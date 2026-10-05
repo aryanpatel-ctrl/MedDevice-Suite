@@ -285,6 +285,24 @@ class TestReports(UnitTestCase):
 			},
 		)
 
+	def test_a_failing_subtest_fails_its_test(self):
+		report = self.tree.write(
+			"junit.xml",
+			"""
+			<testsuites><testsuite>
+				<testcase classname="pkg.test_x.T" name="test_roles"/>
+				<testcase classname="pkg.test_x.T" name="test_roles (role='System Manager')"><failure message="x"/></testcase>
+				<testcase classname="pkg.test_x.T" name="test_other (case=1)"><skipped message="x"/></testcase>
+				<testcase classname="pkg.test_x.T" name="test_other"/>
+			</testsuite></testsuites>
+			""",
+		)
+
+		self.assertEqual(
+			load_junit_results(report),
+			{"pkg.test_x.T.test_roles": "failed", "pkg.test_x.T.test_other": "skipped"},
+		)
+
 	def test_reads_every_document_of_a_multi_category_report(self):
 		document = (
 			'<?xml version="1.0" encoding="UTF-8"?>\n<testsuites><testsuite>{}</testsuite></testsuites>\n'
