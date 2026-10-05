@@ -311,6 +311,20 @@ approach = "build"
 
 # --- Requirements -----------------------------------------------------------
 [[requirement]]
+id = "URS-PLT-001"
+module = 0
+title = "The desk shows the standard areas the client requirement uses and hides every other standard area, for all users."
+source = "Scope decision 2026-10-05 against D1, D2, D3"
+status = "implemented"
+
+[[requirement]]
+id = "URS-PLT-002"
+module = 0
+title = "Site configuration owned by this app is applied automatically and idempotently on install and on every migrate, without modifying Frappe, ERPNext or India Compliance."
+source = "Engineering rules (README)"
+status = "implemented"
+
+[[requirement]]
 id = "URS-PLT-003"
 module = 0
 title = "Every implemented requirement is verified by at least one automated test, and the traceability matrix is generated from the source."
