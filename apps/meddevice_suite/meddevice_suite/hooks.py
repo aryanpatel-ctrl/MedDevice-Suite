@@ -9,3 +9,7 @@ required_apps = ["erpnext"]
 
 after_install = "meddevice_suite.setup.install.apply_configuration"
 after_migrate = "meddevice_suite.setup.install.apply_configuration"
+
+doc_events = {
+	"Desktop Layout": {"validate": "meddevice_suite.setup.desk.enforce_on_desktop_layout"},
+}
