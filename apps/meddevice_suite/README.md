@@ -51,11 +51,18 @@ the bench root unless marked *(app)*, which means `apps/meddevice_suite`.
 | Traceability *(app)* | `python3 -m meddevice_suite.qa.traceability --check --junit reports/junit.xml --output reports/traceability.md` | every implemented requirement verified by a passing test |
 | UI tests | `bench --site <test-site> run-ui-tests meddevice_suite --headless --browser electron` | all pass |
 
+Before tests run on a new test site, bring it to a known state once with
+`bench --site <test-site> execute meddevice_suite.qa.site_setup.prepare_test_site`
+(it refuses any site without `allow_tests`).
+
 Before running UI tests locally, make the test site's name resolve once with
 `bench --site <test-site> add-to-hosts` (macOS does not resolve `*.localhost`
-for Node). Terminals inside VS Code or Cursor set `ELECTRON_RUN_AS_NODE`, which
-stops Cypress from starting; prefix the command with
-`env -u ELECTRON_RUN_AS_NODE` there.
+for Node). That also adds an IPv6 entry the bench web server does not listen
+on, so run Cypress with `NODE_OPTIONS=--dns-result-order=ipv4first`. Terminals
+inside VS Code or Cursor set `ELECTRON_RUN_AS_NODE`, which stops Cypress from
+starting; prefix the command with `env -u ELECTRON_RUN_AS_NODE` there. The
+bench must have no default site (`bench use`), or the web server sends every
+request to that site.
 
 ## CI
 
