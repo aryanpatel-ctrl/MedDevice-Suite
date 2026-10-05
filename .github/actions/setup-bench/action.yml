@@ -55,5 +55,6 @@ runs:
         bench --site $SITE install-app meddevice_suite
         bench --site $SITE set-config admin_password admin
         bench --site $SITE set-config allow_tests true
+        bench --site $SITE execute meddevice_suite.qa.site_setup.prepare_test_site
       env:
         CI: 'Yes'

@@ -330,3 +330,10 @@ module = 0
 title = "Every implemented requirement is verified by at least one automated test, and the traceability matrix is generated from the source."
 source = "ISO 13485 4.1.6 / 21 CFR 11.10(a) software validation"
 status = "implemented"
+
+[[requirement]]
+id = "URS-PLT-004"
+module = 0
+title = "Automated tests run on a disposable test site brought to a known state (setup completed with a fixed test company); the preparation refuses to run on a site that does not allow tests."
+source = "ISO 13485 4.1.6 / 21 CFR 11.10(a): controlled test environment for software validation"
+status = "implemented"
