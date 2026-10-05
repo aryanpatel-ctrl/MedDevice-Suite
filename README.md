@@ -19,7 +19,6 @@ releases of Frappe, ERPNext and India Compliance it runs on. Only secrets
 | `scripts/verify_vendored.sh` | Proves each official app is byte-for-byte its pinned release. Runs in CI. |
 | `.github/` | CI: release integrity, traceability, server tests, coverage, UI tests, linters. |
 | `.pre-commit-config.yaml` | Checks run before every commit. |
-| `CONTRIBUTING.md` | Engineering rules for every change: workflow, standards, tests, quality gates, change control. Read before contributing. |
 
 ## Setting up a machine
 
@@ -56,5 +55,5 @@ An upgrade is a change-control decision. Replace the app folder with the new
 release, update its `ref` and `commit` in `pinned-apps.json`, run
 `scripts/verify_vendored.sh`, and commit both together with the change record.
 
-Every change follows [CONTRIBUTING.md](CONTRIBUTING.md). The requirement
-register and test tooling are described in the [app README](apps/meddevice_suite/README.md).
+Engineering rules, the requirement register and the quality gates are
+described in the [app README](apps/meddevice_suite/README.md).
