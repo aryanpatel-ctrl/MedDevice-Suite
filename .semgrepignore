@@ -1,0 +1,4 @@
+# Official releases, kept unchanged (see scripts/verify_vendored.sh).
+apps/frappe/
+apps/erpnext/
+apps/india_compliance/

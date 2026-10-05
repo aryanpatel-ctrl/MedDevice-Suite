@@ -1,4 +1,6 @@
-exclude: 'node_modules|.git'
+# Frappe, ERPNext and India Compliance are official releases kept byte-for-byte
+# (see scripts/verify_vendored.sh), so only this project's own code is checked.
+exclude: '^apps/(frappe|erpnext|india_compliance)/|node_modules|\.git/'
 default_stages: [pre-commit]
 fail_fast: false
 
