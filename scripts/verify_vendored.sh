@@ -10,9 +10,8 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 revision="${1:-HEAD}"
-upstream="$(mktemp -d)"
-trap 'rm -rf "$upstream"' EXIT
-git -C "$upstream" init --quiet
+workdir="$(mktemp -d)"
+trap 'rm -rf "$workdir"' EXIT
 
 pins() {
 	python3 -c 'import json; [print(p["name"], p["url"], p["ref"], p["commit"]) for p in json.load(open("pinned-apps.json"))]'
@@ -20,7 +19,12 @@ pins() {
 
 failures=0
 while read -r name url ref commit; do
-	git -C "$upstream" fetch --quiet --depth 1 "$url" "refs/tags/$ref"
+	# One scratch repository per app, with git's background maintenance off: a
+	# shared repository let the maintenance one fetch starts rewrite the
+	# shallow file while the next fetch was reading it.
+	upstream="$workdir/$name"
+	git init --quiet "$upstream"
+	git -C "$upstream" -c gc.auto=0 -c maintenance.auto=false fetch --quiet --depth 1 "$url" "refs/tags/$ref"
 	tag_commit="$(git -C "$upstream" rev-parse 'FETCH_HEAD^{commit}')"
 	release_tree="$(git -C "$upstream" rev-parse 'FETCH_HEAD^{tree}')"
 	bundled_tree="$(git rev-parse "$revision:apps/$name" 2>/dev/null || echo missing)"
