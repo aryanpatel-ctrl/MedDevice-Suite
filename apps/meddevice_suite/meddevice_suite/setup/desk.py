@@ -26,6 +26,11 @@ DESKTOP_ICON_VISIBILITY: dict[str, bool] = {
 	"Share Management": False,  # shareholder register
 	"Subscription": False,  # recurring billing
 	"My Workspaces": False,  # personal workspaces
+	"Payments": False,  # duplicates Invoicing, which keeps every payment entry in scope
+	"Subcontracting": False,  # sterilization is not stated as outsourced; restore if the client says it is
+	"Automation": False,  # assignment rules, auto repeat, milestones
+	"Integrations": False,  # webhooks, OAuth, Google, LDAP; the client's integrations are separate, later
+	"Build": False,  # configuration is code, never edited on a site
 }
 
 

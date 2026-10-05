@@ -1,4 +1,5 @@
-// Mirrors DESKTOP_ICON_VISIBILITY in meddevice_suite/setup/desk.py.
+// Mirrors DESKTOP_ICON_VISIBILITY in meddevice_suite/setup/desk.py and
+// SIDEBAR_SCOPE in meddevice_suite/setup/sidebars.py.
 const SHOWN = ["CRM", "Stock", "Buying", "Selling", "Manufacturing", "Quality", "Assets"];
 const HIDDEN = [
 	"Projects",
@@ -7,7 +8,17 @@ const HIDDEN = [
 	"Share Management",
 	"Subscription",
 	"My Workspaces",
+	"Payments",
+	"Subcontracting",
+	"Automation",
+	"Integrations",
+	"Build",
 ];
+const HIDDEN_ENTRIES = {
+	selling: ["POS", "Loyalty Program", "Coupon Code", "Sales Partner"],
+	stock: ["Serial No", "Brand", "Item Attribute", "Landed Cost Voucher"],
+	quality: ["Non Conformance", "Quality Action", "Quality Goal"],
+};
 
 context("Desk scope", () => {
 	before(() => {
@@ -31,6 +42,19 @@ context("Desk scope", () => {
 			HIDDEN.forEach((label) => {
 				expect(rendered_labels, label).not.to.include(label);
 				cy.get(`.desktop-icon[data-id="${label}"]`).should("not.exist");
+			});
+		});
+	});
+
+	it("[URS-PLT-001] lists only in-scope entries inside an area", () => {
+		cy.window().then((win) => {
+			Object.entries(HIDDEN_ENTRIES).forEach(([area, entries]) => {
+				const labels = win.frappe.boot.workspace_sidebar_item[area].items.map(
+					(item) => item.label
+				);
+				entries.forEach((entry) =>
+					expect(labels, `${area}: ${entry}`).not.to.include(entry)
+				);
 			});
 		});
 	});
