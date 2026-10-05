@@ -1,0 +1,373 @@
+import frappe
+from erpnext.accounts.doctype.accounting_dimension.accounting_dimension import (
+    get_accounting_dimensions,
+)
+from frappe.query_builder import Case
+from frappe.query_builder.custom import ConstantColumn
+from frappe.query_builder.functions import IfNull, Sum
+from frappe.utils import flt
+
+from india_compliance.gst_india.constants import GST_TAX_TYPES
+from india_compliance.gst_india.doctype.purchase_reconciliation_tool import (
+    CREDIT_NOTE_DOC_TYPES,
+    GSTIN_RULES,
+    PAN_RULES,
+    BaseUtil,
+    Reconciler,
+)
+
+
+class IMSReconciler(Reconciler):
+    CATEGORIES = (
+        {"doc_type": "Invoice", "category": "B2B"},
+        {"doc_type": "Debit Note", "category": "CDNR"},
+        {"doc_type": "Credit Note", "category": "CDNR"},
+    )
+
+    def reconcile(self, filters):
+        """
+        Reconcile purchases and inward supplies.
+        """
+        for row in self.CATEGORIES:
+            filters["doc_type"], self.category = row.values()
+
+            purchases = PurchaseInvoice().get_unmatched(filters)
+            inward_supplies = InwardSupply().get_unmatched(filters)
+
+            # GSTIN Level matching
+            self.reconcile_for_rules(GSTIN_RULES, purchases, inward_supplies)
+
+            # PAN Level matching
+            purchases = self.get_pan_level_data(purchases)
+            inward_supplies = self.get_pan_level_data(inward_supplies)
+            self.reconcile_for_rules(PAN_RULES, purchases, inward_supplies)
+
+
+class InwardSupply:
+    def __init__(self):
+        self.IMS = frappe.qb.DocType("GST Inward Supply")
+
+    def get_all(self, company_gstin, names=None):
+        query = self.get_query(
+            company_gstin,
+            [
+                "action",
+                "doc_type",
+                "is_amended",
+                "is_itc_reduction_blocked",
+                "declared_igst",
+                "declared_cgst",
+                "declared_sgst",
+                "declared_cess",
+                "remarks",
+            ],
+        )
+
+        if names:
+            query = query.where(self.IMS.name.isin(names))
+
+        return query.run(as_dict=True)
+
+    def get_for_save(self, company_gstin):
+        return (
+            self.get_query_for_upload(company_gstin)
+            .where(self.IMS.ims_action != "No Action")
+            .run(as_dict=True)
+        )
+
+    def get_for_reset(self, company_gstin):
+        return (
+            self.get_query_for_upload(company_gstin)
+            .where(self.IMS.ims_action == "No Action")
+            .run(as_dict=True)
+        )
+
+    def get_query_for_upload(self, company_gstin):
+        return self.get_query(
+            company_gstin,
+            additional_fields=[
+                "doc_type",
+                "is_amended",
+                "sup_return_period",
+                "document_value",
+                "itc_reduction_required",
+                "is_itc_reduction_blocked",
+                "declared_igst",
+                "declared_cgst",
+                "declared_sgst",
+                "declared_cess",
+                "remarks",
+                "is_remarks_blocked",
+            ],
+        ).where(
+            (self.IMS.ims_action != self.IMS.previous_ims_action)
+            # declared ITC changed after upload; re-send even though the action is unchanged
+            | (self.IMS.is_declaration_pending_upload == 1)
+        )
+
+    def get_unmatched(self, filters):
+        query = self.get_query(filters.company_gstin)
+        data = (
+            query.where(IfNull(self.IMS.match_status, "") == "")
+            .where(self.IMS.doc_type == filters.doc_type)
+            .run(as_dict=True)
+        )
+
+        for doc in data:
+            doc.fy = BaseUtil.get_fy(doc.bill_date)
+
+        return BaseUtil.get_dict_for_key("supplier_gstin", data)
+
+    def get_query(self, company_gstin, additional_fields=None):
+        fields = self.get_fields(additional_fields=additional_fields)
+
+        return (
+            frappe.qb.from_(self.IMS)
+            .select(
+                *fields,
+                ConstantColumn("GST Inward Supply").as_("doctype"),
+                Case()
+                .when(
+                    (self.IMS.ims_action == self.IMS.previous_ims_action)
+                    & (IfNull(self.IMS.is_declaration_pending_upload, 0) == 0),
+                    False,
+                )
+                .else_(True)
+                .as_("pending_upload"),
+            )
+            .where(IfNull(self.IMS.previous_ims_action, "") != "")
+            .where(self.IMS.company_gstin == company_gstin)
+        )
+
+    def get_fields(self, additional_fields=None):
+        fields = [
+            "supplier_gstin",
+            "supplier_name",
+            "company_gstin",
+            "bill_no",
+            "bill_date",
+            "name",
+            "is_reverse_charge",
+            "place_of_supply",
+            "link_name",
+            "link_doctype",
+            "match_status",
+            "ims_action",
+            "previous_ims_action",
+            "supply_type",
+            "classification",
+            "is_pending_action_allowed",
+            "supplier_return_form",
+            "is_supplier_return_filed",
+            "original_bill_date",
+            "original_bill_no",
+        ]
+
+        if additional_fields:
+            fields += additional_fields
+
+        fields = [self.IMS[field] for field in fields]
+        fields += self.get_tax_fields()
+
+        return fields
+
+    def get_tax_fields(self):
+        fields = (*GST_TAX_TYPES[:-1], "taxable_value")
+        return [
+            Case()
+            .when(self.IMS.doc_type.isin(CREDIT_NOTE_DOC_TYPES), -self.IMS[field])
+            .else_(self.IMS[field])
+            .as_(field)
+            for field in fields
+        ]
+
+
+class PurchaseInvoice:
+    def __init__(self):
+        self.PI = frappe.qb.DocType("Purchase Invoice")
+        self.PI_ITEM = frappe.qb.DocType("Purchase Invoice Item")
+
+    def get_all(self, names=None, filters=None):
+        dimension_fields = [*get_accounting_dimensions(), "cost_center", "project"]
+        additional_fields = [*dimension_fields, "posting_date"]
+
+        query = self.get_query(filters=filters, additional_fields=additional_fields)
+
+        if names:
+            query = query.where(self.PI.name.isin(names))
+
+        purchases = query.run(as_dict=True)
+
+        return {doc.name: doc for doc in purchases}
+
+    def get_unmatched(self, filters):
+        gst_category = (
+            "Registered Regular",
+            "Tax Deductor",
+            "Tax Collector",
+            "Input Service Distributor",
+        )
+        is_return = 1 if filters.doc_type == "Credit Note" else 0
+
+        data = (
+            self.get_query(filters=filters, is_return=is_return)
+            .where(self.PI.gst_category.isin(gst_category))
+            .where(self.PI.reconciliation_status == "Unreconciled")
+            .where(self.PI.is_return == is_return)
+            .where(IfNull(self.PI.ineligibility_reason, "") != "ITC restricted due to PoS rules")
+            .run(as_dict=True)
+        )
+
+        for doc in data:
+            doc.fy = BaseUtil.get_fy(doc.bill_date)
+
+        return BaseUtil.get_dict_for_key("supplier_gstin", data)
+
+    def get_query(self, filters=None, additional_fields=None, is_return=False):
+        fields = self.get_fields(additional_fields, is_return)
+
+        query = (
+            frappe.qb.from_(self.PI)
+            .left_join(self.PI_ITEM)
+            .on(self.PI_ITEM.parent == self.PI.name)
+            .select(
+                Sum(self.PI_ITEM.taxable_value).as_("taxable_value"),
+                *fields,
+                ConstantColumn("Purchase Invoice").as_("doctype"),
+            )
+            .where(self.PI.docstatus == 1)
+            .where(IfNull(self.PI.reconciliation_status, "") != "Not Applicable")
+            .where(self.PI.is_opening == "No")
+            .where(self.PI_ITEM.parenttype == "Purchase Invoice")
+            .where(self.PI.is_reverse_charge == 0)  # for IMS
+            .groupby(self.PI.name)
+        )
+
+        if filters:
+            query = self.apply_filters(query, filters)
+
+        return query
+
+    def apply_filters(self, query, filters):
+        if filters.get("company"):
+            query = query.where(self.PI.company == filters.company)
+
+        if filters.get("company_gstin"):
+            query = query.where(self.PI.company_gstin == filters.company_gstin)
+
+        return query
+
+    def get_fields(self, additional_fields=None, is_return=False):
+        fields = [
+            "supplier",
+            "supplier_gstin",
+            "supplier_name",
+            "bill_no",
+            "bill_date",
+            "name",
+            "company",
+            "company_gstin",
+            "is_reverse_charge",
+            "place_of_supply",
+        ]
+
+        if additional_fields:
+            fields += additional_fields
+
+        fields = [self.PI[field] for field in fields]
+        fields += self.get_tax_fields()
+
+        if is_return:
+            # return is initiated by the customer. So bill date may not be available or known.
+            fields += [self.PI.posting_date.as_("bill_date")]
+        else:
+            fields += [
+                # Default to posting date if bill date is not available.
+                Case()
+                .when(
+                    self.PI.bill_date.isnull(),
+                    self.PI.posting_date,
+                )
+                .else_(self.PI.bill_date)
+                .as_("bill_date")
+            ]
+
+        return fields
+
+    def get_tax_fields(self):
+        return [self.query_tax_amount(f"{tax_type}_amount").as_(tax_type) for tax_type in GST_TAX_TYPES]
+
+    def query_tax_amount(self, field):
+        return Sum(getattr(self.PI_ITEM, field))
+
+
+# declared ITC reduction on specified records
+
+DECLARED_FIELDS = (
+    "itc_reduction_required",
+    "declared_igst",
+    "declared_cgst",
+    "declared_sgst",
+    "declared_cess",
+)
+
+# fields needed from the stored record
+DECLARATION_ROW_FIELDS = (
+    "name",
+    "is_itc_reduction_blocked",
+    "remarks",
+    "igst",
+    "cgst",
+    "sgst",
+    "cess",
+    *DECLARED_FIELDS,
+)
+
+
+def _declaration_changed(stored, declared):
+    # changed -> caller re-flags for upload (action stays put, flag carries the dirty signal)
+    # remarks travel with the declaration, so a remarks-only edit counts as a change too
+    if (stored.get("remarks") or "") != (declared.get("remarks") or ""):
+        return True
+    return any(flt(stored.get(field)) != flt(declared.get(field)) for field in DECLARED_FIELDS)
+
+
+def apply_declared_overrides(overrides):
+    """Save user-confirmed declared ITC (and remarks) from the review dialog."""
+    rows = frappe.get_all(
+        "GST Inward Supply",
+        filters={"name": ["in", list(overrides)]},
+        fields=list(DECLARATION_ROW_FIELDS),
+    )
+    # blocked -> read-only declaration, skip
+    document = {row.name: row for row in rows if not row.is_itc_reduction_blocked}
+
+    for name, override in overrides.items():
+        if not (doc := document.get(name)):
+            continue
+
+        declared = _clean_declared(doc, override)
+        declared["remarks"] = override.get("remarks") or ""
+
+        if not _declaration_changed(doc, declared):
+            continue
+
+        declared["is_declaration_pending_upload"] = 1
+        frappe.db.set_value("GST Inward Supply", name, declared)
+
+
+def _clean_declared(document, declared):
+    values = {
+        # clamp to [0, document]
+        head: max(0, min(flt(declared.get(head)), flt(document.get(head))))
+        for head in ("igst", "cgst", "sgst", "cess")
+    }
+    values["cgst"] = values["sgst"] = min(values["cgst"], values["sgst"])  # govt: CGST must equal SGST
+
+    return {
+        "itc_reduction_required": 1 if any(values.values()) else 0,
+        "declared_igst": values["igst"],
+        "declared_cgst": values["cgst"],
+        "declared_sgst": values["sgst"],
+        "declared_cess": values["cess"],
+    }

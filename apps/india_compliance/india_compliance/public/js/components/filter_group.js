@@ -1,0 +1,142 @@
+frappe.provide("india_compliance");
+
+india_compliance.FILTER_OPERATORS = {
+    "=": (expected_value, value) => value == expected_value,
+    "!=": (expected_value, value) => value != expected_value,
+    ">": (expected_value, value) => value > expected_value,
+    "<": (expected_value, value) => value < expected_value,
+    ">=": (expected_value, value) => value >= expected_value,
+    "<=": (expected_value, value) => value <= expected_value,
+    like: (expected_value, value) => _like(expected_value, value),
+    "not like": (expected_value, value) => !_like(expected_value, value),
+    in: (expected_values, value) => expected_values.includes(value),
+    "not in": (expected_values, value) => !expected_values.includes(value),
+    is: (expected_value, value) => {
+        if (expected_value === "set") {
+            return !!value;
+        } else {
+            return !value;
+        }
+    },
+};
+
+const FILTER_GROUP_BUTTON = $(
+    `
+    <div class="custom-button-group">
+        <div class="filter-selector">
+            <div class="btn-group">
+                <button class="btn btn-default btn-sm filter-button">
+                    <span class="filter-icon button-icon">
+                        ${frappe.utils.icon("es-line-filter")}
+                    </span>
+                    <span class="button-label hidden-xs">
+                        ${__("Filter")}
+                    <span>
+                </button>
+                <button class="btn btn-default btn-sm filter-x-button" title="${__("Clear all filters")}">
+                    <span class="filter-icon button-icon">
+                        ${frappe.utils.icon("es-small-close")}
+                    </span>
+                </button>
+            </div>
+        </div>
+    </div>
+    `,
+);
+
+class _Filter extends frappe.ui.Filter {
+    set_conditions_from_config() {
+        let filter_options = this.filter_list.filter_options;
+        if (filter_options) {
+            filter_options = { ...filter_options };
+            if (this.fieldname && this.fieldname !== "name") delete filter_options.fieldname;
+
+            Object.assign(this, filter_options);
+        }
+
+        this.conditions = this.conditions.filter(
+            (condition) => india_compliance.FILTER_OPERATORS[condition && condition[0]],
+        );
+
+        const like_conditions = ["like", "not like"];
+
+        // keep like / not like conditions
+        for (const [fieldtype, invalid] of Object.entries(this.invalid_condition_map))
+            this.invalid_condition_map[fieldtype] = invalid.filter(
+                (condition) => !like_conditions.includes(condition),
+            );
+    }
+}
+
+india_compliance.FilterGroup = class FilterGroup extends frappe.ui.FilterGroup {
+    constructor(opts) {
+        if (!opts.parent) frappe.throw(__("india_compliance.FilterGroup: Parent element not found"));
+
+        FILTER_GROUP_BUTTON.appendTo(opts.parent);
+
+        Object.assign(opts, {
+            filter_button: FILTER_GROUP_BUTTON.find(".filter-button"),
+            filter_x_button: FILTER_GROUP_BUTTON.find(".filter-x-button"),
+        });
+
+        super(opts);
+    }
+
+    _push_new_filter(...args) {
+        const Filter = frappe.ui.Filter;
+        try {
+            frappe.ui.Filter = _Filter;
+            return super._push_new_filter(...args);
+        } finally {
+            frappe.ui.Filter = Filter;
+        }
+    }
+
+    set_clear_all_filters_event() {
+        if (!this.filter_x_button) return;
+
+        super.set_clear_all_filters_event();
+
+        this.filter_x_button.on("click", () => {
+            this.on_change();
+        });
+    }
+
+    remove_filter(filter_value) {
+        // filter_value of form: [doctype, fieldname, condition, value]
+        this.filters = this.filters.filter((f) => {
+            let f_value = f.get_value();
+
+            if (filter_value.length === 2) f_value = f_value.slice(0, 2);
+
+            const remove = frappe.utils.arrays_equal(f_value.slice(0, 4), filter_value.slice(0, 4));
+            if (remove) f.remove();
+
+            return !remove;
+        });
+    }
+
+    async add_or_remove_filter(filter_value) {
+        // filter_value of form: [doctype, fieldname, condition, value]
+        if (this.filter_exists(filter_value)) {
+            this.remove_filter(filter_value);
+        } else {
+            await this.push_new_filter(filter_value);
+        }
+    }
+};
+
+function _like(expected_value, value) {
+    expected_value = String(expected_value).toLowerCase();
+    value = String(value).toLowerCase();
+
+    const starts_open = expected_value.startsWith("%");
+    const ends_open = expected_value.endsWith("%");
+    const text = expected_value.replace(/^%/, "").replace(/%$/, "");
+
+    if (starts_open && !ends_open) return value.endsWith(text);
+    if (ends_open && !starts_open) return value.startsWith(text);
+
+    // no wildcard typed, match anywhere
+    return value.includes(text);
+}
