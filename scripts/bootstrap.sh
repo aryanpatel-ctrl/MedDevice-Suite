@@ -44,7 +44,9 @@ mkdir -p sites logs config/pids
 
 [[ -f sites/common_site_config.json ]] || bench setup config
 [[ -x env/bin/python ]] || bench setup env --python "$PYTHON"
-bench setup requirements $dev
+bench setup requirements
+# Separate call: with --dev, bench installs only the development tools.
+[[ -z "$dev" ]] || bench setup requirements --dev
 [[ -f config/redis_cache.conf ]] || bench setup redis
 [[ -f Procfile ]] || bench setup procfile
 [[ -z "$build_assets" ]] || bench build
@@ -58,8 +60,10 @@ if ! git diff --quiet -- $official_apps; then
 	git checkout -- $official_apps
 fi
 
+# Every app must import from the environment; a failure here fails the setup.
 while read -r name; do
-	echo "$name $(env/bin/python -c "import $name; print($name.__version__)")"
+	version="$(env/bin/python -c "import $name; print($name.__version__)")"
+	echo "$name $version"
 done < <(
 	pinned_names
 	echo "$PROJECT_APP"
