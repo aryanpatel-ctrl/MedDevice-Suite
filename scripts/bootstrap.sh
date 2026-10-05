@@ -8,6 +8,8 @@
 #
 # Options: --dev           also install test and coverage tools
 #          --skip-assets   do not build the desk's JavaScript and CSS
+#          --skip-redis    Redis is provided elsewhere (CI service containers);
+#                          do not generate local Redis config
 #
 # Needs Python 3.14 (or PYTHON=<interpreter>), Node 24+, yarn, Redis,
 # MariaDB 11.8 and bench (pip install frappe-bench).
@@ -18,10 +20,12 @@ PYTHON="${PYTHON:-python3.14}"
 PROJECT_APP=meddevice_suite
 dev=""
 build_assets=yes
+local_redis=yes
 for option in "$@"; do
 	case "$option" in
 	--dev) dev="--dev" ;;
 	--skip-assets) build_assets="" ;;
+	--skip-redis) local_redis="" ;;
 	*) echo "unknown option: $option" >&2 && exit 2 ;;
 	esac
 done
@@ -50,7 +54,7 @@ mkdir -p sites logs config/pids
 bench setup requirements --python
 bench setup requirements --node
 [[ -z "$dev" ]] || bench setup requirements --dev
-[[ -f config/redis_cache.conf ]] || bench setup redis
+[[ -z "$local_redis" || -f config/redis_cache.conf ]] || bench setup redis
 [[ -f Procfile ]] || bench setup procfile
 [[ -z "$build_assets" ]] || bench build
 
