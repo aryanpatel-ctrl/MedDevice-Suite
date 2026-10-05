@@ -1,0 +1,57 @@
+name: Set up bench
+description: >
+  A fresh Frappe bench at the versions pinned in pinned-apps.json, with this
+  repository laid over it, and a test site with the production app set.
+  Expects the job to provide MariaDB on 3306, Redis on 11000 / 13000 and env SITE.
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v6
+      with:
+        python-version: '3.14'
+
+    - uses: actions/setup-node@v6
+      with:
+        node-version: 24
+
+    - name: Cache pip
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('pinned-apps.json', 'apps/*/pyproject.toml') }}
+        restore-keys: ${{ runner.os }}-pip-
+
+    - name: Install MariaDB client
+      shell: bash
+      run: sudo apt-get update && sudo apt-get install -y mariadb-client
+
+    - name: Initialise bench at the pinned Frappe version
+      shell: bash
+      run: |
+        pip install frappe-bench
+        frappe_ref=$(python -c 'import json; print(next(a["ref"] for a in json.load(open("pinned-apps.json")) if a["name"] == "frappe"))')
+        bench init --skip-redis-config-generation --skip-assets \
+          --frappe-branch "$frappe_ref" --python "$(which python)" ~/frappe-bench
+        rsync -a --exclude .git "$GITHUB_WORKSPACE"/ ~/frappe-bench/
+
+    - name: Install the pinned app set
+      shell: bash
+      working-directory: /home/runner/frappe-bench
+      run: |
+        scripts/bootstrap.sh
+        bench setup requirements --dev
+      env:
+        CI: 'Yes'
+
+    - name: Create test site
+      shell: bash
+      working-directory: /home/runner/frappe-bench
+      run: |
+        bench new-site --db-root-password root --admin-password admin --install-app erpnext $SITE
+        bench --site $SITE install-app india_compliance
+        bench --site $SITE install-app meddevice_suite
+        bench --site $SITE set-config admin_password admin
+        bench build
+      env:
+        CI: 'Yes'
