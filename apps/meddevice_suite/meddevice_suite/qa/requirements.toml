@@ -1,0 +1,318 @@
+# Scope baseline and user requirements, traced to verification tests.
+#
+# module.approach  ready     = standard Frappe/ERPNext/India Compliance, configuration only
+#                  customise = standard base extended by this app
+#                  build     = built in this app
+#
+# requirement.id      URS-<AREA>-<nnn>. Never reused or renumbered; withdraw instead.
+# requirement.module  module number below; 0 = platform (applies across modules)
+# requirement.status  planned | implemented | withdrawn
+#                     an implemented requirement must be verified by at least one test
+#
+# Sources: client diagrams D1 (MedDevice Suite ERP flow map), D2 (Foley ERP
+# flowchart, ISO 13485) and D3 (Foley full workflow diagram).
+
+# --- A. Master data ---------------------------------------------------------
+[[module]]
+number = 1
+title = "Item master (raw material / WIP / finished goods)"
+approach = "customise"
+
+[[module]]
+number = 2
+title = "Bill of materials"
+approach = "customise"
+
+[[module]]
+number = 3
+title = "Routing and work centres"
+approach = "ready"
+
+[[module]]
+number = 4
+title = "Vendor master, vendor rating and approved supplier list"
+approach = "customise"
+
+[[module]]
+number = 5
+title = "Customer master"
+approach = "customise"
+
+[[module]]
+number = 6
+title = "Specifications and tests"
+approach = "customise"
+
+[[module]]
+number = 7
+title = "Warehouses and locations"
+approach = "ready"
+
+[[module]]
+number = 8
+title = "Equipment master"
+approach = "customise"
+
+[[module]]
+number = 9
+title = "Employee master"
+approach = "ready"
+
+# --- B. Sales ---------------------------------------------------------------
+[[module]]
+number = 10
+title = "Customer enquiry (CRM)"
+approach = "ready"
+
+[[module]]
+number = 11
+title = "Quotation with internal price approval, revision and lost reason"
+approach = "ready"
+
+[[module]]
+number = 12
+title = "Sales order and price lists"
+approach = "ready"
+
+# --- C. Planning ------------------------------------------------------------
+[[module]]
+number = 13
+title = "Demand forecast, MPS, MRP and production scheduling"
+approach = "ready"
+
+# --- D. Purchasing ----------------------------------------------------------
+[[module]]
+number = 14
+title = "Purchase request, RFQ, quotation comparison, approval and purchase order"
+approach = "ready"
+
+[[module]]
+number = 15
+title = "Returns to supplier"
+approach = "ready"
+
+# --- E. Receiving and stores ------------------------------------------------
+[[module]]
+number = 16
+title = "Goods receipt, certificate verification, IQC and QA stock release"
+approach = "customise"
+
+[[module]]
+number = 17
+title = "Lot status control (quarantine / approved / rejected / hold)"
+approach = "customise"
+
+[[module]]
+number = 18
+title = "Batch inventory, expiry, FEFO picking and putaway"
+approach = "ready"
+
+# --- F. Production ----------------------------------------------------------
+[[module]]
+number = 19
+title = "Work orders, job cards, material issue, machine and operator tracking"
+approach = "customise"
+
+[[module]]
+number = 20
+title = "In-process quality control (IPQC)"
+approach = "customise"
+
+[[module]]
+number = 21
+title = "Rework and scrap stock postings"
+approach = "ready"
+
+[[module]]
+number = 22
+title = "Shop-floor operator screens"
+approach = "build"
+
+# --- G. Packing, sterilization and release ---------------------------------
+[[module]]
+number = 23
+title = "Label / UDI printing and label reconciliation"
+approach = "build"
+
+[[module]]
+number = 24
+title = "Sterilization load"
+approach = "build"
+
+[[module]]
+number = 25
+title = "Final quality control (FQC)"
+approach = "customise"
+
+[[module]]
+number = 26
+title = "QA batch release and certificate of conformity"
+approach = "build"
+
+# --- H. Dispatch and finance ------------------------------------------------
+[[module]]
+number = 27
+title = "Pick, pack, dispatch and delivery"
+approach = "ready"
+
+[[module]]
+number = 28
+title = "GST invoice, e-invoice and e-way bill"
+approach = "ready"
+
+[[module]]
+number = 29
+title = "Accounts, payables, receivables and costing"
+approach = "ready"
+
+# --- I. Quality management system ------------------------------------------
+[[module]]
+number = 30
+title = "Document control"
+approach = "build"
+
+[[module]]
+number = 31
+title = "Device master record / medical device file"
+approach = "build"
+
+[[module]]
+number = 32
+title = "Device history record / batch manufacturing record"
+approach = "build"
+
+[[module]]
+number = 33
+title = "Non-conformance report and disposition"
+approach = "build"
+
+[[module]]
+number = 34
+title = "Deviation"
+approach = "build"
+
+[[module]]
+number = 35
+title = "CAPA"
+approach = "build"
+
+[[module]]
+number = 36
+title = "Change control"
+approach = "build"
+
+[[module]]
+number = 37
+title = "Training management"
+approach = "build"
+
+[[module]]
+number = 38
+title = "Calibration and maintenance"
+approach = "customise"
+
+[[module]]
+number = 39
+title = "Risk management (ISO 14971)"
+approach = "build"
+
+[[module]]
+number = 40
+title = "Equipment qualification (IQ / OQ / PQ)"
+approach = "build"
+
+[[module]]
+number = 41
+title = "Regulatory licences and registrations"
+approach = "build"
+
+# --- J. Post-market ---------------------------------------------------------
+[[module]]
+number = 42
+title = "Customer feedback"
+approach = "ready"
+
+[[module]]
+number = 43
+title = "Complaint management"
+approach = "build"
+
+[[module]]
+number = 44
+title = "Vigilance reporting"
+approach = "build"
+
+[[module]]
+number = 45
+title = "Recall management and record pack"
+approach = "build"
+
+[[module]]
+number = 46
+title = "Returns and replacement"
+approach = "ready"
+
+# --- K. Compliance foundation -----------------------------------------------
+[[module]]
+number = 47
+title = "Roles and permissions"
+approach = "ready"
+
+[[module]]
+number = 48
+title = "Approval workflows"
+approach = "ready"
+
+[[module]]
+number = 49
+title = "21 CFR Part 11 electronic signature"
+approach = "build"
+
+[[module]]
+number = 50
+title = "Tamper-evident audit trail"
+approach = "build"
+
+[[module]]
+number = 51
+title = "Alerts and notifications"
+approach = "ready"
+
+[[module]]
+number = 52
+title = "Backup and disaster recovery"
+approach = "ready"
+
+[[module]]
+number = 53
+title = "Barcode / QR scanning in stock transactions"
+approach = "ready"
+
+[[module]]
+number = 54
+title = "Record retention and archival"
+approach = "build"
+
+# --- L. Traceability and reports --------------------------------------------
+[[module]]
+number = 55
+title = "Backward / forward batch traceability"
+approach = "customise"
+
+[[module]]
+number = 56
+title = "Standard reports"
+approach = "ready"
+
+[[module]]
+number = 57
+title = "Compliance reports and dashboards"
+approach = "build"
+
+# --- Requirements -----------------------------------------------------------
+[[requirement]]
+id = "URS-PLT-003"
+module = 0
+title = "Every implemented requirement is verified by at least one automated test, and the traceability matrix is generated from the source."
+source = "ISO 13485 4.1.6 / 21 CFR 11.10(a) software validation"
+status = "implemented"
