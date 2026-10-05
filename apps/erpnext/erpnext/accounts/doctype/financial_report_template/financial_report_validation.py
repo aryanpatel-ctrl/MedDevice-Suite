@@ -1,0 +1,569 @@
+# Copyright (c) 2025, Frappe Technologies Pvt. Ltd. and contributors
+# For license information, please see license.txt
+
+import ast
+import json
+import re
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any, ClassVar
+
+import frappe
+from frappe import _, is_whitelisted
+from frappe.database.operator_map import OPERATOR_MAP
+from frappe.database.query import SQLFunctionParser
+
+
+def get_valid_api_method(api_path: str):
+	"""Resolve `api_path`, ensuring it is whitelisted and permits GET (i.e. read-only)."""
+	method = frappe.get_attr(api_path)
+	is_whitelisted(method)
+
+	if "GET" not in frappe.allowed_http_methods_for_whitelisted_func.get(method, ()):
+		frappe.throw(
+			_("Method {0} must permit GET requests").format(frappe.bold(api_path)),
+			frappe.PermissionError,
+			title=_("Method Not Allowed"),
+		)
+
+	return method
+
+
+def get_formula_field_label(data_source: str) -> str:
+	# Must mirror the `labels` map in financial_report_template.js (update_formula_label),
+	labels = {
+		"Account Data": _("Account Filter"),
+		"Custom API": _("API Method Path"),
+	}
+	return labels.get(data_source, _("Calculation Formula"))
+
+
+@dataclass
+class ValidationIssue:
+	"""Represents a single validation issue"""
+
+	message: str
+	row_idx: int | None = None
+	details: dict[str, Any] = None
+
+	def __post_init__(self):
+		if self.details is None:
+			self.details = {}
+
+	def __str__(self) -> str:
+		if self.row_idx:
+			return _("Row {0}: {1}", context="Financial Report Template").format(self.row_idx, self.message)
+		return self.message
+
+
+@dataclass
+class ValidationResult:
+	issues: list[ValidationIssue] = field(default_factory=list)
+	warnings: list[ValidationIssue] = field(default_factory=list)
+
+	@property
+	def is_valid(self) -> bool:
+		return len(self.issues) == 0
+
+	@property
+	def has_warnings(self) -> bool:
+		return len(self.warnings) > 0
+
+	@property
+	def error_count(self) -> int:
+		return len(self.issues)
+
+	@property
+	def warning_count(self) -> int:
+		return len(self.warnings)
+
+	def merge(self, other: "ValidationResult") -> "ValidationResult":
+		self.issues.extend(other.issues)
+		self.warnings.extend(other.warnings)
+		return self
+
+	def add_error(self, issue: ValidationIssue) -> None:
+		"""Add a critical error that prevents functionality"""
+		self.issues.append(issue)
+
+	def add_warning(self, issue: ValidationIssue) -> None:
+		"""Add a warning for recommendatory validation"""
+		self.warnings.append(issue)
+
+	def notify_user(self) -> None:
+		warnings = "<br><br>".join(str(w) for w in self.warnings if w)
+		errors = "<br><br>".join(str(e) for e in self.issues if e)
+
+		if warnings:
+			frappe.msgprint(warnings, title=_("Warnings"), indicator="orange")
+
+		if errors:
+			frappe.throw(errors, title=_("Errors"))
+
+
+class TemplateValidator:
+	"""Main validator that orchestrates all validations"""
+
+	def __init__(self, template):
+		self.template = template
+		self.validators = [
+			TemplateStructureValidator(),
+			DependencyValidator(template),
+		]
+		self.formula_validator = FormulaValidator(template)
+
+	def validate(self) -> ValidationResult:
+		result = ValidationResult([])
+
+		# Run template-level validators
+		for validator in self.validators:
+			result.merge(validator.validate(self.template))
+
+		# Run row-level validations
+		for row in self.template.rows:
+			result.merge(self.formula_validator.validate(row))
+
+		return result
+
+
+class Validator(ABC):
+	@abstractmethod
+	def validate(self, context: Any) -> ValidationResult:
+		pass
+
+
+class TemplateStructureValidator(Validator):
+	def validate(self, template) -> ValidationResult:
+		result = ValidationResult()
+
+		result.merge(self._validate_reference_codes(template))
+		result.merge(self._validate_required_fields(template))
+
+		return result
+
+	def _validate_reference_codes(self, template) -> ValidationResult:
+		result = ValidationResult()
+		used_codes = set()
+
+		for row in template.rows:
+			if not row.reference_code:
+				continue
+
+			ref_code = row.reference_code.strip()
+
+			# Check format
+			if not re.match(r"^[A-Za-z][A-Za-z0-9_-]*$", ref_code):
+				result.add_error(
+					ValidationIssue(
+						message=_(
+							"Invalid line reference format: '{0}'. Must start with letter and contain only letters, numbers, underscores, and hyphens"
+						).format(ref_code),
+						row_idx=row.idx,
+					)
+				)
+
+			# Check uniqueness
+			if ref_code in used_codes:
+				result.add_error(
+					ValidationIssue(
+						message=_("Duplicate line reference: '{0}'").format(ref_code),
+						row_idx=row.idx,
+					)
+				)
+			used_codes.add(ref_code)
+
+		return result
+
+	def _validate_required_fields(self, template) -> ValidationResult:
+		result = ValidationResult()
+
+		for row in template.rows:
+			# Balance type required
+			if row.data_source == "Account Data" and not row.balance_type:
+				result.add_error(
+					ValidationIssue(
+						message=_("Balance Type is required for Account Data"),
+						row_idx=row.idx,
+					)
+				)
+
+			# Calculation formula required
+			if row.data_source in ["Account Data", "Calculated Amount", "Custom API"]:
+				if not row.calculation_formula:
+					result.add_error(
+						ValidationIssue(
+							message=_("{0} is required when {1} is {2}").format(
+								get_formula_field_label(row.data_source),
+								row.meta.get_translated_label("data_source"),
+								_(row.data_source),
+							),
+							row_idx=row.idx,
+						)
+					)
+
+		return result
+
+
+class DependencyValidator(Validator):
+	def __init__(self, template):
+		self.template = template
+		self.dependencies = self._build_dependency_graph()
+
+	def validate(self, context=None) -> ValidationResult:
+		result = ValidationResult()
+
+		result.merge(self._validate_circular_dependencies())
+		result.merge(self._validate_missing_dependencies())
+
+		return result
+
+	def _build_dependency_graph(self) -> dict[str, list[str]]:
+		graph = {}
+		available_codes = {row.reference_code for row in self.template.rows if row.reference_code}
+
+		for row in self.template.rows:
+			if row.reference_code and row.data_source == "Calculated Amount" and row.calculation_formula:
+				# skip self-reference, `CalculationFormulaValidator` already reports it
+				deps = [
+					code
+					for code in extract_reference_codes_from_formula(
+						row.calculation_formula, list(available_codes)
+					)
+					if code != row.reference_code
+				]
+				if deps:
+					graph[row.reference_code] = deps
+
+		return graph
+
+	def _validate_circular_dependencies(self) -> ValidationResult:
+		"""
+		Efficient cycle detection using DFS (Depth-First Search) with three-color algorithm:
+		- WHITE (0): unvisited node
+		- GRAY (1): currently being processed (on recursion stack)
+		- BLACK (2): fully processed
+
+		Example cycle detection:
+		A → B → C → A (cycle detected when A is GRAY and visited again)
+		"""
+		result = ValidationResult()
+		WHITE, GRAY, BLACK = 0, 1, 2
+		colors = {node: WHITE for node in self.dependencies}
+
+		def dfs(node, path):
+			if node not in colors:
+				return  # External dependency
+
+			if colors[node] == GRAY:
+				# Found cycle
+				cycle_start = path.index(node)
+				cycle = [*path[cycle_start:], node]
+				result.add_error(
+					ValidationIssue(
+						message=_("Circular dependency detected: {0}").format(" → ".join(cycle)),
+					)
+				)
+				return
+
+			if colors[node] == BLACK:
+				return  # Already processed
+
+			colors[node] = GRAY
+			path.append(node)
+
+			for neighbor in self.dependencies.get(node, []):
+				dfs(neighbor, path.copy())
+
+			colors[node] = BLACK
+
+		for node in self.dependencies:
+			if colors[node] == WHITE:
+				dfs(node, [])
+
+		return result
+
+	def _validate_missing_dependencies(self) -> ValidationResult:
+		available = {row.reference_code for row in self.template.rows if row.reference_code}
+		result = ValidationResult()
+
+		for ref_code, deps in self.dependencies.items():
+			undefined = [d for d in deps if d not in available]
+			if undefined:
+				row_idx = self._get_row_idx(ref_code)
+				result.add_error(
+					ValidationIssue(
+						message=_("Line references undefined in {0}: {1}").format(
+							get_formula_field_label("Calculated Amount"), ", ".join(undefined)
+						),
+						row_idx=row_idx,
+					)
+				)
+
+		return result
+
+	def _get_row_idx(self, reference_code: str) -> int | None:
+		for row in self.template.rows:
+			if row.reference_code == reference_code:
+				return row.idx
+		return None
+
+
+class CalculationFormulaValidator(Validator):
+	"""Validates calculation formulas used in Calculated Amount rows"""
+
+	def __init__(self, reference_codes: set[str]):
+		self.reference_codes = reference_codes
+
+	def validate(self, row) -> ValidationResult:
+		"""Validate calculation formula for a single row"""
+		result = ValidationResult()
+
+		if row.data_source != "Calculated Amount":
+			return result
+
+		formula = self._preprocess_formula(row.calculation_formula)
+		row.calculation_formula = formula
+
+		# Check parentheses
+		if not self._are_parentheses_balanced(formula):
+			result.add_error(
+				ValidationIssue(
+					message=_("Formula has unbalanced parentheses"),
+					row_idx=row.idx,
+				)
+			)
+			return result
+
+		# Check self-reference
+		available_codes = list(self.reference_codes)
+		refs = extract_reference_codes_from_formula(formula, available_codes)
+		if row.reference_code and row.reference_code in refs:
+			result.add_error(
+				ValidationIssue(
+					message=_("Formula references itself ('{0}')").format(row.reference_code),
+					row_idx=row.idx,
+				)
+			)
+
+		# Try to evaluate with dummy values
+		eval_error = self._test_formula_evaluation(formula, available_codes)
+		if eval_error:
+			result.add_error(
+				ValidationIssue(
+					message=_("Formula evaluation error: {0}").format(eval_error),
+					row_idx=row.idx,
+				)
+			)
+
+		return result
+
+	def _preprocess_formula(self, formula: str) -> str:
+		if not formula or not isinstance(formula, str):
+			return ""
+
+		return formula.strip()
+
+	@staticmethod
+	def _are_parentheses_balanced(formula: str) -> bool:
+		return formula.count("(") == formula.count(")")
+
+	def _test_formula_evaluation(self, formula: str, available_codes: list[str]) -> str | None:
+		try:
+			context = {code: 1.0 for code in available_codes}
+			context.update(
+				{
+					"abs": abs,
+					"round": round,
+					"min": min,
+					"max": max,
+					"sum": sum,
+					"sqrt": lambda x: x**0.5,
+					"pow": pow,
+					"ceil": lambda x: int(x) + (1 if x % 1 else 0),
+					"floor": lambda x: int(x),
+				}
+			)
+
+			result = frappe.safe_eval(formula, eval_globals=None, eval_locals=context)
+
+			if not isinstance(result, (int, float)):  # noqa: UP038
+				return _("Formula must return a numeric value, got {0}").format(type(result).__name__)
+
+			return None
+		except Exception as e:
+			return str(e)
+
+
+class AccountFilterValidator(Validator):
+	"""Validates account filter expressions used in Account Data rows"""
+
+	def __init__(self, account_fields: set | None = None):
+		self.account_meta = frappe.get_meta("Account")
+		self.account_fields = account_fields or set(self.account_meta._valid_columns)
+
+	def validate(self, row) -> ValidationResult:
+		# dispatch-path guard: only account-data rows are validated here
+		if row.data_source != "Account Data":
+			return ValidationResult()
+
+		return self.validate_filter(row)
+
+	def validate_filter(self, row) -> ValidationResult:
+		"""Validate calculation_formula as an Account filter, regardless of data_source.
+
+		The caller has already decided this row is an account filter, so unlike
+		`validate()` this does not opt out based on `data_source`.
+		"""
+		result = ValidationResult()
+
+		try:
+			filter_config = json.loads(row.calculation_formula)
+			error = self._validate_filter_structure(
+				filter_config,
+				self.account_fields,
+				row.advanced_filtering,
+			)
+
+			if error:
+				result.add_error(
+					ValidationIssue(
+						message=_("[{0}] {1}", context="Financial Report Template").format(
+							get_formula_field_label("Account Data"), error
+						),
+						row_idx=row.idx,
+					)
+				)
+
+		except json.JSONDecodeError as e:
+			result.add_error(
+				ValidationIssue(
+					message=_("[{0}] {1}", context="Financial Report Template").format(
+						get_formula_field_label("Account Data"),
+						_("Invalid JSON format: {0}").format(str(e)),
+					),
+					row_idx=row.idx,
+				)
+			)
+
+		return result
+
+	def _validate_filter_structure(
+		self,
+		filter_config,
+		account_fields: set,
+		advanced_filtering: bool = False,
+	) -> str | None:
+		# simple condition: [field, operator, value]
+		if isinstance(filter_config, list):
+			if len(filter_config) != 3:
+				return _("Filter must be [field, operator, value]")
+
+			field, operator, value = filter_config
+
+			if not isinstance(field, str) or not isinstance(operator, str):
+				return _("Field and operator must be strings")
+
+			if field not in account_fields:
+				# escape: `field` is caller-supplied and this message renders as HTML
+				return _("Field '{0}' is not a valid Account field").format(frappe.utils.escape_html(field))
+
+			if operator.casefold() not in OPERATOR_MAP:
+				return _("Invalid operator '{0}'").format(operator)
+
+			if operator in ["in", "not in"] and not isinstance(value, list):
+				return _("Operator '{0}' requires a list value").format(operator)
+
+		# logical condition: {"and": [condition1, condition2]}
+		elif isinstance(filter_config, dict):
+			if len(filter_config) != 1:
+				return _("Logical condition must have exactly one operator")
+
+			op = next(iter(filter_config.keys())).lower()
+			if op not in ["and", "or"]:
+				return _("Logical operators must be 'and' or 'or'")
+
+			conditions = filter_config[next(iter(filter_config.keys()))]
+			if not isinstance(conditions, list) or len(conditions) < 1:
+				return _("Logical conditions need at least 1 sub-condition")
+
+			# recursive
+			for condition in conditions:
+				error = self._validate_filter_structure(condition, account_fields, advanced_filtering)
+				if error:
+					return error
+		else:
+			return _("Filter must be a list or dict")
+
+		return None
+
+
+class FormulaValidator(Validator):
+	def __init__(self, template):
+		self.template = template
+		reference_codes = {row.reference_code for row in template.rows if row.reference_code}
+		self.calculation_validator = CalculationFormulaValidator(reference_codes)
+		self.account_filter_validator = AccountFilterValidator()
+
+	def validate(self, row) -> ValidationResult:
+		result = ValidationResult()
+
+		if not row.calculation_formula:
+			return result
+
+		if row.data_source == "Calculated Amount":
+			return self.calculation_validator.validate(row)
+
+		elif row.data_source == "Account Data":
+			return self.account_filter_validator.validate(row)
+
+		elif row.data_source == "Custom API":
+			result.merge(self._validate_custom_api(row))
+
+		return result
+
+	def _validate_custom_api(self, row) -> ValidationResult:
+		result = ValidationResult()
+		api_path = row.calculation_formula
+
+		if "." not in api_path:
+			result.add_error(
+				ValidationIssue(
+					message=_("{0} should be in format: app.module.method").format(
+						get_formula_field_label(row.data_source)
+					),
+					row_idx=row.idx,
+				)
+			)
+			return result
+
+		try:
+			get_valid_api_method(api_path)
+		except Exception as e:
+			if isinstance(e, frappe.PermissionError | frappe.ValidationError):
+				# frappe.throw inside get_valid_api_method logs a message that would pop up in UI
+				frappe.clear_last_message()
+
+			if isinstance(e, frappe.PermissionError):
+				message = _("[{0}] {1}", context="Financial Report Template").format(
+					get_formula_field_label(row.data_source),
+					_("Method '{0}' must be whitelisted and permit GET requests").format(api_path),
+				)
+			else:
+				message = _("Could not validate {0}: {1}").format(
+					get_formula_field_label(row.data_source), str(e)
+				)
+
+			result.add_error(ValidationIssue(message=message, row_idx=row.idx))
+
+		return result
+
+
+def extract_reference_codes_from_formula(formula: str, available_codes: list[str]) -> list[str]:
+	found_codes = []
+	for code in available_codes:
+		# Match complete words only to avoid partial matches
+		pattern = r"\b" + re.escape(code) + r"\b"
+		if re.search(pattern, formula):
+			found_codes.append(code)
+	return found_codes
