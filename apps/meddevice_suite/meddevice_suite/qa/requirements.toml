@@ -337,3 +337,10 @@ module = 0
 title = "Automated tests run on a disposable test site brought to a known state (setup completed with a fixed test company); the preparation refuses to run on a site that does not allow tests."
 source = "ISO 13485 4.1.6 / 21 CFR 11.10(a): controlled test environment for software validation"
 status = "implemented"
+
+[[requirement]]
+id = "URS-PLT-005"
+module = 0
+title = "Every Frappe module this app declares exists on the site before its DocTypes are synced, and modules the app no longer declares are removed when they hold nothing."
+source = "Engineering rules: configuration is code; folder plan 2026-10-05"
+status = "implemented"
