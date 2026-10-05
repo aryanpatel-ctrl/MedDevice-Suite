@@ -1,4 +1,5 @@
 import hashlib
+import json
 from unittest.mock import patch
 
 import frappe
@@ -8,6 +9,7 @@ from meddevice_suite.qa import verifies
 from meddevice_suite.setup.desk import (
 	DESKTOP_ICON_VISIBILITY,
 	apply_desk_configuration,
+	enforce_declared_visibility,
 	set_desktop_icon_visibility,
 )
 
@@ -82,3 +84,53 @@ class TestDeskConfiguration(IntegrationTestCase):
 	@verifies("URS-PLT-002")
 	def test_unknown_icon_is_ignored(self):
 		set_desktop_icon_visibility("No Such Icon", visible=False)
+
+
+# A user's saved desk in which they re-showed Projects and hid CRM.
+CUSTOMISED_LAYOUT = [
+	{"label": "Stock", "hidden": 0, "idx": 1},
+	{"label": "Projects", "hidden": 0, "idx": 2},
+	{"label": "CRM", "hidden": 1, "idx": 3},
+]
+
+
+def saved_layout(user: str = "Administrator") -> list[dict]:
+	return json.loads(frappe.db.get_value("Desktop Layout", user, "layout"))
+
+
+@verifies("URS-PLT-001")
+class TestSavedDesktopLayouts(IntegrationTestCase):
+	def setUp(self):
+		frappe.delete_doc_if_exists("Desktop Layout", "Administrator")
+
+	def assert_enforced(self, layout: list[dict]):
+		self.assertEqual(
+			layout,
+			[
+				{"label": "Stock", "hidden": 0, "idx": 1},
+				{"label": "Projects", "hidden": 1, "idx": 2},
+				{"label": "CRM", "hidden": 0, "idx": 3},
+			],
+		)
+
+	def test_saving_a_layout_enforces_declared_visibility(self):
+		frappe.get_doc(
+			{"doctype": "Desktop Layout", "user": "Administrator", "layout": json.dumps(CUSTOMISED_LAYOUT)}
+		).insert()
+
+		self.assert_enforced(saved_layout())
+
+	def test_migrate_enforces_on_layouts_saved_earlier(self):
+		frappe.get_doc({"doctype": "Desktop Layout", "user": "Administrator", "layout": "[]"}).insert()
+		frappe.db.set_value("Desktop Layout", "Administrator", "layout", json.dumps(CUSTOMISED_LAYOUT))
+		modified = frappe.db.get_value("Desktop Layout", "Administrator", "modified")
+
+		apply_desk_configuration()
+
+		self.assert_enforced(saved_layout())
+		self.assertEqual(frappe.db.get_value("Desktop Layout", "Administrator", "modified"), modified)
+
+	def test_layouts_without_declared_changes_are_left_alone(self):
+		for layout in (None, "", "{}", "[]", "not json", '[1, {"label": "Stock", "hidden": 0}]'):
+			with self.subTest(layout=layout):
+				self.assertIsNone(enforce_declared_visibility(layout))
