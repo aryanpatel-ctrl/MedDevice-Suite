@@ -6,3 +6,6 @@ app_email = "examdycoe@gmail.com"
 app_license = "gpl-3.0"
 
 required_apps = ["erpnext"]
+
+after_install = "meddevice_suite.setup.install.apply_configuration"
+after_migrate = "meddevice_suite.setup.install.apply_configuration"
