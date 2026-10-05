@@ -1,0 +1,22 @@
+# This repository is a Frappe bench. Only the project's own files are tracked;
+# everything else is created by `bench init` and scripts/bootstrap.sh.
+
+# Third-party apps, installed at the versions pinned in pinned-apps.json
+/apps/*
+!/apps/meddevice_suite/
+
+# Created and managed by bench (sites/ also holds database credentials)
+/env/
+/sites/
+/logs/
+/config/
+/archived/
+/Procfile
+/patches.txt
+
+# Generated
+node_modules/
+__pycache__/
+*.py[cod]
+.ruff_cache/
+.DS_Store

@@ -1,0 +1,9 @@
+[
+	{ "name": "frappe", "url": "https://github.com/frappe/frappe", "ref": "v16.36.1" },
+	{ "name": "erpnext", "url": "https://github.com/frappe/erpnext", "ref": "v16.37.0" },
+	{
+		"name": "india_compliance",
+		"url": "https://github.com/resilient-tech/india-compliance",
+		"ref": "v16.10.0"
+	}
+]
