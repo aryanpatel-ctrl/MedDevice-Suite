@@ -1,0 +1,6 @@
+/* shared bits live in public/scss/india_compliance.bundle.scss */
+
+div[data-page-route="Purchase Reconciliation Tool"] .datatable .dt-scrollable {
+    margin-bottom: 2em;
+    min-height: calc(100vh - 450px);
+}

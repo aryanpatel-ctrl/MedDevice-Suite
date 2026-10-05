@@ -1,0 +1,162 @@
+// Copyright (c) 2023, Resilient Tech and contributors
+// For license information, please see license.txt
+/* eslint-disable */
+
+frappe.query_reports["GST Balance"] = {
+    filters: [
+        {
+            fieldname: "company",
+            label: __("Company"),
+            fieldtype: "Link",
+            options: "Company",
+            default: frappe.defaults.get_user_default("Company"),
+            on_change: (report) => {
+                india_compliance.set_gstin_filter_options(report);
+                add_custom_button_to_update_gstin(report);
+            },
+            reqd: 1,
+        },
+        {
+            fieldname: "company_gstin",
+            label: __("Company GSTIN"),
+            fieldtype: "Autocomplete",
+            get_query() {
+                const company = frappe.query_report.get_filter_value("company");
+                return india_compliance.get_gstin_query(company);
+            },
+        },
+        {
+            fieldname: "from_date",
+            label: __("From Date"),
+            fieldtype: "Date",
+            default: india_compliance.last_month_start(),
+        },
+        {
+            fieldname: "to_date",
+            label: __("To Date"),
+            fieldtype: "Date",
+            default: india_compliance.last_month_end(),
+        },
+        {
+            fieldname: "finance_book",
+            label: __("Finance Book"),
+            fieldtype: "Link",
+            options: "Finance Book",
+        },
+        {
+            fieldname: "cost_center",
+            label: __("Cost Center"),
+            fieldtype: "MultiSelectList",
+            options: "Cost Center",
+            get_data: function (txt) {
+                return frappe.db.get_link_options("Cost Center", txt, {
+                    company: frappe.query_report.get_filter_value("company"),
+                });
+            },
+        },
+        {
+            fieldname: "project",
+            label: __("Project"),
+            fieldtype: "MultiSelectList",
+            options: "Project",
+            get_data: function (txt) {
+                return frappe.db.get_link_options("Project", txt, {
+                    company: frappe.query_report.get_filter_value("company"),
+                });
+            },
+        },
+        {
+            fieldname: "show_summary",
+            label: __("Show Summary"),
+            fieldtype: "Check",
+            on_change: (report) => {
+                toggle_filters(report);
+                report.refresh();
+            },
+        },
+    ],
+
+    onload(report) {
+        toggle_filters(report);
+        india_compliance.set_gstin_filter_options(report, false, false);
+        add_custom_button_to_update_gstin(report);
+    },
+};
+
+erpnext.utils.add_dimensions("GST Balance", 4);
+
+function toggle_filters(report) {
+    const show_summary = report.get_filter_value("show_summary");
+    report.get_filter("company_gstin").toggle(!show_summary);
+    report.get_filter("from_date").toggle(!show_summary);
+}
+
+function add_custom_button_to_update_gstin(report) {
+    frappe
+        .call({
+            method: "india_compliance.gst_india.report.gst_balance.gst_balance.get_pending_voucher_types",
+            args: {
+                company: report.get_filter_value("company"),
+            },
+        })
+        .then((r) => {
+            if (!r.message) return;
+            const [voucher_types, company_accounts] = r.message;
+            if (!voucher_types.length) return;
+
+            report._gst_accounts = company_accounts;
+            report.page.add_inner_button(__("Update GSTIN"), () =>
+                update_gstin_message(report, voucher_types),
+            );
+        });
+}
+
+async function update_gstin_message(report, voucher_types) {
+    const message = get_update_gstin_message(report, voucher_types);
+    frappe.msgprint({
+        title: __("Update Company GSTIN"),
+        message: message,
+        primary_action: {
+            label: __("Execute Patch"),
+            server_action: "india_compliance.gst_india.report.gst_balance.gst_balance.update_company_gstin",
+            hide_on_success: true,
+        },
+    });
+
+    frappe.msg_dialog.custom_onhide = () => {
+        report.refresh();
+    };
+}
+
+function get_update_gstin_message(report, voucher_types) {
+    // nosemgrep
+    let message = __(
+        `
+        Company GSTIN is a mandatory field for all transactions.
+        It could not be set automatically as you have Multi-GSTIN setup.
+        Please update the GSTIN for the following transactions <strong>before</strong>
+        executing the patch:<br>
+        `,
+    );
+
+    voucher_types.forEach((voucher_type) => {
+        let account_field = "account_head";
+        if (voucher_type === "Journal Entry") account_field = "account";
+
+        let element_text = `<br><a><span class="custom-link" data-fieldtype="Link" data-doctype="${voucher_type}" data-accountfield="${account_field}">${voucher_type}</span></a>`;
+        message += element_text;
+    });
+
+    $(document).on("click", ".custom-link", function () {
+        const doctype = $(this).data("doctype");
+        const account_field = $(this).data("accountfield");
+
+        frappe.set_route("List", doctype, {
+            docstatus: 1,
+            company_gstin: ["is", "not set"],
+            [account_field]: ["in", report._gst_accounts],
+        });
+    });
+
+    return message;
+}

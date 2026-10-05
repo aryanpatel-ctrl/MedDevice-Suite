@@ -1,0 +1,787 @@
+import {
+    GSTIN_REGEX,
+    REGISTERED_REGEX,
+    OVERSEAS_REGEX,
+    OIDAR_REGEX,
+    UNBODY_REGEX,
+    TDS_REGEX,
+    TCS_REGEX,
+    GST_INVOICE_NUMBER_FORMAT,
+    PAN_REGEX,
+} from "./regex_constants";
+
+const INWARD_SECTION_MAPPING = {
+    4: {
+        "ITC Available": [
+            "Import Of Goods",
+            "Import Of Service",
+            "ITC on Reverse Charge",
+            "Input Service Distributor",
+            "All Other ITC",
+        ],
+        "ITC Reversed": ["As per rules 42 & 43 of CGST Rules and section 17(5)", "Others"],
+        "Ineligible ITC": ["Reclaim of ITC Reversal", "ITC restricted due to PoS rules"],
+    },
+    5: {
+        "Composition Scheme, Exempted, Nil Rated": ["Composition Scheme, Exempted, Nil Rated"],
+        "Non-GST": ["Non-GST"],
+    },
+};
+
+frappe.provide("india_compliance");
+
+window.gst_settings = frappe.boot.gst_settings;
+
+Object.assign(india_compliance, {
+    MONTH: [
+        "January",
+        "February",
+        "March",
+        "April",
+        "May",
+        "June",
+        "July",
+        "August",
+        "September",
+        "October",
+        "November",
+        "December",
+    ],
+
+    QUARTER: ["Jan-Mar", "Apr-Jun", "Jul-Sep", "Oct-Dec"],
+
+    HSN_BIFURCATION_FROM: frappe.datetime.str_to_obj("2025-05-01"),
+
+    // Stock Entry purposes for Subcontracting Inward (company is the job worker)
+    SUBCONTRACTING_INWARD_PURPOSES: ["Subcontracting Delivery", "Return Raw Material to Customer"],
+
+    // Stock Entry purposes where goods move between subcontracting parties
+    SUBCONTRACTING_PURPOSES: [
+        "Send to Subcontractor",
+        "Subcontracting Delivery",
+        "Return Raw Material to Customer",
+    ],
+
+    // Stock Entry purposes eligible for e-Waybill
+    E_WAYBILL_STOCK_ENTRY_PURPOSES: [
+        "Material Transfer",
+        "Material Issue",
+        "Send to Subcontractor",
+        "Subcontracting Delivery",
+        "Return Raw Material to Customer",
+    ],
+
+    is_subcontracting_inward_entry(doc) {
+        return this.SUBCONTRACTING_INWARD_PURPOSES.includes(doc.purpose);
+    },
+
+    get_month_year_from_period(period) {
+        /**
+         * Returns month or quarter and year from the period
+         * Month or quarter depends on the filing frequency set in GST Settings
+         *
+         * @param {String} period - period in format MMYYYY
+         * @returns {Array} - [month_or_quarter, year]
+         */
+
+        const month_number = period.slice(0, 2);
+        const year = period.slice(2);
+
+        return [this.MONTH[month_number - 1], year];
+    },
+
+    get_period(month_or_quarter, year) {
+        /**
+         * Returns the period in the format MMYYYY
+         * as accepted by the GST Portal
+         */
+
+        let month;
+
+        if (month_or_quarter.includes("-")) {
+            // Quarterly
+            const last_month = month_or_quarter.split("-")[1];
+            const date = new Date(`${last_month} 1, ${year}`);
+            month = String(date.getMonth() + 1).padStart(2, "0");
+        } else {
+            // Monthly
+            const date = new Date(`${month_or_quarter} 1, ${year}`);
+            month = String(date.getMonth() + 1).padStart(2, "0");
+        }
+
+        return `${month}${year}`;
+    },
+
+    check_duplicate_gstin(gstin, party_type, party = null) {
+        if (!gstin || gstin.length !== 15) return;
+        this.check_duplicate_party("gstin", gstin, party_type, party);
+    },
+
+    check_duplicate_pan(pan, party_type, party = null) {
+        if (!pan || pan.length !== 10) return;
+        this.check_duplicate_party("pan", pan, party_type, party);
+    },
+
+    check_duplicate_party(field, value, party_type, party = null) {
+        if (!party_type) return;
+        if (!frappe.boot.gst_party_types.includes(party_type)) return;
+
+        frappe.call({
+            method: "india_compliance.gst_india.utils.check_duplicate_party",
+            args: { field, value, party_type, party },
+        });
+    },
+
+    get_gstin_query(party, party_type = "Company", exclude_isd = false) {
+        if (!party) {
+            frappe.show_alert({
+                message: __("Please select {0} to get GSTIN options", [__(party_type)]),
+                indicator: "yellow",
+            });
+            return;
+        }
+
+        return {
+            query: "india_compliance.gst_india.utils.get_gstin_list",
+            params: { party, party_type, exclude_isd },
+        };
+    },
+
+    async get_gstin_options(party, party_type = "Company", exclude_isd = false) {
+        const { query, params } = india_compliance.get_gstin_query(party, party_type, exclude_isd);
+        const { message } = await frappe.call({
+            method: query,
+            args: params,
+        });
+        return message || [];
+    },
+
+    async set_gstin_filter_options(report, exclude_isd = false, refresh = true) {
+        const company = report.get_filter_value("company");
+        const options = company
+            ? await india_compliance.get_gstin_options(company, "Company", exclude_isd)
+            : [];
+
+        // company changed again while loading
+        if (report.get_filter_value("company") !== company) return;
+
+        const gstin_field = report.get_filter("company_gstin");
+        gstin_field.set_data(options);
+
+        // keep a selection that is still valid, eg. restored from the url on reload
+        let gstin = gstin_field.get_value();
+        if (!options.includes(gstin)) gstin = options.length === 1 ? options[0] : "";
+
+        if (gstin !== gstin_field.get_value()) {
+            // frappe refreshes the report on its own when a filter is set
+            report.set_filter_value("company_gstin", gstin);
+        } else if (refresh) {
+            report.refresh();
+        }
+    },
+
+    async get_account_options(company) {
+        if (!company) return;
+        const { message } = await frappe.call({
+            method: "india_compliance.gst_india.utils.get_all_gst_accounts",
+            args: {
+                company,
+            },
+        });
+
+        return message || [];
+    },
+
+    get_party_type(doctype) {
+        return frappe.boot.sales_doctypes.includes(doctype) ? "Customer" : "Supplier";
+    },
+
+    async set_gstin_status(field, doc, force_update = false) {
+        const gstin = field.value;
+        if (!gstin || gstin.length !== 15) return field.set_description("");
+
+        doc = get_doc_details(doc);
+
+        let { message } = await frappe.call({
+            method: "india_compliance.gst_india.doctype.gstin.gstin.get_gstin_status",
+            args: { gstin, doc, force_update },
+        });
+
+        if (!message) message = { status: "Not Available" };
+
+        field.set_description(
+            india_compliance.get_gstin_status_desc(message?.status, message?.last_updated_on),
+        );
+
+        this.set_gstin_refresh_btn(field, doc);
+
+        return message;
+    },
+
+    async set_pan_status(field, force_update = false) {
+        const pan = field.value;
+        field.set_description("");
+        if (!pan || pan.length !== 10) return;
+
+        let { message } = await frappe.call({
+            method: "india_compliance.gst_india.doctype.pan.pan.get_pan_status",
+            args: { pan, force_update },
+        });
+
+        if (!message) return;
+
+        const [pan_status, datetime] = message;
+
+        function get_indicator(status) {
+            switch (status) {
+                case "Valid":
+                    return "green";
+                case "Not Linked":
+                    return "red";
+                case "Invalid":
+                    return "red";
+                default:
+                    return "orange";
+            }
+        }
+
+        const pan_desc = this.get_status_description(
+            pan_status,
+            get_indicator(pan_status),
+            datetime,
+            "pan-last-synced",
+        );
+
+        field.set_description(pan_desc);
+
+        const refresh_btn = this.get_status_refresh_button(
+            "refresh-pan",
+            field.$wrapper.find(".pan-last-synced"),
+        );
+
+        refresh_btn.on("click", async function () {
+            await india_compliance.set_pan_status(field, true);
+        });
+
+        return;
+    },
+
+    validate_gst_transporter_id(transporter_id, doc) {
+        if (!transporter_id || transporter_id.length !== 15) return;
+
+        doc = get_doc_details(doc);
+
+        frappe.call({
+            method: "india_compliance.gst_india.doctype.gstin.gstin.validate_gst_transporter_id",
+            args: { transporter_id, doc },
+        });
+    },
+
+    get_gstin_status_desc(status, datetime) {
+        if (!status) return;
+
+        function get_indicator(status) {
+            switch (status) {
+                case "Active":
+                    return "green";
+                case "Cancelled":
+                    return "red";
+                case "Not Available":
+                    return "grey";
+                default:
+                    return "orange";
+            }
+        }
+
+        return this.get_status_description(status, get_indicator(status), datetime, "gstin-last-synced");
+    },
+
+    set_gstin_refresh_btn(field, doc) {
+        if (
+            !this.is_api_enabled() ||
+            gst_settings.sandbox_mode ||
+            !gst_settings.validate_gstin_status ||
+            field.$wrapper.find(".refresh-gstin").length
+        )
+            return;
+
+        const refresh_btn = this.get_status_refresh_button(
+            "refresh-gstin",
+            field.$wrapper.find(".gstin-last-synced"),
+        );
+
+        refresh_btn.on("click", async function () {
+            await india_compliance.set_gstin_status(field, doc, true);
+        });
+    },
+
+    get_status_description(status, indicator, datetime, classes) {
+        const user_date = frappe.datetime.str_to_user(datetime);
+        const pretty_date = frappe.datetime.prettyDate(datetime);
+
+        return `<div class="d-flex indicator ${indicator}" style="font-size: 12px">
+                    <strong>${status}</strong>
+                    <span class="d-flex justify-content-between align-items-center ${classes}"
+                        title="${user_date}" style="margin-left: auto;gap: 2px">
+                       <span style="text-align: end;"> ${datetime ? "Synced " + pretty_date : ""}</span>
+                    </span>
+                </div>`;
+    },
+
+    get_status_refresh_button(classes, append_to = null, style = null) {
+        if (!style) {
+            style = "cursor: pointer;width: 14px;height: 14px;";
+        }
+
+        const refresh_btn = $(frappe.utils.icon("refresh", "sm", classes, style));
+
+        if (append_to) {
+            refresh_btn.appendTo(append_to);
+        }
+
+        return refresh_btn;
+    },
+
+    set_state_options(frm) {
+        const state_field = frm.get_field("state");
+        const country = frm.get_field("country").value;
+        if (country !== "India") {
+            state_field.set_data([]);
+            return;
+        }
+
+        state_field.set_data(frappe.boot.india_state_options || []);
+    },
+
+    get_state_from_gstin(gstin) {
+        if (!gstin || gstin.length < 2) return;
+
+        const state_number = gstin.substring(0, 2);
+        return (frappe.boot.gst_state_by_number || {})[state_number];
+    },
+
+    can_enable_api(settings) {
+        return settings.api_secret || frappe.boot.ic_api_enabled_from_conf;
+    },
+
+    is_api_enabled(settings) {
+        if (!settings) settings = gst_settings;
+        return settings.enable_api && india_compliance.can_enable_api(settings);
+    },
+
+    is_e_invoice_enabled() {
+        return india_compliance.is_api_enabled() && gst_settings.enable_e_invoice;
+    },
+
+    validate_pan(pan) {
+        if (!pan) return;
+
+        pan = pan.trim().toUpperCase();
+
+        if (pan.length != 10) {
+            frappe.throw(__("PAN should be 10 characters long"));
+        }
+
+        if (!PAN_REGEX.test(pan)) {
+            frappe.throw(__("Invalid PAN format"));
+        }
+
+        return pan;
+    },
+
+    validate_gstin(gstin, show_msg = true) {
+        const opts = { title: __("Error"), indicator: "red" };
+
+        if (!gstin || gstin.length !== 15) {
+            if (show_msg) {
+                frappe.msgprint({
+                    message: __("GSTIN must be 15 characters long"),
+                    ...opts,
+                });
+            }
+
+            return;
+        }
+
+        gstin = gstin.trim().toUpperCase();
+
+        if (GSTIN_REGEX.test(gstin) && is_gstin_check_digit_valid(gstin)) {
+            return gstin;
+        } else if (show_msg) {
+            frappe.msgprint({
+                message: __("Invalid GSTIN"),
+                ...opts,
+            });
+        }
+    },
+    guess_gst_category(gstin, country) {
+        if (!gstin) {
+            if (country && country !== "India") return "Overseas";
+            return "Unregistered";
+        }
+
+        if (TDS_REGEX.test(gstin)) return "Tax Deductor";
+        if (TCS_REGEX.test(gstin)) return "Tax Collector";
+        if (REGISTERED_REGEX.test(gstin)) return "Registered Regular";
+        if (UNBODY_REGEX.test(gstin)) return "UIN Holders";
+        if (OIDAR_REGEX.test(gstin)) return "Overseas";
+        if (OVERSEAS_REGEX.test(gstin)) return "Overseas";
+    },
+
+    set_hsn_code_query(field) {
+        if (!field || !gst_settings.validate_hsn_code) return;
+        field.get_query = function () {
+            const wildcard = "_".repeat(gst_settings.min_hsn_digits) + "%";
+            return {
+                filters: {
+                    name: ["like", wildcard],
+                },
+            };
+        };
+    },
+
+    set_hsn_code_autocomplete(frm, table_fieldname = "items") {
+        const grid = frm.fields_dict[table_fieldname].grid;
+        frm.set_query("gst_hsn_code", table_fieldname, () => ({
+            query: "india_compliance.gst_india.utils.get_hsn_code_list",
+        }));
+
+        frappe.meta.get_docfield(grid.doctype, "gst_hsn_code").ignore_validation = 1;
+    },
+
+    setup_itc_claim_period_query(frm) {
+        frm.set_query("itc_claim_period", () => ({
+            query: "india_compliance.gst_india.utils.itc_claim.get_itc_period_options",
+            params: {
+                company_gstin: frm.doc.company_gstin,
+                posting_date: frm.doc.posting_date,
+            },
+        }));
+
+        frappe.meta.get_docfield(frm.doctype, "itc_claim_period").ignore_validation = 1;
+
+        // options label the period with a status badge; the input shows the period alone
+        frm.get_field("itc_claim_period").format_for_input = (value) => value;
+    },
+
+    update_itc_claim_period(frm) {
+        if (frm.doc.docstatus !== 0 || !frm.doc.posting_date) return;
+
+        // Deferred is a deliberate user choice; only a period follows the posting date
+        if (frm.doc.itc_claim_period === "Deferred") return;
+
+        const posting_month = moment(frm.doc.posting_date);
+        const period = posting_month.format("MMYYYY");
+        if (period === frm.doc.itc_claim_period) return;
+
+        frm.set_value("itc_claim_period", period);
+        frappe.show_alert(
+            {
+                message: __("ITC Claim Period set to {0}.", [posting_month.format("MMM YYYY")]),
+                indicator: "blue",
+            },
+            7,
+        );
+    },
+
+    // client_action target for msgprint primary actions, args: { doctype, fieldname }
+    scroll_to_field({ doctype, fieldname }) {
+        frappe.hide_msgprint(true);
+        frappe.views.formview[doctype]?.frm.scroll_to_field(fieldname);
+    },
+
+    set_reconciliation_status(frm, field) {
+        if (!frm.doc.docstatus === 1 || !frm.doc.reconciliation_status) return;
+
+        const STATUS_COLORS = {
+            Reconciled: "green",
+            Unreconciled: "red",
+            Ignored: "grey",
+            "Not Applicable": "grey",
+            "Match Found": "yellow",
+        };
+        const color = STATUS_COLORS[frm.doc.reconciliation_status];
+
+        frm.get_field(field).set_description(
+            `<div class="d-flex indicator ${color}">
+                2A/2B Status:&nbsp;<strong>${frm.doc.reconciliation_status}</strong>
+            </div>`,
+        );
+    },
+
+    validate_invoice_number(invoice_number) {
+        // returns a list of error messages if invoice number is invalid
+        let message_list = [];
+        if (invoice_number.length > 16) {
+            message_list.push(__("Transaction Name must be 16 characters or fewer to meet GST requirements"));
+        }
+
+        if (!GST_INVOICE_NUMBER_FORMAT.test(invoice_number)) {
+            message_list.push(
+                __(
+                    "Transaction Name should start with an alphanumeric character and can only contain alphanumeric characters, dash (-) and slash (/) to meet GST requirements.",
+                ),
+            );
+        }
+
+        return message_list;
+    },
+
+    trigger_file_download(file_content, file_name) {
+        let type = "application/json;charset=utf-8";
+
+        if (!file_name.endsWith(".json")) {
+            type = "application/octet-stream";
+        }
+        const blob = new Blob([file_content], { type: type });
+
+        // Create a link and set the URL using `createObjectURL`
+        const link = document.createElement("a");
+        link.style.display = "none";
+        link.href = URL.createObjectURL(blob);
+        link.download = file_name;
+
+        // It needs to be added to the DOM so it can be clicked
+        document.body.appendChild(link);
+        link.click();
+
+        // To make this work on Firefox we need to wait
+        // a little while before removing it.
+        setTimeout(() => {
+            URL.revokeObjectURL(link.href);
+            link.parentNode.removeChild(link);
+        }, 0);
+    },
+
+    get_user_default_json(key) {
+        // Read a user default that stores a JSON value (e.g. a saved list of
+        // download sections/categories). Returns null when unset or malformed.
+        const raw = frappe.defaults.get_user_default(key);
+        try {
+            return raw ? JSON.parse(raw) : null;
+        } catch {
+            return null;
+        }
+    },
+
+    set_last_month_as_default_period(report) {
+        report.filters.forEach((filter) => {
+            if (filter.fieldname === "from_date") {
+                filter.default = this.last_month_start();
+            }
+            if (filter.fieldname === "to_date") {
+                filter.default = this.last_month_end();
+            }
+        });
+    },
+
+    last_month_name() {
+        const today = frappe.datetime.now_date(true);
+        const last_month = today.getMonth() - 1;
+        return this.MONTH[last_month];
+    },
+
+    last_month_start() {
+        return frappe.datetime.add_months(frappe.datetime.month_start(), -1);
+    },
+
+    last_month_end() {
+        return frappe.datetime.add_days(frappe.datetime.month_start(), -1);
+    },
+
+    last_half_year(position) {
+        const today = frappe.datetime.now_date(true);
+        const current_month = today.getMonth() + 1;
+        const current_year = today.getFullYear();
+
+        if (current_month <= 3) {
+            return position === "start" ? `${current_year - 1}-03-01` : `${current_year - 1}-09-30`;
+        } else if (current_month <= 9) {
+            return position === "start" ? `${current_year - 1}-10-01` : `${current_year}-03-31`;
+        } else {
+            return position === "start" ? `${current_year}-04-01` : `${current_year}-09-30`;
+        }
+    },
+
+    get_options_for_year(filing_frequency) {
+        const today = new Date();
+        let current_year = today.getFullYear();
+        const current_month_idx = today.getMonth();
+        const start_year = 2017;
+        const year_range = current_year - start_year + 1;
+        const options = Array.from({ length: year_range }, (_, index) =>
+            (start_year + year_range - index - 1).toString(),
+        );
+
+        if (
+            (filing_frequency === "Monthly" && current_month_idx === 0) ||
+            (filing_frequency === "Quarterly" && current_month_idx < 3)
+        )
+            current_year--;
+
+        current_year = current_year.toString();
+        return { options, current_year };
+    },
+
+    // Yes: true, No or close: false
+    warn(title, message) {
+        return new Promise((resolve) => {
+            let proceed = false;
+            const d = frappe.warn(title, message, () => (proceed = true), __("Yes"), false, __("No"));
+            d.onhide = () => resolve(proceed);
+        });
+    },
+
+    show_cancel_headline(frm, message, on_click) {
+        frm.dashboard.set_headline_alert(
+            `${message} <a class="ic-cancel-link" href="#">${__("Cancel")}</a>`,
+            "red",
+            true,
+        );
+
+        frm.layout.message.find(".ic-cancel-link").on("click", (e) => {
+            e.preventDefault();
+            on_click();
+        });
+    },
+
+    primary_to_danger_btn(parent) {
+        parent.$wrapper.find(".btn-primary").removeClass("btn-primary").addClass("btn-danger");
+    },
+
+    add_divider_to_btn_group(btn_group_name) {
+        $(document)
+            .find(`.inner-group-button[data-label=${btn_group_name}]`)
+            .find(`.dropdown-menu`)
+            .append($('<li class="dropdown-divider"></li>'));
+    },
+
+    make_text_red(btn_group_name, btn_name) {
+        $(document)
+            .find(`.inner-group-button[data-label=${btn_group_name}]`)
+            .find(`.dropdown-item[data-label="${encodeURIComponent(btn_name)}"]`)
+            .addClass("text-danger");
+    },
+
+    // same banner every other form uses. returns it, to wire links inside
+    show_doc_alert(frm, message, color = "blue", on_close = null) {
+        frm.dashboard.set_headline(`<div>${message}</div>`, color, !on_close);
+
+        // set_headline returns nothing, so take the block it just appended
+        const alert = frm.layout.message.children().last();
+        if (on_close) alert.find(".close-message").on("click", on_close);
+        return alert;
+    },
+
+    is_e_waybill_applicable_for_subcontracting(doc) {
+        if (
+            !(
+                india_compliance.is_indian_registered_company(doc.company) &&
+                gst_settings.enable_api &&
+                gst_settings.enable_e_waybill &&
+                gst_settings.enable_e_waybill_for_sc
+            )
+        ) {
+            return false;
+        }
+
+        if (doc.doctype != "Stock Entry") return true;
+
+        if (!india_compliance.E_WAYBILL_STOCK_ENTRY_PURPOSES.includes(doc.purpose)) {
+            return false;
+        }
+
+        return true;
+    },
+
+    is_indian_registered_company(company) {
+        if (!company) return false;
+
+        return frappe.boot.indian_registered_companies?.includes(company);
+    },
+
+    is_e_waybill_applicable_for_asset_movement(doc) {
+        return !!(
+            india_compliance.is_indian_registered_company(doc.company) &&
+            gst_settings.enable_api &&
+            gst_settings.enable_e_waybill &&
+            gst_settings.enable_e_waybill_from_asset_movement
+        );
+    },
+
+    set_address_display_events(doctype) {
+        // Used by Stock Entry and Asset Movement
+        const event_fields = ["bill_from_address", "bill_to_address", "ship_from_address", "ship_to_address"];
+
+        const events = Object.fromEntries(
+            event_fields.map((field) => [
+                field,
+                (frm) => {
+                    erpnext.utils.get_address_display(frm, field, `${field}_display`, false);
+                },
+            ]),
+        );
+
+        frappe.ui.form.on(doctype, events);
+    },
+
+    get_items_fieldname(doctype) {
+        if (doctype == "Asset Movement") {
+            return "assets";
+        }
+
+        return "items";
+    },
+
+    get_items(doc) {
+        return doc[this.get_items_fieldname(doc.doctype)] || [];
+    },
+
+    get_inward_subcategory_options(sub_section) {
+        return Object.values(INWARD_SECTION_MAPPING[sub_section] || {}).flat();
+    },
+});
+
+function get_doc_details(doc) {
+    return doc
+        ? {
+              doctype: doc.doctype,
+              name: doc.name,
+              docstatus: doc.docstatus,
+              transaction_date: doc.posting_date || doc.transaction_date,
+          }
+        : null;
+}
+
+function is_gstin_check_digit_valid(gstin) {
+    /*
+    adapted from
+    https://gitlab.com/srikanthlogic/gstin-validator/-/blob/master/src/index.js
+    */
+
+    const GSTIN_CODEPOINT_CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    const mod = GSTIN_CODEPOINT_CHARS.length;
+
+    let factor = 2;
+    let sum = 0;
+
+    for (let i = gstin.length - 2; i >= 0; i--) {
+        let codePoint = -1;
+        for (let j = 0; j < GSTIN_CODEPOINT_CHARS.length; j++) {
+            if (GSTIN_CODEPOINT_CHARS[j] === gstin[i]) {
+                codePoint = j;
+            }
+        }
+        let digit = factor * codePoint;
+        factor = factor === 2 ? 1 : 2;
+        digit = Math.floor(digit / mod) + (digit % mod);
+        sum += digit;
+    }
+
+    const checkCodePoint = (mod - (sum % mod)) % mod;
+    return GSTIN_CODEPOINT_CHARS[checkCodePoint] === gstin[14];
+}
+
+// Will be deprecated after v15 release, kept only for compatibility
+// DO NOT USE IN CODE
+window.ic = window.india_compliance;
