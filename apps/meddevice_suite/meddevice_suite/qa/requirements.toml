@@ -313,8 +313,8 @@ approach = "build"
 [[requirement]]
 id = "URS-PLT-001"
 module = 0
-title = "The desk shows the standard areas the client requirement uses and hides every other standard area, for all users."
-source = "Scope decision 2026-10-05 against D1, D2, D3"
+title = "The desk shows only the standard areas, and the entries inside them, that the client requirement uses; every other standard area and entry is hidden for all users, including ones a future release adds."
+source = "Scope decisions 2026-10-05 against D1, D2, D3 (module map)"
 status = "implemented"
 
 [[requirement]]
