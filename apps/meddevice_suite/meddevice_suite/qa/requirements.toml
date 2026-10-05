@@ -344,3 +344,47 @@ module = 0
 title = "Every Frappe module this app declares exists on the site before its DocTypes are synced, and modules the app no longer declares are removed when they hold nothing."
 source = "Engineering rules: configuration is code; folder plan 2026-10-05"
 status = "implemented"
+
+# --- Module 49: electronic signature (21 CFR Part 11 subpart C) -------------
+
+[[requirement]]
+id = "URS-CMP-001"
+module = 49
+title = "Signing requires the signer to re-enter their own password at the moment of signing; a wrong password records no signature and counts towards the same account lockout as a failed login, and a locked account cannot sign."
+source = "21 CFR 11.200(a)(1), 11.300(d); D1 E-sign points"
+status = "implemented"
+
+[[requirement]]
+id = "URS-CMP-002"
+module = 49
+title = "Each signature records the signer's user ID and full name, the date and time, the action signed and the meaning of the signature (authored, reviewed, approved, rejected, released or verified), plus an optional reason."
+source = "21 CFR 11.50(a); D1, D2 QA Review & Approval (E-Signature)"
+status = "implemented"
+
+[[requirement]]
+id = "URS-CMP-003"
+module = 49
+title = "The signatures on a record are shown with the record, on screen and on its printouts, with name, date and time, and meaning."
+source = "21 CFR 11.50(b)"
+status = "planned"
+
+[[requirement]]
+id = "URS-CMP-004"
+module = 49
+title = "A signature is bound to the exact content of the record at signing and to the previous signature on the same record, so that altering the signed record or any signature is detectable by verification."
+source = "21 CFR 11.70"
+status = "implemented"
+
+[[requirement]]
+id = "URS-CMP-005"
+module = 49
+title = "Signature records cannot be edited or deleted by any user, including system managers."
+source = "21 CFR 11.70, 11.10(e)"
+status = "implemented"
+
+[[requirement]]
+id = "URS-CMP-006"
+module = 49
+title = "Only an identified individual can sign: shared and system accounts (Administrator, Guest) are refused, and the signer must hold the permission the signed action requires on the record."
+source = "21 CFR 11.100(a), 11.10(d), 11.10(g)"
+status = "implemented"
