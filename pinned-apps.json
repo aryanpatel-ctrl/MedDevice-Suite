@@ -1,9 +1,20 @@
 [
-	{ "name": "frappe", "url": "https://github.com/frappe/frappe", "ref": "v16.36.1" },
-	{ "name": "erpnext", "url": "https://github.com/frappe/erpnext", "ref": "v16.37.0" },
+	{
+		"name": "frappe",
+		"url": "https://github.com/frappe/frappe",
+		"ref": "v16.36.1",
+		"commit": "97a5dd93ca5883bcc9c4ef9834120c5cba397b67"
+	},
+	{
+		"name": "erpnext",
+		"url": "https://github.com/frappe/erpnext",
+		"ref": "v16.37.0",
+		"commit": "af63cde4941570ec7b9e12422c68302762cfcf91"
+	},
 	{
 		"name": "india_compliance",
 		"url": "https://github.com/resilient-tech/india-compliance",
-		"ref": "v16.10.0"
+		"ref": "v16.10.0",
+		"commit": "93eca2f553c04f6695e3d6103be8a4e6e6264d39"
 	}
 ]
