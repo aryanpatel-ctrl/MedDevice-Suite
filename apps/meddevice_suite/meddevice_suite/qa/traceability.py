@@ -27,6 +27,7 @@ REQUIREMENT_ID = re.compile(r"^URS-[A-Z]{2,5}-\d{3}$")
 UI_TEST_TITLE = re.compile(r"""\bit\(\s*(["'`])(?P<title>.*?)\1""")
 UI_REQUIREMENT_TAG = re.compile(r"\[(URS-[A-Z]{2,5}-\d{3})\]")
 XML_DECLARATION = re.compile(r"(?=<\?xml)")
+OUTCOME_SEVERITY = {"passed": 0, "skipped": 1, "failed": 2}
 APPROACHES = {"ready", "customise", "build"}
 STATUSES = {"planned", "implemented", "withdrawn"}
 PLATFORM = 0
@@ -161,20 +162,24 @@ def load_junit_results(path: Path) -> dict[str, str]:
 	"""Map ``module.Class.test`` to passed, failed or skipped.
 
 	``bench run-tests`` writes one XML document per test category (unit,
-	integration) into the same file, so every document in it is read.
+	integration) into the same file, so every document in it is read. A failing
+	subtest is reported as its own case, named ``test_x (param=value)``; it
+	counts against ``test_x``, and the worst outcome of a test's cases wins.
 	"""
 	documents = [doc for doc in XML_DECLARATION.split(path.read_text()) if doc.strip()]
 	cases = [case for doc in documents for case in ET.fromstring(doc.encode()).iter("testcase")]
 
 	results: dict[str, str] = {}
 	for case in cases:
-		test_id = f"{case.get('classname')}.{case.get('name')}"
+		test_id = f"{case.get('classname')}.{case.get('name').split(' (', 1)[0]}"
 		if case.find("failure") is not None or case.find("error") is not None:
-			results[test_id] = "failed"
+			outcome = "failed"
 		elif case.find("skipped") is not None:
-			results[test_id] = "skipped"
+			outcome = "skipped"
 		else:
-			results[test_id] = "passed"
+			outcome = "passed"
+		if OUTCOME_SEVERITY[outcome] > OUTCOME_SEVERITY.get(results.get(test_id), -1):
+			results[test_id] = outcome
 	return results
 
 
