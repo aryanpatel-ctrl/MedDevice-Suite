@@ -219,16 +219,18 @@ def render_markdown(
 	tests: list[VerifyingTest],
 	results: dict[str, str] | None = None,
 ) -> str:
-	statuses = Counter(requirement.status for requirement in registry.requirements.values())
 	approaches = Counter(module.approach for module in registry.modules.values())
+	modules_by_approach = ", ".join(f"{name} {approaches[name]}" for name in ("ready", "customise", "build"))
+	statuses = Counter(requirement.status for requirement in registry.requirements.values())
+	requirements_by_status = ", ".join(
+		f"{name} {statuses[name]}" for name in ("implemented", "planned", "withdrawn")
+	)
+
 	lines = [
 		"# Requirement traceability matrix",
 		"",
-		f"Modules in scope: {len(registry.modules)} "
-		f"(ready {approaches['ready']}, customise {approaches['customise']}, build {approaches['build']})  ",
-		f"Requirements: {len(registry.requirements)} "
-		f"(implemented {statuses['implemented']}, planned {statuses['planned']}, "
-		f"withdrawn {statuses['withdrawn']})  ",
+		f"Modules in scope: {len(registry.modules)} ({modules_by_approach})  ",
+		f"Requirements: {len(registry.requirements)} ({requirements_by_status})  ",
 		f"Test results: {'included' if results is not None else 'not included'}",
 		"",
 		"## Requirements",
