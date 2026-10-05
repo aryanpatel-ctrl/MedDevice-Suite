@@ -18,6 +18,14 @@ build-backend = "flit_core.buildapi"
 frappe = ">=16.36.0,<17.0.0"
 erpnext = ">=16.37.0,<17.0.0"
 
+# Applied to the data written by `bench run-tests --app meddevice_suite --coverage`.
+[tool.coverage.report]
+omit = ["*/test_*.py"]
+exclude_also = ['if __name__ == "__main__":']
+show_missing = true
+skip_covered = false
+fail_under = 90
+
 [tool.ruff]
 line-length = 110
 target-version = "py314"
