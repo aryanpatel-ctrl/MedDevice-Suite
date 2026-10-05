@@ -37,9 +37,9 @@ runs:
       shell: bash
       run: |
         if [[ "${{ inputs.build-assets }}" == "true" ]]; then
-          scripts/bootstrap.sh --dev
+          scripts/bootstrap.sh --dev --skip-redis
         else
-          scripts/bootstrap.sh --dev --skip-assets
+          scripts/bootstrap.sh --dev --skip-assets --skip-redis
         fi
         # Redis comes from the job's service containers.
         sed -i '/^redis_/d' Procfile
