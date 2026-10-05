@@ -59,9 +59,10 @@ stops Cypress from starting; prefix the command with
 
 ## CI
 
-- **CI** builds a fresh bench at the pinned versions, installs this app and
-  runs the traceability, server-test, coverage and UI-test gates on every push
-  to `main` and every pull request. The traceability matrix, JUnit report and
+- **CI** first proves Frappe, ERPNext and India Compliance are exactly their
+  pinned releases, then bootstraps the checkout into a bench and runs the
+  traceability, server-test, coverage and UI-test gates on every push to
+  `main` and every pull request. The traceability matrix, JUnit report and
   coverage report are published as the `server-test-evidence` artifact and on
   the run summary.
 - **Linters** run pre-commit, Frappe Semgrep rules and pip-audit.
