@@ -4,32 +4,31 @@ ERP and quality management system for a Foley catheter and urine bag
 manufacturer, built on ERPNext and aligned with ISO 13485, 21 CFR Part 11 and
 CDSCO MDR 2017.
 
-This repository is the project's Frappe bench. It tracks only the project's own
-files; Frappe, ERPNext and India Compliance are installed at pinned versions.
+This repository is the project's complete Frappe bench: our app and the exact
+releases of Frappe, ERPNext and India Compliance it runs on. Only secrets
+(`sites/`) and files each machine generates for itself are kept out of git.
 
 ## Layout
 
 | Path | What it is |
 | --- | --- |
-| `apps/meddevice_suite/` | The project app: all customisation, QMS modules, tests. See its [README](apps/meddevice_suite/README.md). |
-| `pinned-apps.json` | Exact versions of Frappe, ERPNext and India Compliance in use. Changing one is a change-control decision. |
-| `scripts/bootstrap.sh` | Installs the pinned apps and registers the project app on a bench. Used by developers and CI alike. |
-| `.github/` | CI: traceability, server tests, coverage, UI tests, linters. |
+| `apps/meddevice_suite/` | The project app: all customisation, QMS modules and tests. See its [README](apps/meddevice_suite/README.md). |
+| `apps/frappe/`, `apps/erpnext/`, `apps/india_compliance/` | Official releases, kept exactly as released. Never edit these; all changes go into the project app. |
+| `pinned-apps.json` | Which release of each official app is in `apps/`, with its upstream commit. |
+| `scripts/bootstrap.sh` | Turns a clone into a working bench. Used by developers and CI alike. |
+| `scripts/verify_vendored.sh` | Proves each official app is byte-for-byte its pinned release. Runs in CI. |
+| `.github/` | CI: release integrity, traceability, server tests, coverage, UI tests, linters. |
 | `.pre-commit-config.yaml` | Checks run before every commit. |
 
 ## Setting up a machine
 
-Requires Python 3.14, Node 24+, MariaDB 11.8, Redis and
-[bench](https://github.com/frappe/bench).
+Requires Python 3.14, Node 24+, yarn, MariaDB 11.8, Redis and
+[bench](https://github.com/frappe/bench) (`pip install frappe-bench`).
 
 ```bash
-bench init frappe-bench --frappe-branch v16.36.1 --python python3.14
+git clone https://github.com/aryanpatel-ctrl/MedDevice-Suite.git frappe-bench
 cd frappe-bench
-git init -b main
-git remote add origin https://github.com/aryanpatel-ctrl/MedDevice-Suite.git
-git pull origin main
-scripts/bootstrap.sh
-bench setup requirements --dev
+scripts/bootstrap.sh --dev
 pre-commit install
 ```
 
@@ -45,9 +44,16 @@ bench --site <site> install-app meddevice_suite
 
 ```bash
 bench start                                   # run the system
+scripts/bootstrap.sh --dev                    # after pulling changes
 bench --site <site> migrate                   # after pulling changes
 bench --site <test-site> run-tests --app meddevice_suite
 ```
+
+## Upgrading Frappe, ERPNext or India Compliance
+
+An upgrade is a change-control decision. Replace the app folder with the new
+release, update its `ref` and `commit` in `pinned-apps.json`, run
+`scripts/verify_vendored.sh`, and commit both together with the change record.
 
 Engineering rules, the requirement register and the quality gates are
 described in the [app README](apps/meddevice_suite/README.md).

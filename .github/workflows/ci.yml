@@ -17,21 +17,23 @@ env:
   SITE: test.localhost
 
 jobs:
-  traceability:
-    name: Requirement traceability
+  integrity:
+    name: Official apps and traceability
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
         with:
           python-version: '3.14'
+      - name: Frappe, ERPNext and India Compliance are exactly the pinned releases
+        run: scripts/verify_vendored.sh
       - name: Every implemented requirement is verified by a test
         working-directory: apps/meddevice_suite
         run: python -m meddevice_suite.qa.traceability --check
 
   server:
     name: Server tests
-    needs: traceability
+    needs: integrity
     runs-on: ubuntu-latest
 
     services:
@@ -57,18 +59,15 @@ jobs:
       - uses: ./.github/actions/setup-bench
 
       - name: Run tests with coverage
-        working-directory: /home/runner/frappe-bench
         run: |
-          bench --site $SITE set-config allow_tests true
-          mkdir -p $GITHUB_WORKSPACE/reports
+          mkdir -p reports
           bench --site $SITE run-tests --app meddevice_suite --coverage \
             --junit-xml-output $GITHUB_WORKSPACE/reports/junit.xml
 
       - name: Coverage gate
-        working-directory: /home/runner/frappe-bench
         run: |
           ./env/bin/coverage report --data-file=sites/.coverage --rcfile=apps/meddevice_suite/pyproject.toml
-          cp sites/coverage.xml $GITHUB_WORKSPACE/reports/coverage.xml
+          cp sites/coverage.xml reports/coverage.xml
 
       - name: Traceability gate with test results
         working-directory: apps/meddevice_suite
@@ -86,7 +85,7 @@ jobs:
 
   ui:
     name: UI tests
-    needs: traceability
+    needs: integrity
     runs-on: ubuntu-latest
 
     services:
@@ -110,9 +109,10 @@ jobs:
       - uses: actions/checkout@v6
 
       - uses: ./.github/actions/setup-bench
+        with:
+          build-assets: 'true'
 
       - name: Start bench
-        working-directory: /home/runner/frappe-bench
         run: |
           echo "127.0.0.1 $SITE" | sudo tee -a /etc/hosts
           sed -i -E 's/^(watch|schedule):/# \1:/' Procfile
@@ -120,7 +120,6 @@ jobs:
           timeout 120 bash -c 'until curl -sf http://127.0.0.1:8000/api/method/ping -H "Host: $SITE"; do sleep 2; done'
 
       - name: Run UI tests
-        working-directory: /home/runner/frappe-bench
         run: bench --site $SITE run-ui-tests meddevice_suite --headless --browser electron
 
       - name: Upload screenshots of failures
@@ -128,4 +127,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ui-test-screenshots
-          path: /home/runner/frappe-bench/apps/meddevice_suite/cypress/screenshots/
+          path: apps/meddevice_suite/cypress/screenshots/

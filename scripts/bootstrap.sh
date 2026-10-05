@@ -1,48 +1,66 @@
 #!/usr/bin/env bash
-# Bring a bench to this project's pinned app set. Safe to run again.
+# Turn a clone of this repository into a working bench, or bring an existing
+# bench up to date. Safe to run again.
 #
-#   bench init frappe-bench --frappe-branch v16.36.1 --python python3.14
+#   git clone https://github.com/aryanpatel-ctrl/MedDevice-Suite.git frappe-bench
 #   cd frappe-bench
-#   git init -b main && git remote add origin <this repository> && git pull origin main
-#   scripts/bootstrap.sh
+#   scripts/bootstrap.sh --dev
 #
-# Installs the third-party apps at the versions in pinned-apps.json, checks that
-# every installed app is at its pinned version, and registers apps/meddevice_suite.
-# A version change is a change-control decision, so a mismatch stops the script
-# instead of being "fixed" automatically.
+# Options: --dev           also install test and coverage tools
+#          --skip-assets   do not build the desk's JavaScript and CSS
+#
+# Needs Python 3.14 (or PYTHON=<interpreter>), Node 24+, yarn, Redis,
+# MariaDB 11.8 and bench (pip install frappe-bench).
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
+PYTHON="${PYTHON:-python3.14}"
 PROJECT_APP=meddevice_suite
+dev=""
+build_assets=yes
+for option in "$@"; do
+	case "$option" in
+	--dev) dev="--dev" ;;
+	--skip-assets) build_assets="" ;;
+	*) echo "unknown option: $option" >&2 && exit 2 ;;
+	esac
+done
 
-pins() {
-	python3 -c 'import json; [print(a["name"], a["url"], a["ref"]) for a in json.load(open("pinned-apps.json"))]'
+pinned_names() {
+	python3 -c 'import json; [print(p["name"]) for p in json.load(open("pinned-apps.json"))]'
 }
 
-installed_version() {
-	env/bin/python -c "import $1; print($1.__version__)" 2>/dev/null || true
-}
-
-while read -r name url ref; do
-	if [[ ! -d "apps/$name" ]]; then
-		bench get-app --branch "$ref" "$url"
-	fi
-
-	version="$(installed_version "$name")"
-	if [[ "v$version" != "$ref" ]]; then
-		echo "error: $name is at ${version:-unknown}, pinned to $ref" >&2
-		exit 1
-	fi
-	echo "$name $ref"
-done < <(pins)
-
-if ! grep -qx "$PROJECT_APP" sites/apps.txt; then
-	env/bin/python -m pip install --quiet -e "apps/$PROJECT_APP"
-	python3 - "$PROJECT_APP" <<'EOF'
-import sys
-path = "sites/apps.txt"
-apps = [line.strip() for line in open(path) if line.strip()]
-open(path, "w").write("\n".join([*apps, sys.argv[1]]) + "\n")
-EOF
+# mysqlclient compiles against MariaDB's client library, which Homebrew keeps
+# outside the default search paths.
+if command -v brew > /dev/null && prefix="$(brew --prefix mariadb@11.8 2> /dev/null)"; then
+	export PKG_CONFIG_PATH="$prefix/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
 fi
-echo "$PROJECT_APP registered"
+
+mkdir -p sites logs config/pids
+{
+	pinned_names
+	echo "$PROJECT_APP"
+} > sites/apps.txt
+
+[[ -f sites/common_site_config.json ]] || bench setup config
+[[ -x env/bin/python ]] || bench setup env --python "$PYTHON"
+bench setup requirements $dev
+[[ -f config/redis_cache.conf ]] || bench setup redis
+[[ -f Procfile ]] || bench setup procfile
+[[ -z "$build_assets" ]] || bench build
+
+# Installers must not change the official apps. Some rewrite files on install
+# (ERPNext's banking yarn.lock, for example); put those back as released.
+official_apps=$(pinned_names | sed 's#^#apps/#')
+if ! git diff --quiet -- $official_apps; then
+	echo "restoring official app files changed during install:"
+	git diff --name-only -- $official_apps | sed 's/^/  /'
+	git checkout -- $official_apps
+fi
+
+while read -r name; do
+	echo "$name $(env/bin/python -c "import $name; print($name.__version__)")"
+done < <(
+	pinned_names
+	echo "$PROJECT_APP"
+)
