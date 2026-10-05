@@ -1,0 +1,154 @@
+{
+ "actions": [],
+ "allow_bulk_edit": 1,
+ "autoname": "format:ESIG-{YYYY}-{#####}",
+ "creation": "2026-10-05 18:50:53.587865",
+ "description": "A 21 CFR Part 11 electronic signature on a record. Created only by the signing service; never edited or deleted.",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "reference_doctype",
+  "reference_name",
+  "action",
+  "meaning",
+  "column_break_signer",
+  "signer",
+  "signer_name",
+  "signed_at",
+  "reason",
+  "section_integrity",
+  "record_hash",
+  "previous_signature",
+  "signature_hash"
+ ],
+ "fields": [
+  {
+   "fieldname": "reference_doctype",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Document Type",
+   "options": "DocType",
+   "read_only": 1,
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "reference_name",
+   "fieldtype": "Dynamic Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Document",
+   "options": "reference_doctype",
+   "read_only": 1,
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "action",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Action",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "meaning",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Meaning",
+   "options": "Authored\nReviewed\nApproved\nRejected\nReleased\nVerified",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_signer",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "signer",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Signed By",
+   "options": "User",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "signer_name",
+   "fieldtype": "Data",
+   "label": "Signer Name",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "signed_at",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Signed At",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "reason",
+   "fieldtype": "Small Text",
+   "label": "Reason",
+   "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "section_integrity",
+   "fieldtype": "Section Break",
+   "label": "Integrity"
+  },
+  {
+   "fieldname": "record_hash",
+   "fieldtype": "Data",
+   "label": "Record Fingerprint",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "previous_signature",
+   "fieldtype": "Link",
+   "label": "Previous Signature",
+   "options": "Electronic Signature",
+   "read_only": 1
+  },
+  {
+   "fieldname": "signature_hash",
+   "fieldtype": "Data",
+   "label": "Signature Fingerprint",
+   "read_only": 1,
+   "reqd": 1,
+   "unique": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "in_create": 1,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-10-05 18:54:04.505688",
+ "modified_by": "Administrator",
+ "module": "Compliance",
+ "name": "Electronic Signature",
+ "naming_rule": "Expression (old style)",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager"
+  }
+ ],
+ "read_only": 1,
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}
