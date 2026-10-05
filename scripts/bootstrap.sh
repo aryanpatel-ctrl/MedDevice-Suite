@@ -44,8 +44,11 @@ mkdir -p sites logs config/pids
 
 [[ -f sites/common_site_config.json ]] || bench setup config
 [[ -x env/bin/python ]] || bench setup env --python "$PYTHON"
-bench setup requirements
-# Separate call: with --dev, bench installs only the development tools.
+# Python and Node separately: the combined `bench setup requirements` expects
+# every app to be its own git repository, and here the whole bench is one.
+# With --dev, bench installs only the development tools, hence a third call.
+bench setup requirements --python
+bench setup requirements --node
 [[ -z "$dev" ]] || bench setup requirements --dev
 [[ -f config/redis_cache.conf ]] || bench setup redis
 [[ -f Procfile ]] || bench setup procfile
