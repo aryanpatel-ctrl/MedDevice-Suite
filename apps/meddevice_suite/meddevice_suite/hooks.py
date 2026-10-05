@@ -7,6 +7,7 @@ app_license = "gpl-3.0"
 
 required_apps = ["erpnext"]
 
+before_migrate = "meddevice_suite.setup.modules.sync_module_defs"
 after_install = "meddevice_suite.setup.install.apply_configuration"
 after_migrate = "meddevice_suite.setup.install.apply_configuration"
 
