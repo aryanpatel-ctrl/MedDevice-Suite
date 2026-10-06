@@ -18,7 +18,7 @@ they are kept for the same period instead.
 
 import frappe
 
-from meddevice_suite.compliance.audit_scope import REGULATED_DOCTYPES, SELF_RECORDING
+from meddevice_suite.compliance.audit_scope import APP, REGULATED_DOCTYPES, SELF_RECORDING
 
 QUALITY_BASIS = "ISO 13485 4.2.5; 21 CFR 820; EU MDR Art. 10(8); CDSCO MDR 2017"
 ACCESS_BASIS = "21 CFR 11.10(d), (e), (g)"
@@ -62,7 +62,11 @@ RETENTION_SCHEDULE: dict[str, tuple[int, str, tuple[str, ...]]] = {
 		ACCESS_BASIS,
 		("User", "Role", "Role Profile", "User Permission", "Custom DocPerm", "System Settings"),
 	),
-	"Compliance evidence": (10, EVIDENCE_BASIS, ("Audit Event", "Electronic Signature", "Activity Log")),
+	"Compliance evidence": (
+		10,
+		EVIDENCE_BASIS,
+		("Audit Event", "Electronic Signature", "Activity Log", "Record Archive"),
+	),
 }
 
 LOGIN_HISTORY = "Activity Log"
@@ -80,8 +84,13 @@ def scheduled_doctypes() -> list[str]:
 
 
 def must_be_scheduled() -> set[str]:
-	"""Every regulated record type, the compliance evidence, and the login history."""
-	return set(REGULATED_DOCTYPES) | set(SELF_RECORDING) | {LOGIN_HISTORY}
+	"""Every regulated record type, every record type this app defines, and the login history."""
+	own = frappe.get_all(
+		"DocType",
+		filters={"module": ["in", frappe.get_module_list(APP)], "istable": 0, "custom": 0},
+		pluck="name",
+	)
+	return set(REGULATED_DOCTYPES) | set(SELF_RECORDING) | set(own) | {LOGIN_HISTORY}
 
 
 def apply_retention() -> None:

@@ -519,3 +519,17 @@ module = 54
 title = "Login, logout, failed-login and impersonation records are kept for their retention period instead of being cleared after 90 days."
 source = "21 CFR 11.10(d), (e), (g)"
 status = "implemented"
+
+[[requirement]]
+id = "URS-CMP-025"
+module = 54
+title = "QA can produce an archive copy of every regulated record changed in a period, each in full with its audit history and electronic signatures, together with the period's login history, in a file that can be read without the system; the records stay in the system."
+source = "D3 Retention & Archival; 21 CFR 11.10(b)"
+status = "implemented"
+
+[[requirement]]
+id = "URS-CMP-026"
+module = 54
+title = "Every archive carries a fingerprint of the whole file and of every file in it, can be verified at any time so that any changed, removed or added file is detected, and cannot be changed or deleted."
+source = "21 CFR 11.10(c); data integrity (ALCOA+)"
+status = "implemented"
