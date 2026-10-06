@@ -1,17 +1,25 @@
-"""Tamper-evident audit trail (21 CFR 11.10(e); EU GMP Annex 11 §9).
+"""Tamper-evident audit trail (21 CFR 11.10(e); ISO 13485 4.2.5).
 
-Every create, change, submit, cancel, amend, rename and delete of a regulated
-record (see `audit_scope`) writes an Audit Event: who, when, what, and the old
-and new values, or the whole record on creation and deletion. A record's events
-form a chain: each one is fingerprinted together with the fingerprint of the
-event before it, so altering, removing or inserting an event breaks the chain.
+Every create, change, submit, cancel, amend, discard, rename and delete of a
+regulated record (see `audit_scope`) writes an Audit Event: who, when, what, and
+the old and new values, or the whole record on creation and deletion. Values that
+code sets on the record with `db_set` are recorded too. A record's events form a
+chain: each one is fingerprinted together with the fingerprint of the event
+before it, so altering, removing or inserting an event breaks the chain.
 
-Scale: one insert per audited save and no extra reads. Frappe already loads and
-row-locks the record before a save, which also serialises the chain per record;
-there is no lock shared between records.
+Not recorded: totals and statuses that ERPNext recalculates with
+`frappe.db.set_value` from other records (a purchase order's received
+percentage, for example). They are derived by the system, not entered, and the
+transaction that changed them is itself audited. Code in this app never writes
+a regulated record that way.
+
+Scale: one insert and one indexed read per audited write. Frappe already loads
+and row-locks the record before a save, which also serialises the chain per
+record; there is no lock shared between records.
 """
 
 import json
+from copy import deepcopy
 
 import frappe
 from frappe.model import child_table_fields, no_value_fields, table_fields
@@ -21,31 +29,75 @@ from frappe.utils import get_datetime, now_datetime
 from meddevice_suite.compliance.audit_scope import is_regulated
 from meddevice_suite.compliance.fingerprint import record_content, sha256
 
-ACTION_FOR = {"submit": "Submitted", "cancel": "Cancelled", "update_after_submit": "Updated after submission"}
+ACTION_FOR = {
+	"submit": "Submitted",
+	"cancel": "Cancelled",
+	"update_after_submit": "Updated after submission",
+	"discard": "Discarded",
+}
+
+
+def before_insert(doc: Document, method: str | None = None) -> None:
+	# Runs for every insert, even with validation skipped; marks the record's first event as its creation.
+	if should_audit(doc):
+		doc.flags.audit_creation_pending = True
+
+
+def before_change(doc: Document, method: str | None = None) -> None:
+	# Frappe runs this only from `db_set`: a value written by code, not by a save.
+	if should_audit(doc):
+		doc.flags.audit_set_by_code = True
 
 
 def on_change(doc: Document, method: str | None = None) -> None:
-	"""Runs once at the end of every create, save, submit, cancel and update after submit."""
+	"""Runs at the end of every insert, save, submit, cancel, update after submit and discard,
+	and after every `db_set`, which ERPNext also calls while those are still running (a status
+	set in `on_submit`, for example). Each action is recorded once and each change once: the
+	first call of a save records the action, and any later call on the same record object
+	records only what changed since the last event recorded from it.
+	"""
+	set_by_code = doc.flags.pop("audit_set_by_code", False)
 	# Frappe also runs on_change while deleting; on_trash has recorded the deletion.
 	if doc.flags.in_delete or not should_audit(doc):
 		return
 
+	# Frappe reloads the stored record at the start of every save; `db_set` loads it only when
+	# it is missing, so the same object means the same save, or code writing after it.
 	before = doc.get_doc_before_save()
-	if before is None:
-		if doc.get("amended_from"):
-			action = "Amended"
-		elif doc.docstatus == 1:
-			action = "Submitted"
-		else:
-			action = "Created"
-		changes = {"snapshot": record_content(doc)}
-	else:
-		action = ACTION_FOR.get(getattr(doc, "_action", "save"), "Updated")
-		changes = differences(before, doc)
-		if action == "Updated" and not changes:
-			return
+	last = doc.flags.audit_last_recorded
+	in_save = (doc.doctype, doc.name) in frappe.flags.currently_saving
 
-	record(doc.doctype, doc.name, action, changes)
+	if doc.flags.pop("audit_creation_pending", False):
+		action, changes = creation_event(doc)
+	elif last and (last.before is before or (set_by_code and not in_save)):
+		action, changes = "Updated", differences(last.state, doc)
+	elif before is None:
+		# Every insert is marked by before_insert, and every save of a stored record loads it,
+		# so this is code writing to a record that was never inserted: nothing was stored.
+		return
+	elif set_by_code and not in_save:
+		action, changes = "Updated", differences(before, doc)
+	else:
+		action, changes = ACTION_FOR.get(getattr(doc, "_action", "save"), "Updated"), differences(before, doc)
+
+	if action != "Updated" or changes:
+		record(doc.doctype, doc.name, action, changes)
+	doc.flags.audit_last_recorded = frappe._dict(before=before, state=copy_of(doc))
+
+
+def creation_event(doc: Document) -> tuple[str, dict]:
+	if doc.get("amended_from"):
+		action = "Amended"
+	elif doc.docstatus == 1:
+		action = "Submitted"
+	else:
+		action = "Created"
+	return action, {"snapshot": record_content(doc)}
+
+
+def copy_of(doc: Document) -> Document:
+	"""The record as the trail now knows it, to compare later writes on the same object against."""
+	return frappe.get_doc(deepcopy(doc.as_dict()))
 
 
 def on_trash(doc: Document, method: str | None = None) -> None:
@@ -59,7 +111,8 @@ def after_rename(doc: Document, method: str, old: str, new: str, merge: bool = F
 
 
 def should_audit(doc: Document) -> bool:
-	return not frappe.flags.in_install and is_regulated(doc.doctype, doc.meta.module)
+	# Child-table rows are recorded in their parent record's events.
+	return not frappe.flags.in_install and not doc.meta.istable and is_regulated(doc.doctype, doc.meta.module)
 
 
 def differences(before: Document, after: Document) -> dict:

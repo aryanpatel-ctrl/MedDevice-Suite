@@ -58,7 +58,7 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Action",
-   "options": "Created\nAmended\nUpdated\nSubmitted\nCancelled\nUpdated after submission\nRenamed\nDeleted",
+   "options": "Created\nAmended\nUpdated\nSubmitted\nCancelled\nUpdated after submission\nDiscarded\nRenamed\nDeleted",
    "read_only": 1,
    "reqd": 1
   },
@@ -134,7 +134,7 @@
  "in_create": 1,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-06 16:18:40.210963",
+ "modified": "2026-10-06 18:30:00.000000",
  "modified_by": "Administrator",
  "module": "Compliance",
  "name": "Audit Event",
