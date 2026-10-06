@@ -36,7 +36,9 @@ def ensure_audited_doctype() -> None:
 			}
 		],
 	).insert()
-	frappe.db.commit()  # creating a table ends the transaction anyway
+	# Creating its table already committed implicitly (DDL in MariaDB); committing the
+	# DocType record too keeps it from being rolled back without its table.
+	frappe.db.commit()  # nosemgrep
 
 
 def events_for(doctype: str, name: str) -> list[frappe._dict]:
