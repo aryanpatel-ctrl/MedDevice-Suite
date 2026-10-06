@@ -6,7 +6,7 @@ from frappe.core.doctype.doctype.test_doctype import new_doctype
 from frappe.tests import IntegrationTestCase, UnitTestCase
 from frappe.utils import now_datetime, time_diff_in_seconds
 
-from meddevice_suite.compliance.audit import event_fingerprint, verify_events
+from meddevice_suite.compliance.audit import event_fingerprint, should_audit, verify_events
 from meddevice_suite.compliance.audit_scope import REGULATED_DOCTYPES, SELF_RECORDING, is_regulated
 from meddevice_suite.compliance.doctype.audit_event.audit_event import on_doctype_update
 from meddevice_suite.compliance.esign import sign, verify_signatures
@@ -133,6 +133,101 @@ class TestEveryActionIsRecorded(AuditTestCase):
 		todo = frappe.get_doc({"doctype": "ToDo", "description": "Not a GMP record"}).insert()
 
 		self.assertEqual(actions_for(todo), [])
+
+
+@verifies("URS-CMP-007", "URS-CMP-008")
+class TestValuesSetByCode(AuditTestCase):
+	"""ERPNext sets values such as a status with `db_set`, often while the record is being
+	saved or submitted. Each action must still be recorded once, and each change once."""
+
+	def test_value_set_while_submitting_is_part_of_the_one_submit_event(self):
+		doc = self.new_record()
+		doc.on_submit = lambda: doc.db_set("remarks", "Released to stores")
+
+		doc.submit()
+
+		events = events_for(AUDITED, doc.name)
+		self.assertEqual([event.action for event in events], ["Created", "Submitted"])
+		self.assertIn(["remarks", None, "Released to stores"], events[-1].changes["changed"])
+
+	def test_value_set_while_creating_is_part_of_the_one_created_event(self):
+		doc = frappe.get_doc({"doctype": AUDITED, "title": "Lot L-002", "qty": 1})
+		doc.after_insert = lambda: doc.db_set("remarks", "Quarantine")
+
+		doc.insert()
+
+		events = events_for(AUDITED, doc.name)
+		self.assertEqual([event.action for event in events], ["Created"])
+		self.assertEqual(events[0].changes["snapshot"]["remarks"], "Quarantine")
+
+	def test_value_set_after_saving_records_only_that_change(self):
+		doc = self.new_record()
+		doc.qty = 5
+		doc.save()
+
+		doc.db_set("remarks", "Counted")
+
+		events = events_for(AUDITED, doc.name)
+		self.assertEqual([event.action for event in events], ["Created", "Updated", "Updated"])
+		self.assertEqual(events[-1].changes, {"changed": [["remarks", None, "Counted"]]})
+
+	def test_value_set_after_submitting_is_not_recorded_as_a_second_submit(self):
+		doc = self.new_record()
+		doc.submit()
+
+		doc.db_set("remarks", "Label reprinted")
+
+		events = events_for(AUDITED, doc.name)
+		self.assertEqual([event.action for event in events], ["Created", "Submitted", "Updated"])
+		self.assertEqual(events[-1].changes, {"changed": [["remarks", None, "Label reprinted"]]})
+
+	def test_value_set_while_saving_with_validation_skipped_is_recorded_once(self):
+		# ERPNext's production plan creates work and purchase orders this way.
+		doc = frappe.get_doc({"doctype": AUDITED, "title": "Lot L-003", "qty": 1})
+		doc.flags.ignore_validate = True
+		doc.after_insert = lambda: doc.db_set("remarks", "Planned")
+		doc.insert()
+		doc.qty = 4
+		doc.save()
+
+		events = events_for(AUDITED, doc.name)
+		self.assertEqual([event.action for event in events], ["Created", "Updated"])
+		self.assertEqual(events[-1].changes, {"changed": [["qty", 1.0, 4]]})
+
+	def test_value_set_on_a_freshly_loaded_record(self):
+		name = self.new_record().name
+
+		frappe.get_doc(AUDITED, name).db_set("remarks", "Status from another transaction")
+
+		events = events_for(AUDITED, name)
+		self.assertEqual([event.action for event in events], ["Created", "Updated"])
+		self.assertEqual(
+			events[-1].changes, {"changed": [["remarks", None, "Status from another transaction"]]}
+		)
+
+	def test_value_set_on_a_record_never_inserted_records_nothing(self):
+		doc = frappe.get_doc({"doctype": AUDITED, "name": "never-inserted", "title": "Lot L-004"})
+
+		doc.db_set("remarks", "No record exists")
+
+		self.assertEqual(events_for(AUDITED, "never-inserted"), [])
+
+	def test_discarding_a_draft(self):
+		doc = self.new_record()
+
+		doc.discard()
+
+		events = events_for(AUDITED, doc.name)
+		self.assertEqual([event.action for event in events], ["Created", "Discarded"])
+		self.assertEqual(events[-1].changes, {"changed": [["docstatus", 0, 2]]})
+
+	def test_chain_stays_intact(self):
+		doc = self.new_record()
+		doc.on_submit = lambda: doc.db_set("remarks", "Released to stores")
+		doc.submit()
+		doc.db_set("remarks", "Label reprinted")
+
+		self.assertEqual(verify_events(AUDITED, doc.name), [])
 
 
 @verifies("URS-CMP-008")
@@ -285,6 +380,12 @@ class TestScope(AuditTestCase):
 		doc.save()
 
 		self.assertEqual(actions_for(doc), ["Updated"])
+
+	def test_child_table_rows_are_recorded_in_their_parent_not_on_their_own(self):
+		with patch(
+			"meddevice_suite.compliance.audit_scope.REGULATED_DOCTYPES", REGULATED_DOCTYPES | {"Has Role"}
+		):
+			self.assertFalse(should_audit(frappe.new_doc("Has Role")))
 
 
 @verifies("URS-CMP-013")

@@ -394,7 +394,7 @@ status = "implemented"
 [[requirement]]
 id = "URS-CMP-007"
 module = 50
-title = "Every create, change, submit, cancel, amend, rename and delete of a regulated record is recorded in the audit trail automatically, without any action by the user."
+title = "Every create, change, submit, cancel, amend, discard, rename and delete of a regulated record, including values that code writes through the record itself (such as a status set on submit), is recorded in the audit trail automatically and exactly once, without any action by the user."
 source = "21 CFR 11.10(e); design approved 2026-10-06"
 status = "implemented"
 
@@ -415,15 +415,15 @@ status = "implemented"
 [[requirement]]
 id = "URS-CMP-010"
 module = 50
-title = "Each record's audit entries form a fingerprinted chain and each day's entries are sealed together, so any altered, removed or inserted entry is detected by verification."
-source = "Data integrity (ALCOA+); 21 CFR 11.10(e)"
-status = "planned"
+title = "Each record's audit entries form a fingerprinted chain, so any altered, removed or inserted entry is detected by verification."
+source = "Data integrity (ALCOA+); 21 CFR 11.10(e); daily seal dropped by decision of 2026-10-06"
+status = "implemented"
 
 [[requirement]]
 id = "URS-CMP-011"
 module = 50
 title = "Cancelling or amending a regulated record, or changing it after submission, requires a reason, which is stored in the audit entry."
-source = "EU GMP Annex 11 §9"
+source = "21 CFR 11.10(e); ISO 13485 4.2.5; design approved 2026-10-06"
 status = "planned"
 
 [[requirement]]

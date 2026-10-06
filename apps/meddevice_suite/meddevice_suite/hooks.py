@@ -14,6 +14,8 @@ after_migrate = "meddevice_suite.setup.install.apply_configuration"
 doc_events = {
 	"*": {
 		# Audit trail: each handler returns at once for record types that are not regulated.
+		"before_insert": "meddevice_suite.compliance.audit.before_insert",
+		"before_change": "meddevice_suite.compliance.audit.before_change",
 		"on_change": "meddevice_suite.compliance.audit.on_change",
 		"on_trash": "meddevice_suite.compliance.audit.on_trash",
 		"after_rename": "meddevice_suite.compliance.audit.after_rename",
