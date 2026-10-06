@@ -1,0 +1,1 @@
+<p>{{ _("Quotation {0} for {1}, {2}, is waiting for internal price approval.").format(doc.name, doc.customer_name or doc.party_name, frappe.format_value(doc.grand_total, {'fieldtype': 'Currency', 'options': 'currency'}, doc)) }}</p>

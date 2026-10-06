@@ -1,0 +1,1 @@
+<p>{% if doc.workflow_state == 'Approved' %}{{ _("Purchase order {0} was approved and can be issued to the supplier.").format(doc.name) }}{% else %}{{ _("Purchase order {0} was returned for revision.").format(doc.name) }}{% endif %}</p>
