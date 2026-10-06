@@ -3,7 +3,8 @@
 Every create, change, submit, cancel, amend, discard, rename and delete of a
 regulated record (see `audit_scope`) writes an Audit Event: who, when, what, and
 the old and new values, or the whole record on creation and deletion. Values that
-code sets on the record with `db_set` are recorded too. A record's events form a
+code sets on the record with `db_set` are recorded too. Cancelling, amending and
+changing after submission need a reason (see `audit_reason`). A record's events form a
 chain: each one is fingerprinted together with the fingerprint of the event
 before it, so altering, removing or inserting an event breaks the chain.
 
@@ -26,6 +27,7 @@ from frappe.model import child_table_fields, no_value_fields, table_fields
 from frappe.model.document import Document
 from frappe.utils import get_datetime, now_datetime
 
+from meddevice_suite.compliance.audit_reason import STAGED_ACTION, action_finished, reason_for, reason_used
 from meddevice_suite.compliance.audit_scope import is_regulated
 from meddevice_suite.compliance.fingerprint import record_content, sha256
 
@@ -41,6 +43,20 @@ def before_insert(doc: Document, method: str | None = None) -> None:
 	# Runs for every insert, even with validation skipped; marks the record's first event as its creation.
 	if should_audit(doc):
 		doc.flags.audit_creation_pending = True
+		if doc.get("amended_from"):
+			reason_for(doc, "Amended")
+
+
+# The reason is taken when the action starts, so that the records it causes to be cancelled
+# or changed in the same request take it too.
+def before_cancel(doc: Document, method: str | None = None) -> None:
+	if should_audit(doc):
+		reason_for(doc, "Cancelled")
+
+
+def before_update_after_submit(doc: Document, method: str | None = None) -> None:
+	if should_audit(doc):
+		reason_for(doc, "Updated after submission")
 
 
 def before_change(doc: Document, method: str | None = None) -> None:
@@ -80,9 +96,18 @@ def on_change(doc: Document, method: str | None = None) -> None:
 	else:
 		action, changes = ACTION_FOR.get(getattr(doc, "_action", "save"), "Updated"), differences(before, doc)
 
-	if action != "Updated" or changes:
+	if action in STAGED_ACTION:
+		# Taken again here for actions that skipped their start hook (flags.ignore_validate).
+		reason, caused_by = reason_for(doc, action)
+		if caused_by:
+			changes["caused_by"] = caused_by
+		record(doc.doctype, doc.name, action, changes, reason)
+		reason_used(doc)
+	elif action != "Updated" or changes:
 		record(doc.doctype, doc.name, action, changes)
 	doc.flags.audit_last_recorded = frappe._dict(before=before, state=copy_of(doc))
+	if not set_by_code:  # the save's own final call
+		action_finished(doc)
 
 
 def creation_event(doc: Document) -> tuple[str, dict]:
