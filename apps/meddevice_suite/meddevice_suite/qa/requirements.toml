@@ -431,7 +431,7 @@ id = "URS-CMP-012"
 module = 50
 title = "Authorised reviewers can search the audit trail by record, user, action and date range, see it on each regulated record, and export it, without being able to change it."
 source = "21 CFR 11.10(b), 11.10(e)"
-status = "planned"
+status = "implemented"
 
 [[requirement]]
 id = "URS-CMP-013"

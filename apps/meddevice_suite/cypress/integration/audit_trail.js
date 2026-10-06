@@ -28,31 +28,33 @@ function submitted_record(title) {
 	return cy.insert_doc(RECORD, { title, docstatus: 1 });
 }
 
+function setup() {
+	cy.login();
+	cy.visit("/desk");
+	cy.insert_doc(
+		"DocType",
+		{
+			name: RECORD,
+			module: "Compliance",
+			custom: 1,
+			is_submittable: 1,
+			fields: [
+				{ fieldname: "title", fieldtype: "Data", label: "Title", reqd: 1 },
+				{
+					fieldname: "remarks",
+					fieldtype: "Small Text",
+					label: "Remarks",
+					allow_on_submit: 1,
+				},
+			],
+			permissions: [{ role: "System Manager", ...FULL_ACCESS }],
+		},
+		true
+	);
+}
+
 context("Reason for change", () => {
-	before(() => {
-		cy.login();
-		cy.visit("/desk");
-		cy.insert_doc(
-			"DocType",
-			{
-				name: RECORD,
-				module: "Compliance",
-				custom: 1,
-				is_submittable: 1,
-				fields: [
-					{ fieldname: "title", fieldtype: "Data", label: "Title", reqd: 1 },
-					{
-						fieldname: "remarks",
-						fieldtype: "Small Text",
-						label: "Remarks",
-						allow_on_submit: 1,
-					},
-				],
-				permissions: [{ role: "System Manager", ...FULL_ACCESS }],
-			},
-			true
-		);
-	});
+	before(setup);
 
 	it("[URS-CMP-011] asks for a reason before cancelling and records it", () => {
 		submitted_record("Lot UI-001").then((doc) => {
@@ -123,6 +125,35 @@ context("Reason for change", () => {
 					"Quantity corrected",
 				])
 			);
+		});
+	});
+});
+
+context("Audit trail review", () => {
+	before(setup);
+
+	it("[URS-CMP-012] shows the record's audit trail and opens its full history", () => {
+		submitted_record("Lot UI-005").then((doc) => {
+			cy.call("meddevice_suite.compliance.audit_reason.stage_reason", {
+				doctype: RECORD,
+				name: doc.name,
+				action: "cancel",
+				reason: "Supplier lot rejected",
+			});
+			cy.call("frappe.client.cancel", { doctype: RECORD, name: doc.name });
+
+			cy.visit(`${ROUTE}/${doc.name}`);
+			cy.get(".page-container:visible .timeline-item")
+				.should("contain", "Cancelled by")
+				.and("contain", "Reason: Supplier lot rejected")
+				.and("contain", "Submitted by");
+
+			cy.get(
+				'.page-container:visible .inner-group-button[data-label="View"] button'
+			).click();
+			cy.get('.page-container:visible .dropdown-item[data-label="Audit%20Trail"]').click();
+			cy.location("pathname").should("eq", "/desk/audit-event");
+			cy.get(".page-container:visible .list-row-container").should("have.length", 2);
 		});
 	});
 });
