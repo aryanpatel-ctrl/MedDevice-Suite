@@ -44,6 +44,7 @@ REGULATED_DOCTYPES: frozenset[str] = frozenset(
 		# Access control (21 CFR 11.10(d), (g))
 		"User",
 		"Role",
+		"Role Profile",
 		"User Permission",
 		"Custom DocPerm",
 		"System Settings",
