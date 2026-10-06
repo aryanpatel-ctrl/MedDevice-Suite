@@ -504,3 +504,18 @@ module = 48
 title = "The approval workflows are declared in code and applied on every site, and any manual change to them is undone on the next migrate."
 source = "Configuration as code; ISO 13485 4.1.6"
 status = "implemented"
+
+# --- Module 54: record retention and archival (D3 Retention & Archival) ----
+[[requirement]]
+id = "URS-CMP-023"
+module = 54
+title = "Every regulated record type, the audit trail, the electronic signatures and the login history have a declared retention period of at least ten years with its legal basis, which QA can view in the system."
+source = "D3 Retention & Archival; ISO 13485 4.2.5; EU MDR Art. 10(8); periods pending client QA (baseline question 10)"
+status = "implemented"
+
+[[requirement]]
+id = "URS-CMP-024"
+module = 54
+title = "Login, logout, failed-login and impersonation records are kept for their retention period instead of being cleared after 90 days."
+source = "21 CFR 11.10(d), (e), (g)"
+status = "implemented"
