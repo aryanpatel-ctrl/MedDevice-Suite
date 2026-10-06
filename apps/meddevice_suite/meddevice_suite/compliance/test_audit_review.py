@@ -8,6 +8,8 @@ from meddevice_suite.compliance.audit_timeline import VALUE_LENGTH, change_lines
 from meddevice_suite.compliance.test_audit import AUDITED, AuditTestCase, because
 from meddevice_suite.compliance.test_esign import SIGNER, VIEWER, ensure_user
 from meddevice_suite.qa import verifies
+from meddevice_suite.setup.roles import apply_roles
+from meddevice_suite.setup.test_roles import user_with_profile
 
 
 class ReviewTestCase(AuditTestCase):
@@ -198,3 +200,30 @@ class TestSearchAndExport(ReviewTestCase):
 
 		with self.assertRaises(frappe.PermissionError):
 			frappe.get_list("Audit Event", limit=1)
+
+
+@verifies("URS-CMP-012", "URS-CMP-014")
+class TestQAReviewsTheEvidence(ReviewTestCase):
+	def test_qa_managers_review_audit_events_and_signatures_but_never_change_them(self):
+		apply_roles()
+		qa = user_with_profile("QA Manager")
+
+		for doctype in ("Audit Event", "Electronic Signature"):
+			for permission, allowed in {
+				"read": True,
+				"report": True,
+				"export": True,
+				"write": False,
+				"create": False,
+				"delete": False,
+			}.items():
+				with self.subTest(doctype=doctype, permission=permission):
+					self.assertEqual(bool(frappe.has_permission(doctype, permission, user=qa)), allowed)
+
+	def test_qa_managers_see_the_record_history(self):
+		doc = self.history()
+		apply_roles()
+
+		frappe.set_user(user_with_profile("QA Manager"))
+
+		self.assertEqual(len(timeline_content(AUDITED, doc.name)), 5)
