@@ -2,7 +2,7 @@ from collections import Counter
 
 import frappe
 from frappe.desk.query_report import run as run_report
-from frappe.tests import IntegrationTestCase, UnitTestCase
+from frappe.tests import IntegrationTestCase
 from frappe.utils import add_days, now_datetime
 
 from meddevice_suite.compliance.retention import (
@@ -26,7 +26,7 @@ def login_history_days() -> int | None:
 
 
 @verifies("URS-CMP-023")
-class TestRetentionSchedule(UnitTestCase):
+class TestRetentionSchedule(IntegrationTestCase):
 	def test_every_regulated_record_type_and_the_evidence_is_scheduled_once(self):
 		scheduled = scheduled_doctypes()
 
