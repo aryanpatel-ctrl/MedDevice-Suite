@@ -10,6 +10,7 @@
  "field_order": [
   "reference_doctype",
   "reference_name",
+  "document_name_at_signing",
   "action",
   "meaning",
   "column_break_signer",
@@ -44,6 +45,14 @@
    "read_only": 1,
    "reqd": 1,
    "search_index": 1
+  },
+  {
+   "description": "The document's name when it was signed; kept if the document is later renamed.",
+   "fieldname": "document_name_at_signing",
+   "fieldtype": "Data",
+   "label": "Document Name at Signing",
+   "read_only": 1,
+   "reqd": 1
   },
   {
    "fieldname": "action",
@@ -130,7 +139,7 @@
  "in_create": 1,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-05 18:54:04.505688",
+ "modified": "2026-10-06 16:18:15.208752",
  "modified_by": "Administrator",
  "module": "Compliance",
  "name": "Electronic Signature",

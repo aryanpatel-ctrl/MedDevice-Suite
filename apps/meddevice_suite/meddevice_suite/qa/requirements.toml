@@ -388,3 +388,54 @@ module = 49
 title = "Only an identified individual can sign: shared and system accounts (Administrator, Guest) are refused, and the signer must hold the permission the signed action requires on the record."
 source = "21 CFR 11.100(a), 11.10(d), 11.10(g)"
 status = "implemented"
+
+# --- Module 50: tamper-evident audit trail (21 CFR 11.10(e); EU GMP Annex 11 §9) ---
+
+[[requirement]]
+id = "URS-CMP-007"
+module = 50
+title = "Every create, change, submit, cancel, amend, rename and delete of a regulated record is recorded in the audit trail automatically, without any action by the user."
+source = "21 CFR 11.10(e); design approved 2026-10-06"
+status = "implemented"
+
+[[requirement]]
+id = "URS-CMP-008"
+module = 50
+title = "Each audit entry records the user, and the real user when someone acted on their behalf; the server date and time; the action; the record; and the old and new value of every changed field, child-table rows included. Creation and deletion entries keep the whole record."
+source = "21 CFR 11.10(e)"
+status = "implemented"
+
+[[requirement]]
+id = "URS-CMP-009"
+module = 50
+title = "Audit entries cannot be edited or deleted by any user, including system managers, and never overwrite or hide earlier entries."
+source = "21 CFR 11.10(e)"
+status = "implemented"
+
+[[requirement]]
+id = "URS-CMP-010"
+module = 50
+title = "Each record's audit entries form a fingerprinted chain and each day's entries are sealed together, so any altered, removed or inserted entry is detected by verification."
+source = "Data integrity (ALCOA+); 21 CFR 11.10(e)"
+status = "planned"
+
+[[requirement]]
+id = "URS-CMP-011"
+module = 50
+title = "Cancelling or amending a regulated record, or changing it after submission, requires a reason, which is stored in the audit entry."
+source = "EU GMP Annex 11 §9"
+status = "planned"
+
+[[requirement]]
+id = "URS-CMP-012"
+module = 50
+title = "Authorised reviewers can search the audit trail by record, user, action and date range, see it on each regulated record, and export it, without being able to change it."
+source = "21 CFR 11.10(b), 11.10(e)"
+status = "planned"
+
+[[requirement]]
+id = "URS-CMP-013"
+module = 50
+title = "The regulated record types are declared in code, including every record type this app builds, and each is audited from the moment it is declared."
+source = "Validation scope; design approved 2026-10-06"
+status = "implemented"

@@ -11,9 +11,6 @@ signature to the record's exact content and to the record's previous signature
 (11.70). `verify_signatures` and `is_unchanged_since` detect tampering later.
 """
 
-import hashlib
-import json
-
 import frappe
 from frappe import _
 from frappe.auth import get_login_attempt_tracker
@@ -21,15 +18,12 @@ from frappe.model.document import Document
 from frappe.utils import get_datetime, get_fullname, now_datetime
 from frappe.utils.password import check_password
 
+from meddevice_suite.compliance.fingerprint import record_content, sha256
+
 MEANINGS = ("Authored", "Reviewed", "Approved", "Rejected", "Released", "Verified")
 
 # Accounts that do not identify one person (21 CFR 11.100(a)).
 SHARED_ACCOUNTS = ("Administrator", "Guest")
-
-# Fields that change without the record's content changing.
-VOLATILE_FIELDS = frozenset(
-	{"modified", "modified_by", "_user_tags", "_comments", "_assign", "_liked_by", "_seen"}
-)
 
 
 def sign(
@@ -66,6 +60,7 @@ def sign(
 			"doctype": "Electronic Signature",
 			"reference_doctype": doc.doctype,
 			"reference_name": doc.name,
+			"document_name_at_signing": doc.name,
 			"action": action,
 			"meaning": meaning,
 			"reason": reason,
@@ -106,16 +101,17 @@ def last_signature(doctype: str, name: str) -> frappe._dict | None:
 
 def record_fingerprint(doc: Document) -> str:
 	"""SHA-256 of the record's content, child rows included, ignoring bookkeeping fields."""
-	content = without_volatile_fields(doc.as_dict(no_private_properties=True, convert_dates_to_str=True))
-	return sha256(content)
+	return sha256(record_content(doc))
 
 
 def signature_fingerprint(signature: Document, previous_hash: str) -> str:
+	# The name as it was at signing: renaming a record rewrites `reference_name`
+	# in every signature, which must not read as tampering.
 	return sha256(
 		[
 			previous_hash,
 			signature.reference_doctype,
-			signature.reference_name,
+			signature.document_name_at_signing,
 			signature.action,
 			signature.meaning,
 			signature.reason or "",
@@ -153,18 +149,3 @@ def is_unchanged_since(signature: Document) -> bool:
 	"""Whether the signed record's content is still exactly what was signed."""
 	doc = frappe.get_doc(signature.reference_doctype, signature.reference_name)
 	return record_fingerprint(doc) == signature.record_hash
-
-
-def without_volatile_fields(value):
-	if isinstance(value, dict):
-		return {
-			key: without_volatile_fields(item) for key, item in value.items() if key not in VOLATILE_FIELDS
-		}
-	if isinstance(value, list):
-		return [without_volatile_fields(item) for item in value]
-	return value
-
-
-def sha256(value) -> str:
-	canonical = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str, ensure_ascii=False)
-	return hashlib.sha256(canonical.encode()).hexdigest()
