@@ -217,3 +217,15 @@ class TestSignaturesAreImmutable(SigningTestCase):
 		permissions.build_permissions()
 
 		self.assertIn("Electronic Signature", permissions.can_read)
+
+
+@verifies("URS-CMP-004")
+class TestSignatureLookupsStayFastAtScale(IntegrationTestCase):
+	def test_signatures_are_indexed_by_record_and_by_signer(self):
+		indexes = {}
+		for row in frappe.db.sql("SHOW INDEX FROM `tabElectronic Signature`", as_dict=True):
+			indexes.setdefault(row.Key_name, []).append(row.Column_name)
+
+		for columns in (["reference_doctype", "reference_name", "signed_at"], ["signer", "signed_at"]):
+			with self.subTest(columns=columns):
+				self.assertIn(columns, indexes.values())
