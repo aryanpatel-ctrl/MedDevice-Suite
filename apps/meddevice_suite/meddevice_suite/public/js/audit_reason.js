@@ -79,6 +79,20 @@ $(document).on("form-refresh", (event, frm) => {
 			() => frm.handle_save_fail(btn, on_error)
 		);
 
+	// A workflow action that cancels the record (module 48) asks too. Frappe freezes the
+	// screen before its own before_workflow_action trigger, so the dialog comes first.
+	const handle_workflow_action = frm.states.handle_workflow_action.bind(frm.states);
+	frm.states.handle_workflow_action = (transition) => {
+		const next = frappe.workflow.workflows[frm.doctype]?.states.find(
+			(state) => state.state === transition.next_state
+		);
+		if (cint(next?.doc_status) !== 2) return handle_workflow_action(transition);
+		return with_reason(frm, "cancel", frm.doc.name).then(
+			() => handle_workflow_action(transition),
+			() => {}
+		);
+	};
+
 	const save = frm.save.bind(frm);
 	frm.save = (save_action, callback, btn, on_error) => {
 		const amending = frm.is_new() && frm.doc.amended_from;
