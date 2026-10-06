@@ -19,3 +19,10 @@ class ElectronicSignature(Document):
 
 	def on_trash(self):
 		frappe.throw(_("An electronic signature cannot be deleted."), frappe.PermissionError)
+
+
+def on_doctype_update():
+	# A record's signatures are read at every signing and verification, and a signer's
+	# when their work is reviewed; each stays an index lookup at millions of signatures.
+	frappe.db.add_index("Electronic Signature", ["reference_doctype", "reference_name", "signed_at"])
+	frappe.db.add_index("Electronic Signature", ["signer", "signed_at"])
