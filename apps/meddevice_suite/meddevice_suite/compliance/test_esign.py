@@ -3,13 +3,8 @@ from frappe.auth import get_login_attempt_tracker
 from frappe.tests import IntegrationTestCase, UnitTestCase
 from frappe.utils import now_datetime, time_diff_in_seconds
 
-from meddevice_suite.compliance.esign import (
-	is_unchanged_since,
-	sha256,
-	sign,
-	verify_signatures,
-	without_volatile_fields,
-)
+from meddevice_suite.compliance.esign import is_unchanged_since, sign, verify_signatures
+from meddevice_suite.compliance.fingerprint import sha256, without_volatile_fields
 from meddevice_suite.qa import verifies
 
 SIGNER = "esign.signer@example.com"

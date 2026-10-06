@@ -1,0 +1,158 @@
+{
+ "actions": [],
+ "allow_bulk_edit": 1,
+ "autoname": "hash",
+ "creation": "2026-10-06 16:18:40.210963",
+ "description": "One entry of the tamper-evident audit trail. Written only by the audit service; never edited or deleted.",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "reference_doctype",
+  "reference_name",
+  "document_name_at_event",
+  "action",
+  "column_break_who",
+  "user",
+  "impersonated_by",
+  "event_at",
+  "reason",
+  "section_changes",
+  "changes",
+  "section_integrity",
+  "previous_event",
+  "event_hash"
+ ],
+ "fields": [
+  {
+   "fieldname": "reference_doctype",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Document Type",
+   "options": "DocType",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "reference_name",
+   "fieldtype": "Dynamic Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Document",
+   "options": "reference_doctype",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "description": "The document's name when this happened; kept if the document is later renamed.",
+   "fieldname": "document_name_at_event",
+   "fieldtype": "Data",
+   "label": "Document Name at Event",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "action",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Action",
+   "options": "Created\nAmended\nUpdated\nSubmitted\nCancelled\nUpdated after submission\nRenamed\nDeleted",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_who",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "User",
+   "options": "User",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "impersonated_by",
+   "fieldtype": "Link",
+   "label": "Impersonated By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "event_at",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Date and Time",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "reason",
+   "fieldtype": "Small Text",
+   "label": "Reason",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_changes",
+   "fieldtype": "Section Break",
+   "label": "Changes"
+  },
+  {
+   "fieldname": "changes",
+   "fieldtype": "JSON",
+   "label": "Changes",
+   "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "section_integrity",
+   "fieldtype": "Section Break",
+   "label": "Integrity"
+  },
+  {
+   "fieldname": "previous_event",
+   "fieldtype": "Link",
+   "label": "Previous Event",
+   "options": "Audit Event",
+   "read_only": 1
+  },
+  {
+   "fieldname": "event_hash",
+   "fieldtype": "Data",
+   "label": "Event Fingerprint",
+   "read_only": 1,
+   "reqd": 1,
+   "unique": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "in_create": 1,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-10-06 16:18:40.210963",
+ "modified_by": "Administrator",
+ "module": "Compliance",
+ "name": "Audit Event",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager"
+  }
+ ],
+ "read_only": 1,
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "event_at",
+ "sort_order": "DESC",
+ "states": []
+}
