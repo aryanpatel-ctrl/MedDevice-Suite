@@ -7,6 +7,8 @@ app_license = "gpl-3.0"
 
 required_apps = ["erpnext"]
 
+app_include_js = "meddevice_suite.bundle.js"
+
 before_migrate = "meddevice_suite.setup.modules.sync_module_defs"
 after_install = "meddevice_suite.setup.install.apply_configuration"
 after_migrate = "meddevice_suite.setup.install.apply_configuration"
@@ -16,6 +18,8 @@ doc_events = {
 		# Audit trail: each handler returns at once for record types that are not regulated.
 		"before_insert": "meddevice_suite.compliance.audit.before_insert",
 		"before_change": "meddevice_suite.compliance.audit.before_change",
+		"before_cancel": "meddevice_suite.compliance.audit.before_cancel",
+		"before_update_after_submit": "meddevice_suite.compliance.audit.before_update_after_submit",
 		"on_change": "meddevice_suite.compliance.audit.on_change",
 		"on_trash": "meddevice_suite.compliance.audit.on_trash",
 		"after_rename": "meddevice_suite.compliance.audit.after_rename",

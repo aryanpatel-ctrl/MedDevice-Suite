@@ -68,9 +68,18 @@ class AuditTestCase(IntegrationTestCase):
 		self.enterContext(
 			patch("meddevice_suite.compliance.audit_scope.REGULATED_DOCTYPES", REGULATED_DOCTYPES | {AUDITED})
 		)
+		# Request-scoped state: each test is its own request.
+		frappe.flags.audit_cause = None
+		self.addCleanup(frappe.flags.pop, "audit_cause", None)
 
 	def new_record(self, **values):
 		return frappe.get_doc({"doctype": AUDITED, "title": "Lot L-001", "qty": 1, **values}).insert()
+
+
+def because(doc, reason: str = "Wrong lot entered"):
+	"""Give the reason the way code in this app does before cancelling, amending or changing a submitted record."""
+	doc.flags.audit_reason = reason
+	return doc
 
 
 @verifies("URS-CMP-007")
@@ -81,8 +90,8 @@ class TestEveryActionIsRecorded(AuditTestCase):
 		doc.save()
 		doc.submit()
 		doc.remarks = "Label reprinted"
-		doc.save()
-		doc.cancel()
+		because(doc).save()
+		because(doc).cancel()
 
 		self.assertEqual(
 			actions_for(doc), ["Created", "Updated", "Submitted", "Updated after submission", "Cancelled"]
@@ -91,12 +100,12 @@ class TestEveryActionIsRecorded(AuditTestCase):
 	def test_amendment(self):
 		doc = self.new_record()
 		doc.submit()
-		doc.cancel()
+		because(doc).cancel()
 
 		amended = frappe.copy_doc(doc)
 		amended.docstatus = 0  # as the Amend button does
 		amended.amended_from = doc.name
-		amended.insert()
+		because(amended).insert()
 
 		self.assertEqual(actions_for(amended), ["Amended"])
 		self.assertEqual(events_for(AUDITED, amended.name)[0].changes["snapshot"]["amended_from"], doc.name)
