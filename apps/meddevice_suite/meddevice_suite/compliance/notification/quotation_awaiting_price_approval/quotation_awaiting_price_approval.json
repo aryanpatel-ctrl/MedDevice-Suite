@@ -1,0 +1,32 @@
+{
+ "attach_print": 0,
+ "channel": "System Notification",
+ "condition": "doc.workflow_state == \"Awaiting Price Approval\"",
+ "condition_type": "Python",
+ "creation": "2026-10-07 06:00:00.000000",
+ "days_in_advance": 0,
+ "docstatus": 0,
+ "doctype": "Notification",
+ "document_type": "Quotation",
+ "enabled": 1,
+ "event": "Value Change",
+ "idx": 0,
+ "is_standard": 1,
+ "message_type": "HTML",
+ "minutes_offset": 0,
+ "modified": "2026-10-07 07:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Compliance",
+ "name": "Quotation Awaiting Price Approval",
+ "notification_message": "{{ _(\"Quotation {0} for {1}, {2}, is waiting for internal price approval.\").format(doc.name, doc.customer_name or doc.party_name, frappe.format_value(doc.grand_total, {'fieldtype': 'Currency', 'options': 'currency'}, doc)) }}",
+ "owner": "Administrator",
+ "recipients": [
+  {
+   "receiver_by_role": "Sales Manager"
+  }
+ ],
+ "send_system_notification": 0,
+ "send_to_all_assignees": 0,
+ "subject": "Quotation {{ doc.name }} is waiting for your price approval",
+ "value_changed": "workflow_state"
+}

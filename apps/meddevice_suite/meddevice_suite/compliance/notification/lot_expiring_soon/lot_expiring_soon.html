@@ -1,0 +1,1 @@
+<p>{{ _("Lot {0} of item {1} expires on {2}, and {3} {4} of it is still in stock. Plan its use, or its hold, before then.").format(doc.name, doc.item, frappe.format_value(doc.expiry_date, {'fieldtype': 'Date'}), frappe.format_value(doc.batch_qty, {'fieldtype': 'Float'}), doc.stock_uom) }}</p>

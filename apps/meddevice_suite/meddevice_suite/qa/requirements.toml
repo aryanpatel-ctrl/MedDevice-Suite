@@ -533,3 +533,25 @@ module = 54
 title = "Every archive carries a fingerprint of the whole file and of every file in it, can be verified at any time so that any changed, removed or added file is detected, and cannot be changed or deleted."
 source = "21 CFR 11.10(c); data integrity (ALCOA+)"
 status = "implemented"
+
+# --- Module 51: alerts and notifications (D2 Alerts & Notifications) -------
+[[requirement]]
+id = "URS-CMP-027"
+module = 51
+title = "Stores and QA are alerted 30 days before a lot with stock remaining expires, and again on the day it expires; lots with no stock and disabled lots raise no alert."
+source = "D2 Alerts & Notifications; module 51 lot expiry; lead time pending client (baseline question 11)"
+status = "implemented"
+
+[[requirement]]
+id = "URS-CMP-028"
+module = 51
+title = "The approver is alerted when a quotation or purchase order is waiting for approval, and the person who raised it is alerted when it is approved or returned for revision."
+source = "D1 approval points; module 48 approvals"
+status = "implemented"
+
+[[requirement]]
+id = "URS-CMP-029"
+module = 51
+title = "The alerts are declared in code, applied on every site, and cannot be edited on a site."
+source = "Configuration as code; ISO 13485 4.1.6"
+status = "implemented"

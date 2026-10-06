@@ -1,0 +1,32 @@
+{
+ "attach_print": 0,
+ "channel": "System Notification",
+ "condition": "doc.workflow_state == \"Approved\" or (doc.workflow_state == \"Draft\" and doc.modified != doc.creation)",
+ "condition_type": "Python",
+ "creation": "2026-10-07 06:00:00.000000",
+ "days_in_advance": 0,
+ "docstatus": 0,
+ "doctype": "Notification",
+ "document_type": "Purchase Order",
+ "enabled": 1,
+ "event": "Value Change",
+ "idx": 0,
+ "is_standard": 1,
+ "message_type": "HTML",
+ "minutes_offset": 0,
+ "modified": "2026-10-07 07:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Compliance",
+ "name": "Purchase Order Approval Decided",
+ "notification_message": "{% if doc.workflow_state == 'Approved' %}{{ _(\"Purchase order {0} was approved and can be issued to the supplier.\").format(doc.name) }}{% else %}{{ _(\"Purchase order {0} was returned for revision.\").format(doc.name) }}{% endif %}",
+ "owner": "Administrator",
+ "recipients": [
+  {
+   "receiver_by_document_field": "owner"
+  }
+ ],
+ "send_system_notification": 0,
+ "send_to_all_assignees": 0,
+ "subject": "Purchase order {{ doc.name }} {{ _('was approved') if doc.workflow_state == 'Approved' else _('was returned for revision') }}",
+ "value_changed": "workflow_state"
+}

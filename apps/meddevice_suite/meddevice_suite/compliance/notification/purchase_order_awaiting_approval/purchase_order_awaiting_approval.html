@@ -1,0 +1,1 @@
+<p>{{ _("Purchase order {0} to {1}, {2}, is waiting for purchase approval.").format(doc.name, doc.supplier_name or doc.supplier, frappe.format_value(doc.grand_total, {'fieldtype': 'Currency', 'options': 'currency'}, doc)) }}</p>

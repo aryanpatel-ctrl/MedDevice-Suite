@@ -1,0 +1,35 @@
+{
+ "attach_print": 0,
+ "channel": "System Notification",
+ "condition": "doc.batch_qty > 0 and not doc.disabled",
+ "condition_type": "Python",
+ "creation": "2026-10-07 06:00:00.000000",
+ "date_changed": "expiry_date",
+ "days_in_advance": 0,
+ "docstatus": 0,
+ "doctype": "Notification",
+ "document_type": "Batch",
+ "enabled": 1,
+ "event": "Days Before",
+ "idx": 0,
+ "is_standard": 1,
+ "message_type": "HTML",
+ "minutes_offset": 0,
+ "modified": "2026-10-07 07:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Compliance",
+ "name": "Lot Expired",
+ "notification_message": "{{ _(\"Lot {0} of item {1} expires today, and {2} {3} of it is still in stock. It must not be issued or dispatched.\").format(doc.name, doc.item, frappe.format_value(doc.batch_qty, {'fieldtype': 'Float'}), doc.stock_uom) }}",
+ "owner": "Administrator",
+ "recipients": [
+  {
+   "receiver_by_role": "Stock User"
+  },
+  {
+   "receiver_by_role": "Quality Manager"
+  }
+ ],
+ "send_system_notification": 0,
+ "send_to_all_assignees": 0,
+ "subject": "Lot {{ doc.name }} expires today with stock remaining"
+}
