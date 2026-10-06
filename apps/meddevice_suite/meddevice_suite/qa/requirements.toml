@@ -439,3 +439,39 @@ module = 50
 title = "The regulated record types are declared in code, including every record type this app builds, and each is audited from the moment it is declared."
 source = "Validation scope; design approved 2026-10-06"
 status = "implemented"
+
+# --- Module 47: roles and permissions (21 CFR 11.10(d), (g)) ---------------
+[[requirement]]
+id = "URS-CMP-014"
+module = 47
+title = "Each person is given a job profile that grants exactly the roles that job needs; the job profiles and the roles in them are declared in code and applied on every site."
+source = "D2 Role Based Access (RBAC); 21 CFR 11.10(d); design approved 2026-10-06; job names pending client (baseline question 3)"
+status = "implemented"
+
+[[requirement]]
+id = "URS-CMP-015"
+module = 47
+title = "For every regulated business record type, which roles may read, create, submit, cancel and amend it is declared in code and applied exactly, replacing the platform's default permissions, and any manual change is undone on the next migrate."
+source = "21 CFR 11.10(d), (g); ISO 13485 4.2.4"
+status = "implemented"
+
+[[requirement]]
+id = "URS-CMP-016"
+module = 47
+title = "No role may delete, share or import a regulated record."
+source = "ISO 13485 4.2.5; CDSCO MDR 2017 Fifth Schedule; 21 CFR 11.10(c)"
+status = "implemented"
+
+[[requirement]]
+id = "URS-CMP-017"
+module = 47
+title = "System administrators can read regulated records but cannot create, submit, cancel or amend them."
+source = "21 CFR 11.10(g); design approved 2026-10-06"
+status = "implemented"
+
+[[requirement]]
+id = "URS-CMP-018"
+module = 47
+title = "Inspection results are recorded and submitted by QC inspectors and corrected only by QA; operators record their operations but cannot create, submit or cancel production records."
+source = "ISO 13485 7.5.1, 8.2.6; design approved 2026-10-06"
+status = "implemented"
