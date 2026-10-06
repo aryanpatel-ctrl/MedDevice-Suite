@@ -20,12 +20,16 @@ doc_events = {
 		"before_change": "meddevice_suite.compliance.audit.before_change",
 		"before_cancel": "meddevice_suite.compliance.audit.before_cancel",
 		"before_update_after_submit": "meddevice_suite.compliance.audit.before_update_after_submit",
+		"onload": "meddevice_suite.compliance.audit_timeline.onload",
 		"on_change": "meddevice_suite.compliance.audit.on_change",
 		"on_trash": "meddevice_suite.compliance.audit.on_trash",
 		"after_rename": "meddevice_suite.compliance.audit.after_rename",
 	},
 	"Desktop Layout": {"validate": "meddevice_suite.setup.desk.enforce_on_desktop_layout"},
 }
+
+# A regulated record's audit events in its form timeline, for users who may review them.
+additional_timeline_content = {"*": ["meddevice_suite.compliance.audit_timeline.timeline_content"]}
 
 # A record's audit history must not stop the record itself from being deleted;
 # the deletion is recorded like any other action.

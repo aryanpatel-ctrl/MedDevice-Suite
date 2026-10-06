@@ -134,7 +134,7 @@
  "in_create": 1,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-06 18:30:00.000000",
+ "modified": "2026-10-06 22:00:00.000000",
  "modified_by": "Administrator",
  "module": "Compliance",
  "name": "Audit Event",
@@ -149,7 +149,7 @@
    "role": "System Manager"
   }
  ],
- "read_only": 1,
+ "read_only": 0,
  "row_format": "Dynamic",
  "rows_threshold_for_grid_search": 20,
  "sort_field": "event_at",

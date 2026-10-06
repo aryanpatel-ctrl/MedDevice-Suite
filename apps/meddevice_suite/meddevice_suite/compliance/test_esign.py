@@ -2,6 +2,7 @@ import frappe
 from frappe.auth import get_login_attempt_tracker
 from frappe.tests import IntegrationTestCase, UnitTestCase
 from frappe.utils import now_datetime, time_diff_in_seconds
+from frappe.utils.user import UserPermissions
 
 from meddevice_suite.compliance.esign import is_unchanged_since, sign, verify_signatures
 from meddevice_suite.compliance.fingerprint import sha256, without_volatile_fields
@@ -210,3 +211,9 @@ class TestSignaturesAreImmutable(SigningTestCase):
 		for rule in meta.permissions:
 			with self.subTest(role=rule.role):
 				self.assertFalse(rule.create or rule.write or rule.delete or rule.submit or rule.amend)
+
+	def test_users_who_may_read_signatures_can_list_and_search_them(self):
+		permissions = UserPermissions(SIGNER)
+		permissions.build_permissions()
+
+		self.assertIn("Electronic Signature", permissions.can_read)
