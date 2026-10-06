@@ -475,3 +475,32 @@ module = 47
 title = "Inspection results are recorded and submitted by QC inspectors and corrected only by QA; operators record their operations but cannot create, submit or cancel production records."
 source = "ISO 13485 7.5.1, 8.2.6; design approved 2026-10-06"
 status = "implemented"
+
+# --- Module 48: approval workflows (D1 approval points "A") ----------------
+[[requirement]]
+id = "URS-CMP-019"
+module = 48
+title = "A quotation can be sent to the customer only after internal price approval; the approver approves it or returns it for revision."
+source = "D1 Internal Price Approval? / Revise - Re-estimate; approver and threshold pending client (baseline question 3)"
+status = "implemented"
+
+[[requirement]]
+id = "URS-CMP-020"
+module = 48
+title = "A purchase order is issued only after purchase approval; the approver approves it or returns it for revision, and only the approver cancels it."
+source = "D1 Purchase Approval? / Revise; approver and threshold pending client (baseline question 3)"
+status = "implemented"
+
+[[requirement]]
+id = "URS-CMP-021"
+module = 48
+title = "An approval cannot be bypassed: a record under an approval workflow is submitted only from its awaiting-approval state, only by a role allowed to approve it, and never by the person who raised it, whether through the form or the API."
+source = "21 CFR 11.10(f), (g); design approved 2026-10-07"
+status = "implemented"
+
+[[requirement]]
+id = "URS-CMP-022"
+module = 48
+title = "The approval workflows are declared in code and applied on every site, and any manual change to them is undone on the next migrate."
+source = "Configuration as code; ISO 13485 4.1.6"
+status = "implemented"

@@ -163,7 +163,13 @@ PERMISSIONS: dict[str, dict[str, tuple[str, ...]]] = {
 		}
 	),
 	"Purchase Order": oversight(
-		{"Purchase User": CORRECT, "Purchase Manager": APPROVE, "Stock User": VIEW, "Accounts User": VIEW}
+		{
+			# Purchasing drafts and amends; only the approver submits and cancels (module 48).
+			"Purchase User": (*EDIT, "amend"),
+			"Purchase Manager": APPROVE,
+			"Stock User": VIEW,
+			"Accounts User": VIEW,
+		}
 	),
 	"Purchase Receipt": oversight(
 		{

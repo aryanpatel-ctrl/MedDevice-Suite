@@ -150,7 +150,7 @@ class TestPermissionMatrix(ProfileTestCase):
 # What each job must still be able to do under least privilege.
 DAILY_WORK = {
 	"Sales": [("Customer", "create"), ("Delivery Note", "submit")],
-	"Purchase": [("Supplier", "create"), ("Material Request", "submit"), ("Purchase Order", "submit")],
+	"Purchase": [("Supplier", "create"), ("Material Request", "submit"), ("Purchase Order", "create")],
 	"Stores": [("Purchase Receipt", "submit"), ("Stock Entry", "submit"), ("Delivery Note", "cancel")],
 	"Production Supervisor": [("BOM", "create"), ("Work Order", "submit"), ("Job Card", "submit")],
 	"QC Inspector": [("Quality Inspection", "submit")],
@@ -175,7 +175,7 @@ class TestDailyWork(ProfileTestCase):
 
 	def test_jobs_do_not_do_each_others_work(self):
 		refused = {
-			"Purchase": [("Purchase Receipt", "create")],
+			"Purchase": [("Purchase Receipt", "create"), ("Purchase Order", "submit")],
 			"Sales": [("Delivery Note", "cancel"), ("Stock Entry", "read")],
 			"Production Supervisor": [("BOM", "submit")],
 			"Stores": [("Quality Inspection", "create")],

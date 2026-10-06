@@ -20,6 +20,8 @@ doc_events = {
 		"before_change": "meddevice_suite.compliance.audit.before_change",
 		"before_cancel": "meddevice_suite.compliance.audit.before_cancel",
 		"before_update_after_submit": "meddevice_suite.compliance.audit.before_update_after_submit",
+		# Approval workflows: returns at once for record types without one.
+		"on_submit": "meddevice_suite.compliance.approvals.on_submit",
 		"onload": "meddevice_suite.compliance.audit_timeline.onload",
 		"on_change": "meddevice_suite.compliance.audit.on_change",
 		"on_trash": "meddevice_suite.compliance.audit.on_trash",
