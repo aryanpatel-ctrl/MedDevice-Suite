@@ -8,6 +8,7 @@ from frappe.email.doctype.notification.notification import Notification
 from frappe.tests import IntegrationTestCase
 from frappe.utils import add_days, add_years, getdate, today
 from frappe.utils.password import update_password
+from frappe.www.printview import get_rendered_template
 from pypdf import PdfWriter
 
 from meddevice_suite.compliance.esign import verify_signatures
@@ -607,8 +608,14 @@ class TestOutsidersCannotReachDrafts(DocumentControlTestCase):
 @verifies("URS-QMS-008", "URS-CMP-003")
 class TestControlledCopy(DocumentControlTestCase):
 	def printout(self, revision) -> str:
+		# The printout's own content, with the person's print permission checked, as the print
+		# page renders it; without the page around it, which needs built assets.
 		self.as_user(self.qa)
-		return frappe.get_print("Document Revision", revision.name, "Controlled Copy")
+		return get_rendered_template(
+			frappe.get_doc("Document Revision", revision.name),
+			print_format=frappe.get_doc("Print Format", "Controlled Copy"),
+			no_letterhead=1,
+		)
 
 	def test_an_effective_revision_prints_as_a_controlled_copy_with_its_signatures(self):
 		revision = self.issue(self.register())
