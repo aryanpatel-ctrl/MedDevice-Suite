@@ -1,0 +1,196 @@
+{
+ "actions": [],
+ "autoname": "",
+ "creation": "2026-10-07 14:00:00.000000",
+ "description": "One issue of a controlled document: authored, reviewed and approved with electronic signatures, then effective until superseded (module 30).",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "controlled_document",
+  "document_title",
+  "document_type",
+  "revision",
+  "file",
+  "file_sha256",
+  "summary_of_change",
+  "column_break_people",
+  "status",
+  "author",
+  "reviewer",
+  "approver",
+  "effective_date",
+  "superseded_by",
+  "amended_from"
+ ],
+ "fields": [
+  {
+   "fieldname": "controlled_document",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Controlled Document",
+   "options": "Controlled Document",
+   "reqd": 1,
+   "set_only_once": 1
+  },
+  {
+   "fetch_from": "controlled_document.title",
+   "fieldname": "document_title",
+   "fieldtype": "Data",
+   "label": "Title",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "controlled_document.document_type",
+   "fieldname": "document_type",
+   "fieldtype": "Data",
+   "label": "Document Type",
+   "read_only": 1
+  },
+  {
+   "fieldname": "revision",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Revision",
+   "read_only": 1
+  },
+  {
+   "fieldname": "file",
+   "fieldtype": "Attach",
+   "label": "Document File"
+  },
+  {
+   "fieldname": "file_sha256",
+   "fieldtype": "Data",
+   "label": "File Fingerprint (SHA-256)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "summary_of_change",
+   "fieldtype": "Small Text",
+   "label": "Summary of Change"
+  },
+  {
+   "fieldname": "column_break_people",
+   "fieldtype": "Column Break"
+  },
+  {
+   "allow_on_submit": 1,
+   "default": "Draft",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Draft\nIn Review\nAwaiting Approval\nApproved\nEffective\nSuperseded\nObsolete",
+   "read_only": 1
+  },
+  {
+   "fieldname": "author",
+   "fieldtype": "Link",
+   "label": "Author",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "reviewer",
+   "fieldtype": "Link",
+   "label": "Reviewer",
+   "options": "User"
+  },
+  {
+   "fieldname": "approver",
+   "fieldtype": "Link",
+   "label": "Approved By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "effective_date",
+   "fieldtype": "Date",
+   "label": "Effective Date"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "superseded_by",
+   "fieldtype": "Link",
+   "label": "Superseded By",
+   "options": "Document Revision",
+   "read_only": 1
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Document Revision",
+   "print_hide": 1,
+   "read_only": 1
+  }
+ ],
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-10-07 14:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "QMS",
+ "name": "Document Revision",
+ "naming_rule": "By script",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "amend": 0,
+   "cancel": 0,
+   "create": 1,
+   "delete": 0,
+   "email": 0,
+   "export": 1,
+   "import": 0,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Quality Manager",
+   "share": 0,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "amend": 0,
+   "cancel": 0,
+   "create": 0,
+   "delete": 0,
+   "email": 0,
+   "export": 0,
+   "import": 0,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 0,
+   "submit": 0,
+   "write": 0
+  },
+  {
+   "amend": 0,
+   "cancel": 0,
+   "create": 1,
+   "delete": 0,
+   "email": 0,
+   "export": 0,
+   "import": 0,
+   "print": 1,
+   "read": 1,
+   "report": 0,
+   "role": "Desk User",
+   "share": 0,
+   "submit": 0,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "document_title",
+ "track_changes": 0
+}

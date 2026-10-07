@@ -26,8 +26,17 @@ class SignedAct:
 	perform: str  # dotted path of perform(doc, password, reason) -> None: checks, signs, acts
 
 
+DOCUMENT_CONTROL = "meddevice_suite.qms.document_control"
+
 # (record type, act) -> the signed act. Each module adds the acts it signs.
-SIGNING_ACTIONS: dict[tuple[str, str], SignedAct] = {}
+SIGNING_ACTIONS: dict[tuple[str, str], SignedAct] = {
+	# Module 30, document control
+	("Document Revision", "Author"): SignedAct("Authored", f"{DOCUMENT_CONTROL}.author"),
+	("Document Revision", "Review"): SignedAct("Reviewed", f"{DOCUMENT_CONTROL}.review"),
+	("Document Revision", "Return"): SignedAct("Rejected", f"{DOCUMENT_CONTROL}.return_for_changes"),
+	("Document Revision", "Approve"): SignedAct("Approved", f"{DOCUMENT_CONTROL}.approve"),
+	("Controlled Document", "Withdraw"): SignedAct("Approved", f"{DOCUMENT_CONTROL}.withdraw"),
+}
 
 
 @frappe.whitelist(methods=["POST"])

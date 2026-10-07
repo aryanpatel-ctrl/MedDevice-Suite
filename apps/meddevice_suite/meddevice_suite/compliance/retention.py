@@ -46,6 +46,7 @@ RETENTION_SCHEDULE: dict[str, tuple[int, str, tuple[str, ...]]] = {
 			"Pick List",
 		),
 	),
+	"Quality system records": (10, QUALITY_BASIS, ("Controlled Document", "Document Revision")),
 	"Purchasing and supplier records": (
 		10,
 		QUALITY_BASIS,
