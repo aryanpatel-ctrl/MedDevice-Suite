@@ -45,6 +45,9 @@ DESKTOP_ICONS_SHOWN = frozenset(
 		"Financial Reports",
 		"GST India",
 		"Income Tax India",
+		# This app: document control for everyone, the compliance records for QA (modules 30, 49-54)
+		"Documents",
+		"Compliance",
 		# Administration
 		"ERPNext Settings",
 		"Users",
@@ -86,6 +89,11 @@ DESK_AREAS: dict[str, tuple[str, ...]] = {
 	"GST India": ACCOUNTS_ROLES,
 	# TDS: ERPNext opens its records to the accounts manager only, as it ships this area.
 	"Income Tax India": ("Accounts Manager",),
+	# Everyone reads the documents in effect and works on the revisions they author or review;
+	# the record types' own permissions decide what each person sees in them.
+	"Documents": ("Desk User",),
+	# The audit trail, signatures, archives and retention schedule are reviewed by QA.
+	"Compliance": ("Quality Manager", *ADMINISTRATION),
 	# Administration
 	"Framework": ADMINISTRATION,
 	"ERPNext Settings": ADMINISTRATION,

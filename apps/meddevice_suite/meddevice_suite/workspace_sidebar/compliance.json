@@ -1,0 +1,65 @@
+{
+ "app": "meddevice_suite",
+ "creation": "2026-10-07 23:30:00.000000",
+ "docstatus": 0,
+ "doctype": "Workspace Sidebar",
+ "header_icon": "compliance",
+ "idx": 0,
+ "items": [
+  {
+   "child": 0,
+   "collapsible": 1,
+   "icon": "history",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Audit Event",
+   "link_to": "Audit Event",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 0,
+   "collapsible": 1,
+   "icon": "pen-line",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Electronic Signature",
+   "link_to": "Electronic Signature",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 0,
+   "collapsible": 1,
+   "icon": "archive",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Record Archive",
+   "link_to": "Record Archive",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 0,
+   "collapsible": 1,
+   "icon": "table",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Retention Schedule",
+   "link_to": "Retention Schedule",
+   "link_type": "Report",
+   "show_arrow": 0,
+   "type": "Link"
+  }
+ ],
+ "modified": "2026-10-07 23:30:00.000000",
+ "modified_by": "Administrator",
+ "module": "Compliance",
+ "name": "Compliance",
+ "owner": "Administrator",
+ "standard": 1,
+ "title": "Compliance"
+}

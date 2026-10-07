@@ -4,6 +4,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import frappe
+from frappe.boot import get_bootinfo
 from frappe.desk.desk_views import DeskViews
 from frappe.desk.desktop import Workspace, get_desktop_page, get_workspaces
 from frappe.permissions import get_doctypes_with_read
@@ -202,6 +203,27 @@ class TestEachJobsDesk(IntegrationTestCase):
 				declared.add("Welcome Workspace")
 			with self.subTest(profile=profile):
 				self.assertLessEqual(loaded, declared)
+
+	def test_each_jobs_desk_icons_are_the_areas_of_its_work(self):
+		# The icons the desk shows the person, as Frappe builds them when they sign in.
+		for profile, roles in JOB_PROFILES.items():
+			frappe.set_user(user_with_profile(profile))
+			frappe.cache.delete_key("desktop_icons")
+			# Areas as the person sees them: not the hidden app and folder icons that group them.
+			icons = {
+				icon.label
+				for icon in get_bootinfo().desktop_icons
+				if icon.icon_type not in ("Folder", "App") and not icon.hidden
+			}
+			declared = {
+				area for area, area_roles in DESK_AREAS.items() if {*roles, "Desk User"} & set(area_roles)
+			}
+			with self.subTest(profile=profile):
+				self.assertLessEqual(icons, declared)
+				self.assertIn("Documents", icons)
+				self.assertEqual(
+					"Compliance" in icons, bool({"Quality Manager", "System Manager"} & set(roles))
+				)
 
 	def test_everything_in_a_jobs_areas_opens_for_that_job(self):
 		# Frappe shows a System Manager every chart, whether or not they may run its report;

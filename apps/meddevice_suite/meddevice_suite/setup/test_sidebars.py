@@ -37,8 +37,12 @@ class TestSidebarScope(IntegrationTestCase):
 		from meddevice_suite.setup.desk import DESKTOP_ICONS_SHOWN
 
 		sidebars = set(frappe.get_all("Workspace Sidebar", pluck="name"))
+		# The allowlists trim other apps' sidebars; this app's own are written as they are meant.
+		other_apps = set(
+			frappe.get_all("Workspace Sidebar", filters={"app": ["!=", "meddevice_suite"]}, pluck="name")
+		)
 		self.assertEqual(set(SIDEBAR_SCOPE) - sidebars, set())
-		self.assertEqual((DESKTOP_ICONS_SHOWN & sidebars) - set(SIDEBAR_SCOPE), set())
+		self.assertEqual((DESKTOP_ICONS_SHOWN & other_apps) - set(SIDEBAR_SCOPE), set())
 
 	def test_every_kept_entry_exists_in_the_shipped_sidebar(self):
 		for sidebar, keep in SIDEBAR_SCOPE.items():
