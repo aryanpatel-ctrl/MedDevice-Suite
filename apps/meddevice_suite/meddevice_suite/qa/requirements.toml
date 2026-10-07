@@ -504,6 +504,13 @@ title = "After a person signs out, the next person starts on a clean sign-in pag
 source = "21 CFR 11.10(d); shared shop-floor terminals; found in the live pilot test of 2026-10-07"
 status = "implemented"
 
+[[requirement]]
+id = "URS-CMP-036"
+module = 47
+title = "Every lookup in a form a job fills in can be searched by that job, apart from a reviewed list of features the client's process does not use, so nobody meets a permission error doing their own work; looking a record up never lets the person open it."
+source = "21 CFR 11.10(d); least privilege; found in the live pilot test of 2026-10-07 (operator time logs)"
+status = "implemented"
+
 # --- Module 48: approval workflows (D1 approval points "A") ----------------
 [[requirement]]
 id = "URS-CMP-019"

@@ -67,6 +67,7 @@ FLAGS = (
 	"mask",
 )
 
+PICK = ("select",)  # choose it in a form; never open it
 VIEW = ("select", "read", "report", "print")
 REVIEW = (*VIEW, "export")
 EDIT = (*VIEW, "write", "create")  # masters: never submitted
@@ -96,6 +97,7 @@ PERMISSIONS: dict[str, dict[str, tuple[str, ...]]] = {
 			"QC Inspector": VIEW,
 			"Maintenance User": VIEW,
 			"Accounts User": VIEW,
+			"Operator": PICK,  # the item on the job card
 		}
 	),
 	"BOM": oversight(
@@ -133,6 +135,8 @@ PERMISSIONS: dict[str, dict[str, tuple[str, ...]]] = {
 			"Manufacturing User": VIEW,
 			"QC Inspector": VIEW,
 			"Accounts User": VIEW,
+			"Operator": PICK,  # the job card's stores
+			"Maintenance User": PICK,  # where a repair takes its spare parts from
 		}
 	),
 	"Batch": oversight(
@@ -157,7 +161,8 @@ PERMISSIONS: dict[str, dict[str, tuple[str, ...]]] = {
 		}
 	),
 	"Asset": oversight({"Quality Manager": APPROVE, "Maintenance User": VIEW, "Accounts User": VIEW}),
-	"Employee": oversight({"HR User": EDIT, "Manufacturing User": VIEW}),
+	# An operator names themselves on the time they log against a job card.
+	"Employee": oversight({"HR User": EDIT, "Manufacturing User": VIEW, "Operator": PICK}),
 	# --- Purchasing and receiving
 	# --- Sales
 	"Quotation": oversight(
@@ -271,7 +276,17 @@ HIGHER_LEVELS: dict[str, dict[tuple[str, int], tuple[str, ...]]] = {
 SUPPORTING_PERMISSIONS: dict[str, dict[str, tuple[str, ...]]] = {
 	# A goods receipt or delivery looks up the supplier's or customer's account, which
 	# ERPNext lets Stock User neither read nor select. Select only: pick it, never open it.
-	"Account": {"Stock User": ("select",)},
+	"Account": {"Stock User": PICK},
+	# The forms these jobs fill in look these up (found in the live pilot test, 2026-10-07).
+	"Stock Entry Type": {"Manufacturing User": PICK},
+	"Sales Order": {"Manufacturing User": PICK},  # a work order made against an order
+	"Workstation Type": {"Operator": PICK, "Quality Manager": PICK, **dict.fromkeys(MANAGEMENT, PICK)},
+	"Quality Inspection Parameter": {"QC Inspector": PICK},
+	"Price List": {"Quality Manager": PICK},  # a BOM's costing
+	"Terms and Conditions": dict.fromkeys(MANAGEMENT, PICK),  # an approver correcting a quotation
+	"Asset Maintenance": {"Maintenance User": PICK},
+	# ERPNext's stock forms read these settings and fail quietly when they may not.
+	"Stock Settings": {"Stock User": ("read",), "Manufacturing User": ("read",)},
 }
 
 ACCESS_CONTROL = frozenset(
