@@ -641,6 +641,13 @@ title = "On the pilot's demo data, the standard flow runs end to end with each s
 source = "Delivery plan Phase 2 (pilot), decided 2026-10-07; D1, D2, D3"
 status = "implemented"
 
+[[requirement]]
+id = "URS-PLT-008"
+module = 0
+title = "Each job's desk shows only the areas its work uses, every chart, card and link in those areas opens for that job, and opening a record type the job may not use is refused with a plain message naming it."
+source = "Least privilege (21 CFR 11.10(d)); found in the live pilot test of 2026-10-07 (report and page permission errors)"
+status = "implemented"
+
 # --- Module 30: document control (D2 Document Control; ISO 13485 4.2.4) ----
 [[requirement]]
 id = "URS-QMS-001"

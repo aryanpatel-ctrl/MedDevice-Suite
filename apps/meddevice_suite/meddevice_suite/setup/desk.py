@@ -14,6 +14,7 @@ is saved and on every migrate. Users keep their own order and arrangement.
 import json
 
 import frappe
+from frappe import _
 
 # The areas the client requirement uses. Every other desktop icon is hidden,
 # including any a future release of Frappe, ERPNext or India Compliance adds,
@@ -55,9 +56,55 @@ DESKTOP_ICONS_SHOWN = frozenset(
 )
 
 
+# Who works in each area, by role (URS-PLT-008). ERPNext shows every area to everyone
+# and each area's dashboard draws on records and reports that many jobs may not use;
+# a job sees only the areas of its work, so the desk follows the permission matrix.
+STOCK_ROLES = ("Stock User", "Stock Manager")
+SALES_ROLES = ("Sales User", "Sales Manager")
+PURCHASE_ROLES = ("Purchase User", "Purchase Manager")
+PRODUCTION_ROLES = ("Manufacturing User", "Manufacturing Manager")
+QUALITY_ROLES = ("Quality Manager", "QC Inspector")
+ACCOUNTS_ROLES = ("Accounts User", "Accounts Manager")
+ADMINISTRATION = ("System Manager",)
+DESK_AREAS: dict[str, tuple[str, ...]] = {
+	"CRM": SALES_ROLES,
+	"Selling": (*SALES_ROLES, "Quality Manager"),
+	"Buying": (*PURCHASE_ROLES, *STOCK_ROLES, "Quality Manager"),
+	"Stock": (*STOCK_ROLES, *PURCHASE_ROLES, *SALES_ROLES, *PRODUCTION_ROLES, *QUALITY_ROLES, "Item Manager"),
+	"Manufacturing": (*PRODUCTION_ROLES, "Operator", "Quality Manager"),
+	"Quality": (*QUALITY_ROLES, *PRODUCTION_ROLES),
+	"Assets": ("Maintenance User", "Quality Manager", *ACCOUNTS_ROLES),
+	"Organization": ("HR User", "Quality Manager", *ADMINISTRATION),
+	# Finance (modules 28, 29); company and fiscal-year set-up is also the administrator's.
+	"Accounting": (*ACCOUNTS_ROLES, *ADMINISTRATION),
+	"Accounts Setup": (*ACCOUNTS_ROLES, *ADMINISTRATION),
+	"Invoicing": ACCOUNTS_ROLES,
+	"Banking": ACCOUNTS_ROLES,
+	"Taxes": ACCOUNTS_ROLES,
+	"Financial Reports": ACCOUNTS_ROLES,
+	"India Compliance": ACCOUNTS_ROLES,
+	"GST India": ACCOUNTS_ROLES,
+	# TDS: ERPNext opens its records to the accounts manager only, as it ships this area.
+	"Income Tax India": ("Accounts Manager",),
+	# Administration
+	"Framework": ADMINISTRATION,
+	"ERPNext Settings": ADMINISTRATION,
+	"Users": ADMINISTRATION,
+	"System": ADMINISTRATION,
+	"Data": ADMINISTRATION,
+	"Email": ADMINISTRATION,
+	"Printing": ADMINISTRATION,
+}
+
+
 def apply_desk_configuration() -> None:
 	for label in frappe.get_all("Desktop Icon", pluck="name"):
 		set_desktop_icon_visibility(label, label in DESKTOP_ICONS_SHOWN)
+	# Every area is applied: any() over a generator would stop at the first one changed.
+	changed = [set_area_roles(area, roles) for area, roles in DESK_AREAS.items()]
+	if any(changed):
+		frappe.cache.delete_key("desktop_icons")
+		frappe.cache.delete_key("bootinfo")
 
 	for user, layout in frappe.get_all("Desktop Layout", fields=["name", "layout"], as_list=True):
 		if (enforced := enforce_declared_visibility(layout)) is not None:
@@ -77,6 +124,47 @@ def set_desktop_icon_visibility(label: str, visible: bool) -> None:
 	frappe.db.set_value("Desktop Icon", label, "hidden", int(not visible), update_modified=False)
 	frappe.cache.delete_key("desktop_icons")
 	frappe.cache.delete_key("bootinfo")
+
+
+def set_area_roles(area: str, roles: tuple[str, ...]) -> bool:
+	"""Restrict an area's desk icon and page to `roles`; True when anything changed.
+
+	The role rows are written directly, as the visibility is: saving a standard
+	Workspace or Desktop Icon in developer mode would export it into the owning app."""
+	changed = False
+	for parenttype in ("Desktop Icon", "Workspace"):
+		if not frappe.db.exists(parenttype, area):
+			continue
+		filters = {"parent": area, "parenttype": parenttype, "parentfield": "roles"}
+		if set(frappe.get_all("Has Role", filters=filters, pluck="role")) == set(roles):
+			continue
+		frappe.db.delete("Has Role", filters)
+		for idx, role in enumerate(sorted(set(roles)), start=1):
+			frappe.get_doc({"doctype": "Has Role", **filters, "role": role, "idx": idx}).db_insert()
+		# Frappe reads both from its document cache, which direct writes do not refresh.
+		frappe.clear_document_cache(parenttype, area)
+		changed = True
+	return changed
+
+
+# Security review: open to guests exactly as Frappe's own loader is; a guest gets Frappe's
+# behaviour unchanged, and the plain refusal, given only to a signed-in user, names nothing
+# but a standard record type.
+@frappe.whitelist(allow_guest=True)  # nosemgrep
+def getpage(name: str):
+	"""Frappe's page loader, with a plain refusal for a record type the user may not open.
+
+	The desk opens a record type the user may not read as if it were a page, and Frappe
+	then reports a missing permission on "document Page". Overridden in hooks.py because
+	only the loader knows the route; every other page loads exactly as in Frappe."""
+	from frappe.desk.desk_page import getpage as frappe_getpage
+
+	doctype = frappe.unscrub(name)
+	signed_in = frappe.session.user != "Guest"
+	if signed_in and not frappe.db.exists("Page", name) and frappe.db.exists("DocType", doctype):
+		frappe.response["403"] = 1
+		frappe.throw(_("You are not permitted to open {0}.").format(_(doctype)), frappe.PermissionError)
+	return frappe_getpage(name)
 
 
 def enforce_on_desktop_layout(doc, method=None) -> None:
