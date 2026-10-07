@@ -569,7 +569,7 @@ id = "URS-STK-002"
 module = 18
 title = "When stock is picked or issued, the lot that expires first is taken first."
 source = "D3 Putaway in Finished Goods Warehouse (FIFO / FEFO)"
-status = "planned"
+status = "implemented"
 
 [[requirement]]
 id = "URS-STK-003"
@@ -583,4 +583,11 @@ id = "URS-PLT-006"
 module = 0
 title = "A pilot site can be loaded with fictional demo data that follows the client's process (catheter and urine bag lines with the D3 process steps, quarantine, rejected and hold stores, and one demo user per job), and the demo data can never be loaded on any other site."
 source = "Delivery plan Phase 2 (pilot), decided 2026-10-07; D2, D3"
+status = "implemented"
+
+[[requirement]]
+id = "URS-PLT-007"
+module = 0
+title = "On the pilot's demo data, the standard flow runs end to end with each step done by its job: enquiry, quotation with price approval and sales order; purchase request, purchase order with approval and goods receipt by batch into quarantine; work order on the line's routing with material issue, operations and a finished lot with its expiry; and delivery of that lot, all recorded in the audit trail."
+source = "Delivery plan Phase 2 (pilot), decided 2026-10-07; D1, D2, D3"
 status = "implemented"
