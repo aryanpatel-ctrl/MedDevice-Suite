@@ -3,14 +3,17 @@ from pathlib import Path
 from unittest.mock import patch
 
 import frappe
+from frappe.desk.search import search_link
 from frappe.tests import IntegrationTestCase
 from frappe.utils import add_days, add_years, getdate, today
 from frappe.utils.password import update_password
 from pypdf import PdfWriter
 
+from meddevice_suite.compliance.esign import verify_signatures
 from meddevice_suite.compliance.signing import sign_action
 from meddevice_suite.compliance.test_esign import PASSWORD, reset_lockout
 from meddevice_suite.qa import verifies
+from meddevice_suite.qms.doctype.document_revision.document_revision import next_revision_number
 from meddevice_suite.qms.document_control import (
 	make_due_revisions_effective,
 	make_effective,
@@ -401,3 +404,182 @@ class TestWithdrawal(DocumentControlTestCase):
 		self.draft(document, summary="In progress")
 		with self.assertRaises(frappe.ValidationError):
 			self.withdraw(self.qa, document)
+
+
+@verifies("URS-QMS-002")
+class TestSeparationOfSigners(DocumentControlTestCase):
+	def test_the_reviewer_cannot_also_approve(self):
+		revision = self.draft(self.register(), reviewer=self.qa)
+		self.act(self.author, revision, "Author")
+		revision = self.act(self.qa, revision, "Review")
+
+		with self.assertRaises(frappe.ValidationError):
+			self.act(self.qa, revision, "Approve")
+		self.assertEqual(
+			frappe.db.get_value("Document Revision", revision.name, "status"), "Awaiting Approval"
+		)
+
+	def test_a_reason_is_kept_exactly_as_written(self):
+		revision = self.draft(self.register())
+		self.act(self.author, revision, "Author")
+
+		with self.assertRaises(frappe.ValidationError):
+			self.act(self.reviewer, revision, "Return", reason="Step <4> is unclear")
+		self.act(self.reviewer, revision, "Return", reason="Steps 4 & 5: say 'Fr' sizes; ±0.5 mm")
+
+		reasons = frappe.get_all(
+			"Electronic Signature",
+			filters={"reference_name": revision.name, "meaning": "Rejected"},
+			pluck="reason",
+		)
+		self.assertEqual(reasons, ["Steps 4 & 5: say 'Fr' sizes; ±0.5 mm"])
+		self.assertTrue(verify_signatures("Document Revision", revision.name))
+
+
+@verifies("URS-QMS-003")
+class TestNoWayAroundTheSignedActs(DocumentControlTestCase):
+	def test_frappes_submit_cannot_approve_a_revision(self):
+		revision = self.draft(self.register())
+		self.act(self.author, revision, "Author")
+		self.act(self.reviewer, revision, "Review")
+
+		self.as_user(self.qa)
+		with self.assertRaises(frappe.PermissionError):
+			frappe.get_doc("Document Revision", revision.name).submit()
+		self.assertEqual(frappe.db.get_value("Document Revision", revision.name, "docstatus"), 0)
+
+	def test_an_approved_revision_cannot_be_changed_through_the_api(self):
+		revision = self.issue(self.register())
+
+		self.as_user(self.qa)
+		for field, value in (("status", "Draft"), ("superseded_by", revision.name)):
+			with self.subTest(field=field), self.assertRaises(frappe.PermissionError):
+				frappe.client.set_value("Document Revision", revision.name, field, value)
+		self.assertEqual(frappe.db.get_value("Document Revision", revision.name, "status"), "Effective")
+
+	def test_what_only_the_signed_acts_set_is_discarded_on_creation(self):
+		document = self.register()
+		earlier = self.issue(self.register("Release of finished goods"))
+		self.as_user(self.author)
+		revision = frappe.get_doc(
+			{
+				"doctype": "Document Revision",
+				"controlled_document": document.name,
+				"file": private_file(),
+				"reviewer": self.reviewer,
+				"file_sha256": "0" * 64,
+				"approver": self.qa,
+				"effective_date": today(),
+				"superseded_by": earlier.name,
+			}
+		).insert()
+
+		self.assertEqual(
+			(revision.file_sha256, revision.approver, revision.effective_date, revision.superseded_by),
+			(None, None, None, None),
+		)
+
+	def test_a_fingerprinted_file_cannot_be_deleted_made_public_or_replaced(self):
+		revision = self.draft(self.register())
+		self.act(self.author, revision, "Author")
+		file = frappe.get_doc("File", {"file_url": revision.file})
+
+		for user in (self.author, self.reviewer, self.outsider):
+			self.as_user(user)
+			with self.subTest(user=user, action="delete"), self.assertRaises(frappe.PermissionError):
+				frappe.delete_doc("File", file.name)
+			with self.subTest(user=user, action="make public"), self.assertRaises(frappe.PermissionError):
+				frappe.client.set_value("File", file.name, "is_private", 0)
+
+		self.as_user("Administrator")
+		public = frappe.get_doc("File", file.name)
+		public.is_private = 0
+		with self.assertRaises(frappe.PermissionError):
+			public.save()
+		self.assertEqual(
+			frappe.db.get_value("File", file.name, ["is_private", "file_url"]), (1, revision.file)
+		)
+		self.assertTrue(Path(file.get_full_path()).is_file())
+
+	def test_a_draft_file_can_still_be_replaced_by_its_author(self):
+		revision = self.draft(self.register())
+		file = frappe.db.get_value("File", {"file_url": revision.file}, "name")
+
+		self.as_user(self.author)
+		frappe.delete_doc("File", file)
+
+		self.assertFalse(frappe.db.exists("File", file))
+
+	def test_a_missing_file_is_reported_not_crashed_on(self):
+		revision = self.draft(self.register())
+		self.act(self.author, revision, "Author")
+		revision = self.act(self.reviewer, revision, "Review")
+		Path(frappe.get_doc("File", {"file_url": revision.file}).get_full_path()).unlink()
+
+		with self.assertRaises(frappe.ValidationError):
+			self.act(self.qa, revision, "Approve")
+
+
+@verifies("URS-QMS-004")
+class TestTakingEffectIsGuarded(DocumentControlTestCase):
+	def test_only_an_approved_revision_of_a_live_document_takes_effect(self):
+		draft = self.draft(self.register())
+		with self.assertRaises(frappe.ValidationError):
+			make_effective(draft.name)
+
+		approved = self.issue(self.register("Release of finished goods"), effective_date=add_days(today(), 5))
+		frappe.db.set_value("Controlled Document", approved.controlled_document, "status", "Obsolete")
+		with self.assertRaises(frappe.ValidationError):
+			make_effective(approved.name)
+		self.assertEqual(frappe.db.get_value("Document Revision", approved.name, "status"), "Approved")
+
+	def test_every_earlier_effective_revision_is_superseded(self):
+		document = self.register()
+		first = self.issue(document)
+		# A second effective revision, as only a fault could leave behind.
+		stray = self.issue(document, summary="Second")
+		frappe.db.set_value("Document Revision", first.name, {"status": "Effective", "superseded_by": None})
+
+		latest = self.issue(document, summary="Third")
+
+		for revision in (first, stray):
+			self.assertEqual(
+				frappe.db.get_value("Document Revision", revision.name, ["status", "superseded_by"]),
+				("Superseded", latest.name),
+			)
+
+	def test_a_document_is_reviewed_at_least_every_year(self):
+		for years in (0, -1):
+			with self.subTest(years=years), self.assertRaises(frappe.ValidationError):
+				self.as_user(self.qa)
+				frappe.get_doc(
+					{
+						"doctype": "Controlled Document",
+						"title": "Never reviewed",
+						"document_type": "SOP",
+						"department": "QA",
+						"process_owner": self.author,
+						"review_period_years": years,
+					}
+				).insert()
+
+	def test_revision_numbers_continue_past_99(self):
+		with patch("frappe.get_all", return_value=["00", "98", "99"]):
+			self.assertEqual(next_revision_number("SOP-QA-001"), "100")
+
+
+@verifies("URS-QMS-005")
+class TestOutsidersCannotReachDrafts(DocumentControlTestCase):
+	def test_no_api_route_shows_an_outsider_a_draft_or_superseded_revision(self):
+		document = self.register()
+		old = self.issue(document)
+		current = self.issue(document, summary="Clarified step 3")
+		draft = self.draft(document, summary="Work in progress")
+
+		self.as_user(self.outsider)
+		for name in (old.name, draft.name):
+			with self.subTest(name=name), self.assertRaises(frappe.PermissionError):
+				frappe.client.get("Document Revision", name)
+		self.assertEqual(
+			{row["value"] for row in search_link("Document Revision", document.name)}, {current.name}
+		)

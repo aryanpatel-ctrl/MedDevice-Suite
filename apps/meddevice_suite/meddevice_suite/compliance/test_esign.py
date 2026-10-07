@@ -1,10 +1,16 @@
 import frappe
 from frappe.auth import get_login_attempt_tracker
 from frappe.tests import IntegrationTestCase, UnitTestCase
-from frappe.utils import now_datetime, time_diff_in_seconds
+from frappe.utils import add_to_date, now_datetime, time_diff_in_seconds
 from frappe.utils.user import UserPermissions
 
-from meddevice_suite.compliance.esign import is_unchanged_since, sign, verify_signatures
+from meddevice_suite.compliance.esign import (
+	SigningRefused,
+	is_unchanged_since,
+	record_fingerprint,
+	sign,
+	verify_signatures,
+)
 from meddevice_suite.compliance.fingerprint import sha256, without_volatile_fields
 from meddevice_suite.qa import verifies
 
@@ -71,13 +77,64 @@ class TestReauthentication(SigningTestCase):
 		self.assertEqual(signatures_on(self.todo), [signature.name])
 
 	def test_wrong_password_records_nothing_and_counts_as_a_failed_login(self):
-		with self.assertRaises(frappe.AuthenticationError):
+		with self.assertRaises(SigningRefused) as refused:
 			self.sign(password="wrong password")
 
+		# Frappe signs the user out on its own authentication error; a typo must not.
+		self.assertNotIsInstance(refused.exception, frappe.AuthenticationError)
 		self.assertEqual(signatures_on(self.todo), [])
 		self.assertEqual(
 			get_login_attempt_tracker(SIGNER, raise_locked_exception=False).login_failed_count, 1
 		)
+
+	def test_a_wrong_password_is_kept_in_the_login_history(self):
+		with self.assertRaises(SigningRefused):
+			self.sign(password="wrong password")
+
+		self.assertTrue(
+			frappe.db.exists(
+				"Activity Log",
+				{"user": SIGNER, "status": "Failed", "subject": ["like", f"%ToDo {self.todo.name}"]},
+			)
+		)
+
+	def test_the_lockout_counts_signing_failures_up_to_its_limit(self):
+		frappe.db.set_single_value("System Settings", "allow_consecutive_login_attempts", 3)
+		for _attempt in range(2):
+			with self.assertRaises(SigningRefused):
+				self.sign(password="wrong password")
+
+		# Below the limit the correct password still signs, and clears the count.
+		self.sign()
+		self.assertFalse(get_login_attempt_tracker(SIGNER, raise_locked_exception=False).login_failed_count)
+
+		# As for logging in, the setting is the number of failures allowed: one more locks.
+		for _attempt in range(3):
+			with self.assertRaises(SigningRefused):
+				self.sign(password="wrong password")
+		self.assertTrue(get_login_attempt_tracker(SIGNER, raise_locked_exception=False).is_user_allowed())
+		with self.assertRaises(SigningRefused):
+			self.sign(password="wrong password")
+		with self.assertRaises(frappe.SecurityException):
+			self.sign()
+		self.assertEqual(len(signatures_on(self.todo)), 1)  # only the signature made before the lock
+
+	def test_the_lock_lifts_after_the_lockout_period(self):
+		frappe.db.set_single_value("System Settings", "allow_consecutive_login_attempts", 3)
+		frappe.db.set_single_value("System Settings", "allow_login_after_fail", 60)
+		tracker = get_login_attempt_tracker(SIGNER, raise_locked_exception=False)
+		tracker.login_failed_count = 3
+		tracker.login_failed_time = add_to_date(now_datetime(), seconds=-61)
+
+		self.sign()
+
+	def test_a_disabled_account_cannot_sign(self):
+		frappe.db.set_value("User", SIGNER, "enabled", 0)
+		self.addCleanup(frappe.db.set_value, "User", SIGNER, "enabled", 1)
+
+		with self.assertRaises(frappe.PermissionError):
+			self.sign()
+		self.assertEqual(signatures_on(self.todo), [])
 
 	def test_locked_account_cannot_sign_even_with_the_correct_password(self):
 		frappe.db.set_single_value("System Settings", "allow_consecutive_login_attempts", 3)
@@ -110,6 +167,20 @@ class TestSignatureContent(SigningTestCase):
 	def test_action_is_required(self):
 		with self.assertRaises(frappe.ValidationError):
 			self.sign(action="")
+
+	def test_the_reason_is_stored_exactly_as_signed(self):
+		for reason in ('Lot 7 & 8 checked; seal "OK"', "Prüfung bestanden ✓ 合格", "x" * 2000):
+			with self.subTest(reason=reason[:20]):
+				signature = self.sign(reason=reason)
+				self.assertEqual(
+					frappe.db.get_value("Electronic Signature", signature.name, "reason"), reason
+				)
+		self.assertTrue(verify_signatures(self.todo.doctype, self.todo.name))
+
+	def test_a_reason_frappe_would_rewrite_is_refused_rather_than_altered(self):
+		with self.assertRaises(frappe.ValidationError):
+			self.sign(reason="Lot changed from <L-001> to <L-002>")
+		self.assertEqual(signatures_on(self.todo), [])
 
 
 @verifies("URS-CMP-004")
@@ -171,6 +242,25 @@ class TestFingerprint(UnitTestCase):
 
 	def test_any_content_change_changes_the_fingerprint(self):
 		self.assertNotEqual(sha256({"qty": 10.0}), sha256({"qty": 10.5}))
+
+	def test_a_rename_does_not_change_what_a_signature_binds_child_rows_included(self):
+		def profile(name: str):
+			doc = frappe.get_doc(
+				{
+					"doctype": "Role Profile",
+					"role_profile": "Lab",
+					"roles": [{"role": "Sales User", "name": "r1"}],
+				}
+			)
+			doc.name = name
+			for row in doc.roles:
+				row.parent = name
+			return doc
+
+		self.assertEqual(record_fingerprint(profile("Lab")), record_fingerprint(profile("Laboratory")))
+		changed = profile("Lab")
+		changed.roles[0].role = "Stock User"
+		self.assertNotEqual(record_fingerprint(profile("Lab")), record_fingerprint(changed))
 
 	def test_bookkeeping_fields_are_ignored_at_every_level(self):
 		record = {

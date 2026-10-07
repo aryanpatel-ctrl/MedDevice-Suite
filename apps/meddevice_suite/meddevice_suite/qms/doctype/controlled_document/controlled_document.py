@@ -5,6 +5,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.model.naming import make_autoname
+from frappe.utils import cint
 
 # Numbering TYPE-DEPARTMENT-###, decided on the client's instruction of 2026-10-07.
 TYPE_CODES = {
@@ -28,6 +29,8 @@ class ControlledDocument(Document):
 		self.name = make_autoname(f"{TYPE_CODES[self.document_type]}-{self.department}-.###", doc=self)
 
 	def validate(self):
+		if cint(self.review_period_years) < 1:
+			frappe.throw(_("A document is reviewed at least every year."))
 		if self.is_new() or self.flags.document_control:
 			return
 		before = self.get_doc_before_save()

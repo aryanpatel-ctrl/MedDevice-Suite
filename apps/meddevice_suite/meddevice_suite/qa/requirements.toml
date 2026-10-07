@@ -638,14 +638,14 @@ status = "implemented"
 [[requirement]]
 id = "URS-QMS-002"
 module = 30
-title = "A revision is signed by its author, reviewed by someone other than the author and approved by QA, never by its author, each with an electronic signature; the reviewer or QA can return it for changes with a reason, and every revision after the first states what changed."
-source = "D2 Review & Approval, Version Control; ISO 13485 4.2.4 a), b); 21 CFR 11.50"
+title = "A revision is signed by its author, reviewed by someone other than the author and approved by QA, never by its author or its reviewer, each with an electronic signature; the reviewer or QA can return it for changes with a reason, and every revision after the first states what changed."
+source = "D2 Review & Approval, Version Control; ISO 13485 4.2.4 a), b); 21 CFR 11.50; approver other than the reviewer decided on the client's instruction of 2026-10-07"
 status = "implemented"
 
 [[requirement]]
 id = "URS-QMS-003"
 module = 30
-title = "The document file is fingerprinted when its author signs; approval is refused if the file has changed since, and a revision cannot be changed after its author signs except through the signed acts."
+title = "The document file is fingerprinted when its author signs; approval is refused if the file has changed since, the file cannot then be deleted, made public or replaced, and a revision cannot be changed, submitted or changed after submission except through the signed acts."
 source = "ISO 13485 4.2.4; 21 CFR 11.10(a), 11.70"
 status = "implemented"
 
