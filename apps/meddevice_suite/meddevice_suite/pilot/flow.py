@@ -44,10 +44,8 @@ def as_job(profile: str) -> Iterator[None]:
 	allowed only on a pilot site and in tests, never on a working or production site."""
 	if not frappe.in_test:
 		refuse_unless_pilot_site()
-	previous = frappe.session.user
-	frappe.set_user(
-		demo_user_email(profile)
-	)  # nosemgrep: frappe-setuser - pilot and tests only, checked above
+	previous, job_user = frappe.session.user, demo_user_email(profile)
+	frappe.set_user(job_user)  # nosemgrep: frappe-setuser - pilot and tests only, checked above
 	try:
 		yield
 	finally:
