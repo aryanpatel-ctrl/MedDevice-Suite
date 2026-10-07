@@ -8,9 +8,9 @@ D1 marks two approval points that exist before any quality module is built:
   Purchase Order.
 
 Each becomes a Frappe workflow in which the approver's action submits the
-record. The approver roles are proposals pending the client (requirement
-baseline, question 3), as is approval of every record rather than above an
-amount. The rules Frappe's workflow alone does not enforce are enforced in
+record. Management approves, and every record needs approval rather than only
+those above an amount, as D1 draws it: decided on the client's instruction of
+2026-10-07. The rules Frappe's workflow alone does not enforce are enforced in
 `compliance/approvals.py`.
 """
 

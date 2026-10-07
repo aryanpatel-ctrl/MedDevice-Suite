@@ -8,8 +8,8 @@ archive export of module 54 copies them out for safekeeping.
 ISO 13485 4.2.5 requires records to be kept for at least the lifetime of the
 device and never less than two years from its release; EU MDR Article 10(8)
 requires ten years. Ten years therefore covers a catheter or urine bag with a
-shelf life of up to eight years. The periods are proposals until the client's QA
-confirms the device lifetime (requirement baseline, question 10).
+shelf life of up to eight years: decided on the client's instruction of
+2026-10-07.
 
 Frappe clears its own login history (Activity Log) after 90 days. Login, logout,
 failed-login and impersonation records show who had access to the records, so

@@ -445,7 +445,7 @@ status = "implemented"
 id = "URS-CMP-014"
 module = 47
 title = "Each person is given a job profile that grants exactly the roles that job needs; the job profiles and the roles in them are declared in code and applied on every site."
-source = "D2 Role Based Access (RBAC); 21 CFR 11.10(d); design approved 2026-10-06; job names pending client (baseline question 3)"
+source = "D2 Role Based Access (RBAC); 21 CFR 11.10(d); design approved 2026-10-06; jobs decided on the client's instruction of 2026-10-07"
 status = "implemented"
 
 [[requirement]]
@@ -481,14 +481,14 @@ status = "implemented"
 id = "URS-CMP-019"
 module = 48
 title = "A quotation can be sent to the customer only after internal price approval; the approver approves it or returns it for revision."
-source = "D1 Internal Price Approval? / Revise - Re-estimate; approver and threshold pending client (baseline question 3)"
+source = "D1 Internal Price Approval? / Revise - Re-estimate; Management approves every quotation, decided on the client's instruction of 2026-10-07"
 status = "implemented"
 
 [[requirement]]
 id = "URS-CMP-020"
 module = 48
 title = "A purchase order is issued only after purchase approval; the approver approves it or returns it for revision, and only the approver cancels it."
-source = "D1 Purchase Approval? / Revise; approver and threshold pending client (baseline question 3)"
+source = "D1 Purchase Approval? / Revise; Management approves every purchase order, decided on the client's instruction of 2026-10-07"
 status = "implemented"
 
 [[requirement]]
@@ -510,7 +510,7 @@ status = "implemented"
 id = "URS-CMP-023"
 module = 54
 title = "Every regulated record type, the audit trail, the electronic signatures and the login history have a declared retention period of at least ten years with its legal basis, which QA can view in the system."
-source = "D3 Retention & Archival; ISO 13485 4.2.5; EU MDR Art. 10(8); periods pending client QA (baseline question 10)"
+source = "D3 Retention & Archival; ISO 13485 4.2.5; EU MDR Art. 10(8); 10 years decided on the client's instruction of 2026-10-07"
 status = "implemented"
 
 [[requirement]]
@@ -539,7 +539,7 @@ status = "implemented"
 id = "URS-CMP-027"
 module = 51
 title = "Stores and QA are alerted 30 days before a lot with stock remaining expires, and again on the day it expires; lots with no stock and disabled lots raise no alert."
-source = "D2 Alerts & Notifications; module 51 lot expiry; lead time pending client (baseline question 11)"
+source = "D2 Alerts & Notifications; module 51 lot expiry; 30 days decided on the client's instruction of 2026-10-07"
 status = "implemented"
 
 [[requirement]]
