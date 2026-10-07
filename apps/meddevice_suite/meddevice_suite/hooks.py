@@ -45,6 +45,7 @@ doc_events = {
 		"on_trash": "meddevice_suite.setup.workflows.protect",
 	},
 	"Batch": {"validate": "meddevice_suite.compliance.alerts.reset_expiry_alert"},
+	"File": {"before_validate": "meddevice_suite.compliance.evidence_files.protect"},
 	"User": {"validate": "meddevice_suite.setup.roles.separate_administration"},
 }
 
@@ -59,10 +60,14 @@ ignore_links_on_delete = ["Audit Event"]
 jinja = {"methods": ["meddevice_suite.compliance.signing.signatures_for_print"]}
 
 # Document control (module 30): outside QA, only effective revisions are visible.
+# Evidence files (an approved document's, an archive's) cannot be changed or deleted.
 permission_query_conditions = {
 	"Document Revision": "meddevice_suite.qms.document_control.revision_query_conditions",
 }
-has_permission = {"Document Revision": "meddevice_suite.qms.document_control.revision_has_permission"}
+has_permission = {
+	"Document Revision": "meddevice_suite.qms.document_control.revision_has_permission",
+	"File": "meddevice_suite.compliance.evidence_files.has_permission",
+}
 
 scheduler_events = {
 	"daily": [

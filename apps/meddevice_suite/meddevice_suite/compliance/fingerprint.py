@@ -7,6 +7,8 @@ always gives the same fingerprint and any change gives a different one.
 import hashlib
 import json
 
+import frappe
+from frappe import _
 from frappe.model.document import Document
 
 # Fields that change without the record's content changing.
@@ -33,3 +35,16 @@ def without_volatile_fields(value):
 def sha256(value) -> str:
 	canonical = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str, ensure_ascii=False)
 	return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def plain_text(value: str | None) -> str | None:
+	"""A reason or comment that goes into a fingerprint, refused if Frappe would rewrite it.
+
+	Frappe strips anything that looks like HTML from a text field when it is stored, after
+	the fingerprint is taken: "from <L-001> to <L-002>" would be stored as "from  to ",
+	losing what the person wrote and breaking the fingerprint. Refusing < and > keeps every
+	reason exactly as written.
+	"""
+	if value and ("<" in value or ">" in value):
+		frappe.throw(_("Write the reason without the characters < and >."))
+	return value

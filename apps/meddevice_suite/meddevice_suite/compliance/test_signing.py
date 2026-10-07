@@ -3,7 +3,7 @@ from unittest.mock import patch
 import frappe
 from frappe.utils import get_fullname
 
-from meddevice_suite.compliance.esign import sign
+from meddevice_suite.compliance.esign import SigningRefused, is_unchanged_since, sign, verify_signatures
 from meddevice_suite.compliance.signing import (
 	SignedAct,
 	onload,
@@ -63,9 +63,23 @@ class TestSigningDialog(SigningTestCase):
 		self.assertEqual(self.signatures(), [])
 
 	def test_a_wrong_password_records_nothing(self):
-		with self.assertRaises(frappe.AuthenticationError):
+		with self.assertRaises(SigningRefused):
 			sign_action(AUDITED, self.doc.name, "Approve", "not my password")
 		self.assertEqual(self.signatures(), [])
+
+	def test_signing_is_accepted_only_as_a_post_request(self):
+		# A GET can be triggered by a link or an image; a signature never may be.
+		self.assertEqual(frappe.allowed_http_methods_for_whitelisted_func[sign_action], ["POST"])
+
+	def test_a_renamed_record_keeps_verifiable_signatures(self):
+		sign_action(AUDITED, self.doc.name, "Approve", PASSWORD)
+		signature = frappe.get_last_doc("Electronic Signature", filters={"reference_name": self.doc.name})
+
+		frappe.set_user("Administrator")
+		renamed = frappe.rename_doc(AUDITED, self.doc.name, f"{self.doc.name}-R")
+
+		self.assertTrue(verify_signatures(AUDITED, renamed))
+		self.assertTrue(is_unchanged_since(frappe.get_doc("Electronic Signature", signature.name)))
 
 	def test_someone_who_cannot_open_the_record_cannot_sign_it(self):
 		frappe.set_user(VIEWER)

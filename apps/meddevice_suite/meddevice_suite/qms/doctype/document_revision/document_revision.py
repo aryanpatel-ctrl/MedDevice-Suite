@@ -5,11 +5,13 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
-from meddevice_suite.qms.document_control import IN_PROGRESS, is_qa
+from meddevice_suite.qms.document_control import IN_PROGRESS, is_qa, lock_document
 
 # What the author may change while the revision is a draft; everything else is
 # set by document control as the revision moves through its life.
 AUTHOR_FIELDS = ("file", "summary_of_change", "reviewer")
+# Set only by the signed acts; whatever a new revision arrives with is discarded.
+SET_BY_DOCUMENT_CONTROL = ("file_sha256", "approver", "effective_date", "superseded_by")
 
 
 class DocumentRevision(Document):
@@ -21,6 +23,7 @@ class DocumentRevision(Document):
 		self.name = f"{self.controlled_document}-REV-{self.revision}"
 
 	def before_insert(self):
+		lock_document(self.controlled_document)
 		document = frappe.get_doc("Controlled Document", self.controlled_document)
 		if document.status == "Obsolete":
 			frappe.throw(_("{0} has been withdrawn; it cannot be revised.").format(document.name))
@@ -35,6 +38,8 @@ class DocumentRevision(Document):
 			frappe.throw(_("{0} already has a revision in progress.").format(document.name))
 		self.author = frappe.session.user
 		self.status = "Draft"
+		for field in SET_BY_DOCUMENT_CONTROL:
+			self.set(field, None)
 
 	def validate(self):
 		if self.is_new() or self.flags.document_control:
@@ -55,6 +60,20 @@ class DocumentRevision(Document):
 				_("Revision {0} is {1}; it can no longer be changed this way.").format(
 					self.name, _(self.status)
 				),
+				frappe.PermissionError,
+			)
+
+	def before_submit(self):
+		self.only_by_document_control()
+
+	def before_update_after_submit(self):
+		self.only_by_document_control()
+
+	def only_by_document_control(self):
+		# Frappe's Submit button and the API would otherwise approve or change a revision unsigned.
+		if not self.flags.document_control:
+			frappe.throw(
+				_("Revision {0} is approved and moved on only by signing it.").format(self.name),
 				frappe.PermissionError,
 			)
 

@@ -9,6 +9,17 @@ itself is allowed:
 accounts (11.100), records name, time and meaning (11.50), and binds the
 signature to the record's exact content and to the record's previous signature
 (11.70). `verify_signatures` and `is_unchanged_since` detect tampering later.
+
+A wrong password counts towards the account lockout like a failed login, and is
+written to the login history by a background job, so it stays on record although
+the refused request is rolled back (11.300(d)). It does not end the session:
+Frappe signs a user out on its own authentication error, which a mistyped
+signing password must not do.
+
+The content a signature binds is what the person signed. Fields the system keeps
+up to date as the record's life moves on (its status, links to later records) are
+left out, as is the record's name, which a rename may change; the audit trail
+records every one of those changes.
 """
 
 import frappe
@@ -18,12 +29,22 @@ from frappe.model.document import Document
 from frappe.utils import get_datetime, get_fullname, now_datetime
 from frappe.utils.password import check_password
 
-from meddevice_suite.compliance.fingerprint import record_content, sha256
+from meddevice_suite.compliance.fingerprint import plain_text, record_content, sha256
 
 MEANINGS = ("Authored", "Reviewed", "Approved", "Rejected", "Released", "Verified")
 
 # Accounts that do not identify one person (21 CFR 11.100(a)).
 SHARED_ACCOUNTS = ("Administrator", "Guest")
+
+# record type -> fields the system maintains after signing, outside what a signature binds.
+SYSTEM_MAINTAINED: dict[str, tuple[str, ...]] = {
+	"Document Revision": ("status", "docstatus", "superseded_by"),
+	"Controlled Document": ("status", "current_revision", "effective_since", "next_review_date"),
+}
+
+
+class SigningRefused(frappe.ValidationError):
+	"""The signature was not recorded. Not an authentication error, which would sign the user out."""
 
 
 def sign(
@@ -43,13 +64,17 @@ def sign(
 		frappe.throw(
 			_("Sign in with your own account to sign; shared accounts cannot sign."), frappe.PermissionError
 		)
+	# Frappe's password check does not look at the account, and a session outlives disabling it.
+	if not frappe.db.get_value("User", user, "enabled"):
+		frappe.throw(_("Your account is disabled; it cannot sign."), frappe.PermissionError)
 	if meaning not in MEANINGS:
 		frappe.throw(_("Unknown signature meaning: {0}").format(meaning))
 	if not action:
 		frappe.throw(_("A signature needs the action being signed."))
+	plain_text(reason)
 
 	doc.check_permission(permission)
-	authenticate(user, password)
+	authenticate(user, password, doc, action)
 
 	# Serialises signings of the same record, so each one chains to the one before.
 	frappe.db.get_value(doc.doctype, doc.name, "name", for_update=True)
@@ -77,15 +102,39 @@ def sign(
 	return signature
 
 
-def authenticate(user: str, password: str) -> None:
+def authenticate(user: str, password: str, doc: Document, action: str) -> None:
 	"""Check the signer's password, counting failures towards the login lockout (11.300(d))."""
 	tracker = get_login_attempt_tracker(user)  # raises if the account is locked
 	try:
 		check_password(user, password, delete_tracker_cache=False)
 	except frappe.AuthenticationError:
 		tracker.add_failure_attempt()
-		frappe.throw(_("Incorrect password. The signature was not recorded."), frappe.AuthenticationError)
+		frappe.enqueue(
+			record_failed_signing,
+			queue="short",
+			# Run in its own transaction, not this request's, which is rolled back.
+			now=frappe.in_test,
+			user=user,
+			doctype=doc.doctype,
+			name=doc.name,
+			action=action,
+		)
+		frappe.throw(_("Incorrect password. The signature was not recorded."), SigningRefused)
 	tracker.add_success_attempt()
+
+
+def record_failed_signing(user: str, doctype: str, name: str, action: str) -> None:
+	frappe.get_doc(
+		{
+			"doctype": "Activity Log",
+			"user": user,
+			"operation": "Login",
+			"status": "Failed",
+			# The record is named in the subject: Frappe marks a log that links a record as
+			# "Linked" instead of "Failed", which would hide the failure.
+			"subject": f"Electronic signature refused, wrong password: {action} on {doctype} {name}",
+		}
+	).insert(ignore_permissions=True, ignore_links=True)  # login history is written by the system
 
 
 def last_signature(doctype: str, name: str) -> frappe._dict | None:
@@ -100,8 +149,16 @@ def last_signature(doctype: str, name: str) -> frappe._dict | None:
 
 
 def record_fingerprint(doc: Document) -> str:
-	"""SHA-256 of the record's content, child rows included, ignoring bookkeeping fields."""
-	return sha256(record_content(doc))
+	"""SHA-256 of the content a signature binds, child rows included (see the module docstring)."""
+	content = record_content(doc)
+	for field in ("name", *SYSTEM_MAINTAINED.get(doc.doctype, ())):
+		content.pop(field, None)
+	for rows in content.values():
+		if isinstance(rows, list):
+			for row in rows:
+				if isinstance(row, dict):
+					row.pop("parent", None)
+	return sha256(content)
 
 
 def signature_fingerprint(signature: Document, previous_hash: str) -> str:

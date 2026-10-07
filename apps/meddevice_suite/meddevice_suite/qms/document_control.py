@@ -9,12 +9,15 @@ author, then moves on only through signed acts (21 CFR Part 11):
 	                                                       Effective ──next revision──▶ Superseded
 	                       a withdrawn document's revisions become Obsolete
 
-- the reviewer is never the author, and QA approves, never the author;
+- the reviewer is never the author, and QA approves, never the author or the reviewer;
 - the document file is fingerprinted when it is authored, and approval is refused
   if it has changed since;
 - outside QA, people see only effective revisions, and the drafts they author or
   review, so a superseded or withdrawn revision is not used by mistake;
-- nothing is ever deleted; a document is withdrawn, with a signature and a reason.
+- nothing is ever deleted; a document is withdrawn, with a signature and a reason;
+- a revision is submitted and changed after submission only by these acts, never
+  by Frappe's own Submit or an API call; its file cannot be deleted, made public
+  or replaced once it is fingerprinted (`compliance.evidence_files`).
 
 The signed acts are registered in `compliance.signing.SIGNING_ACTIONS`.
 """
@@ -91,6 +94,9 @@ def approve(doc: Document, password: str, reason: str | None = None) -> None:
 	require(is_qa(), _("Only QA can approve a document revision."), frappe.PermissionError)
 	require(frappe.session.user != doc.author, _("The author of {0} cannot approve it.").format(doc.name))
 	require(
+		frappe.session.user != doc.reviewer, _("The reviewer of {0} cannot also approve it.").format(doc.name)
+	)
+	require(
 		file_fingerprint(doc.file) == doc.file_sha256,
 		_("The document file has changed since it was signed by its author; it must be authored again."),
 	)
@@ -106,6 +112,8 @@ def approve(doc: Document, password: str, reason: str | None = None) -> None:
 
 def withdraw(document: Document, password: str, reason: str | None = None) -> None:
 	require(is_qa(), _("Only QA can withdraw a controlled document."), frappe.PermissionError)
+	# Held until the request ends, so no revision can be started while the check below holds.
+	lock_document(document.name)
 	require(document.status != "Obsolete", _("{0} has already been withdrawn.").format(document.name))
 	require(reason, _("Say why the document is withdrawn."))
 	require(
@@ -116,10 +124,10 @@ def withdraw(document: Document, password: str, reason: str | None = None) -> No
 	)
 	document.status = "Obsolete"
 	document.withdrawn_reason = reason
+	document.next_review_date = None
 	sign(document, "Approved", "Withdraw", password, reason)
 	if document.current_revision:
 		frappe.get_doc("Document Revision", document.current_revision).db_set("status", "Obsolete")
-	document.next_review_date = None
 	save(document)
 
 
@@ -129,16 +137,26 @@ def withdraw(document: Document, password: str, reason: str | None = None) -> No
 def make_effective(revision_name: str) -> None:
 	"""The revision takes effect, and the one it replaces is superseded."""
 	revision = frappe.get_doc("Document Revision", revision_name)
+	lock_document(revision.controlled_document)
 	document = frappe.get_doc("Controlled Document", revision.controlled_document)
-	if document.current_revision and document.current_revision != revision.name:
-		frappe.get_doc("Document Revision", document.current_revision).db_set(
+	require(revision.status == "Approved", _("Only an approved revision can take effect."))
+	require(
+		document.status != "Obsolete",
+		_("{0} has been withdrawn; {1} cannot take effect.").format(document.name, revision.name),
+	)
+	for previous in frappe.get_all(
+		"Document Revision",
+		filters={"controlled_document": document.name, "status": "Effective", "name": ["!=", revision.name]},
+		pluck="name",
+	):
+		frappe.get_doc("Document Revision", previous).db_set(
 			{"status": "Superseded", "superseded_by": revision.name}
 		)
 	revision.db_set("status", "Effective")
 	document.status = "Effective"
 	document.current_revision = revision.name
 	document.effective_since = revision.effective_date
-	document.next_review_date = add_years(revision.effective_date, document.review_period_years or 2)
+	document.next_review_date = add_years(revision.effective_date, document.review_period_years)
 	save(document)
 
 
@@ -190,13 +208,23 @@ def revision_has_permission(doc: Document, ptype: str | None = None, user: str |
 
 def file_fingerprint(file_url: str) -> str:
 	"""SHA-256 of an attached private file, read in chunks."""
-	file = frappe.get_doc("File", {"file_url": file_url})
+	name = frappe.db.get_value("File", {"file_url": file_url}, "name")
+	require(name, _("The document file {0} is missing; attach it again.").format(file_url))
+	file = frappe.get_doc("File", name)
 	require(file.is_private, _("Attach the document as a private file."))
+	path = Path(file.get_full_path())
+	require(path.is_file(), _("The document file {0} is missing; attach it again.").format(file.file_name))
 	digest = hashlib.sha256()
-	with Path(file.get_full_path()).open("rb") as handle:
+	with path.open("rb") as handle:
 		while chunk := handle.read(CHUNK):
 			digest.update(chunk)
 	return digest.hexdigest()
+
+
+def lock_document(name: str) -> None:
+	"""Row-lock a controlled document for the rest of the transaction, so that withdrawing it,
+	starting a revision and a revision taking effect never run at the same time."""
+	frappe.db.get_value("Controlled Document", name, "name", for_update=True)
 
 
 def save(doc: Document) -> None:

@@ -23,6 +23,7 @@ from frappe import _
 from frappe.model.document import Document
 
 from meddevice_suite.compliance.audit_scope import is_regulated
+from meddevice_suite.compliance.fingerprint import plain_text
 
 # Audit action -> the action a reason is staged for
 STAGED_ACTION = {"Cancelled": "cancel", "Amended": "amend", "Updated after submission": "update_after_submit"}
@@ -152,7 +153,7 @@ def clean(reason: str | None) -> str:
 		frappe.throw(_("Enter a reason."), title=_("Reason required"))
 	if len(reason) > MAX_LENGTH:
 		frappe.throw(_("Keep the reason within {0} characters.").format(MAX_LENGTH))
-	return reason
+	return plain_text(reason)
 
 
 def verb(action: str) -> str:
