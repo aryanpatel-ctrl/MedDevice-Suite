@@ -4,15 +4,23 @@ from pathlib import Path
 from unittest.mock import patch
 
 import frappe
+from frappe.desk.desk_views import DeskViews
+from frappe.desk.desktop import Workspace, get_desktop_page
+from frappe.permissions import get_doctypes_with_read
 from frappe.tests import IntegrationTestCase
 
 from meddevice_suite.qa import verifies
 from meddevice_suite.setup.desk import (
+	DESK_AREAS,
 	DESKTOP_ICONS_SHOWN,
 	apply_desk_configuration,
 	enforce_declared_visibility,
+	getpage,
 	set_desktop_icon_visibility,
 )
+from meddevice_suite.setup.install import apply_configuration
+from meddevice_suite.setup.roles import JOB_PROFILES
+from meddevice_suite.setup.test_roles import user_with_profile
 
 
 def is_visible(label: str) -> bool:
@@ -156,3 +164,96 @@ class TestSavedDesktopLayouts(IntegrationTestCase):
 		for layout in (None, "", "{}", "[]", "not json", '[1, {"label": "Stock", "hidden": 0}]'):
 			with self.subTest(layout=layout):
 				self.assertIsNone(enforce_declared_visibility(layout))
+
+
+@verifies("URS-PLT-008")
+class TestEachJobsDesk(IntegrationTestCase):
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		apply_configuration()
+
+	def tearDown(self):
+		frappe.set_user("Administrator")
+
+	def test_every_area_shown_says_which_jobs_work_in_it(self):
+		self.assertEqual(set(DESK_AREAS), set(DESKTOP_ICONS_SHOWN))
+		for area, roles in DESK_AREAS.items():
+			with self.subTest(area=area):
+				self.assertEqual({role for role in roles if not frappe.db.exists("Role", role)}, set())
+
+	def test_each_job_sees_only_the_areas_of_its_work(self):
+		for profile, roles in JOB_PROFILES.items():
+			frappe.set_user(user_with_profile(profile))
+			for area, area_roles in DESK_AREAS.items():
+				if not frappe.db.exists("Workspace", area):
+					continue
+				with self.subTest(profile=profile, area=area):
+					self.assertEqual(can_open(area), bool(set(roles) & set(area_roles)))
+
+	def test_everything_in_a_jobs_areas_opens_for_that_job(self):
+		# Frappe shows a System Manager every chart, whether or not they may run its report;
+		# for everyone, a chart, card or link they cannot open would greet them with an error.
+		for profile, roles in JOB_PROFILES.items():
+			user = user_with_profile(profile)
+			frappe.set_user(user)
+			reports = set(DeskViews.get_allowed_report_names(user=user))
+			readable = set(get_doctypes_with_read())
+			for area, area_roles in DESK_AREAS.items():
+				if not (set(roles) & set(area_roles)) or not frappe.db.exists("Workspace", area):
+					continue
+				page = get_desktop_page(json.dumps({"name": area, "title": area, "public": 1}))
+				for target in workspace_targets(page):
+					with self.subTest(profile=profile, area=area, target=target):
+						kind, name = target
+						self.assertIn(name, reports if kind == "Report" else readable)
+
+	def test_a_record_type_one_may_not_open_is_refused_plainly(self):
+		frappe.set_user(user_with_profile("Sales"))
+
+		with self.assertRaisesRegex(frappe.PermissionError, "not permitted to open Stock Entry"):
+			getpage("stock-entry")
+
+	def test_a_guest_gets_frappes_own_answer(self):
+		frappe.set_user("Guest")
+
+		with self.assertRaises(frappe.DoesNotExistError):
+			getpage("stock-entry")
+
+	def test_real_pages_still_load(self):
+		frappe.set_user(user_with_profile("Sales"))
+		getpage("print")
+
+
+def can_open(area: str) -> bool:
+	"""Whether the session user may open an area's page; Frappe refuses some outright."""
+	try:
+		return bool(Workspace({"name": area, "title": area, "public": 1}).is_permitted())
+	except frappe.PermissionError:
+		return False
+
+
+def workspace_targets(page: dict) -> set[tuple[str, str]]:
+	"""What each chart, number card, shortcut and link of an area needs: a report or a record type."""
+	targets = set()
+	for row in page["charts"]["items"]:
+		chart = frappe.get_doc("Dashboard Chart", row.chart_name)
+		targets.add(
+			("Report", chart.report_name)
+			if chart.chart_type == "Report"
+			else ("DocType", chart.document_type)
+		)
+	for row in page["number_cards"]["items"]:
+		card = frappe.get_doc("Number Card", row.number_card_name)
+		targets.add(
+			("Report", card.report_name) if card.type == "Report" else ("DocType", card.document_type)
+		)
+	links = [
+		*page["shortcuts"]["items"],
+		*(link for card in page["cards"]["items"] for link in card.get("links", [])),
+	]
+	for link in links:
+		kind, name = link.get("link_type") or link.get("type"), link.get("link_to")
+		if kind in ("DocType", "Report") and name:
+			targets.add((kind, name))
+	return {(kind, name) for kind, name in targets if name}

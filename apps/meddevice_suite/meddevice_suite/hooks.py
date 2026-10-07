@@ -88,3 +88,7 @@ scheduler_events = {
 		"meddevice_suite.qms.document_control.make_due_revisions_effective",
 	],
 }
+
+# The desk's page loader, so that opening a record type one may not read says so plainly
+# instead of reporting a missing permission on "document Page" (setup/desk.py).
+override_whitelisted_methods = {"frappe.desk.desk_page.getpage": "meddevice_suite.setup.desk.getpage"}
