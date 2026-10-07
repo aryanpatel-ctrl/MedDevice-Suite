@@ -75,6 +75,7 @@ has_permission = {
 scheduler_events = {
 	"daily": [
 		"meddevice_suite.compliance.alerts.send_expiry_alerts",
+		"meddevice_suite.compliance.archive.fail_stalled_archives",
 		"meddevice_suite.qms.document_control.make_due_revisions_effective",
 	],
 }

@@ -92,20 +92,16 @@ def on_change(doc: Document, method: str | None = None) -> None:
 	in_save = (doc.doctype, doc.name) in frappe.flags.currently_saving
 	# A db_set outside a save writes only its own fields; the object may hold other edits that
 	# were never saved, so what is stored is compared, not the object.
-	current = doc
-	if set_by_code and not in_save and not doc.flags.get("audit_creation_pending"):
-		if not frappe.db.exists(doc.doctype, doc.name):
-			return  # code writing to a record that was never inserted: nothing was stored
-		current = frappe.get_doc(doc.doctype, doc.name)
+	if before is None and not doc.flags.get("audit_creation_pending"):
+		# Every insert is marked by before_insert, and every save of a stored record loads it,
+		# so this is code writing to a record that was never inserted: nothing was stored.
+		return
+	current = frappe.get_doc(doc.doctype, doc.name) if set_by_code and not in_save else doc
 
 	if doc.flags.pop("audit_creation_pending", False):
 		action, changes = creation_event(doc)
 	elif last and (last.before is before or (set_by_code and not in_save)):
 		action, changes = "Updated", differences(last.state, current)
-	elif before is None:
-		# Every insert is marked by before_insert, and every save of a stored record loads it,
-		# so this is code writing to a record that was never inserted: nothing was stored.
-		return
 	elif set_by_code and not in_save:
 		action, changes = "Updated", differences(before, current)
 	else:

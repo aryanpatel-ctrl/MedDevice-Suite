@@ -9,7 +9,17 @@ import frappe
 from frappe.tests import IntegrationTestCase
 from frappe.utils import add_days, add_years, now_datetime, today
 
-from meddevice_suite.compliance.archive import INDEX, LOGINS, MANIFEST, verify
+from meddevice_suite.compliance.archive import (
+	INDEX,
+	LOGINS,
+	MANIFEST,
+	archived_doctypes,
+	build_archive,
+	fail_stalled_archives,
+	file_name,
+	verify,
+)
+from meddevice_suite.compliance.audit_scope import REGULATED_DOCTYPES
 from meddevice_suite.qa import verifies
 from meddevice_suite.setup.roles import apply_roles
 from meddevice_suite.setup.test_roles import user_with_profile
@@ -228,3 +238,169 @@ class TestArchiveRequests(ArchiveTestCase):
 
 		self.assertEqual(archive.status, "Failed")
 		self.assertIn("Disk full", archive.error)
+
+
+@verifies("URS-CMP-025")
+class TestArchiveAtScale(ArchiveTestCase):
+	def test_the_archive_is_stored_once_and_not_limited_by_the_upload_size(self):
+		new_supplier(f"MDS Archive Supplier {frappe.generate_hash(length=6)}")
+		# Frappe's upload limit, far below any real archive.
+		with patch("frappe.core.api.file.get_max_file_size", return_value=1):
+			archive = archive_of()
+		archive.reload()
+
+		self.assertEqual(archive.status, "Completed")
+		self.assertEqual(Path(archive.archive_file).name, f"{archive.name}.zip")
+		stored = list(Path(frappe.get_site_path("private", "files")).glob(f"{archive.name}*"))
+		self.assertEqual([path.name for path in stored], [f"{archive.name}.zip"])
+		self.assertEqual(frappe.db.count("File", {"attached_to_name": archive.name}), 1)
+
+	def test_every_archived_record_type_is_read_through_an_index(self):
+		for doctype in archived_doctypes():
+			if frappe.get_meta(doctype).issingle:
+				continue
+			indexed = {
+				row.Column_name for row in frappe.db.sql(f"SHOW INDEX FROM `tab{doctype}`", as_dict=True)
+			}
+			with self.subTest(doctype=doctype):
+				self.assertIn("modified", indexed)
+
+	def test_records_deleted_in_the_period_are_archived_with_their_history(self):
+		supplier = new_supplier(f"MDS Deleted Supplier {frappe.generate_hash(length=6)}")
+		frappe.delete_doc("Supplier", supplier.name)
+
+		archive = archive_of()
+		archive.reload()
+
+		rows = [row for row in read_index(archive_path(archive)) if row["name"] == supplier.name]
+		self.assertEqual([row["docstatus"] for row in rows], ["deleted"])
+		with zipfile.ZipFile(archive_path(archive)) as zipped:
+			content = json.loads(zipped.read(rows[0]["file"]))
+		self.assertEqual(content["record"]["supplier_name"], supplier.supplier_name)
+		self.assertEqual([event["action"] for event in content["audit_events"]], ["Created", "Deleted"])
+		self.assertEqual(verify(archive.name), [])
+
+	def test_many_deletions_are_read_page_by_page_and_other_record_types_left_out(self):
+		from meddevice_suite.compliance.test_audit import AUDITED, ensure_audited_doctype
+
+		ensure_audited_doctype()
+		suppliers = [
+			new_supplier(f"MDS Deleted Supplier {frappe.generate_hash(length=6)}") for _n in range(3)
+		]
+		for supplier in suppliers:
+			frappe.delete_doc("Supplier", supplier.name)
+		# A regulated record type that no retention category archives.
+		with patch(
+			"meddevice_suite.compliance.audit_scope.REGULATED_DOCTYPES", REGULATED_DOCTYPES | {AUDITED}
+		):
+			other = frappe.get_doc({"doctype": AUDITED, "title": "Not archived"}).insert()
+			frappe.delete_doc(AUDITED, other.name)
+
+		with patch("meddevice_suite.compliance.archive.PAGE_SIZE", 1):
+			archive = archive_of()
+		archive.reload()
+
+		deleted = {row["name"] for row in read_index(archive_path(archive)) if row["docstatus"] == "deleted"}
+		self.assertTrue({supplier.name for supplier in suppliers} <= deleted)
+		self.assertNotIn(other.name, deleted)
+
+	def test_a_running_archive_is_committed_as_running_outside_tests(self):
+		with patch("meddevice_suite.compliance.archive.build_archive"):
+			archive = archive_of()
+
+		with (
+			patch.object(frappe, "in_test", False),
+			patch("frappe.db.commit") as commit,
+			patch("meddevice_suite.compliance.archive.write_archive", side_effect=OSError("stop")),
+		):
+			build_archive(archive.name)
+
+		commit.assert_called_once()
+
+	def test_record_names_become_file_names_any_system_opens(self):
+		self.assertEqual(file_name("SOP/QA\\001"), "SOP%2FQA%5C001")
+		self.assertEqual(file_name("CON"), "_CON")
+		self.assertEqual(file_name("lpt1.x"), "_lpt1.x")
+		long_names = [file_name("Katheter-" + "ü" * 200 + suffix) for suffix in ("A", "B")]
+		self.assertTrue(all(len(name) <= 120 for name in long_names))
+		self.assertNotEqual(*long_names)
+
+
+@verifies("URS-CMP-026")
+class TestArchiveIsProtectedAndRecoverable(ArchiveTestCase):
+	def setUp(self):
+		super().setUp()
+		new_supplier(f"MDS Archive Supplier {frappe.generate_hash(length=6)}")
+		self.archive = archive_of()
+		self.archive.reload()
+		self.path = archive_path(self.archive)
+
+	def test_the_archive_file_cannot_be_deleted_or_made_public(self):
+		file = frappe.db.get_value("File", {"file_url": self.archive.archive_file}, "name")
+		for profile in ("QA Manager", "System Administrator"):
+			frappe.set_user(user_with_profile(profile))
+			with self.subTest(profile=profile, action="delete"), self.assertRaises(frappe.PermissionError):
+				frappe.delete_doc("File", file)
+			with self.subTest(profile=profile, action="public"), self.assertRaises(frappe.PermissionError):
+				frappe.client.set_value("File", file, "is_private", 0)
+
+		self.assertTrue(self.path.is_file())
+		self.assertEqual(verify(self.archive.name), [])
+
+	def test_damaged_compressed_data_is_reported_not_crashed_on(self):
+		with zipfile.ZipFile(self.path) as zipped:
+			entry = zipped.getinfo(read_index(self.path)[0]["file"])
+		data = bytearray(self.path.read_bytes())
+		start = entry.header_offset + 30 + len(entry.filename.encode()) + len(entry.extra)
+		for offset in range(start, start + min(entry.compress_size, 16)):
+			data[offset] ^= 0xFF
+		self.path.write_bytes(bytes(data))
+
+		problems = verify(self.archive.name)
+
+		self.assertIn("The archive file has changed since it was made.", problems)
+		self.assertTrue(any(entry.filename in problem for problem in problems))
+
+	def test_a_manifest_of_the_wrong_shape_is_reported(self):
+		rewrite(self.path, lambda entries: entries.__setitem__(MANIFEST, b'{"files": ["not", "a", "map"]}'))
+
+		self.assertIn("The archive file cannot be read.", verify(self.archive.name))
+
+	def test_a_large_archive_is_verified_in_the_background_and_the_requester_told(self):
+		with patch("meddevice_suite.compliance.archive.INLINE_VERIFY_BYTES", 0):
+			self.assertIsNone(verify(self.archive.name))
+
+		self.assertIn(
+			"verified",
+			frappe.get_all(
+				"Notification Log",
+				filters={"document_type": "Record Archive", "document_name": self.archive.name},
+				pluck="subject",
+			)[0],
+		)
+
+	def test_an_archive_whose_job_stopped_is_marked_failed(self):
+		with patch("meddevice_suite.compliance.archive.build_archive"):
+			stopped = archive_of()
+		frappe.db.set_value(
+			"Record Archive", stopped.name, "modified", add_days(now_datetime(), -1), update_modified=False
+		)
+		recent = None
+		with patch("meddevice_suite.compliance.archive.build_archive"):
+			recent = archive_of()
+
+		fail_stalled_archives()
+
+		self.assertEqual(frappe.db.get_value("Record Archive", stopped.name, "status"), "Failed")
+		self.assertEqual(frappe.db.get_value("Record Archive", recent.name, "status"), "Queued")
+		self.assertIn("fail_stalled_archives", str(frappe.get_hooks("scheduler_events")["daily"]))
+
+	def test_a_failed_archive_leaves_no_partial_file(self):
+		def fail_halfway(doc, path):
+			path.write_bytes(b"partial")
+			raise OSError("Disk full")
+
+		with patch("meddevice_suite.compliance.archive.write_archive", side_effect=fail_halfway):
+			failed = archive_of()
+
+		self.assertFalse(Path(frappe.get_site_path("private", "files", f"{failed.name}.zip")).exists())
