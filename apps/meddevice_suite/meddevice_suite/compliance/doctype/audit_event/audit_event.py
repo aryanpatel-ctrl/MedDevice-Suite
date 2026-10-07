@@ -27,3 +27,5 @@ def on_doctype_update():
 	frappe.db.add_index("Audit Event", ["reference_doctype", "reference_name", "event_at"])
 	frappe.db.add_index("Audit Event", ["user", "event_at"])
 	frappe.db.add_index("Audit Event", ["event_at"])
+	# The newest event of a record is the one no other event follows.
+	frappe.db.add_index("Audit Event", ["previous_event"])

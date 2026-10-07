@@ -8,6 +8,7 @@ from meddevice_suite.compliance.audit import verify_events
 from meddevice_suite.compliance.audit_reason import (
 	CANCEL_ALL_LINKED,
 	MAX_LENGTH,
+	reason_for,
 	requires_reason,
 	stage_reason,
 	staged_key,
@@ -244,6 +245,26 @@ class TestActionsCausedByAnother(ReasonTestCase):
 
 		with self.assertRaises(frappe.ValidationError):
 			unrelated.cancel()
+
+	def test_a_status_command_is_recorded_with_the_command_used(self):
+		doc = self.submitted_record()
+		self.enterContext(patch.dict(frappe.form_dict, {"cmd": "erpnext.example.update_status"}))
+
+		doc.db_set("remarks", "Closed")
+
+		self.assertEqual(
+			events_for(AUDITED, doc.name)[-1].changes["command"], "erpnext.example.update_status"
+		)
+
+	def test_a_failed_action_leaves_its_reason_to_no_other_record(self):
+		# As in a bulk cancel: the first record's cancellation takes its reason and then fails;
+		# the request carries on with the next record, which was given no reason.
+		failing, next_record = self.submitted_record(), self.submitted_record()
+		reason_for(because(failing), "Cancelled")
+
+		with self.assertRaises(frappe.ValidationError):
+			next_record.cancel()
+		self.assertEqual(frappe.db.get_value(AUDITED, next_record.name, "docstatus"), 1)
 
 	def test_cancel_all_linked_takes_the_reason_staged_for_the_record_being_cancelled(self):
 		doc, linked = self.submitted_record(), self.submitted_record()

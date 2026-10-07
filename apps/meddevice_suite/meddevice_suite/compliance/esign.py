@@ -29,7 +29,7 @@ from frappe.model.document import Document
 from frappe.utils import get_datetime, get_fullname, now_datetime
 from frappe.utils.password import check_password
 
-from meddevice_suite.compliance.fingerprint import plain_text, record_content, sha256
+from meddevice_suite.compliance.fingerprint import chain_head, plain_text, record_content, sha256
 
 MEANINGS = ("Authored", "Reviewed", "Approved", "Rejected", "Released", "Verified")
 
@@ -138,14 +138,7 @@ def record_failed_signing(user: str, doctype: str, name: str, action: str) -> No
 
 
 def last_signature(doctype: str, name: str) -> frappe._dict | None:
-	signatures = frappe.get_all(
-		"Electronic Signature",
-		filters={"reference_doctype": doctype, "reference_name": name},
-		fields=["name", "signature_hash"],
-		order_by="signed_at desc, creation desc",
-		limit=1,
-	)
-	return signatures[0] if signatures else None
+	return chain_head("Electronic Signature", "previous_signature", "signature_hash", (doctype, name))
 
 
 def record_fingerprint(doc: Document) -> str:

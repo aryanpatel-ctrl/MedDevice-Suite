@@ -46,7 +46,10 @@ doc_events = {
 	},
 	"Batch": {"validate": "meddevice_suite.compliance.alerts.reset_expiry_alert"},
 	"File": {"before_validate": "meddevice_suite.compliance.evidence_files.protect"},
-	"User": {"validate": "meddevice_suite.setup.roles.separate_administration"},
+	"User": {
+		"validate": "meddevice_suite.setup.roles.separate_administration",
+		"before_rename": "meddevice_suite.compliance.audit.keep_user_id",
+	},
 }
 
 # A regulated record's audit events in its form timeline, for users who may review them.

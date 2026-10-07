@@ -48,3 +48,30 @@ def plain_text(value: str | None) -> str | None:
 	if value and ("<" in value or ">" in value):
 		frappe.throw(_("Write the reason without the characters < and >."))
 	return value
+
+
+def chain_head(
+	doctype: str, link_field: str, hash_field: str, reference: tuple[str, str]
+) -> frappe._dict | None:
+	"""The newest entry of a record's chain: the one no other entry names as the one before it.
+
+	Found by the links rather than by time, which a clock change could reorder, and read with a
+	lock, so that two transactions adding to the same chain at once wait for each other and the
+	second sees the first's entry instead of an old snapshot.
+	"""
+	entry = frappe.qb.DocType(doctype)
+	successor = frappe.qb.DocType(doctype).as_("successor")
+	heads = (
+		frappe.qb.from_(entry)
+		.left_join(successor)
+		.on(successor[link_field] == entry.name)
+		.select(entry.name, entry[hash_field])
+		.where(entry.reference_doctype == reference[0])
+		.where(entry.reference_name == reference[1])
+		.where(successor.name.isnull())
+		.orderby(entry.creation, order=frappe.qb.desc)
+		.limit(1)
+		.for_update()
+		.run(as_dict=True)
+	)
+	return heads[0] if heads else None
