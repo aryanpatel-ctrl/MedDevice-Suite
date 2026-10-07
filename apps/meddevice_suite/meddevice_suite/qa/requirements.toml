@@ -422,8 +422,8 @@ status = "implemented"
 [[requirement]]
 id = "URS-CMP-011"
 module = 50
-title = "Cancelling or amending a regulated record, or changing it after submission, requires a reason, which is stored in the audit entry."
-source = "21 CFR 11.10(e); ISO 13485 4.2.5; design approved 2026-10-06"
+title = "Cancelling or amending a regulated record, or changing it by hand after submission, requires a reason, which is stored in the audit entry; when another record's action changes it after submission, its audit entry names that record instead."
+source = "21 CFR 11.10(e); ISO 13485 4.2.5; design approved 2026-10-06; changes caused by another record clarified 2026-10-07 (job cards update work orders)"
 status = "implemented"
 
 [[requirement]]
