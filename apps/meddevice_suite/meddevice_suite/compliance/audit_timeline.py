@@ -2,7 +2,8 @@
 
 Users allowed to review the audit trail see the record's latest audit events in
 its activity timeline, and an Audit Trail button that lists all of them, where
-they can be filtered and exported. Other users see the form as usual. Searching
+they can be filtered and exported, and a Verify Integrity button that checks the
+record's audit and signature chains. Other users see the form as usual. Searching
 across records by user, action and date range is the Audit Event list itself.
 """
 
@@ -12,8 +13,9 @@ from frappe.model.document import Document
 from frappe.model.meta import Meta
 from frappe.utils import escape_html, get_fullname, get_link_to_form
 
-from meddevice_suite.compliance.audit import as_data
+from meddevice_suite.compliance.audit import as_data, verify_events
 from meddevice_suite.compliance.audit_scope import is_regulated
+from meddevice_suite.compliance.esign import verify_signatures
 
 # The form loads quickly however long a record's history is; the button lists every event.
 TIMELINE_LIMIT = 50
@@ -24,6 +26,20 @@ VALUE_LENGTH = 80
 def onload(doc: Document, method: str | None = None) -> None:
 	if shows_audit_trail(doc.doctype):
 		doc.set_onload("audit_trail", True)
+
+
+@frappe.whitelist()
+def verify_record(doctype: str, name: str) -> dict:
+	"""For reviewers: whether the record's audit trail and signatures are intact (21 CFR 11.10(e))."""
+	if not shows_audit_trail(doctype):
+		frappe.throw(
+			_("You cannot review the audit trail of {0}.").format(_(doctype)), frappe.PermissionError
+		)
+	frappe.has_permission(doctype, "read", doc=name, throw=True)
+	return {
+		"audit_trail": verify_events(doctype, name),
+		"signatures_intact": verify_signatures(doctype, name),
+	}
 
 
 def timeline_content(doctype: str, docname: str) -> list[dict]:

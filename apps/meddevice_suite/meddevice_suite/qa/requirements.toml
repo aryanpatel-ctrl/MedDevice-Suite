@@ -422,15 +422,15 @@ status = "implemented"
 [[requirement]]
 id = "URS-CMP-010"
 module = 50
-title = "Each record's audit entries form a fingerprinted chain, so any altered, removed or inserted entry is detected by verification."
-source = "Data integrity (ALCOA+); 21 CFR 11.10(e); daily seal dropped by decision of 2026-10-06"
+title = "Each record's audit entries form a fingerprinted chain, so that an altered entry, and an entry removed or inserted before the newest, is detected by a verification that authorised reviewers can run on the record; the newest entries are protected by the rule that no entry is ever deleted, by access control and by the periodic archives."
+source = "Data integrity (ALCOA+); 21 CFR 11.10(e); daily seal dropped by decision of 2026-10-06; verification on the record and the wording on the newest entries after the robustness review of 2026-10-07"
 status = "implemented"
 
 [[requirement]]
 id = "URS-CMP-011"
 module = 50
-title = "Cancelling or amending a regulated record, or changing it by hand after submission, requires a reason, which is stored in the audit entry; when another record's action changes it after submission, its audit entry names that record instead."
-source = "21 CFR 11.10(e); ISO 13485 4.2.5; design approved 2026-10-06; changes caused by another record clarified 2026-10-07 (job cards update work orders)"
+title = "Cancelling or amending a regulated record, or editing it after submission, requires a reason, which is stored in the audit entry; when another record's action changes it after submission, its audit entry names that record instead; a status command run on a submitted record (close, hold, stop, re-open) is recorded with the command used."
+source = "21 CFR 11.10(e); ISO 13485 4.2.5; design approved 2026-10-06; changes caused by another record clarified 2026-10-07 (job cards update work orders); status commands scoped after the robustness review of 2026-10-07"
 status = "implemented"
 
 [[requirement]]

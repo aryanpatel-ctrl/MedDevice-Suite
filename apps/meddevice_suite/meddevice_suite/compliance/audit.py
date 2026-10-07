@@ -23,13 +23,17 @@ import json
 from copy import deepcopy
 
 import frappe
+from frappe import _
 from frappe.model import child_table_fields, no_value_fields, table_fields
 from frappe.model.document import Document
-from frappe.utils import get_datetime, now_datetime
+from frappe.utils import cint, flt, get_datetime, getdate, now_datetime, to_timedelta
 
 from meddevice_suite.compliance.audit_reason import STAGED_ACTION, action_finished, reason_for, reason_used
 from meddevice_suite.compliance.audit_scope import is_regulated
-from meddevice_suite.compliance.fingerprint import record_content, sha256
+from meddevice_suite.compliance.fingerprint import chain_head, record_content, sha256
+
+NUMBERS = frozenset({"Int", "Check", "Float", "Currency", "Percent"})
+COMPARED_AS_VALUES = NUMBERS | {"Date", "Datetime", "Time"}
 
 ACTION_FOR = {
 	"submit": "Submitted",
@@ -86,19 +90,30 @@ def on_change(doc: Document, method: str | None = None) -> None:
 	before = doc.get_doc_before_save()
 	last = doc.flags.audit_last_recorded
 	in_save = (doc.doctype, doc.name) in frappe.flags.currently_saving
+	# A db_set outside a save writes only its own fields; the object may hold other edits that
+	# were never saved, so what is stored is compared, not the object.
+	current = doc
+	if set_by_code and not in_save and not doc.flags.get("audit_creation_pending"):
+		if not frappe.db.exists(doc.doctype, doc.name):
+			return  # code writing to a record that was never inserted: nothing was stored
+		current = frappe.get_doc(doc.doctype, doc.name)
 
 	if doc.flags.pop("audit_creation_pending", False):
 		action, changes = creation_event(doc)
 	elif last and (last.before is before or (set_by_code and not in_save)):
-		action, changes = "Updated", differences(last.state, doc)
+		action, changes = "Updated", differences(last.state, current)
 	elif before is None:
 		# Every insert is marked by before_insert, and every save of a stored record loads it,
 		# so this is code writing to a record that was never inserted: nothing was stored.
 		return
 	elif set_by_code and not in_save:
-		action, changes = "Updated", differences(before, doc)
+		action, changes = "Updated", differences(before, current)
 	else:
 		action, changes = ACTION_FOR.get(getattr(doc, "_action", "save"), "Updated"), differences(before, doc)
+
+	if set_by_code and not in_save and changes and (command := frappe.form_dict.get("cmd")):
+		# A status command run on its own (Close, Hold, Stop, Re-open): which one was used.
+		changes["command"] = command
 
 	if action in STAGED_ACTION:
 		# Taken again here for actions that skipped their start hook (flags.ignore_validate).
@@ -109,7 +124,7 @@ def on_change(doc: Document, method: str | None = None) -> None:
 		reason_used(doc)
 	elif action != "Updated" or changes:
 		record(doc.doctype, doc.name, action, changes)
-	doc.flags.audit_last_recorded = frappe._dict(before=before, state=copy_of(doc))
+	doc.flags.audit_last_recorded = frappe._dict(before=before, state=copy_of(current))
 	if not set_by_code:  # the save's own final call
 		action_finished(doc)
 
@@ -137,6 +152,19 @@ def on_trash(doc: Document, method: str | None = None) -> None:
 def after_rename(doc: Document, method: str, old: str, new: str, merge: bool = False) -> None:
 	if should_audit(doc):
 		record(doc.doctype, new, "Renamed", {"old_name": old, "new_name": new, "merged": bool(merge)})
+
+
+def keep_user_id(doc: Document, method: str, old: str, new: str, merge: bool = False) -> None:
+	"""User before_rename: a user ID is permanent (21 CFR 11.300(b)). Renaming a user would rewrite
+	the user on every audit event and signature they made, which the chains would then report
+	as tampering; a person with a new address gets a new account."""
+	if not (frappe.flags.in_install or frappe.flags.in_migrate):
+		frappe.throw(
+			_(
+				"User IDs are permanent in the audit trail. Create a new account instead of renaming {0}."
+			).format(old),
+			frappe.PermissionError,
+		)
 
 
 def should_audit(doc: Document) -> bool:
@@ -169,7 +197,7 @@ def differences(before: Document, after: Document) -> dict:
 				if row_diff := field_changes(old_rows[name], new_rows[name], old_rows[name].meta.fields):
 					row_changed.append([df.fieldname, name, row_diff])
 		elif df.fieldtype not in no_value_fields and not same(
-			before.get(df.fieldname), after.get(df.fieldname)
+			before.get(df.fieldname), after.get(df.fieldname), df.fieldtype
 		):
 			changed.append([df.fieldname, before.get(df.fieldname), after.get(df.fieldname)])
 
@@ -187,7 +215,7 @@ def field_changes(before: Document, after: Document, fields) -> list:
 		for df in fields
 		if df.fieldtype not in no_value_fields
 		and df.fieldtype not in table_fields
-		and not same(before.get(df.fieldname), after.get(df.fieldname))
+		and not same(before.get(df.fieldname), after.get(df.fieldname), df.fieldtype)
 	]
 
 
@@ -195,9 +223,34 @@ def row_content(row: Document) -> dict:
 	return {key: value for key, value in record_content(row).items() if key not in child_table_fields}
 
 
-def same(old, new) -> bool:
-	"""Equal, treating an empty string and no value as the same stored value."""
-	return old == new or (old in (None, "") and new in (None, ""))
+def same(old, new, fieldtype: str | None = None) -> bool:
+	"""Equal as stored values. An empty string and no value are the same; dates, times and numbers
+	are compared as values, because the database returns a date where the desk and ERPNext set
+	the same date as text, and a time as "9:30:00" where they set "09:30:00"."""
+	if old == new or (old in (None, "") and new in (None, "")):
+		return True
+	# A number left blank is stored as 0; any other blank differs from a value.
+	if fieldtype not in COMPARED_AS_VALUES or (
+		fieldtype not in NUMBERS and (old in (None, "") or new in (None, ""))
+	):
+		return False
+	try:
+		return as_value(old, fieldtype) == as_value(new, fieldtype)
+	except (TypeError, ValueError, frappe.ValidationError):
+		return False  # a value that is not of its type is recorded as it is
+
+
+def as_value(value, fieldtype: str):
+	"""A value of a field type as one comparable form, whatever form code holds it in."""
+	if fieldtype == "Date":
+		return getdate(value)
+	if fieldtype == "Datetime":
+		return get_datetime(value)
+	if fieldtype == "Time":
+		return to_timedelta(str(value))
+	if fieldtype in ("Int", "Check"):
+		return cint(value)
+	return flt(value, 9)
 
 
 def record(doctype: str, name: str, action: str, changes: dict, reason: str | None = None) -> Document:
@@ -224,14 +277,7 @@ def record(doctype: str, name: str, action: str, changes: dict, reason: str | No
 
 
 def last_event(doctype: str, name: str) -> frappe._dict | None:
-	events = frappe.get_all(
-		"Audit Event",
-		filters={"reference_doctype": doctype, "reference_name": name},
-		fields=["name", "event_hash"],
-		order_by="event_at desc, creation desc",
-		limit=1,
-	)
-	return events[0] if events else None
+	return chain_head("Audit Event", "previous_event", "event_hash", (doctype, name))
 
 
 def event_fingerprint(event, previous_hash: str) -> str:

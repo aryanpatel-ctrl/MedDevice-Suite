@@ -4,7 +4,7 @@ from unittest.mock import patch
 import frappe
 from frappe.core.doctype.doctype.test_doctype import new_doctype
 from frappe.tests import IntegrationTestCase, UnitTestCase
-from frappe.utils import now_datetime, time_diff_in_seconds
+from frappe.utils import add_days, now_datetime, time_diff_in_seconds
 
 from meddevice_suite.compliance.audit import event_fingerprint, should_audit, verify_events
 from meddevice_suite.compliance.audit_scope import REGULATED_DOCTYPES, SELF_RECORDING, is_regulated
@@ -109,6 +109,37 @@ class TestEveryActionIsRecorded(AuditTestCase):
 			events_for(AUDITED, doc.name)[0].changes["snapshot"]["remarks"], "Set while validating"
 		)
 		self.assertEqual(verify_events(AUDITED, doc.name), [])
+
+	def test_edits_never_saved_are_not_recorded_when_code_writes_another_field(self):
+		doc = self.new_record()
+		doc.qty = 9  # never saved
+
+		doc.db_set("remarks", "Written by code")
+
+		self.assertEqual(
+			events_for(AUDITED, doc.name)[-1].changes, {"changed": [["remarks", None, "Written by code"]]}
+		)
+
+	def test_code_writing_to_a_record_that_was_never_saved_records_nothing(self):
+		doc = frappe.get_doc({"doctype": AUDITED, "title": "Never saved", "qty": 1})
+		doc.name = "never-saved"
+
+		doc.db_set("remarks", "Written by code")
+
+		self.assertEqual(events_for(AUDITED, "never-saved"), [])
+
+	def test_a_value_saved_again_in_another_form_is_not_a_change(self):
+		doc = self.new_record(qty=3)
+		doc.qty = "3"  # as text, the way a form or an import may send it
+		doc.save()
+
+		self.assertEqual(actions_for(doc), ["Created"])
+
+	def test_user_ids_are_permanent(self):
+		ensure_user(VIEWER, "Viewer", [])
+		with self.assertRaises(frappe.PermissionError):
+			frappe.rename_doc("User", VIEWER, "renamed.viewer@example.com")
+		self.assertTrue(frappe.db.exists("User", VIEWER))
 
 	def test_amendment(self):
 		doc = self.new_record()
@@ -379,6 +410,23 @@ class TestChain(AuditTestCase):
 
 		self.assertTrue(verify_events(AUDITED, self.doc.name))
 
+	def test_a_clock_set_back_does_not_break_the_chain(self):
+		# The newest event is found by the links, not by time.
+		with patch(
+			"meddevice_suite.compliance.audit.now_datetime", return_value=add_days(now_datetime(), -1)
+		):
+			self.doc.qty = 5
+			self.doc.save()
+
+		events = {event.name: event for event in events_for(AUDITED, self.doc.name)}
+		newest = [
+			event
+			for event in events.values()
+			if event.changes.get("changed", [[None, None, None]])[0][2] == 5
+		]
+		self.assertEqual(newest[0].previous_event, self.events[-1].name)
+		self.assertEqual(verify_events(AUDITED, self.doc.name), [])
+
 	def test_renaming_the_record_keeps_its_chain_verifiable(self):
 		new_name = frappe.rename_doc(AUDITED, self.doc.name, f"{self.doc.name}-renamed")
 
@@ -457,3 +505,33 @@ class TestReviewStaysFastAtScale(IntegrationTestCase):
 		):
 			with self.subTest(columns=columns):
 				self.assertIn(columns, indexes.values())
+
+
+@verifies("URS-CMP-008")
+class TestValuesComparedAsStored(UnitTestCase):
+	def test_dates_times_and_numbers_are_compared_as_values(self):
+		from datetime import date, datetime, timedelta
+
+		from meddevice_suite.compliance.audit import same
+
+		for old, new, fieldtype in (
+			(date(2026, 10, 7), "2026-10-07", "Date"),
+			(datetime(2026, 10, 7, 9, 30), "2026-10-07 09:30:00", "Datetime"),
+			(timedelta(hours=9, minutes=30), "09:30:00", "Time"),
+			(1, "1", "Int"),
+			(0, None, "Check"),
+			(0.1 + 0.2, 0.3, "Float"),
+			(None, "", "Data"),
+		):
+			with self.subTest(fieldtype=fieldtype):
+				self.assertTrue(same(old, new, fieldtype))
+		for old, new, fieldtype in (
+			(date(2026, 10, 7), "2026-10-08", "Date"),
+			(timedelta(hours=9), "09:30:00", "Time"),
+			(1.5, 1.25, "Float"),
+			(0, 1, "Check"),
+			(None, "0", "Data"),
+			("2026-10-07", "not a date", "Date"),
+		):
+			with self.subTest(fieldtype=fieldtype, old=old, new=new):
+				self.assertFalse(same(old, new, fieldtype))

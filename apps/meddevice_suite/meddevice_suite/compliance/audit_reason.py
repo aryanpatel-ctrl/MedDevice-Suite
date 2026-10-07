@@ -72,7 +72,12 @@ def reason_for(doc: Document, action: str) -> tuple[str | None, list[str] | None
 	name = doc.amended_from if action == "Amended" else doc.name
 	reason, caused_by = doc.flags.audit_reason or take_staged(staged_action, doc.doctype, name), None
 	if not reason:
-		cause = frappe.flags.audit_cause or linked_cancellation(action)
+		cause = frappe.flags.audit_cause
+		if cause and not saving(cause.doc):
+			# The action that gave the reason has ended, here only by failing: Frappe's bulk
+			# actions carry on with the next record after an error. Its reason explains nothing else.
+			cause = frappe.flags.audit_cause = None
+		cause = cause or linked_cancellation(action)
 		if cause:
 			source = cause.doc or cause
 			reason, caused_by = cause.reason, [source.doctype, source.name]
@@ -102,14 +107,25 @@ def saved_around(doc: Document) -> tuple[str, str] | None:
 	Frappe's own list of records being saved is not cleared when a save fails, so in a
 	request that carries on after an error (a bulk job) it would name a record whose save
 	has ended. The call stack only ever holds the saves that are really running."""
+	for outer in records_being_saved():
+		if (outer.doctype, outer.name) != (doc.doctype, doc.name):
+			return outer.doctype, outer.name
+	return None
+
+
+def saving(doc: Document) -> bool:
+	"""Whether this very record object's save, submit or cancel is still running."""
+	return any(outer is doc for outer in records_being_saved())
+
+
+def records_being_saved():
 	frame = sys._getframe(1)
 	while frame:
 		if frame.f_code.co_name in SAVE_STEPS:
 			outer = frame.f_locals.get("self")
-			if isinstance(outer, Document) and (outer.doctype, outer.name) != (doc.doctype, doc.name):
-				return outer.doctype, outer.name
+			if isinstance(outer, Document):
+				yield outer
 		frame = frame.f_back
-	return None
 
 
 def reason_used(doc: Document) -> None:

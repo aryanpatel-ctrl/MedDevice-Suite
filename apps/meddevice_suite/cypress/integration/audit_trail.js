@@ -156,4 +156,18 @@ context("Audit trail review", () => {
 			cy.get(".page-container:visible .list-row-container").should("have.length", 2);
 		});
 	});
+
+	it("[URS-CMP-010] verifies the record's audit trail and signatures on request", () => {
+		submitted_record("Lot UI-006").then((doc) => {
+			cy.visit(`${ROUTE}/${doc.name}`);
+			cy.get(
+				'.page-container:visible .inner-group-button[data-label="View"] button'
+			).click();
+			cy.get(
+				'.page-container:visible .dropdown-item[data-label="Verify%20Integrity"]'
+			).click();
+			cy.get(".modal:visible .modal-title").should("contain", "Integrity verified");
+			cy.get(".modal:visible .modal-body").should("contain", "are intact");
+		});
+	});
 });

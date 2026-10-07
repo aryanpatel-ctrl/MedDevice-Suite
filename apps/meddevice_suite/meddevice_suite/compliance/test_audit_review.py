@@ -4,7 +4,12 @@ import frappe
 from frappe.utils import add_days, today
 from frappe.utils.user import UserPermissions
 
-from meddevice_suite.compliance.audit_timeline import VALUE_LENGTH, change_lines, timeline_content
+from meddevice_suite.compliance.audit_timeline import (
+	VALUE_LENGTH,
+	change_lines,
+	timeline_content,
+	verify_record,
+)
 from meddevice_suite.compliance.test_audit import AUDITED, AuditTestCase, because
 from meddevice_suite.compliance.test_esign import SIGNER, VIEWER, ensure_user
 from meddevice_suite.qa import verifies
@@ -227,3 +232,30 @@ class TestQAReviewsTheEvidence(ReviewTestCase):
 		frappe.set_user(user_with_profile("QA Manager"))
 
 		self.assertEqual(len(timeline_content(AUDITED, doc.name)), 5)
+
+
+@verifies("URS-CMP-010")
+class TestReviewersVerifyARecord(ReviewTestCase):
+	def test_a_reviewer_verifies_an_intact_record(self):
+		doc = self.history()
+		frappe.set_user(SIGNER)
+
+		self.assertEqual(verify_record(AUDITED, doc.name), {"audit_trail": [], "signatures_intact": True})
+
+	def test_a_reviewer_is_told_what_was_tampered_with(self):
+		doc = self.history()
+		event = frappe.get_all("Audit Event", filters={"reference_name": doc.name}, pluck="name", limit=1)[0]
+		frappe.db.set_value("Audit Event", event, "user", VIEWER)
+		frappe.set_user(SIGNER)
+
+		result = verify_record(AUDITED, doc.name)
+
+		self.assertEqual(len(result["audit_trail"]), 1)
+		self.assertIn(event, result["audit_trail"][0])
+
+	def test_only_reviewers_verify(self):
+		doc = self.history()
+		frappe.set_user(VIEWER)
+
+		with self.assertRaises(frappe.PermissionError):
+			verify_record(AUDITED, doc.name)

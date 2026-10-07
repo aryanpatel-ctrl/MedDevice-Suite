@@ -26,3 +26,5 @@ def on_doctype_update():
 	# when their work is reviewed; each stays an index lookup at millions of signatures.
 	frappe.db.add_index("Electronic Signature", ["reference_doctype", "reference_name", "signed_at"])
 	frappe.db.add_index("Electronic Signature", ["signer", "signed_at"])
+	# The newest signature on a record is the one no other signature follows.
+	frappe.db.add_index("Electronic Signature", ["previous_signature"])
