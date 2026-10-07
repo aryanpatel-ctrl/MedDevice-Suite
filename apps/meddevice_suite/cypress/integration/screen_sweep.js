@@ -43,6 +43,7 @@ const API = /^https?:\/\/[^/]+\/api\//;
 // other error there, or the same error elsewhere, still fails the sweep. A fix belongs in
 // the owning app (or a form script of ours) and then its entry is removed.
 const SEARCH = "/api/method/frappe.desk.search.search_link";
+const ANY_REPORT = "any report";
 const QUIRKS = [
 	// A new customer or supplier has no addresses or contacts yet: the field's own query
 	// (get_customer_primary, get_supplier_primary) looks the unsaved record up by its
@@ -102,16 +103,21 @@ const QUIRKS = [
 		where: "list Purchase Reconciliation Tool",
 		script_error: "An unknown error has occurred: [object Object]",
 	},
-	// Frappe raises this while it redraws the report's chart; the report opens.
+	// Frappe raises this while it redraws a report's chart (desk.bundle, ResizeObserver
+	// boundDrawFn), on any report once it has data, for the Administrator too; the report
+	// opens. Accepted with this exact message on report pages only.
 	{
-		where: "report Purchase Order Analysis",
+		where: ANY_REPORT,
 		script_error:
 			"Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.",
 	},
 ];
 
 function known_quirk(sweep, matches) {
-	const quirk = QUIRKS.find((entry) => entry.where === sweep.where && matches(entry));
+	const applies = (entry) =>
+		entry.where === sweep.where ||
+		(entry.where === ANY_REPORT && sweep.where.startsWith("report "));
+	const quirk = QUIRKS.find((entry) => applies(entry) && matches(entry));
 	if (quirk) sweep.quirks.push(`${sweep.where}: ${quirk.script_error || quirk.path}`);
 	return Boolean(quirk);
 }
