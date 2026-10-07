@@ -57,10 +57,18 @@ RETENTION_SCHEDULE: dict[str, tuple[int, str, tuple[str, ...]]] = {
 		QUALITY_BASIS,
 		("Asset", "Asset Maintenance Log", "Asset Repair", "Employee"),
 	),
-	"Access control records": (
+	"Access control and system settings records": (
 		10,
 		ACCESS_BASIS,
-		("User", "Role", "Role Profile", "User Permission", "Custom DocPerm", "System Settings"),
+		(
+			"User",
+			"Role",
+			"Role Profile",
+			"User Permission",
+			"Custom DocPerm",
+			"System Settings",
+			"Stock Settings",
+		),
 	),
 	"Compliance evidence": (
 		10,

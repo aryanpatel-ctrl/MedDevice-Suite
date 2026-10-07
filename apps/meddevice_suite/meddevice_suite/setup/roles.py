@@ -16,8 +16,9 @@ change to it is a change to validated behaviour. Three rules hold throughout:
   submits, cancels or amends a regulated record.
 - Nobody shares or imports regulated records, which would bypass the roles.
 
-Access-control record types (User, Role, Role Profile, User Permission,
-Custom DocPerm, System Settings) keep Frappe's own permissions: System Manager only.
+Access-control and settings record types (User, Role, Role Profile, User Permission,
+Custom DocPerm, System Settings, Stock Settings) keep Frappe's own permissions: they
+are changed by configuration code, not by jobs.
 
 The job and role names are proposals built from the departments in the client's
 diagrams, which do not name job roles (requirement baseline, question 3).
@@ -244,7 +245,7 @@ HIGHER_LEVELS: dict[str, dict[tuple[str, int], tuple[str, ...]]] = {
 }
 
 ACCESS_CONTROL = frozenset(
-	{"User", "Role", "Role Profile", "User Permission", "Custom DocPerm", "System Settings"}
+	{"User", "Role", "Role Profile", "User Permission", "Custom DocPerm", "System Settings", "Stock Settings"}
 )
 
 

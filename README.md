@@ -17,6 +17,7 @@ releases of Frappe, ERPNext and India Compliance it runs on. Only secrets
 | `pinned-apps.json` | Which release of each official app is in `apps/`, with its upstream commit. |
 | `scripts/bootstrap.sh` | Turns a clone into a working bench. Used by developers and CI alike. |
 | `scripts/verify_vendored.sh` | Proves each official app is byte-for-byte its pinned release. Runs in CI. |
+| `scripts/create_pilot_site.sh` | Creates the pilot site with fictional demo data for the client walk-through. Never on production. |
 | `.github/` | CI: release integrity, traceability, server tests, coverage, UI tests, linters. |
 | `.pre-commit-config.yaml` | Checks run before every commit. |
 
@@ -39,6 +40,20 @@ bench new-site <site> --install-app erpnext
 bench --site <site> install-app india_compliance
 bench --site <site> install-app meddevice_suite
 ```
+
+## The pilot site
+
+The client walks through the standard flow on a separate pilot site with
+fictional demo data (Phase 2). The demo loader refuses every site that is not
+marked as a pilot site, so demo data can never reach a working or production
+site.
+
+```bash
+MARIADB_ROOT_PASSWORD=… ADMIN_PASSWORD=… PILOT_USER_PASSWORD=… scripts/create_pilot_site.sh
+```
+
+Each job profile has a demo user, such as `stores@demo.example.com`, signing in
+with `PILOT_USER_PASSWORD`.
 
 ## Daily use
 

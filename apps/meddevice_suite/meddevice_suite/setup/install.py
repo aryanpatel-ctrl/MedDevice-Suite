@@ -10,12 +10,14 @@ from meddevice_suite.compliance.retention import apply_retention
 from meddevice_suite.setup.desk import apply_desk_configuration
 from meddevice_suite.setup.roles import apply_roles
 from meddevice_suite.setup.sidebars import apply_sidebar_scope
+from meddevice_suite.setup.stock import apply_stock_settings
 from meddevice_suite.setup.workflows import apply_workflows
 
 
 def apply_configuration() -> None:
 	apply_desk_configuration()
 	apply_sidebar_scope()
+	apply_stock_settings()
 	apply_roles()
 	apply_workflows()
 	apply_retention()
