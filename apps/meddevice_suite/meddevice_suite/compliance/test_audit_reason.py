@@ -256,6 +256,18 @@ class TestActionsCausedByAnother(ReasonTestCase):
 			events_for(AUDITED, doc.name)[-1].changes["command"], "erpnext.example.update_status"
 		)
 
+	def test_a_record_updated_by_another_records_save_names_it_not_the_request(self):
+		# A receipt's save marks its purchase order received with db_set, in a request whose
+		# command is the receipt's save: the order's event names the receipt, not a command.
+		order, receipt = self.submitted_record(), self.submitted_record()
+		self.enterContext(patch.dict(frappe.form_dict, {"cmd": "frappe.desk.form.save.savedocs"}))
+		receipt.on_update_after_submit = lambda: order.db_set("remarks", "Received")
+		because(receipt).save()
+
+		changes = events_for(AUDITED, order.name)[-1].changes
+		self.assertEqual(changes["caused_by"], [AUDITED, receipt.name])
+		self.assertNotIn("command", changes)
+
 	def test_a_failed_action_leaves_its_reason_to_no_other_record(self):
 		# As in a bulk cancel: the first record's cancellation takes its reason and then fails;
 		# the request carries on with the next record, which was given no reason.

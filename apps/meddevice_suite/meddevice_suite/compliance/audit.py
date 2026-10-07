@@ -28,7 +28,13 @@ from frappe.model import child_table_fields, no_value_fields, table_fields
 from frappe.model.document import Document
 from frappe.utils import cint, flt, get_datetime, getdate, now_datetime, to_timedelta
 
-from meddevice_suite.compliance.audit_reason import STAGED_ACTION, action_finished, reason_for, reason_used
+from meddevice_suite.compliance.audit_reason import (
+	STAGED_ACTION,
+	action_finished,
+	reason_for,
+	reason_used,
+	saved_around,
+)
 from meddevice_suite.compliance.audit_scope import is_regulated
 from meddevice_suite.compliance.fingerprint import chain_head, record_content, sha256
 
@@ -107,9 +113,14 @@ def on_change(doc: Document, method: str | None = None) -> None:
 	else:
 		action, changes = ACTION_FOR.get(getattr(doc, "_action", "save"), "Updated"), differences(before, doc)
 
-	if set_by_code and not in_save and changes and (command := frappe.form_dict.get("cmd")):
-		# A status command run on its own (Close, Hold, Stop, Re-open): which one was used.
-		changes["command"] = command
+	if set_by_code and not in_save and changes:
+		if outer := saved_around(doc):
+			# ERPNext updating this record while another is saved (a receipt marking its order
+			# received): the record whose action changed it.
+			changes["caused_by"] = list(outer)
+		elif command := frappe.form_dict.get("cmd"):
+			# A status command run on its own (Close, Hold, Stop, Re-open): which one was used.
+			changes["command"] = command
 
 	if action in STAGED_ACTION:
 		# Taken again here for actions that skipped their start hook (flags.ignore_validate).
