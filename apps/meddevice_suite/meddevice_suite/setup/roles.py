@@ -134,11 +134,12 @@ PERMISSIONS: dict[str, dict[str, tuple[str, ...]]] = {
 	),
 	"Batch": oversight(
 		{
+			# Receiving and production create lots; changing one is QA's (lot status, module 17).
 			"Item Manager": EDIT,
-			"Stock User": VIEW,
+			"Stock User": (*VIEW, "create"),
+			"Manufacturing User": (*VIEW, "create"),
 			"Purchase User": VIEW,
 			"Sales User": VIEW,
-			"Manufacturing User": VIEW,
 			"QC Inspector": VIEW,
 			"Accounts User": VIEW,
 		}
@@ -244,6 +245,14 @@ HIGHER_LEVELS: dict[str, dict[tuple[str, int], tuple[str, ...]]] = {
 	"Delivery Note": {("Stock Manager", 1): ("read", "write")},
 }
 
+# Record types outside the regulated scope that a job cannot work without. Each keeps
+# ERPNext's own permissions; only the listed flags are added.
+SUPPORTING_PERMISSIONS: dict[str, dict[str, tuple[str, ...]]] = {
+	# A goods receipt or delivery looks up the supplier's or customer's account, which
+	# ERPNext lets Stock User neither read nor select. Select only: pick it, never open it.
+	"Account": {"Stock User": ("select",)},
+}
+
 ACCESS_CONTROL = frozenset(
 	{"User", "Role", "Role Profile", "User Permission", "Custom DocPerm", "System Settings", "Stock Settings"}
 )
@@ -259,6 +268,8 @@ def apply_roles() -> None:
 		sync_job_profile(profile, roles)
 	for doctype in PERMISSIONS:
 		sync_permissions(doctype, declared_rows(doctype))
+	for doctype in SUPPORTING_PERMISSIONS:
+		sync_permissions(doctype, supporting_rows(doctype))
 
 
 def sync_job_profile(profile: str, roles: tuple[str, ...]) -> None:
@@ -277,6 +288,20 @@ def declared_rows(doctype: str) -> dict[tuple[str, int], dict[str, int]]:
 	rows = {(role, 0): flags for role, flags in PERMISSIONS[doctype].items()}
 	rows.update(HIGHER_LEVELS.get(doctype, {}))
 	return {key: {flag: int(flag in granted) for flag in FLAGS} for key, granted in rows.items()}
+
+
+def supporting_rows(doctype: str) -> dict[tuple[str, int], dict[str, int]]:
+	"""ERPNext's own permissions on the record type, plus the declared additions."""
+	rows = {
+		(row.role, row.permlevel): {flag: int(row.get(flag) or 0) for flag in FLAGS}
+		for row in frappe.get_all(
+			"DocPerm", filters={"parent": doctype}, fields=["role", "permlevel", *FLAGS]
+		)
+	}
+	for role, flags in SUPPORTING_PERMISSIONS[doctype].items():
+		row = rows.setdefault((role, 0), dict.fromkeys(FLAGS, 0))
+		row.update(dict.fromkeys(flags, 1))
+	return rows
 
 
 def sync_permissions(doctype: str, declared: dict[tuple[str, int], dict[str, int]]) -> None:
