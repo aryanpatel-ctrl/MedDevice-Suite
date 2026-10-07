@@ -42,3 +42,13 @@ ignore_links_on_delete = ["Audit Event"]
 
 # Print formats show the signatures on a record: signatures_for_print(doc).
 jinja = {"methods": ["meddevice_suite.compliance.signing.signatures_for_print"]}
+
+# Document control (module 30): outside QA, only effective revisions are visible.
+permission_query_conditions = {
+	"Document Revision": "meddevice_suite.qms.document_control.revision_query_conditions",
+}
+has_permission = {"Document Revision": "meddevice_suite.qms.document_control.revision_has_permission"}
+
+scheduler_events = {
+	"daily": ["meddevice_suite.qms.document_control.make_due_revisions_effective"],
+}

@@ -1,0 +1,210 @@
+"""Document control (module 30; ISO 13485 4.2.4; D2 "Document Control").
+
+A controlled document is issued in revisions. A revision is drafted by its
+author, then moves on only through signed acts (21 CFR Part 11):
+
+	Draft ──Author──▶ In Review ──Review──▶ Awaiting Approval ──Approve──▶ Approved
+	  ▲                    │                      │                           │ on its effective date
+	  └──────Return────────┴──────────────────────┘                           ▼
+	                                                       Effective ──next revision──▶ Superseded
+	                       a withdrawn document's revisions become Obsolete
+
+- the reviewer is never the author, and QA approves, never the author;
+- the document file is fingerprinted when it is authored, and approval is refused
+  if it has changed since;
+- outside QA, people see only effective revisions, and the drafts they author or
+  review, so a superseded or withdrawn revision is not used by mistake;
+- nothing is ever deleted; a document is withdrawn, with a signature and a reason.
+
+The signed acts are registered in `compliance.signing.SIGNING_ACTIONS`.
+"""
+
+import hashlib
+from pathlib import Path
+
+import frappe
+from frappe import _
+from frappe.model.document import Document
+from frappe.utils import add_years, getdate, nowdate, today
+
+from meddevice_suite.compliance.esign import sign
+
+QA_ROLE = "Quality Manager"
+IN_PROGRESS = ("Draft", "In Review", "Awaiting Approval", "Approved")
+CHUNK = 1 << 20
+EFFECTIVE_SAVEPOINT = "document_revision_effective"
+
+
+def is_qa(user: str | None = None) -> bool:
+	return QA_ROLE in frappe.get_roles(user or frappe.session.user)
+
+
+# --- Signed acts ----------------------------------------------------------------------
+
+
+def author(doc: Document, password: str, reason: str | None = None) -> None:
+	require(doc.status == "Draft", _("Only a draft can be signed by its author."))
+	require(
+		frappe.session.user == doc.author, _("Only the author of {0} can sign it as author.").format(doc.name)
+	)
+	require(doc.file, _("Attach the document file before signing."))
+	require(doc.reviewer, _("Choose the reviewer before signing."))
+	require(doc.reviewer != doc.author, _("The reviewer cannot be the author."))
+	require(
+		doc.revision == "00" or (doc.summary_of_change or "").strip(), _("Say what changed in this revision.")
+	)
+	doc.file_sha256 = file_fingerprint(doc.file)
+	doc.status = "In Review"
+	# Signed with the fingerprint and status in place, so the signature covers them.
+	sign(doc, "Authored", "Author", password, reason)
+	save(doc)
+
+
+def review(doc: Document, password: str, reason: str | None = None) -> None:
+	require(doc.status == "In Review", _("Only a revision in review can be signed by its reviewer."))
+	require(
+		frappe.session.user == doc.reviewer,
+		_("Only the reviewer of {0} can sign it as reviewer.").format(doc.name),
+	)
+	doc.status = "Awaiting Approval"
+	sign(doc, "Reviewed", "Review", password, reason)
+	save(doc)
+
+
+def return_for_changes(doc: Document, password: str, reason: str | None = None) -> None:
+	require(
+		doc.status in ("In Review", "Awaiting Approval"),
+		_("Only a revision in review or awaiting approval can be returned."),
+	)
+	require(
+		frappe.session.user == doc.reviewer or is_qa(),
+		_("Only the reviewer or QA can return {0} for changes.").format(doc.name),
+	)
+	require(reason, _("Say what must change."))
+	doc.status = "Draft"
+	sign(doc, "Rejected", "Return", password, reason)
+	save(doc)
+
+
+def approve(doc: Document, password: str, reason: str | None = None) -> None:
+	require(doc.status == "Awaiting Approval", _("Only a reviewed revision can be approved."))
+	require(is_qa(), _("Only QA can approve a document revision."), frappe.PermissionError)
+	require(frappe.session.user != doc.author, _("The author of {0} cannot approve it.").format(doc.name))
+	require(
+		file_fingerprint(doc.file) == doc.file_sha256,
+		_("The document file has changed since it was signed by its author; it must be authored again."),
+	)
+	doc.effective_date = max(getdate(doc.effective_date or today()), getdate(today()))
+	doc.approver = frappe.session.user
+	doc.status = "Approved"
+	sign(doc, "Approved", "Approve", password, reason)
+	doc.flags.document_control = True
+	doc.submit()
+	if getdate(doc.effective_date) <= getdate(today()):
+		make_effective(doc.name)
+
+
+def withdraw(document: Document, password: str, reason: str | None = None) -> None:
+	require(is_qa(), _("Only QA can withdraw a controlled document."), frappe.PermissionError)
+	require(document.status != "Obsolete", _("{0} has already been withdrawn.").format(document.name))
+	require(reason, _("Say why the document is withdrawn."))
+	require(
+		not frappe.db.exists(
+			"Document Revision", {"controlled_document": document.name, "status": ["in", IN_PROGRESS]}
+		),
+		_("Finish or return the revision in progress before withdrawing {0}.").format(document.name),
+	)
+	document.status = "Obsolete"
+	document.withdrawn_reason = reason
+	sign(document, "Approved", "Withdraw", password, reason)
+	if document.current_revision:
+		frappe.get_doc("Document Revision", document.current_revision).db_set("status", "Obsolete")
+	document.next_review_date = None
+	save(document)
+
+
+# --- Taking effect ----------------------------------------------------------------------
+
+
+def make_effective(revision_name: str) -> None:
+	"""The revision takes effect, and the one it replaces is superseded."""
+	revision = frappe.get_doc("Document Revision", revision_name)
+	document = frappe.get_doc("Controlled Document", revision.controlled_document)
+	if document.current_revision and document.current_revision != revision.name:
+		frappe.get_doc("Document Revision", document.current_revision).db_set(
+			{"status": "Superseded", "superseded_by": revision.name}
+		)
+	revision.db_set("status", "Effective")
+	document.status = "Effective"
+	document.current_revision = revision.name
+	document.effective_since = revision.effective_date
+	document.next_review_date = add_years(revision.effective_date, document.review_period_years or 2)
+	save(document)
+
+
+def make_due_revisions_effective() -> None:
+	"""Daily: approved revisions whose effective date has come take effect.
+
+	Each revision takes effect on its own, so one that fails is logged for the
+	administrator and does not hold back the others; it is retried the next day."""
+	for name in frappe.get_all(
+		"Document Revision",
+		filters={"status": "Approved", "effective_date": ["<=", nowdate()]},
+		pluck="name",
+		order_by="effective_date asc",
+	):
+		frappe.db.savepoint(EFFECTIVE_SAVEPOINT)
+		try:
+			make_effective(name)
+		except Exception:
+			frappe.db.rollback(save_point=EFFECTIVE_SAVEPOINT)
+			frappe.log_error(title=f"Document revision {name} could not take effect")
+		else:
+			frappe.db.release_savepoint(EFFECTIVE_SAVEPOINT)
+
+
+# --- Who sees which revisions -------------------------------------------------------------
+
+
+def revision_query_conditions(user: str | None = None) -> str:
+	user = user or frappe.session.user
+	if is_qa(user) or "System Manager" in frappe.get_roles(user):
+		return ""
+	quoted = frappe.db.escape(user)
+	return (
+		"(`tabDocument Revision`.status = 'Effective'"
+		f" or `tabDocument Revision`.author = {quoted} or `tabDocument Revision`.reviewer = {quoted})"
+	)
+
+
+def revision_has_permission(doc: Document, ptype: str | None = None, user: str | None = None) -> bool:
+	"""May only narrow the record type's own permissions; Frappe treats anything but True as a refusal."""
+	user = user or frappe.session.user
+	if is_qa(user) or "System Manager" in frappe.get_roles(user):
+		return True
+	return doc.is_new() or doc.status == "Effective" or user in (doc.author, doc.reviewer)
+
+
+# --- Helpers ----------------------------------------------------------------------------
+
+
+def file_fingerprint(file_url: str) -> str:
+	"""SHA-256 of an attached private file, read in chunks."""
+	file = frappe.get_doc("File", {"file_url": file_url})
+	require(file.is_private, _("Attach the document as a private file."))
+	digest = hashlib.sha256()
+	with Path(file.get_full_path()).open("rb") as handle:
+		while chunk := handle.read(CHUNK):
+			digest.update(chunk)
+	return digest.hexdigest()
+
+
+def save(doc: Document) -> None:
+	# The signed act has done its own checks; the controllers' edit rules are for users.
+	doc.flags.document_control = True
+	doc.save(ignore_permissions=True)
+
+
+def require(condition, message: str, exception: type[Exception] = frappe.ValidationError) -> None:
+	if not condition:
+		frappe.throw(message, exception)

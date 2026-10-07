@@ -598,3 +598,46 @@ module = 0
 title = "On the pilot's demo data, the standard flow runs end to end with each step done by its job: enquiry, quotation with price approval and sales order; purchase request, purchase order with approval and goods receipt by batch into quarantine; work order on the line's routing with material issue, operations and a finished lot with its expiry; and delivery of that lot, all recorded in the audit trail."
 source = "Delivery plan Phase 2 (pilot), decided 2026-10-07; D1, D2, D3"
 status = "implemented"
+
+# --- Module 30: document control (D2 Document Control; ISO 13485 4.2.4) ----
+[[requirement]]
+id = "URS-QMS-001"
+module = 30
+title = "Every controlled document (SOP, work instruction, form, specification, packaging and labelling, quality manual, external document) is registered by QA with a unique number TYPE-DEPARTMENT-### and a process owner, and is issued in numbered revisions, one in progress at a time."
+source = "D2 Document Control; ISO 13485 4.2.4; numbering decided on the client's instruction of 2026-10-07"
+status = "implemented"
+
+[[requirement]]
+id = "URS-QMS-002"
+module = 30
+title = "A revision is signed by its author, reviewed by someone other than the author and approved by QA, never by its author, each with an electronic signature; the reviewer or QA can return it for changes with a reason, and every revision after the first states what changed."
+source = "D2 Review & Approval, Version Control; ISO 13485 4.2.4 a), b); 21 CFR 11.50"
+status = "implemented"
+
+[[requirement]]
+id = "URS-QMS-003"
+module = 30
+title = "The document file is fingerprinted when its author signs; approval is refused if the file has changed since, and a revision cannot be changed after its author signs except through the signed acts."
+source = "ISO 13485 4.2.4; 21 CFR 11.10(a), 11.70"
+status = "implemented"
+
+[[requirement]]
+id = "URS-QMS-004"
+module = 30
+title = "An approved revision takes effect on its effective date, never earlier than its approval, and the revision it replaces is superseded automatically; the document then shows its effective revision and its next review date."
+source = "ISO 13485 4.2.4 c); review period decided on the client's instruction of 2026-10-07"
+status = "implemented"
+
+[[requirement]]
+id = "URS-QMS-005"
+module = 30
+title = "Outside QA, people see only the effective revision of each document, and the drafts they author or review, so superseded and withdrawn revisions are not used by mistake; no document or revision is ever deleted or cancelled."
+source = "ISO 13485 4.2.4 d), g), h)"
+status = "implemented"
+
+[[requirement]]
+id = "URS-QMS-006"
+module = 30
+title = "QA can withdraw a document with an electronic signature and a reason, once no revision is in progress; the document and its effective revision become obsolete and are kept."
+source = "ISO 13485 4.2.4 g), h); 4.2.5"
+status = "implemented"
