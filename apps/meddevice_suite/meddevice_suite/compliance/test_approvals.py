@@ -243,15 +243,30 @@ class TestApprovalCannotBeBypassed(ApprovalTestCase):
 		self.refused(lambda: frappe.get_doc("Purchase Order", order.name).submit())
 		self.assertEqual(self.state(order), ("Awaiting Approval", 0))
 
-	def test_a_requester_with_submit_permission_cannot_approve_by_submitting(self):
-		# ERPNext lets sales users submit quotations; only the approval step may.
+	def test_a_requester_cannot_approve_by_submitting(self):
+		# ERPNext lets sales users submit quotations; the permission matrix takes that away.
 		quotation = self.quotation()
 		self.act(self.sales, quotation, "Send for Price Approval")
 
 		self.as_user(self.sales)
-		self.refused(lambda: frappe.get_doc("Quotation", quotation.name).submit())
+		with self.assertRaises(frappe.PermissionError):
+			frappe.get_doc("Quotation", quotation.name).submit()
 
 		self.assertEqual(self.state(quotation), ("Awaiting Price Approval", 0))
+
+	def test_submit_permission_alone_does_not_approve(self):
+		# Second line of defence, should the permission matrix ever give submit to a requester.
+		from meddevice_suite.compliance.approvals import on_submit
+
+		order = self.purchase_order()
+		self.act(self.purchase, order, "Send for Approval")
+		doc = frappe.get_doc("Purchase Order", order.name)
+		doc._doc_before_save = frappe.get_doc("Purchase Order", order.name)
+		doc.workflow_state = "Approved"
+
+		self.as_user(self.purchase)
+		with self.assertRaises(frappe.ValidationError):
+			on_submit(doc)
 
 	def test_requesters_cannot_submit_their_own_records(self):
 		order = self.purchase_order()
@@ -260,3 +275,167 @@ class TestApprovalCannotBeBypassed(ApprovalTestCase):
 		self.as_user(self.purchase)
 		with self.assertRaises(frappe.PermissionError):
 			frappe.get_doc("Purchase Order", order.name).submit()
+
+
+@verifies("URS-CMP-031")
+class TestAttributionIsPermanent(ApprovalTestCase):
+	def test_the_api_cannot_pass_off_a_record_as_someone_elses_to_approve_it(self):
+		order = self.purchase_order(BOTH_ROLES)
+		self.act(BOTH_ROLES, order, "Send for Approval")
+
+		self.as_user(BOTH_ROLES)
+		forged = frappe.get_doc("Purchase Order", order.name).as_dict()
+		forged.owner = self.approver
+		self.refused(lambda: submit_through_api(forged))
+
+		self.assertEqual(frappe.db.get_value("Purchase Order", order.name, "owner"), BOTH_ROLES)
+		self.assertEqual(self.state(order), ("Awaiting Approval", 0))
+
+	def test_who_created_a_record_and_when_never_change_on_save(self):
+		order = self.purchase_order()
+		created = frappe.db.get_value("Purchase Order", order.name, ["owner", "creation"])
+
+		self.as_user(self.purchase)
+		with self.assertRaises(frappe.ValidationError):
+			frappe.client.set_value("Purchase Order", order.name, '{"owner": "%s"}' % self.approver)
+		doc = frappe.get_doc("Purchase Order", order.name)
+		doc.creation = add_days(doc.creation, -1)
+		with self.assertRaises(frappe.ValidationError):
+			doc.save()
+
+		self.assertEqual(frappe.db.get_value("Purchase Order", order.name, ["owner", "creation"]), created)
+
+
+@verifies("URS-CMP-032")
+class TestApprovalStateIsTruthful(ApprovalTestCase):
+	def test_a_draft_cannot_be_labelled_approved(self):
+		order = self.purchase_order(BOTH_ROLES)
+		self.act(BOTH_ROLES, order, "Send for Approval")
+
+		self.as_user(self.approver)
+		with self.assertRaises(frappe.ValidationError):
+			frappe.client.set_value("Purchase Order", order.name, "workflow_state", "Approved")
+
+		self.assertEqual(self.state(order), ("Awaiting Approval", 0))
+
+	def test_an_approved_record_cannot_be_labelled_cancelled_without_cancelling(self):
+		order = self.purchase_order()
+		self.act(self.purchase, order, "Send for Approval")
+		self.act(self.approver, order, "Approve")
+
+		self.as_user(self.approver)
+		doc = frappe.get_doc("Purchase Order", order.name)
+		doc.workflow_state = "Cancelled"
+		try:
+			doc.save()
+		except frappe.ValidationError:
+			pass
+
+		self.assertEqual(self.state(order), ("Approved", 1))
+
+	def test_the_requester_cannot_change_a_record_awaiting_approval(self):
+		order = self.purchase_order()
+		self.act(self.purchase, order, "Send for Approval")
+
+		self.as_user(self.purchase)
+		row = frappe.get_doc("Purchase Order", order.name).items[0].name
+		with self.assertRaises(frappe.ValidationError):
+			frappe.client.set_value("Purchase Order Item", row, "rate", 400)
+		with self.assertRaises(frappe.ValidationError):
+			frappe.client.set_value("Purchase Order", order.name, "workflow_state", "Draft")
+
+		self.assertEqual(frappe.db.get_value("Purchase Order Item", row, "rate"), 4)
+
+	def test_the_approver_may_correct_a_record_before_approving_it(self):
+		order = self.purchase_order()
+		self.act(self.purchase, order, "Send for Approval")
+
+		self.as_user(self.approver)
+		doc = frappe.get_doc("Purchase Order", order.name)
+		doc.items[0].rate = 3.5
+		doc.save()
+		self.act(self.approver, order, "Approve")
+
+		self.assertEqual(self.state(order), ("Approved", 1))
+		self.assertEqual(frappe.db.get_value("Purchase Order", order.name, "grand_total"), 350)
+
+
+@verifies("URS-CMP-033")
+class TestApprovedPricesStand(ApprovalTestCase):
+	def update_items(self, doc, **changes):
+		from erpnext.controllers.accounts_controller import update_child_qty_rate
+
+		row = doc.items[0]
+		item = {
+			"docname": row.name,
+			"item_code": row.item_code,
+			"qty": row.qty,
+			"rate": row.rate,
+			"conversion_factor": row.conversion_factor,
+			"uom": row.uom,
+			"schedule_date": row.get("schedule_date"),
+			**changes,
+		}
+		update_child_qty_rate(doc.doctype, frappe.as_json([item]), doc.name)
+
+	def test_an_approved_purchase_order_keeps_its_prices_and_quantities(self):
+		order = self.purchase_order()
+		self.act(self.purchase, order, "Send for Approval")
+		self.act(self.approver, order, "Approve")
+
+		self.as_user(self.approver)
+		for change in ({"rate": 40}, {"qty": 1000}):
+			# With a reason given, so only the approval stops it.
+			stage_reason("Purchase Order", order.name, "update_after_submit", "Supplier changed the price")
+			doc = frappe.get_doc("Purchase Order", order.name)
+			self.refused(lambda doc=doc, change=change: self.update_items(doc, **change))
+
+		self.assertEqual(frappe.db.get_value("Purchase Order", order.name, "grand_total"), 400)
+
+	def test_an_approved_quotation_keeps_its_prices(self):
+		quotation = self.quotation()
+		self.act(self.sales, quotation, "Send for Price Approval")
+		self.act(self.approver, quotation, "Approve")
+
+		self.as_user(self.approver)
+		doc = frappe.get_doc("Quotation", quotation.name)
+		self.refused(lambda: self.update_items(doc, rate=1))
+
+		self.assertEqual(frappe.db.get_value("Quotation", quotation.name, "grand_total"), 1250)
+
+	def test_an_amended_purchase_order_needs_approval_again(self):
+		order = self.purchase_order()
+		self.act(self.purchase, order, "Send for Approval")
+		self.act(self.approver, order, "Approve")
+		self.as_user(self.approver)
+		stage_reason("Purchase Order", order.name, "cancel", "Quantity changed by the supplier")
+		self.act(self.approver, order, "Cancel")
+
+		self.as_user(self.purchase)
+		stage_reason("Purchase Order", order.name, "amend", "Quantity changed by the supplier")
+		# Copied as the desk's Amend copies: fields marked no-copy, the state among them, start blank.
+		amended = frappe.copy_doc(frappe.get_doc("Purchase Order", order.name), ignore_no_copy=False)
+		amended.docstatus = 0
+		amended.amended_from = order.name
+		amended.items[0].qty = 50
+		amended.insert()
+
+		self.assertEqual(self.state(amended), ("Draft", 0))
+		self.as_user(self.approver)
+		self.refused(lambda: frappe.get_doc("Purchase Order", amended.name).submit())
+
+	def test_a_copy_of_an_approved_order_starts_as_a_draft(self):
+		order = self.purchase_order()
+		self.act(self.purchase, order, "Send for Approval")
+		self.act(self.approver, order, "Approve")
+
+		self.as_user(self.purchase)
+		copy = frappe.copy_doc(frappe.get_doc("Purchase Order", order.name), ignore_no_copy=False)
+		copy.docstatus = 0  # as the desk's Duplicate does
+		copy.workflow_state = "Approved"
+		with self.assertRaises(frappe.ValidationError):
+			copy.insert()
+		copy.workflow_state = None
+		copy.insert()
+
+		self.assertEqual(self.state(copy), ("Draft", 0))

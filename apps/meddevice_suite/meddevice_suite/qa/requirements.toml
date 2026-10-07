@@ -447,6 +447,13 @@ title = "The regulated record types are declared in code, including every record
 source = "Validation scope; design approved 2026-10-06"
 status = "implemented"
 
+[[requirement]]
+id = "URS-CMP-031"
+module = 50
+title = "Who created a regulated record, and when, can never be changed, through the form or the API."
+source = "21 CFR 11.10(e); ALCOA+ attributable; found in the robustness review of 2026-10-07"
+status = "implemented"
+
 # --- Module 47: roles and permissions (21 CFR 11.10(d), (g)) ---------------
 [[requirement]]
 id = "URS-CMP-014"
@@ -483,6 +490,13 @@ title = "Inspection results are recorded and submitted by QC inspectors and corr
 source = "ISO 13485 7.5.1, 8.2.6; design approved 2026-10-06"
 status = "implemented"
 
+[[requirement]]
+id = "URS-CMP-034"
+module = 47
+title = "Whoever administers the system holds no business role, so no one can both grant access and use it to do or approve regulated work."
+source = "21 CFR 11.10(g); EU GMP Annex 11 §12; decided on the client's instruction of 2026-10-07"
+status = "implemented"
+
 # --- Module 48: approval workflows (D1 approval points "A") ----------------
 [[requirement]]
 id = "URS-CMP-019"
@@ -508,8 +522,22 @@ status = "implemented"
 [[requirement]]
 id = "URS-CMP-022"
 module = 48
-title = "The approval workflows are declared in code and applied on every site, and any manual change to them is undone on the next migrate."
-source = "Configuration as code; ISO 13485 4.1.6"
+title = "The approval workflows are declared in code and applied on every site; on a site they cannot be changed, switched off, deleted or replaced by another workflow, and every setting is restored on each migrate."
+source = "Configuration as code; ISO 13485 4.1.6; strengthened after the robustness review of 2026-10-07"
+status = "implemented"
+
+[[requirement]]
+id = "URS-CMP-032"
+module = 48
+title = "While a record awaits approval only its approver can change it, and a record's approval state always matches whether it is submitted, so it never shows as approved without having been approved."
+source = "D1 Internal Price Approval, Purchase Approval; 21 CFR 11.10(f); found in the robustness review of 2026-10-07"
+status = "implemented"
+
+[[requirement]]
+id = "URS-CMP-033"
+module = 48
+title = "Once a quotation or purchase order is approved, its items, quantities and prices cannot be changed; a change is made by cancelling and amending it, which needs approval again."
+source = "D1 Internal Price Approval, Purchase Approval; decided on the client's instruction of 2026-10-07"
 status = "implemented"
 
 # --- Module 54: record retention and archival (D3 Retention & Archival) ----
@@ -545,8 +573,8 @@ status = "implemented"
 [[requirement]]
 id = "URS-CMP-027"
 module = 51
-title = "Stores and QA are alerted 30 days before a lot with stock remaining expires, and again on the day it expires; lots with no stock and disabled lots raise no alert."
-source = "D2 Alerts & Notifications; module 51 lot expiry; 30 days decided on the client's instruction of 2026-10-07"
+title = "Stores and QA are alerted once when a lot with stock remaining is 30 days or less from its expiry date, including a lot received that close to it, and once when it has expired, even after a day the alerts did not run; a changed expiry date is alerted afresh; lots with no stock and disabled lots raise no alert."
+source = "D2 Alerts & Notifications; module 51 lot expiry; 30 days decided on the client's instruction of 2026-10-07; exact-date gaps found in the robustness review of 2026-10-07"
 status = "implemented"
 
 [[requirement]]

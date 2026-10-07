@@ -76,6 +76,10 @@ def on_change(doc: Document, method: str | None = None) -> None:
 	# Frappe also runs on_change while deleting; on_trash has recorded the deletion.
 	if doc.flags.in_delete or not should_audit(doc):
 		return
+	if set_by_code and doc.flags.audit_creation_pending and not frappe.db.exists(doc.doctype, doc.name):
+		# Code writing to a record while it is being validated, before it is stored (ERPNext's
+		# lot bundles do): nothing is stored yet, and the creation event records the final values.
+		return
 
 	# Frappe reloads the stored record at the start of every save; `db_set` loads it only when
 	# it is missing, so the same object means the same save, or code writing after it.

@@ -19,8 +19,12 @@ doc_events = {
 		"before_insert": "meddevice_suite.compliance.audit.before_insert",
 		"before_change": "meddevice_suite.compliance.audit.before_change",
 		"before_cancel": "meddevice_suite.compliance.audit.before_cancel",
-		"before_update_after_submit": "meddevice_suite.compliance.audit.before_update_after_submit",
+		"before_update_after_submit": [
+			"meddevice_suite.compliance.audit.before_update_after_submit",
+			"meddevice_suite.compliance.approvals.before_update_after_submit",
+		],
 		# Approval workflows: returns at once for record types without one.
+		"validate": "meddevice_suite.compliance.approvals.validate",
 		"on_submit": "meddevice_suite.compliance.approvals.on_submit",
 		"onload": [
 			"meddevice_suite.compliance.audit_timeline.onload",
@@ -31,6 +35,17 @@ doc_events = {
 		"after_rename": "meddevice_suite.compliance.audit.after_rename",
 	},
 	"Desktop Layout": {"validate": "meddevice_suite.setup.desk.enforce_on_desktop_layout"},
+	# Configuration as code: the declared alerts and workflows change only by migrate.
+	"Notification": {
+		"before_validate": "meddevice_suite.compliance.alerts.protect",
+		"on_trash": "meddevice_suite.compliance.alerts.protect",
+	},
+	"Workflow": {
+		"before_validate": "meddevice_suite.setup.workflows.protect",
+		"on_trash": "meddevice_suite.setup.workflows.protect",
+	},
+	"Batch": {"validate": "meddevice_suite.compliance.alerts.reset_expiry_alert"},
+	"User": {"validate": "meddevice_suite.setup.roles.separate_administration"},
 }
 
 # A regulated record's audit events in its form timeline, for users who may review them.
@@ -50,5 +65,8 @@ permission_query_conditions = {
 has_permission = {"Document Revision": "meddevice_suite.qms.document_control.revision_has_permission"}
 
 scheduler_events = {
-	"daily": ["meddevice_suite.qms.document_control.make_due_revisions_effective"],
+	"daily": [
+		"meddevice_suite.compliance.alerts.send_expiry_alerts",
+		"meddevice_suite.qms.document_control.make_due_revisions_effective",
+	],
 }

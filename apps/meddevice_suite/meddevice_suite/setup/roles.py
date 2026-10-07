@@ -26,6 +26,8 @@ can be renamed without changing what each job may do.
 """
 
 import frappe
+from frappe import _
+from frappe.model.document import Document
 
 # Roles ERPNext has no equivalent for.
 NEW_ROLES = ("QC Inspector", "Operator")
@@ -157,6 +159,14 @@ PERMISSIONS: dict[str, dict[str, tuple[str, ...]]] = {
 	"Asset": oversight({"Quality Manager": APPROVE, "Maintenance User": VIEW, "Accounts User": VIEW}),
 	"Employee": oversight({"HR User": EDIT, "Manufacturing User": VIEW}),
 	# --- Purchasing and receiving
+	# --- Sales
+	"Quotation": oversight(
+		{
+			# Sales drafts, amends and withdraws a quotation; only the price approver submits (module 48).
+			"Sales User": (*EDIT, "cancel", "amend"),
+			"Sales Manager": APPROVE,
+		}
+	),
 	"Material Request": oversight(
 		{
 			"Stock User": CORRECT,
@@ -221,6 +231,16 @@ PERMISSIONS: dict[str, dict[str, tuple[str, ...]]] = {
 			"QC Inspector": VIEW,
 		}
 	),
+	# The lots on each stock transaction (ERPNext v16 keeps them in a bundle of their own),
+	# made and cancelled with the transaction by whoever may post it.
+	"Serial and Batch Bundle": oversight(
+		{
+			"Stock User": CORRECT,
+			"Stock Manager": APPROVE,
+			"Manufacturing User": ENTER,
+			"Sales User": ENTER,
+		}
+	),
 	"Pick List": oversight(
 		{"Stock User": CORRECT, "Stock Manager": APPROVE, "Manufacturing User": ENTER, "Sales User": VIEW}
 	),
@@ -257,6 +277,28 @@ SUPPORTING_PERMISSIONS: dict[str, dict[str, tuple[str, ...]]] = {
 ACCESS_CONTROL = frozenset(
 	{"User", "Role", "Role Profile", "User Permission", "Custom DocPerm", "System Settings", "Stock Settings"}
 )
+
+
+SYSTEM_ADMINISTRATION = "System Manager"
+BUSINESS_ROLES = frozenset(
+	role for roles in JOB_PROFILES.values() for role in roles if role != SYSTEM_ADMINISTRATION
+)
+
+
+def separate_administration(doc: Document, method: str | None = None) -> None:
+	"""User validate: whoever administers the system takes no part in the regulated work,
+	so no one can both grant access and use it (21 CFR 11.10(g); EU GMP Annex 11 §12)."""
+	if doc.name in ("Administrator", "Guest") or frappe.flags.in_install or frappe.flags.in_migrate:
+		return
+	roles = {row.role for row in doc.roles}
+	if SYSTEM_ADMINISTRATION in roles and roles & BUSINESS_ROLES:
+		frappe.throw(
+			_(
+				"{0} is a system administrator and cannot also hold {1}. Give the business work a "
+				"separate account."
+			).format(doc.name, ", ".join(sorted(roles & BUSINESS_ROLES))),
+			frappe.PermissionError,
+		)
 
 
 def apply_roles() -> None:

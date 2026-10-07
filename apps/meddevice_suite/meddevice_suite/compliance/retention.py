@@ -43,9 +43,12 @@ RETENTION_SCHEDULE: dict[str, tuple[int, str, tuple[str, ...]]] = {
 			"Job Card",
 			"Stock Entry",
 			"Stock Reconciliation",
+			"Serial and Batch Bundle",
 			"Pick List",
 		),
 	),
+	# Review of the customer's requirements before committing to supply (ISO 13485 7.2.2).
+	"Sales records": (10, QUALITY_BASIS, ("Quotation",)),
 	"Quality system records": (10, QUALITY_BASIS, ("Controlled Document", "Document Revision")),
 	"Purchasing and supplier records": (
 		10,
