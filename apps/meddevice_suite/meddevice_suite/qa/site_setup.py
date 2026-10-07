@@ -10,6 +10,8 @@ allow tests, so it can never touch a working or production site.
 import frappe
 from frappe.desk.page.setup_wizard.setup_wizard import setup_complete
 
+from meddevice_suite.setup.site_flags import site_flag
+
 TEST_COMPANY = {
 	"language": "English",
 	"country": "India",
@@ -27,7 +29,7 @@ TEST_COMPANY = {
 
 
 def prepare_test_site() -> None:
-	if not frappe.conf.allow_tests:
+	if not site_flag("allow_tests"):
 		frappe.throw(f"{frappe.local.site} does not allow tests; refusing to prepare it as a test site")
 
 	complete_setup_wizard(TEST_COMPANY)

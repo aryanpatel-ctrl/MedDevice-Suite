@@ -1,4 +1,5 @@
-"""Desk layout: show exactly the standard areas the client requirement uses.
+"""Desk layout: show exactly the standard areas the client requirement uses, and
+hide every other area, including any a future release adds.
 
 The icons belong to Frappe, ERPNext and India Compliance, so they are hidden
 rather than deleted. Those apps re-sync their icons on ``bench migrate``,
@@ -14,29 +15,49 @@ import json
 
 import frappe
 
-# Visibility of standard desktop icons wherever it differs from what the owning
-# app ships. Icons not listed here keep their shipped visibility.
-DESKTOP_ICON_VISIBILITY: dict[str, bool] = {
-	# Shipped hidden, but needed
-	"CRM": True,  # customer enquiry and product selection (Opportunity) precede the quotation
-	# Shipped visible, but outside the requirement
-	"Projects": False,  # project management, timesheets
-	"Website": False,  # public website, customer portal
-	"Budget": False,  # budgeting; cost centres stay under Accounts Setup
-	"Share Management": False,  # shareholder register
-	"Subscription": False,  # recurring billing
-	"My Workspaces": False,  # personal workspaces
-	"Payments": False,  # duplicates Invoicing, which keeps every payment entry in scope
-	"Subcontracting": False,  # sterilization is not stated as outsourced; restore if the client says it is
-	"Automation": False,  # assignment rules, auto repeat, milestones
-	"Integrations": False,  # webhooks, OAuth, Google, LDAP; the client's integrations are separate, later
-	"Build": False,  # configuration is code, never edited on a site
-}
+# The areas the client requirement uses. Every other desktop icon is hidden,
+# including any a future release of Frappe, ERPNext or India Compliance adds,
+# until it is checked against the requirement and added here. Hidden on purpose:
+# Projects, Website, Budget, Share Management, Subscription, My Workspaces,
+# Payments (duplicates Invoicing), Subcontracting (sterilization is not stated as
+# outsourced), Automation, Integrations, Support and Build (configuration is code).
+DESKTOP_ICONS_SHOWN = frozenset(
+	{
+		# Apps and folders that hold the areas below
+		"Framework",
+		"Accounting",
+		"India Compliance",
+		# Sales, purchasing, stores, production, quality, assets (modules 1-10)
+		"CRM",  # customer enquiry and product selection (Opportunity) precede the quotation
+		"Selling",
+		"Buying",
+		"Stock",
+		"Manufacturing",
+		"Quality",
+		"Assets",
+		"Organization",
+		# Finance and GST (modules 28, 29)
+		"Accounts Setup",
+		"Invoicing",
+		"Banking",
+		"Taxes",
+		"Financial Reports",
+		"GST India",
+		"Income Tax India",
+		# Administration
+		"ERPNext Settings",
+		"Users",
+		"System",
+		"Data",
+		"Email",
+		"Printing",
+	}
+)
 
 
 def apply_desk_configuration() -> None:
-	for label, visible in DESKTOP_ICON_VISIBILITY.items():
-		set_desktop_icon_visibility(label, visible)
+	for label in frappe.get_all("Desktop Icon", pluck="name"):
+		set_desktop_icon_visibility(label, label in DESKTOP_ICONS_SHOWN)
 
 	for user, layout in frappe.get_all("Desktop Layout", fields=["name", "layout"], as_list=True):
 		if (enforced := enforce_declared_visibility(layout)) is not None:
@@ -75,9 +96,9 @@ def enforce_declared_visibility(layout_json: str | None) -> str | None:
 
 	changed = False
 	for icon in icons:
-		if not isinstance(icon, dict) or icon.get("label") not in DESKTOP_ICON_VISIBILITY:
+		if not isinstance(icon, dict) or not icon.get("label"):
 			continue
-		hidden = int(not DESKTOP_ICON_VISIBILITY[icon["label"]])
+		hidden = int(icon["label"] not in DESKTOP_ICONS_SHOWN)
 		if icon.get("hidden") != hidden:
 			icon["hidden"] = hidden
 			changed = True

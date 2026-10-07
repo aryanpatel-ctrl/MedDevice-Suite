@@ -117,6 +117,19 @@ class TestLoginHistoryIsKept(IntegrationTestCase):
 		self.assertGreaterEqual(login_history_days(), retention_years(LOGIN_HISTORY) * 365)
 		self.assertEqual(frappe.db.get_single_value("Log Settings", "modified"), saved)
 
+	def test_the_login_history_cannot_be_shortened_or_removed_on_a_site(self):
+		settings = frappe.get_single("Log Settings")
+		next(row for row in settings.logs_to_clear if row.ref_doctype == LOGIN_HISTORY).days = 90
+		with self.assertRaises(frappe.PermissionError):
+			settings.save()
+
+		settings = frappe.get_single("Log Settings")
+		settings.logs_to_clear = [row for row in settings.logs_to_clear if row.ref_doctype != LOGIN_HISTORY]
+		with self.assertRaises(frappe.PermissionError):
+			settings.save()
+
+		self.assertGreaterEqual(login_history_days(), retention_years(LOGIN_HISTORY) * 365)
+
 	def test_the_audit_trail_and_signatures_are_not_logs_frappe_clears(self):
 		cleared = frappe.get_all("Logs To Clear", filters={"parent": "Log Settings"}, pluck="ref_doctype")
 

@@ -75,3 +75,44 @@ class TestStockNeverGoesNegative(StockSettingsTestCase):
 
 		with self.assertRaises(NegativeStockError):
 			issue.submit()
+
+
+@verifies("URS-STK-003")
+class TestNoItemOrLotMayGoNegative(StockSettingsTestCase):
+	def test_an_item_cannot_be_allowed_negative_stock(self):
+		item = frappe.get_doc("Item", stock_item("MDS-STK-FLAG-ITEM"))
+		item.allow_negative_stock = 1
+
+		with self.assertRaises(frappe.ValidationError):
+			item.save()
+
+	def test_a_lot_cannot_be_allowed_negative_stock(self):
+		code = stock_item("MDS-STK-FLAG-LOT", has_batch_no=1)
+		with self.assertRaises(frappe.ValidationError):
+			frappe.get_doc(
+				{
+					"doctype": "Batch",
+					"batch_id": "MDS-NEG-LOT",
+					"item": code,
+					"allow_negative_stock_for_batch": 1,
+				}
+			).insert()
+
+
+@verifies("URS-STK-002", "URS-STK-003")
+class TestStockSettingsAreLocked(StockSettingsTestCase):
+	def test_the_declared_settings_cannot_be_changed_on_a_site(self):
+		for field, value in (
+			("allow_negative_stock", 1),
+			("pick_serial_and_batch_based_on", "FIFO"),
+			("auto_create_serial_and_batch_bundle_for_outward", 0),
+		):
+			settings = frappe.get_single("Stock Settings")
+			settings.set(field, value)
+			with self.subTest(field=field), self.assertRaises(frappe.PermissionError):
+				settings.save()
+
+	def test_other_stock_settings_stay_editable(self):
+		settings = frappe.get_single("Stock Settings")
+		settings.item_naming_by = "Item Code"
+		settings.save()

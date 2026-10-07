@@ -17,6 +17,9 @@ they are kept for the same period instead.
 """
 
 import frappe
+from frappe import _
+from frappe.model.document import Document
+from frappe.utils import cint
 
 from meddevice_suite.compliance.audit_scope import APP, REGULATED_DOCTYPES, SELF_RECORDING
 
@@ -85,14 +88,14 @@ LOGIN_HISTORY = "Activity Log"
 
 
 def retention_years(doctype: str) -> int | None:
-	for years, _, doctypes in RETENTION_SCHEDULE.values():
+	for years, _basis, doctypes in RETENTION_SCHEDULE.values():
 		if doctype in doctypes:
 			return years
 	return None
 
 
 def scheduled_doctypes() -> list[str]:
-	return [doctype for _, _, doctypes in RETENTION_SCHEDULE.values() for doctype in doctypes]
+	return [doctype for _years, _basis, doctypes in RETENTION_SCHEDULE.values() for doctype in doctypes]
 
 
 def must_be_scheduled() -> set[str]:
@@ -105,9 +108,26 @@ def must_be_scheduled() -> set[str]:
 	return set(REGULATED_DOCTYPES) | set(SELF_RECORDING) | set(own) | {LOGIN_HISTORY}
 
 
+def login_history_days() -> int:
+	return retention_years(LOGIN_HISTORY) * 366  # whole years, leap years included
+
+
+def protect_login_history(doc: Document, method: str | None = None) -> None:
+	"""Log Settings validate: Frappe's daily clean-up must never delete login history before its
+	retention period ends. Frappe puts the 90-day default back if the entry is removed."""
+	row = next((row for row in doc.logs_to_clear if row.ref_doctype == LOGIN_HISTORY), None)
+	if not row or cint(row.days) < login_history_days():
+		frappe.throw(
+			_("The login history is kept for {0} days and cannot be cleared sooner.").format(
+				login_history_days()
+			),
+			frappe.PermissionError,
+		)
+
+
 def apply_retention() -> None:
 	"""Keep Frappe's login history for its scheduled period instead of 90 days."""
-	days = retention_years(LOGIN_HISTORY) * 366  # whole years, leap years included
+	days = login_history_days()
 	settings = frappe.get_single("Log Settings")
 	row = next((row for row in settings.logs_to_clear if row.ref_doctype == LOGIN_HISTORY), None)
 	if row and row.days == days:

@@ -1,4 +1,4 @@
-// Mirrors DESKTOP_ICON_VISIBILITY in meddevice_suite/setup/desk.py and
+// Mirrors DESKTOP_ICONS_SHOWN in meddevice_suite/setup/desk.py and
 // SIDEBAR_SCOPE in meddevice_suite/setup/sidebars.py.
 const SHOWN = ["CRM", "Stock", "Buying", "Selling", "Manufacturing", "Quality", "Assets"];
 const HIDDEN = [
