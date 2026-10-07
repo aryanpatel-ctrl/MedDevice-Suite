@@ -22,7 +22,10 @@ doc_events = {
 		"before_update_after_submit": "meddevice_suite.compliance.audit.before_update_after_submit",
 		# Approval workflows: returns at once for record types without one.
 		"on_submit": "meddevice_suite.compliance.approvals.on_submit",
-		"onload": "meddevice_suite.compliance.audit_timeline.onload",
+		"onload": [
+			"meddevice_suite.compliance.audit_timeline.onload",
+			"meddevice_suite.compliance.signing.onload",
+		],
 		"on_change": "meddevice_suite.compliance.audit.on_change",
 		"on_trash": "meddevice_suite.compliance.audit.on_trash",
 		"after_rename": "meddevice_suite.compliance.audit.after_rename",
@@ -36,3 +39,6 @@ additional_timeline_content = {"*": ["meddevice_suite.compliance.audit_timeline.
 # A record's audit history must not stop the record itself from being deleted;
 # the deletion is recorded like any other action.
 ignore_links_on_delete = ["Audit Event"]
+
+# Print formats show the signatures on a record: signatures_for_print(doc).
+jinja = {"methods": ["meddevice_suite.compliance.signing.signatures_for_print"]}

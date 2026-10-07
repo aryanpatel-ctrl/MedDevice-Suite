@@ -389,6 +389,13 @@ title = "Only an identified individual can sign: shared and system accounts (Adm
 source = "21 CFR 11.100(a), 11.10(d), 11.10(g)"
 status = "implemented"
 
+[[requirement]]
+id = "URS-CMP-030"
+module = 49
+title = "A person signs from the record, in a dialog that names the act and the meaning of the signature and asks for their own password; only the acts declared for that record type can be signed, and only by someone who may open the record."
+source = "21 CFR 11.50, 11.200; design approved 2026-10-07 (document control)"
+status = "planned"
+
 # --- Module 50: tamper-evident audit trail (21 CFR 11.10(e); EU GMP Annex 11 §9) ---
 
 [[requirement]]
