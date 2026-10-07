@@ -1,0 +1,207 @@
+from unittest.mock import patch
+
+import frappe
+from frappe.tests import IntegrationTestCase
+from frappe.utils import add_days, getdate, today
+
+from meddevice_suite.qa import verifies
+from meddevice_suite.qa.ui_journey import (
+	COMPANY,
+	CUSTOMER,
+	LATER_EXPIRY_DAYS,
+	LOTS_IN_STORE,
+	OPERATIONS,
+	PRODUCT,
+	PRODUCT_DETAILS,
+	QUANTITY,
+	RAW_MATERIALS,
+	ROUTING,
+	SUPPLIER,
+	journey_items,
+	lots_of,
+	post_stock_entry,
+	prepare_journey,
+	store,
+)
+from meddevice_suite.qa.ui_users import prepare_job_users
+from meddevice_suite.setup.roles import apply_roles
+
+
+def stock(item: str, warehouse: str) -> float:
+	return frappe.db.get_value("Bin", {"item_code": item, "warehouse": warehouse}, "actual_qty") or 0
+
+
+def latest_stock_entry() -> str:
+	return frappe.get_all(
+		"Stock Entry", filters={"docstatus": 1}, order_by="creation desc", limit=1, pluck="name"
+	)[0]
+
+
+@verifies("URS-PLT-007")
+class TestBrowserJourney(IntegrationTestCase):
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		apply_roles()
+
+	def setUp(self):
+		self.enterContext(patch.dict(frappe.local.conf, {"allow_tests": 1}))
+
+	def tearDown(self):
+		frappe.set_user("Administrator")
+
+	def test_refuses_a_site_that_does_not_allow_tests(self):
+		with patch.dict(frappe.local.conf, {"allow_tests": 0}):
+			with self.assertRaises(frappe.PermissionError):
+				prepare_journey()
+			with self.assertRaises(frappe.PermissionError):
+				lots_of("Stock Entry", "anything")
+
+	def test_only_the_administrator_prepares_the_journey(self):
+		frappe.set_user(prepare_job_users()["users"]["Stores"])
+
+		with self.assertRaises(frappe.PermissionError):
+			prepare_journey()
+
+	def test_makes_the_masters_the_journey_needs(self):
+		journey = prepare_journey()
+
+		self.assertEqual(
+			(journey["company"], journey["customer"], journey["supplier"], journey["product"]),
+			(COMPANY, CUSTOMER, SUPPLIER, PRODUCT),
+		)
+		self.assertTrue(frappe.db.exists("Warehouse", journey["stores"]["quarantine"]))
+		self.assertTrue(frappe.db.exists("Customer", CUSTOMER))
+		self.assertTrue(frappe.db.exists("Supplier", SUPPLIER))
+		for code in journey_items():
+			with self.subTest(item=code):
+				item = frappe.db.get_value(
+					"Item",
+					code,
+					[
+						"has_batch_no",
+						"create_new_batch",
+						"has_expiry_date",
+						"shelf_life_in_days",
+						"gst_hsn_code",
+					],
+					as_dict=True,
+				)
+				self.assertEqual((item.has_batch_no, item.create_new_batch, item.has_expiry_date), (1, 1, 1))
+				self.assertGreater(item.shelf_life_in_days, 0)
+				self.assertTrue(item.gst_hsn_code)
+
+		bom = frappe.get_doc("BOM", journey["bom"])
+		self.assertEqual((bom.item, bom.docstatus, bom.is_default, bom.routing), (PRODUCT, 1, 1, ROUTING))
+		self.assertEqual([row.operation for row in bom.operations], journey["operations"])
+		self.assertEqual(journey["operations"], [operation for operation, _ws, _minutes in OPERATIONS])
+		self.assertEqual(
+			journey["materials"],
+			{code: details[5] * QUANTITY / bom.quantity for code, details in RAW_MATERIALS.items()},
+		)
+		self.assertEqual(journey["product_shelf_life_days"], PRODUCT_DETAILS[3])
+
+		# Preparing again makes no second set of masters.
+		self.assertEqual(prepare_journey()["bom"], journey["bom"])
+
+	def test_starts_from_the_lots_put_in_store_whatever_an_earlier_run_left(self):
+		prepare_journey()
+		material = next(iter(RAW_MATERIALS))
+		post_stock_entry(
+			"Material Receipt",
+			[{"item_code": material, "t_warehouse": store("Quarantine"), "qty": 3, "basic_rate": 10}],
+		)
+
+		journey = prepare_journey()
+
+		self.assertEqual(stock(material, store("Quarantine")), 0)
+		for item in journey_items():
+			lot = journey["lots_in_store"].get(item)
+			with self.subTest(item=item):
+				on_hand = frappe.get_all(
+					"Bin", filters={"item_code": item, "actual_qty": [">", 0]}, pluck="warehouse"
+				)
+				if item not in LOTS_IN_STORE:
+					self.assertEqual(on_hand, [])
+					continue
+				store_name, qty, _rate = LOTS_IN_STORE[item]
+				self.assertEqual(on_hand, [store(store_name)])
+				self.assertEqual(stock(item, store(store_name)), qty)
+				expiry = getdate(frappe.db.get_value("Batch", lot, "expiry_date"))
+				self.assertEqual(expiry, getdate(add_days(today(), LATER_EXPIRY_DAYS)))
+				# later than anything the run receives or makes
+				shelf_lives = [details[3] for details in RAW_MATERIALS.values()] + [PRODUCT_DETAILS[3]]
+				self.assertGreater(expiry, getdate(add_days(today(), max(shelf_lives))))
+
+	def test_tells_the_lots_a_stock_transaction_moved_with_their_expiry(self):
+		journey = prepare_journey()
+		receipt = latest_stock_entry()  # the lots put in store
+
+		lots = lots_of("Stock Entry", receipt)
+
+		self.assertEqual(
+			lots,
+			[
+				{
+					"item_code": item,
+					"from_store": None,
+					"to_store": store(store_name),
+					"batch_no": journey["lots_in_store"][item],
+					"qty": qty,
+					"expiry_date": getdate(add_days(today(), LATER_EXPIRY_DAYS)),
+				}
+				for item, (store_name, qty, _rate) in LOTS_IN_STORE.items()
+			],
+		)
+
+	def test_tells_the_lots_of_receipts_and_deliveries_by_their_store(self):
+		prepare_journey()
+		material = next(iter(RAW_MATERIALS))
+		receipt = frappe.get_doc(
+			{
+				"doctype": "Purchase Receipt",
+				"company": COMPANY,
+				"supplier": SUPPLIER,
+				"items": [
+					{"item_code": material, "qty": 2, "rate": 5, "warehouse": store("Quarantine")},
+				],
+			}
+		).insert()
+		receipt.submit()
+
+		[lot] = lots_of("Purchase Receipt", receipt.name)
+
+		self.assertEqual((lot["from_store"], lot["to_store"], lot["qty"]), (None, store("Quarantine"), 2))
+		self.assertTrue(lot["batch_no"])
+		self.assertTrue(lot["expiry_date"])
+
+		delivery = frappe.get_doc(
+			{
+				"doctype": "Delivery Note",
+				"company": COMPANY,
+				"customer": CUSTOMER,
+				"items": [
+					{"item_code": PRODUCT, "qty": 1, "rate": 5, "warehouse": store("Finished Goods")},
+				],
+			}
+		).insert()
+		delivery.submit()
+
+		self.assertEqual(
+			[
+				(lot["from_store"], lot["to_store"], lot["qty"])
+				for lot in lots_of("Delivery Note", delivery.name)
+			],
+			[(store("Finished Goods"), None, 1)],
+		)
+
+	def test_refuses_other_record_types_and_users_who_may_not_read_the_record(self):
+		prepare_journey()
+		receipt = latest_stock_entry()
+
+		with self.assertRaises(frappe.ValidationError):
+			lots_of("Sales Order", receipt)
+
+		frappe.set_user(prepare_job_users()["users"]["Operator"])  # no access to stock entries
+		with self.assertRaises(frappe.PermissionError):
+			lots_of("Stock Entry", receipt)
