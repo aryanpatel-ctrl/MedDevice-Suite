@@ -6,6 +6,7 @@ from meddevice_suite.qa import verifies
 from meddevice_suite.setup.install import apply_configuration
 from meddevice_suite.setup.roles import (
 	ACCESS_CONTROL,
+	CREATED_THROUGH_TRANSACTIONS,
 	FLAGS,
 	HIGHER_LEVELS,
 	JOB_PROFILES,
@@ -327,3 +328,21 @@ class TestOwnFormsAreUsable(IntegrationTestCase):
 				if perm.permlevel == 0 and perm.create:
 					with self.subTest(doctype=doctype, role=perm.role):
 						self.assertTrue(perm.write)
+
+	@verifies("URS-PLT-009")
+	def test_a_job_creates_without_a_form_only_what_its_transactions_create(self):
+		# Create without write leaves the job a blank form; the matrix allows that only for
+		# record types the job's transactions create, whose form belongs to another job.
+		create_only = {
+			(doctype, role)
+			for doctype, rows in PERMISSIONS.items()
+			for role, flags in rows.items()
+			if "create" in flags and "write" not in flags
+		}
+		self.assertEqual(
+			create_only,
+			{(doctype, role) for doctype, roles in CREATED_THROUGH_TRANSACTIONS.items() for role in roles},
+		)
+		for doctype in CREATED_THROUGH_TRANSACTIONS:
+			with self.subTest(doctype=doctype):
+				self.assertTrue(any("write" in flags for flags in PERMISSIONS[doctype].values()))
