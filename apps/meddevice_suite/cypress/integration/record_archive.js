@@ -26,6 +26,26 @@ context("Record archive", () => {
 		cy.visit("/desk");
 	});
 
+	it("[URS-CMP-025] lets QA request an archive from its form", () => {
+		cy.visit("/desk/record-archive/new");
+		for (const field of ["from_date", "to_date"]) {
+			cy.get(`.page-container:visible [data-fieldname="${field}"] input`)
+				.should("be.visible")
+				.and("not.be.disabled");
+		}
+		cy.window()
+			.its("cur_frm")
+			.then((frm) => {
+				frm.set_value("from_date", today());
+				frm.set_value("to_date", today());
+				return frm.save();
+			});
+		cy.window()
+			.its("cur_frm.doc.name")
+			.should("match", /^ARC-/)
+			.then((name) => wait_until_completed(name));
+	});
+
 	it("[URS-CMP-025] [URS-CMP-026] builds an archive in the background and verifies it", () => {
 		cy.insert_doc("Record Archive", { from_date: today(), to_date: today() }).then(
 			(archive) => {

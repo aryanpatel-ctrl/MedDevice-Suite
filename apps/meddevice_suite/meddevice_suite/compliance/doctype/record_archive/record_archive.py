@@ -11,7 +11,9 @@ class RecordArchive(Document):
 	"""A sealed archive copy of a period's regulated records (module 54).
 
 	QA requests it with a period; `meddevice_suite.compliance.archive` builds the file
-	in the background and records its fingerprint. Users can never change or delete it.
+	in the background and records its fingerprint. Users can never change or delete it:
+	the write permission only lets the desk show the period fields on a new archive,
+	and `validate` refuses every save after the first.
 	"""
 
 	def validate(self):

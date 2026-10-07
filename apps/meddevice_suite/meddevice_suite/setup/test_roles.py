@@ -311,3 +311,19 @@ class TestAdministrationIsSeparate(ProfileTestCase):
 		self.new_user(roles=[{"role": "Purchase Manager"}, {"role": "Sales Manager"}]).insert(
 			ignore_permissions=True
 		)
+
+
+@verifies("URS-CMP-015")
+class TestOwnFormsAreUsable(IntegrationTestCase):
+	def test_whoever_may_create_one_of_our_records_can_fill_in_its_form(self):
+		# The desk shows a form its user may not write as read-only and hides its empty
+		# fields, so a create-only permission leaves a blank form (the record archive did).
+		for doctype in frappe.get_all(
+			"DocType",
+			filters={"module": ["in", frappe.get_module_list("meddevice_suite")], "istable": 0},
+			pluck="name",
+		):
+			for perm in frappe.get_meta(doctype).permissions:
+				if perm.permlevel == 0 and perm.create:
+					with self.subTest(doctype=doctype, role=perm.role):
+						self.assertTrue(perm.write)
