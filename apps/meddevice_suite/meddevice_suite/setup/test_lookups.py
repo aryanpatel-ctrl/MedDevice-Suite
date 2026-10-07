@@ -3,96 +3,9 @@ from frappe.desk.search import search_link
 from frappe.tests import IntegrationTestCase
 
 from meddevice_suite.qa import verifies
-from meddevice_suite.setup.lookups import closed_lookups
+from meddevice_suite.setup.lookups import REVIEWED_CLOSED, closed_lookups
 from meddevice_suite.setup.roles import apply_roles
 from meddevice_suite.setup.test_roles import user_with_profile
-
-# Lookups left closed on purpose, reviewed on 2026-10-07: features the client's process
-# does not use (coupons, loyalty, shipping rules, delivery trips, sales partners, projects,
-# serial numbers, tax withholding, subcontracting) and optional fields ERPNext fills in
-# itself (cost centre, price list and tax templates on stock documents). Each is reviewed
-# again when the module that would use it is built; a new one fails this test.
-REVIEWED_CLOSED: dict[str, set[tuple[str, str]]] = {
-	"Maintenance": {
-		("Purchase Invoice", "Asset Repair Purchase Invoice.purchase_invoice"),
-		("Serial and Batch Bundle", "Asset Repair Consumed Item.serial_and_batch_bundle"),
-	},
-	"Management": {
-		("Delivery Trip", "Delivery Note.delivery_trip"),
-		("Loyalty Program", "Customer.loyalty_program"),
-	},
-	"Operator": {
-		("Project", "Job Card.project"),
-		("Quality Inspection", "Job Card.quality_inspection"),
-		("Quality Inspection Template", "Job Card.quality_inspection_template"),
-	},
-	"Production Supervisor": {
-		("Asset", "Material Request Item.wip_composite_asset"),
-		("Customer", "Material Request.customer"),
-		("Customer", "Pick List.customer"),
-		("Item Tax Template", "Stock Entry Detail.item_tax_template"),
-		("Manufacturer", "Material Request Item.manufacturer"),
-		("Purchase Order", "Stock Entry.purchase_order"),
-		("Sales Taxes and Charges Template", "Stock Entry.taxes_and_charges"),
-		("Serial No", "Serial and Batch Entry.serial_no"),
-		("Supplier", "Stock Entry.supplier"),
-		("Supplier", "Stock Entry.transporter"),
-		("Tax Category", "Stock Entry.tax_category"),
-		("Terms and Conditions", "Material Request.tc_name"),
-	},
-	"Purchase": {
-		("Asset", "Material Request Item.wip_composite_asset"),
-		("Asset", "Purchase Order Item.wip_composite_asset"),
-		("Bank Account", "Supplier.default_bank_account"),
-		("Customer", "Material Request.customer"),
-		("Manufacturer", "Material Request Item.manufacturer"),
-		("Manufacturer", "Purchase Order Item.manufacturer"),
-		("Sales Order", "Purchase Order Item.sales_order"),
-		("Tax Withholding Category", "Supplier.tax_withholding_category"),
-		("Tax Withholding Group", "Supplier.tax_withholding_group"),
-	},
-	"QA Manager": {
-		("Customs Tariff Number", "Item.customs_tariff_number"),
-	},
-	"QC Inspector": {
-		("Serial No", "Quality Inspection.item_serial_no"),
-	},
-	"Sales": {
-		("Coupon Code", "Quotation.coupon_code"),
-		("Delivery Trip", "Delivery Note.delivery_trip"),
-		("Market Segment", "Customer.market_segment"),
-		("Material Request", "Delivery Note Item.material_request"),
-		("Purchase Receipt", "Delivery Note.inter_company_reference"),
-		("Quality Inspection", "Delivery Note Item.quality_inspection"),
-		("Serial No", "Serial and Batch Entry.serial_no"),
-		("Supplier", "Delivery Note.transporter"),
-		("Supplier Quotation", "Quotation.supplier_quotation"),
-	},
-	"Stores": {
-		("Asset", "Material Request Item.wip_composite_asset"),
-		("Asset", "Purchase Receipt Item.wip_composite_asset"),
-		("Cost Center", "Delivery Note Item.cost_center"),
-		("Cost Center", "Delivery Note.cost_center"),
-		("Cost Center", "Landed Cost Taxes and Charges.cost_center"),
-		("Cost Center", "Material Request Item.cost_center"),
-		("Cost Center", "Purchase Receipt Item.cost_center"),
-		("Cost Center", "Purchase Receipt.cost_center"),
-		("Cost Center", "Purchase Taxes and Charges.cost_center"),
-		("Cost Center", "Sales Taxes and Charges.cost_center"),
-		("Cost Center", "Stock Entry Detail.cost_center"),
-		("Cost Center", "Stock Entry.cost_center"),
-		("Price List", "Delivery Note.selling_price_list"),
-		("Price List", "Material Request.buying_price_list"),
-		("Price List", "Purchase Receipt.buying_price_list"),
-		("Purchase Taxes and Charges Template", "Purchase Receipt.taxes_and_charges"),
-		("Sales Partner", "Delivery Note.sales_partner"),
-		("Sales Person", "Sales Team.sales_person"),
-		("Sales Taxes and Charges Template", "Delivery Note.taxes_and_charges"),
-		("Sales Taxes and Charges Template", "Stock Entry.taxes_and_charges"),
-		("Shipping Rule", "Delivery Note.shipping_rule"),
-		("Shipping Rule", "Purchase Receipt.shipping_rule"),
-	},
-}
 
 
 @verifies("URS-CMP-036")
@@ -115,6 +28,11 @@ class TestEveryJobCanUseItsForms(IntegrationTestCase):
 			("Production Supervisor", "Stock Entry Type", "Stock Entry"),
 			("QC Inspector", "Quality Inspection Parameter", "Quality Inspection Reading"),
 			("Maintenance", "Asset Maintenance", "Asset Maintenance Log"),
+			# found by the browser test of each job (URS-PLT-009)
+			("Sales", "Sales Stage", "Opportunity"),
+			("QC Inspector", "Quality Feedback Template", "Quality Feedback"),
+			("Production Supervisor", "Quality Feedback Template", "Quality Feedback"),
+			("Accounts", "Sales Taxes and Charges Template", "Sales Invoice"),
 		):
 			frappe.set_user(user_with_profile(profile))
 			with self.subTest(profile=profile, doctype=doctype):
@@ -138,3 +56,34 @@ class TestEveryJobCanUseItsForms(IntegrationTestCase):
 			with self.subTest(profile=profile):
 				frappe.client.get_single_value("Stock Settings", "disable_serial_no_and_batch_selector")
 				self.assertFalse(frappe.has_permission("Stock Settings", "write"))
+
+	@verifies("URS-PLT-009")
+	def test_forms_can_read_what_they_fetch_on_opening(self):
+		company = frappe.get_all("Company", pluck="name", limit=1)[0]
+		# a new material request, inspection, asset or repair reads the company's letter head
+		for profile in ("Production Supervisor", "QC Inspector", "QA Manager", "Maintenance"):
+			frappe.set_user(user_with_profile(profile))
+			with self.subTest(profile=profile):
+				frappe.client.get_value("Company", "default_letter_head", company)
+				self.assertFalse(frappe.has_permission("Company", "write"))
+		# the chart of accounts and the GST tools
+		frappe.set_user(user_with_profile("Accounts"))
+		frappe.client.get_single_value("Accounts Settings", "show_balance_in_coa")
+		frappe.get_list("Accounting Dimension", fields=["fieldname"])
+		self.assertFalse(frappe.has_permission("Accounts Settings", "write"))
+		self.assertFalse(frappe.has_permission("Accounting Dimension", "write"))
+
+	@verifies("URS-PLT-009", "URS-PLT-008")
+	def test_the_reports_of_a_jobs_areas_can_read_their_records(self):
+		for profile, doctype in (
+			("Production Supervisor", "Sales Order"),  # Exponential Smoothing Forecasting
+			("Production Supervisor", "Fiscal Year"),  # Job Card Summary
+			("QA Manager", "Fiscal Year"),  # Fixed Asset Register
+			("Purchase", "Serial and Batch Bundle"),  # Serial No and Batch Traceability
+			("Management", "Sales Invoice"),  # Sales Analytics
+			("Management", "Payment Entry"),
+		):
+			frappe.set_user(user_with_profile(profile))
+			with self.subTest(profile=profile, doctype=doctype):
+				self.assertTrue(frappe.has_permission(doctype, "read"))
+				self.assertFalse(frappe.has_permission(doctype, "write"))

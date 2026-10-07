@@ -244,6 +244,8 @@ PERMISSIONS: dict[str, dict[str, tuple[str, ...]]] = {
 			"Stock Manager": APPROVE,
 			"Manufacturing User": ENTER,
 			"Sales User": ENTER,
+			# purchasing traces a supplier's lots (the Serial No and Batch Traceability report)
+			"Purchase User": VIEW,
 		}
 	),
 	"Pick List": oversight(
@@ -276,10 +278,13 @@ HIGHER_LEVELS: dict[str, dict[tuple[str, int], tuple[str, ...]]] = {
 SUPPORTING_PERMISSIONS: dict[str, dict[str, tuple[str, ...]]] = {
 	# A goods receipt or delivery looks up the supplier's or customer's account, which
 	# ERPNext lets Stock User neither read nor select. Select only: pick it, never open it.
-	"Account": {"Stock User": PICK},
+	# The administrator picks the company's default accounts (below).
+	"Account": {"Stock User": PICK, "System Manager": PICK},
 	# The forms these jobs fill in look these up (found in the live pilot test, 2026-10-07).
 	"Stock Entry Type": {"Manufacturing User": PICK},
-	"Sales Order": {"Manufacturing User": PICK},  # a work order made against an order
+	# A work order made against an order; production also plans from the orders it reads in
+	# the forecasting report of its area (Exponential Smoothing Forecasting, module 13).
+	"Sales Order": {"Manufacturing User": ("select", "read", "report")},
 	"Workstation Type": {"Operator": PICK, "Quality Manager": PICK, **dict.fromkeys(MANAGEMENT, PICK)},
 	"Quality Inspection Parameter": {"QC Inspector": PICK},
 	"Price List": {"Quality Manager": PICK},  # a BOM's costing
@@ -287,7 +292,43 @@ SUPPORTING_PERMISSIONS: dict[str, dict[str, tuple[str, ...]]] = {
 	"Asset Maintenance": {"Maintenance User": PICK},
 	# ERPNext's stock forms read these settings and fail quietly when they may not.
 	"Stock Settings": {"Stock User": ("read",), "Manufacturing User": ("read",)},
+	# Found by the browser test of each job (URS-PLT-009), 2026-10-07:
+	# a new material request, inspection, asset or repair reads the company's letter head, and the
+	# desk tells the person they may not when they cannot read the company.
+	"Company": dict.fromkeys(
+		("Manufacturing User", "QC Inspector", "Quality Manager", "Maintenance User"), ("read",)
+	),
+	# the feedback form's template, for the jobs of the Quality area (module 42)
+	"Quality Feedback Template": {
+		"QC Inspector": PICK,
+		"Quality Manager": PICK,
+		"Manufacturing User": PICK,
+		"Manufacturing Manager": PICK,
+	},
+	"Sales Stage": {"Sales User": PICK},  # the stage of an opportunity (module 10)
+	# Invoicing (module 29): the GST template of a sales invoice, the accounting settings
+	# the chart of accounts reads, and the accounting dimensions the GST tools list.
+	"Sales Taxes and Charges Template": {"Accounts User": PICK},
+	"Accounts Settings": {"Accounts User": ("read",)},
+	"Accounting Dimension": {"Accounts User": ("read",)},
+	# The equipment register (Fixed Asset Register) and the job card summary are filtered by
+	# fiscal year.
+	"Fiscal Year": {"Quality Manager": ("read",), "Manufacturing User": ("read",)},
+	# Management's sales analytics (Selling area) totals invoices and payments as well.
+	"Sales Invoice": {"Sales Manager": ("select", "read", "report")},
+	"Payment Entry": {"Sales Manager": ("select", "read", "report")},
+	# Company and fiscal-year set-up is also the administrator's (setup/desk.py): the company
+	# form's default accounts, holiday list and finance book, and a payment term's mode.
+	"Holiday List": {"System Manager": PICK},
+	"Finance Book": {"System Manager": PICK},
+	"Mode of Payment": {"System Manager": PICK},
 }
+
+# Record types a job may create only through its transactions, never in their own form.
+# A lot is made by the receipt or production entry that brings it in: ERPNext creates it
+# with the job's own create permission. Changing a lot is QA's, so these jobs may not write
+# one, and a new lot's own form is QA's (Item Manager).
+CREATED_THROUGH_TRANSACTIONS: dict[str, tuple[str, ...]] = {"Batch": ("Stock User", "Manufacturing User")}
 
 ACCESS_CONTROL = frozenset(
 	{"User", "Role", "Role Profile", "User Permission", "Custom DocPerm", "System Settings", "Stock Settings"}

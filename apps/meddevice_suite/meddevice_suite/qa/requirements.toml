@@ -653,7 +653,7 @@ id = "URS-PLT-009"
 module = 0
 title = "Signed in as each job, the browser opens every area of that job's desk, and the list and new form of every record type the job may create, with every lookup in those forms, without a refused or failed request, and every such form can be filled in; checked on every change."
 source = "Found necessary in the live pilot test of 2026-10-07: the screens each job uses were not tested as that job"
-status = "planned"
+status = "implemented"
 
 # --- Module 30: document control (D2 Document Control; ISO 13485 4.2.4) ----
 [[requirement]]
