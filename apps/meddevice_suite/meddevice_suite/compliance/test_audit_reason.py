@@ -213,6 +213,31 @@ class TestActionsCausedByAnother(ReasonTestCase):
 		self.assertEqual(caused.changes["caused_by"], [AUDITED, doc.name])
 		self.assertNotIn("caused_by", self.last_event(doc).changes)
 
+	def test_a_change_made_while_another_record_is_saved_needs_no_reason_and_names_it(self):
+		# As ERPNext does when a job card rolls its completed quantity up to the work order.
+		work_order, job_card = self.submitted_record(), self.new_record()
+
+		def roll_up():
+			target = frappe.get_doc(AUDITED, work_order.name)
+			target.remarks = "Completed quantity rolled up"
+			target.save()
+
+		job_card.on_update = roll_up
+		job_card.qty = 2
+		job_card.save()
+
+		event = self.last_event(work_order)
+		self.assertEqual((event.action, event.reason), ("Updated after submission", None))
+		self.assertEqual(event.changes["caused_by"], [AUDITED, job_card.name])
+
+	def test_changing_a_submitted_record_by_hand_still_needs_a_reason(self):
+		doc = self.submitted_record()
+		self.new_record()  # another record saved earlier in the request is no excuse
+		doc.remarks = "Changed by hand"
+
+		with self.assertRaises(frappe.ValidationError):
+			doc.save()
+
 	def test_the_cause_ends_with_its_action(self):
 		doc, unrelated = self.submitted_record(), self.submitted_record()
 		because(doc).cancel()

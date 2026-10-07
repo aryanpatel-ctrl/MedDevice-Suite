@@ -10,8 +10,13 @@ that performs such an action itself sets `doc.flags.audit_reason` first.
 An action often causes others in the same request: "Cancel All" cancels the
 records linked to the one being cancelled, and ERPNext cancels dependent records
 in its own hooks. Those take the reason of the action that caused them, and
-their audit event names that record under `caused_by`.
+their audit event names that record under `caused_by`. A submitted record that
+ERPNext changes while saving another record (a job card updating its work
+order) was not changed by hand: no reason is asked, and its event names that
+other record.
 """
+
+import sys
 
 import frappe
 from frappe import _
@@ -23,6 +28,8 @@ from meddevice_suite.compliance.audit_scope import is_regulated
 STAGED_ACTION = {"Cancelled": "cancel", "Amended": "amend", "Updated after submission": "update_after_submit"}
 PERMISSION_FOR = {"cancel": "cancel", "amend": "amend", "update_after_submit": "write"}
 STAGE_SECONDS = 15 * 60
+# Document methods that run while a record is being saved, submitted or cancelled.
+SAVE_STEPS = frozenset({"insert", "_save", "run_before_save_methods", "run_post_save_methods"})
 MAX_LENGTH = 1000
 CANCEL_ALL_LINKED = "frappe.desk.form.linked_with.cancel_all_linked_docs"
 
@@ -54,7 +61,7 @@ def stage_reason(doctype: str, name: str, action: str, reason: str) -> None:
 		)
 
 
-def reason_for(doc: Document, action: str) -> tuple[str, list[str] | None]:
+def reason_for(doc: Document, action: str) -> tuple[str | None, list[str] | None]:
 	"""The reason for `action` on `doc`, and the record whose action caused it; refuses the action
 	when there is none. Called when the action starts and again when it is recorded."""
 	if doc.flags.audit_reason_resolved:
@@ -68,6 +75,12 @@ def reason_for(doc: Document, action: str) -> tuple[str, list[str] | None]:
 		if cause:
 			source = cause.doc or cause
 			reason, caused_by = cause.reason, [source.doctype, source.name]
+	if not reason and action == "Updated after submission" and (outer := saved_around(doc)):
+		# ERPNext changes a submitted record as part of another record's action: a job card
+		# rolls its completed quantity up to the work order. Nobody changed it by hand, so no
+		# reason is asked; its event names the record whose action changed it.
+		doc.flags.update(audit_reason=None, audit_caused_by=list(outer), audit_reason_resolved=True)
+		return None, list(outer)
 	if not reason:
 		frappe.throw(
 			_("Give a reason to {0} {1} {2}. It is recorded in the audit trail.").format(
@@ -80,6 +93,22 @@ def reason_for(doc: Document, action: str) -> tuple[str, list[str] | None]:
 	if not caused_by and not frappe.flags.audit_cause:
 		frappe.flags.audit_cause = frappe._dict(doc=doc, reason=doc.flags.audit_reason)
 	return doc.flags.audit_reason, caused_by
+
+
+def saved_around(doc: Document) -> tuple[str, str] | None:
+	"""Another record whose save is running around this record's, taken from the call stack.
+
+	Frappe's own list of records being saved is not cleared when a save fails, so in a
+	request that carries on after an error (a bulk job) it would name a record whose save
+	has ended. The call stack only ever holds the saves that are really running."""
+	frame = sys._getframe(1)
+	while frame:
+		if frame.f_code.co_name in SAVE_STEPS:
+			outer = frame.f_locals.get("self")
+			if isinstance(outer, Document) and (outer.doctype, outer.name) != (doc.doctype, doc.name):
+				return outer.doctype, outer.name
+		frame = frame.f_back
+	return None
 
 
 def reason_used(doc: Document) -> None:
