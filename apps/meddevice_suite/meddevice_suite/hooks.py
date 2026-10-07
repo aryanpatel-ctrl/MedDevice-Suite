@@ -44,7 +44,15 @@ doc_events = {
 		"before_validate": "meddevice_suite.setup.workflows.protect",
 		"on_trash": "meddevice_suite.setup.workflows.protect",
 	},
-	"Batch": {"validate": "meddevice_suite.compliance.alerts.reset_expiry_alert"},
+	"Batch": {
+		"validate": [
+			"meddevice_suite.compliance.alerts.reset_expiry_alert",
+			"meddevice_suite.setup.stock.refuse_negative_stock",
+		]
+	},
+	"Item": {"validate": "meddevice_suite.setup.stock.refuse_negative_stock"},
+	"Stock Settings": {"validate": "meddevice_suite.setup.stock.protect_stock_settings"},
+	"Log Settings": {"validate": "meddevice_suite.compliance.retention.protect_login_history"},
 	"File": {"before_validate": "meddevice_suite.compliance.evidence_files.protect"},
 	"User": {
 		"validate": "meddevice_suite.setup.roles.separate_administration",

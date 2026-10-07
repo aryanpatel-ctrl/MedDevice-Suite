@@ -1,5 +1,6 @@
 import hashlib
 import json
+from pathlib import Path
 from unittest.mock import patch
 
 import frappe
@@ -7,7 +8,7 @@ from frappe.tests import IntegrationTestCase
 
 from meddevice_suite.qa import verifies
 from meddevice_suite.setup.desk import (
-	DESKTOP_ICON_VISIBILITY,
+	DESKTOP_ICONS_SHOWN,
 	apply_desk_configuration,
 	enforce_declared_visibility,
 	set_desktop_icon_visibility,
@@ -18,26 +19,29 @@ def is_visible(label: str) -> bool:
 	return frappe.db.get_value("Desktop Icon", label, "hidden") == 0
 
 
+def icons() -> list[str]:
+	return frappe.get_all("Desktop Icon", pluck="name")
+
+
 def shipped_icon_files() -> dict[str, str]:
-	"""Hash of each declared icon's definition file in its owning app's source tree."""
+	"""Hash of each icon's definition file in its owning app's source tree."""
 	hashes = {}
-	for label in DESKTOP_ICON_VISIBILITY:
-		app = frappe.db.get_value("Desktop Icon", label, "app")
-		path = frappe.get_app_path(app, "desktop_icon", f"{frappe.scrub(label)}.json")
-		with open(path, "rb") as definition:
-			hashes[path] = hashlib.sha256(definition.read()).hexdigest()
+	for label, app in frappe.get_all("Desktop Icon", fields=["name", "app"], as_list=True):
+		path = Path(frappe.get_app_path(app, "desktop_icon", f"{frappe.scrub(label)}.json"))
+		if path.exists():
+			hashes[str(path)] = hashlib.sha256(path.read_bytes()).hexdigest()
 	return hashes
 
 
 def invert_declared_visibility() -> None:
-	for label, visible in DESKTOP_ICON_VISIBILITY.items():
-		frappe.db.set_value("Desktop Icon", label, "hidden", int(visible))
+	for label in icons():
+		frappe.db.set_value("Desktop Icon", label, "hidden", int(label in DESKTOP_ICONS_SHOWN))
 
 
 class TestDeskConfiguration(IntegrationTestCase):
 	def assert_declared_visibility(self):
-		for label, visible in DESKTOP_ICON_VISIBILITY.items():
-			self.assertEqual(is_visible(label), visible, label)
+		for label in icons():
+			self.assertEqual(is_visible(label), label in DESKTOP_ICONS_SHOWN, label)
 
 	@verifies("URS-PLT-001")
 	def test_declared_visibility_is_applied(self):
@@ -48,12 +52,27 @@ class TestDeskConfiguration(IntegrationTestCase):
 		self.assert_declared_visibility()
 
 	@verifies("URS-PLT-001")
-	def test_undeclared_icons_keep_shipped_visibility(self):
+	def test_an_area_a_future_release_adds_is_hidden(self):
+		frappe.get_doc(
+			{
+				"doctype": "Desktop Icon",
+				"label": "Future Area",
+				"icon_type": "Link",
+				"app": "erpnext",
+				"hidden": 0,
+			}
+		).db_insert()
+
 		apply_desk_configuration()
 
+		self.assertFalse(is_visible("Future Area"))
 		for label in ("Manufacturing", "Stock", "Quality", "Buying", "Selling", "Accounting"):
 			self.assertTrue(is_visible(label), label)
-		self.assertFalse(is_visible("Support"))
+
+	@verifies("URS-PLT-001")
+	def test_every_declared_area_exists(self):
+		# A release that renames an area would otherwise hide it without a word.
+		self.assertEqual(DESKTOP_ICONS_SHOWN - set(icons()), set())
 
 	@verifies("URS-PLT-002")
 	def test_reapplying_is_idempotent(self):
@@ -86,11 +105,13 @@ class TestDeskConfiguration(IntegrationTestCase):
 		set_desktop_icon_visibility("No Such Icon", visible=False)
 
 
-# A user's saved desk in which they re-showed Projects and hid CRM.
+# A user's saved desk in which they re-showed Projects, hid CRM, and kept an area a
+# later release added.
 CUSTOMISED_LAYOUT = [
 	{"label": "Stock", "hidden": 0, "idx": 1},
 	{"label": "Projects", "hidden": 0, "idx": 2},
 	{"label": "CRM", "hidden": 1, "idx": 3},
+	{"label": "Future Area", "hidden": 0, "idx": 4},
 ]
 
 
@@ -110,6 +131,7 @@ class TestSavedDesktopLayouts(IntegrationTestCase):
 				{"label": "Stock", "hidden": 0, "idx": 1},
 				{"label": "Projects", "hidden": 1, "idx": 2},
 				{"label": "CRM", "hidden": 0, "idx": 3},
+				{"label": "Future Area", "hidden": 1, "idx": 4},
 			],
 		)
 

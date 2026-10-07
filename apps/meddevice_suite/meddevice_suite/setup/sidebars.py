@@ -6,8 +6,10 @@ re-syncs one whenever its app ships a newer version, so this runs on install
 and after every migrate. Rows are written directly: saving a standard sidebar
 in developer mode would export it into the owning app's source tree.
 
-The lists are allowlists. An entry a future release adds stays out until it is
-checked against the requirement and added here. Module numbers refer to the
+Every area the desk shows has its list, and the lists are allowlists: an entry
+a future release adds stays out until it is checked against the requirement and
+added here. A declared sidebar that a release renames or removes fails the tests
+instead of being skipped. Module numbers refer to the
 agreed 57-module scope in qa/requirements.toml.
 """
 

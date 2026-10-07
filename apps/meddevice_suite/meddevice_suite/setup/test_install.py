@@ -2,7 +2,7 @@ import frappe
 from frappe.tests import IntegrationTestCase, UnitTestCase
 
 from meddevice_suite.qa import verifies
-from meddevice_suite.setup.desk import DESKTOP_ICON_VISIBILITY
+from meddevice_suite.setup.desk import DESKTOP_ICONS_SHOWN
 from meddevice_suite.setup.install import apply_configuration
 
 ENTRY_POINT = "meddevice_suite.setup.install.apply_configuration"
@@ -20,10 +20,15 @@ class TestInstallHooks(UnitTestCase):
 class TestApplyConfiguration(IntegrationTestCase):
 	@verifies("URS-PLT-001", "URS-PLT-002")
 	def test_entry_point_restores_declared_desk(self):
-		for label, visible in DESKTOP_ICON_VISIBILITY.items():
-			frappe.db.set_value("Desktop Icon", label, "hidden", int(visible))
+		labels = frappe.get_all("Desktop Icon", pluck="name")
+		for label in labels:
+			frappe.db.set_value("Desktop Icon", label, "hidden", int(label in DESKTOP_ICONS_SHOWN))
 
 		apply_configuration()
 
-		for label, visible in DESKTOP_ICON_VISIBILITY.items():
-			self.assertEqual(frappe.db.get_value("Desktop Icon", label, "hidden"), int(not visible), label)
+		for label in labels:
+			self.assertEqual(
+				frappe.db.get_value("Desktop Icon", label, "hidden"),
+				int(label not in DESKTOP_ICONS_SHOWN),
+				label,
+			)

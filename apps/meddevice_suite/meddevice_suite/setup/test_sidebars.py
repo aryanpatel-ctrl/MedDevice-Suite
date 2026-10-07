@@ -33,6 +33,13 @@ class TestSidebarScope(IntegrationTestCase):
 	def setUp(self):
 		apply_sidebar_scope()
 
+	def test_every_declared_sidebar_exists_and_every_area_shown_has_one(self):
+		from meddevice_suite.setup.desk import DESKTOP_ICONS_SHOWN
+
+		sidebars = set(frappe.get_all("Workspace Sidebar", pluck="name"))
+		self.assertEqual(set(SIDEBAR_SCOPE) - sidebars, set())
+		self.assertEqual((DESKTOP_ICONS_SHOWN & sidebars) - set(SIDEBAR_SCOPE), set())
+
 	def test_every_kept_entry_exists_in_the_shipped_sidebar(self):
 		for sidebar, keep in SIDEBAR_SCOPE.items():
 			with self.subTest(sidebar=sidebar):
