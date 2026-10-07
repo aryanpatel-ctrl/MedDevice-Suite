@@ -97,6 +97,19 @@ class TestEveryActionIsRecorded(AuditTestCase):
 			actions_for(doc), ["Created", "Updated", "Submitted", "Updated after submission", "Cancelled"]
 		)
 
+	def test_code_writing_to_a_record_before_it_is_stored_is_recorded_in_its_creation(self):
+		# ERPNext's lot bundles write totals with db_set while they are still being validated.
+		doc = frappe.get_doc({"doctype": AUDITED, "title": "Lot L-002", "qty": 2})
+		doc.validate = lambda: doc.db_set("remarks", "Set while validating")
+
+		doc.insert()
+
+		self.assertEqual(actions_for(doc), ["Created"])
+		self.assertEqual(
+			events_for(AUDITED, doc.name)[0].changes["snapshot"]["remarks"], "Set while validating"
+		)
+		self.assertEqual(verify_events(AUDITED, doc.name), [])
+
 	def test_amendment(self):
 		doc = self.new_record()
 		doc.submit()

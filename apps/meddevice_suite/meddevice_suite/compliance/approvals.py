@@ -9,12 +9,27 @@ state the record was in, taken by a role allowed to take it, and never by the
 person who raised the record.
 
 Runs on submit, which no flag skips; a refused submit rolls back with the request.
+
+Frappe also leaves three more things to the desk's buttons, which the API does not
+press, so they are enforced here on every save:
+
+- a record's state always has the docstatus the workflow gives it, so a draft is
+  never labelled approved and an approved record never labelled cancelled;
+- while a record is in a state, only the role allowed to edit in that state
+  changes it, so a requester cannot alter what the approver is about to approve;
+- once approved, what was approved (items, quantities, prices, totals) stands.
+  ERPNext's "Update Items" would change it in place; a change is made by
+  cancelling and amending instead, and the amendment is approved again.
 """
 
 import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.model.workflow import WorkflowPermissionError, get_workflow, get_workflow_name
+
+# What an approver approves on a record; none of it changes after approval.
+APPROVED_TOTALS = ("total_qty", "net_total", "grand_total")
+APPROVED_ITEM_FIELDS = ("item_code", "qty", "uom", "conversion_factor", "rate", "discount_percentage")
 
 
 def on_submit(doc: Document, method: str | None = None) -> None:
@@ -46,3 +61,72 @@ def on_submit(doc: Document, method: str | None = None) -> None:
 			WorkflowPermissionError,
 			title=_("Approval required"),
 		)
+
+
+def validate(doc: Document, method: str | None = None) -> None:
+	if not get_workflow_name(doc.doctype) or doc._action != "save" or set_up_by_code():
+		return
+
+	workflow = get_workflow(doc.doctype)
+	field = workflow.workflow_state_field
+	states = {row.state: row for row in workflow.states}
+	target = doc.get(field) or workflow.states[0].state
+	if doc.is_new():
+		require(
+			target == workflow.states[0].state,
+			_("A new {0} starts as {1}.").format(_(doc.doctype), _(workflow.states[0].state)),
+		)
+		return
+
+	before = doc.get_doc_before_save()
+	require(
+		target in states and int(states[target].doc_status) == doc.docstatus,
+		_("{0} {1} cannot be marked {2} without the action that makes it so.").format(
+			_(doc.doctype), doc.name, _(target)
+		),
+	)
+	current = before.get(field) if before else target
+	editor = states[current].allow_edit if current in states else None
+	require(
+		editor in frappe.get_roles(),
+		_("{0} {1} is {2}; only {3} can change it now.").format(
+			_(doc.doctype), doc.name, _(current), _(editor)
+		),
+	)
+
+
+def before_update_after_submit(doc: Document, method: str | None = None) -> None:
+	if not get_workflow_name(doc.doctype) or set_up_by_code():
+		return
+	before = doc.get_doc_before_save()
+	if before and approved_terms(before) != approved_terms(doc):
+		frappe.throw(
+			_(
+				"{0} {1} has been approved; its items, quantities and prices cannot change. "
+				"Cancel and amend it, and the amendment is approved again."
+			).format(_(doc.doctype), doc.name),
+			WorkflowPermissionError,
+			title=_("Approval required"),
+		)
+
+
+def approved_terms(doc: Document) -> tuple:
+	items = sorted(
+		(row.name, *(flt_or_value(row.get(field)) for field in APPROVED_ITEM_FIELDS))
+		for row in doc.get("items")
+	)
+	return (tuple(flt_or_value(doc.get(field)) for field in APPROVED_TOTALS), tuple(items))
+
+
+def flt_or_value(value):
+	# Numbers compared at a fixed precision, so float noise from recalculation is not a change.
+	return round(float(value), 6) if isinstance(value, int | float) else value
+
+
+def set_up_by_code() -> bool:
+	return bool(frappe.flags.in_install or frappe.flags.in_migrate or frappe.flags.in_patch)
+
+
+def require(condition, message: str) -> None:
+	if not condition:
+		frappe.throw(message, WorkflowPermissionError, title=_("Approval required"))

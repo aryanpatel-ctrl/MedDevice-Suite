@@ -187,10 +187,13 @@ class TestDailyWork(ProfileTestCase):
 	def test_jobs_do_not_do_each_others_work(self):
 		refused = {
 			"Purchase": [("Purchase Receipt", "create"), ("Purchase Order", "submit")],
-			"Sales": [("Delivery Note", "cancel"), ("Stock Entry", "read")],
+			# Price approval is the Sales Manager's.
+			"Sales": [("Delivery Note", "cancel"), ("Stock Entry", "read"), ("Quotation", "submit")],
 			"Production Supervisor": [("BOM", "submit")],
 			"Stores": [("Quality Inspection", "create"), ("Batch", "write")],
 			"Accounts": [("Stock Entry", "create")],
+			# The maintenance roles have no part in sales.
+			"Maintenance": [("Quotation", "read"), ("Quotation", "cancel")],
 		}
 		for profile, work in refused.items():
 			for doctype, permission in work:
@@ -265,3 +268,46 @@ class TestSegregationOfDuties(ProfileTestCase):
 			for permission in ("create", "submit", "cancel"):
 				with self.subTest(doctype=doctype, permission=permission):
 					self.assertFalse(can(operator, doctype, permission))
+
+
+@verifies("URS-CMP-034")
+class TestAdministrationIsSeparate(ProfileTestCase):
+	def new_user(self, **fields):
+		return frappe.get_doc(
+			{
+				"doctype": "User",
+				"email": f"{frappe.generate_hash(length=8)}@separation.example.com",
+				"first_name": "Separation",
+				"send_welcome_email": 0,
+				**fields,
+			}
+		)
+
+	def test_an_administrator_cannot_also_hold_a_business_role(self):
+		for fields in (
+			{"roles": [{"role": "System Manager"}, {"role": "Purchase Manager"}]},
+			{"role_profiles": [{"role_profile": "System Administrator"}, {"role_profile": "Management"}]},
+		):
+			with self.subTest(fields=fields), self.assertRaises(frappe.PermissionError):
+				self.new_user(**fields).insert(ignore_permissions=True)
+
+	def test_an_administrator_cannot_be_given_a_business_role_later(self):
+		user = frappe.get_doc("User", self.users["System Administrator"])
+		user.append("role_profiles", {"role_profile": "QA Manager"})
+		with self.assertRaises(frappe.PermissionError):
+			user.save(ignore_permissions=True)
+
+		# A role added outside the job profiles is dropped by Frappe, never granted.
+		user = frappe.get_doc("User", self.users["System Administrator"])
+		user.append("roles", {"role": "Quality Manager"})
+		user.save(ignore_permissions=True)
+		self.assertNotIn("Quality Manager", frappe.get_roles(user.name))
+
+	def test_the_built_in_administrator_account_is_not_a_person_and_is_left_alone(self):
+		frappe.get_doc("User", "Administrator").save(ignore_permissions=True)
+
+	def test_administrators_and_business_users_are_kept_apart_but_allowed(self):
+		self.new_user(roles=[{"role": "System Manager"}]).insert(ignore_permissions=True)
+		self.new_user(roles=[{"role": "Purchase Manager"}, {"role": "Sales Manager"}]).insert(
+			ignore_permissions=True
+		)

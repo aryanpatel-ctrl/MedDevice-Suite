@@ -1,11 +1,11 @@
 from unittest.mock import patch
 
 import frappe
-from frappe.email.doctype.notification.notification import evaluate_alert
+from frappe.email.doctype.notification.notification import Notification
 from frappe.tests import IntegrationTestCase
 from frappe.utils import add_days, today
 
-from meddevice_suite.compliance.alerts import ALERTS
+from meddevice_suite.compliance.alerts import ALERTS, send_expiry_alerts
 from meddevice_suite.compliance.test_approvals import ApprovalTestCase
 from meddevice_suite.qa import verifies
 from meddevice_suite.setup.install import apply_configuration
@@ -26,16 +26,6 @@ def alerts_for(user: str, doctype: str, name: str) -> list[str]:
 def failed_alerts() -> int:
 	# Frappe logs a failing alert instead of raising it, so a broken template would pass silently.
 	return frappe.db.count("Error Log", {"method": "Failed to send Notification"})
-
-
-def run_daily_alerts() -> None:
-	"""Frappe's daily alert run (trigger_daily_alerts), without the commit it makes after each alert."""
-	for name in frappe.get_all(
-		"Notification", filters={"event": ("in", ("Days Before", "Days After")), "enabled": 1}, pluck="name"
-	):
-		alert = frappe.get_doc("Notification", name)
-		for doc in alert.get_documents_for_today():
-			evaluate_alert(doc, alert, alert.event)
 
 
 def ensure_lot_item() -> None:
@@ -88,21 +78,28 @@ class TestLotExpiryAlerts(AlertTestCase):
 		lot.db_set("batch_qty", stock, update_modified=False)
 		return lot.name
 
+	def expiry_alerts(self, user: str, lot: str) -> list[str]:
+		return alerts_for(user, "Batch", lot)
+
+	def run_alerts(self, on: str | None = None) -> None:
+		with patch("meddevice_suite.compliance.alerts.today", return_value=on or today()):
+			send_expiry_alerts()
+
 	def test_stores_and_qa_are_warned_30_days_before_expiry(self):
 		lot = self.lot(30)
 
-		run_daily_alerts()
+		self.run_alerts()
 
 		for user in (self.stores, self.qa):
 			with self.subTest(user=user):
-				self.assertEqual(len(alerts_for(user, "Batch", lot)), 1)
-				self.assertIn(lot, alerts_for(user, "Batch", lot)[0])
-		self.assertEqual(alerts_for(self.sales, "Batch", lot), [])
+				self.assertEqual(len(self.expiry_alerts(user, lot)), 1)
+				self.assertIn(lot, self.expiry_alerts(user, lot)[0])
+		self.assertEqual(self.expiry_alerts(self.sales, lot), [])
 
 	def test_the_alert_says_what_to_do(self):
 		lot = self.lot(30)
 
-		run_daily_alerts()
+		self.run_alerts()
 
 		description = frappe.get_all(
 			"Notification Log", filters={"for_user": self.stores, "document_name": lot}, pluck="description"
@@ -110,33 +107,95 @@ class TestLotExpiryAlerts(AlertTestCase):
 		self.assertIn(lot, description)
 		self.assertIn("still in stock", description)
 
-	def test_the_daily_alert_run_is_scheduled(self):
-		daily = frappe.get_hooks("scheduler_events").get("daily", [])
+	def test_a_lot_is_warned_once_however_often_the_alerts_run(self):
+		lot = self.lot(20)
 
-		self.assertIn("frappe.email.doctype.notification.notification.trigger_daily_alerts", daily)
+		for day in range(3):
+			self.run_alerts(add_days(today(), day))
 
-	def test_stores_and_qa_are_alerted_on_the_day_of_expiry(self):
+		self.assertEqual(len(self.expiry_alerts(self.stores, lot)), 1)
+
+	def test_a_lot_received_inside_the_warning_period_is_warned_at_once(self):
+		lot = self.lot(5)
+
+		self.run_alerts()
+
+		self.assertEqual(len(self.expiry_alerts(self.stores, lot)), 1)
+
+	def test_a_lot_further_off_is_not_warned_yet(self):
+		lot = self.lot(31)
+
+		self.run_alerts()
+
+		self.assertEqual(self.expiry_alerts(self.stores, lot), [])
+
+	def test_a_lot_expiring_today_is_warned_and_alerted_as_expired_the_next_day(self):
 		lot = self.lot(0)
 
-		run_daily_alerts()
+		self.run_alerts()
+		self.run_alerts(add_days(today(), 1))
 
-		self.assertIn("expires today", alerts_for(self.stores, "Batch", lot)[0])
-		self.assertIn("expires today", alerts_for(self.qa, "Batch", lot)[0])
+		subjects = self.expiry_alerts(self.qa, lot)
+		self.assertEqual(len(subjects), 2)
+		self.assertIn("expires on", subjects[0])
+		self.assertIn("has expired", subjects[1])
 
-	def test_other_days_raise_no_alert(self):
-		lot = self.lot(29)
+	def test_an_expiry_the_alerts_missed_is_still_alerted(self):
+		lot = self.lot(-3)
 
-		run_daily_alerts()
+		self.run_alerts()
 
-		self.assertEqual(alerts_for(self.stores, "Batch", lot), [])
+		subjects = self.expiry_alerts(self.stores, lot)
+		self.assertEqual(len(subjects), 1)
+		self.assertIn("has expired", subjects[0])
 
-	def test_lots_without_stock_or_disabled_raise_no_alert(self):
-		used_up, disabled = self.lot(30, stock=0), self.lot(30, disabled=1)
+	def test_a_changed_expiry_date_is_alerted_afresh(self):
+		lot = self.lot(20)
+		self.run_alerts()
 
-		run_daily_alerts()
+		doc = frappe.get_doc("Batch", lot)
+		doc.expiry_date = add_days(today(), 25)
+		doc.save()
+		self.run_alerts()
 
-		self.assertEqual(alerts_for(self.stores, "Batch", used_up), [])
-		self.assertEqual(alerts_for(self.stores, "Batch", disabled), [])
+		self.assertEqual(len(self.expiry_alerts(self.stores, lot)), 2)
+
+	def test_lots_without_stock_disabled_or_without_expiry_raise_no_alert(self):
+		used_up, disabled = self.lot(10, stock=0), self.lot(10, disabled=1)
+		undated = self.lot(10)
+		frappe.db.set_value("Batch", undated, "expiry_date", None)
+
+		self.run_alerts()
+
+		for lot in (used_up, disabled, undated):
+			with self.subTest(lot=lot):
+				self.assertEqual(self.expiry_alerts(self.stores, lot), [])
+
+	def test_one_lot_failing_does_not_hold_back_the_others(self):
+		failing, other = self.lot(10), self.lot(10)
+		real = Notification.send
+
+		def send(notification, doc):
+			if doc.name == failing:
+				raise frappe.ValidationError("template broken")
+			return real(notification, doc)
+
+		with patch.object(Notification, "send", send):
+			self.run_alerts()
+
+		self.assertEqual(self.expiry_alerts(self.stores, failing), [])
+		self.assertEqual(len(self.expiry_alerts(self.stores, other)), 1)
+		self.assertTrue(
+			frappe.db.exists("Error Log", {"method": f"Expiry alert for lot {failing} could not be sent"})
+		)
+		self.run_alerts()
+		self.assertEqual(len(self.expiry_alerts(self.stores, failing)), 1)
+
+	def test_the_expiry_alerts_run_daily(self):
+		self.assertIn(
+			"meddevice_suite.compliance.alerts.send_expiry_alerts",
+			frappe.get_hooks("scheduler_events").get("daily", []),
+		)
 
 	def test_the_daily_lookup_by_expiry_date_is_indexed(self):
 		indexed = {row.Column_name for row in frappe.db.sql("SHOW INDEX FROM `tabBatch`", as_dict=True)}
@@ -215,10 +274,41 @@ class TestAlertsAreDeclared(IntegrationTestCase):
 				# What the site holds is the shipped version (Frappe re-imports only on a new timestamp).
 				self.assertTrue(alert.notification_message)
 
-	def test_an_alert_cannot_be_edited_on_a_site(self):
+	def test_an_alert_cannot_be_edited_switched_off_or_deleted_on_a_site(self):
+		frappe.set_user(user_with_profile("System Administrator"))
+		self.addCleanup(frappe.set_user, "Administrator")
 		alert = frappe.get_doc("Notification", "Lot Expiring Soon")
-		alert.days_in_advance = 7
 
-		# Standard notifications are editable only in developer mode, which a live site never runs.
-		with patch.dict(frappe.conf, {"developer_mode": 0}), self.assertRaises(frappe.ValidationError):
-			alert.save()
+		# Frappe itself allows editing a standard alert once it is switched off, and always in
+		# developer mode; neither may change a declared alert.
+		with patch.dict(frappe.conf, {"developer_mode": 1}):
+			alert.enabled = 0
+			with self.assertRaises(frappe.PermissionError):
+				alert.save()
+			with self.assertRaises(frappe.PermissionError):
+				frappe.delete_doc("Notification", "Lot Expiring Soon")
+
+		self.assertEqual(frappe.db.get_value("Notification", "Lot Expiring Soon", "enabled"), 1)
+
+	def test_an_alert_changed_behind_the_applications_back_is_restored_on_migrate(self):
+		frappe.db.set_value(
+			"Notification", "Purchase Order Awaiting Approval", {"enabled": 0, "subject": "x"}
+		)
+
+		apply_configuration()
+
+		self.assertEqual(
+			frappe.db.get_value("Notification", "Purchase Order Awaiting Approval", ["enabled", "subject"]),
+			(
+				1,
+				frappe.get_file_json(
+					frappe.get_app_path(
+						"meddevice_suite",
+						"compliance",
+						"notification",
+						"purchase_order_awaiting_approval",
+						"purchase_order_awaiting_approval.json",
+					)
+				)["subject"],
+			),
+		)

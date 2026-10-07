@@ -28,6 +28,7 @@ REGULATED_DOCTYPES: frozenset[str] = frozenset(
 		"Asset",
 		"Employee",
 		# GMP transactions
+		"Quotation",
 		"Material Request",
 		"Purchase Order",
 		"Purchase Receipt",
@@ -36,6 +37,7 @@ REGULATED_DOCTYPES: frozenset[str] = frozenset(
 		"Stock Reconciliation",
 		"Work Order",
 		"Job Card",
+		"Serial and Batch Bundle",
 		"Pick List",
 		"Delivery Note",
 		"Packing Slip",
