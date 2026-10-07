@@ -1,0 +1,74 @@
+"""Signing from the desk, and the signatures shown with a record (module 49).
+
+Every act that can be signed in the system is declared in SIGNING_ACTIONS: the
+record type, the act as the signer sees it, the meaning of the signature, and
+the function that checks the act is allowed, signs through `esign.sign` and
+performs the act. The desk's signing dialog can only reach the acts listed
+here, so the list is also the system's register of signed acts.
+
+The signatures on a record are shown on its form (`onload`) and are available
+to its print formats (`signatures_for_print`), with the signer's name, the date
+and time and the meaning (21 CFR 11.50, URS-CMP-003).
+"""
+
+from dataclasses import dataclass
+
+import frappe
+from frappe import _
+from frappe.model.document import Document
+
+from meddevice_suite.compliance.audit_scope import is_regulated
+
+
+@dataclass(frozen=True)
+class SignedAct:
+	meaning: str  # one of esign.MEANINGS
+	perform: str  # dotted path of perform(doc, password, reason) -> None: checks, signs, acts
+
+
+# (record type, act) -> the signed act. Each module adds the acts it signs.
+SIGNING_ACTIONS: dict[tuple[str, str], SignedAct] = {}
+
+
+@frappe.whitelist(methods=["POST"])
+def sign_action(doctype: str, name: str, action: str, password: str, reason: str | None = None) -> None:
+	"""Sign `action` on a record, from the signing dialog."""
+	signed_act = SIGNING_ACTIONS.get((doctype, action))
+	if not signed_act:
+		frappe.throw(_("{0} cannot be signed on {1}.").format(action, _(doctype)), frappe.PermissionError)
+	doc = frappe.get_doc(doctype, name)
+	doc.check_permission("read")
+	frappe.get_attr(signed_act.perform)(doc, password=password, reason=(reason or "").strip() or None)
+
+
+@frappe.whitelist()
+def signing_actions(doctype: str) -> dict[str, str]:
+	"""The acts the dialog may offer on a record type, with their meanings."""
+	frappe.has_permission(doctype, "read", throw=True)
+	return {
+		action: act.meaning
+		for (signed_doctype, action), act in SIGNING_ACTIONS.items()
+		if signed_doctype == doctype
+	}
+
+
+def signatures_of(doctype: str, name: str) -> list[frappe._dict]:
+	return frappe.get_all(
+		"Electronic Signature",
+		filters={"reference_doctype": doctype, "reference_name": name},
+		fields=["signer", "signer_name", "meaning", "action", "signed_at", "reason"],
+		order_by="signed_at asc, creation asc",
+	)
+
+
+def onload(doc: Document, method: str | None = None) -> None:
+	# Anyone who may open a regulated record sees who signed it, when and why.
+	if doc.meta.istable or not is_regulated(doc.doctype, doc.meta.module):
+		return
+	if signatures := signatures_of(doc.doctype, doc.name):
+		doc.set_onload("signatures", signatures)
+
+
+def signatures_for_print(doc: Document) -> list[frappe._dict]:
+	"""For print formats: `{% for s in signatures_for_print(doc) %}…{% endfor %}`."""
+	return signatures_of(doc.doctype, doc.name)
