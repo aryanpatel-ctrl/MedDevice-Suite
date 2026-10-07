@@ -23,14 +23,16 @@
    "fieldtype": "Date",
    "in_list_view": 1,
    "label": "Records Changed From",
-   "reqd": 1
+   "reqd": 1,
+   "set_only_once": 1
   },
   {
    "fieldname": "to_date",
    "fieldtype": "Date",
    "in_list_view": 1,
    "label": "Records Changed To",
-   "reqd": 1
+   "reqd": 1,
+   "set_only_once": 1
   },
   {
    "default": "Queued",
@@ -84,7 +86,7 @@
   }
  ],
  "links": [],
- "modified": "2026-10-07 04:30:00.000000",
+ "modified": "2026-10-07 22:00:00.000000",
  "modified_by": "Administrator",
  "module": "Compliance",
  "name": "Record Archive",
@@ -97,7 +99,8 @@
    "print": 1,
    "read": 1,
    "report": 1,
-   "role": "Quality Manager"
+   "role": "Quality Manager",
+   "write": 1
   },
   {
    "create": 1,
@@ -105,7 +108,8 @@
    "print": 1,
    "read": 1,
    "report": 1,
-   "role": "System Manager"
+   "role": "System Manager",
+   "write": 1
   }
  ],
  "read_only": 0,
