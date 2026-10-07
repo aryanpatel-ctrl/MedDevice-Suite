@@ -64,6 +64,11 @@ context("Signing out", () => {
 	it("[URS-CMP-035] starts the next person on a clean sign-in page", () => {
 		cy.login();
 		cy.visit("/desk/user/Administrator");
+		// Once the desk has started and opened the record, as a person signs out (a cold
+		// CI machine can take longer than the default wait to start the desk).
+		cy.window({ timeout: 60000 })
+			.its("cur_frm.doc.name", { timeout: 60000 })
+			.should("eq", "Administrator");
 		cy.window().its("frappe.app").invoke("logout");
 		cy.get(".modal:visible .btn-primary").click();
 
