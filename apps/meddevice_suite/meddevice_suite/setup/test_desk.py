@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import frappe
 from frappe.desk.desk_views import DeskViews
-from frappe.desk.desktop import Workspace, get_desktop_page
+from frappe.desk.desktop import Workspace, get_desktop_page, get_workspaces
 from frappe.permissions import get_doctypes_with_read
 from frappe.tests import IntegrationTestCase
 
@@ -190,6 +190,18 @@ class TestEachJobsDesk(IntegrationTestCase):
 					continue
 				with self.subTest(profile=profile, area=area):
 					self.assertEqual(can_open(area), bool(set(roles) & set(area_roles)))
+
+	def test_each_jobs_desk_loads_only_the_areas_of_its_work(self):
+		# What the desk itself loads for the person: an area outside this list cannot be reached.
+		for profile, roles in JOB_PROFILES.items():
+			frappe.set_user(user_with_profile(profile))
+			loaded = {page["name"] for page in get_workspaces()["pages"]}
+			declared = {area for area, area_roles in DESK_AREAS.items() if set(roles) & set(area_roles)}
+			if not loaded & declared:
+				# Frappe's empty start page for someone whose areas are sidebars, not dashboards.
+				declared.add("Welcome Workspace")
+			with self.subTest(profile=profile):
+				self.assertLessEqual(loaded, declared)
 
 	def test_everything_in_a_jobs_areas_opens_for_that_job(self):
 		# Frappe shows a System Manager every chart, whether or not they may run its report;

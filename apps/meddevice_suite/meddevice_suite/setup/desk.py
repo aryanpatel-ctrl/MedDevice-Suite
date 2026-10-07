@@ -97,11 +97,19 @@ DESK_AREAS: dict[str, tuple[str, ...]] = {
 }
 
 
+# Only the built-in Administrator account, which installs the system.
+UNUSED_AREA = ("Administrator",)
+
+
 def apply_desk_configuration() -> None:
 	for label in frappe.get_all("Desktop Icon", pluck="name"):
 		set_desktop_icon_visibility(label, label in DESKTOP_ICONS_SHOWN)
+	# Areas no job uses stay closed even to someone typing their address: their dashboards
+	# would otherwise greet the person with the errors of records they may not read.
+	unused = set(frappe.get_all("Workspace", pluck="name")) - set(DESK_AREAS)
+	areas = {**DESK_AREAS, **dict.fromkeys(unused, UNUSED_AREA)}
 	# Every area is applied: any() over a generator would stop at the first one changed.
-	changed = [set_area_roles(area, roles) for area, roles in DESK_AREAS.items()]
+	changed = [set_area_roles(area, roles) for area, roles in areas.items()]
 	if any(changed):
 		frappe.cache.delete_key("desktop_icons")
 		frappe.cache.delete_key("bootinfo")
