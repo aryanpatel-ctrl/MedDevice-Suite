@@ -11,6 +11,7 @@ from meddevice_suite.setup.roles import (
 	JOB_PROFILES,
 	NEW_ROLES,
 	PERMISSIONS,
+	SUPPORTING_PERMISSIONS,
 	apply_roles,
 	declared_rows,
 )
@@ -151,8 +152,18 @@ class TestPermissionMatrix(ProfileTestCase):
 DAILY_WORK = {
 	"Sales": [("Customer", "create"), ("Delivery Note", "submit")],
 	"Purchase": [("Supplier", "create"), ("Material Request", "submit"), ("Purchase Order", "create")],
-	"Stores": [("Purchase Receipt", "submit"), ("Stock Entry", "submit"), ("Delivery Note", "cancel")],
-	"Production Supervisor": [("BOM", "create"), ("Work Order", "submit"), ("Job Card", "submit")],
+	"Stores": [
+		("Purchase Receipt", "submit"),
+		("Stock Entry", "submit"),
+		("Delivery Note", "cancel"),
+		("Batch", "create"),
+	],
+	"Production Supervisor": [
+		("BOM", "create"),
+		("Work Order", "submit"),
+		("Job Card", "submit"),
+		("Batch", "create"),
+	],
 	"QC Inspector": [("Quality Inspection", "submit")],
 	"QA Manager": [("BOM", "submit"), ("Item", "create"), ("Quality Inspection Template", "create")],
 	"Maintenance": [("Asset Maintenance Log", "submit"), ("Asset Repair", "submit")],
@@ -178,13 +189,36 @@ class TestDailyWork(ProfileTestCase):
 			"Purchase": [("Purchase Receipt", "create"), ("Purchase Order", "submit")],
 			"Sales": [("Delivery Note", "cancel"), ("Stock Entry", "read")],
 			"Production Supervisor": [("BOM", "submit")],
-			"Stores": [("Quality Inspection", "create")],
+			"Stores": [("Quality Inspection", "create"), ("Batch", "write")],
 			"Accounts": [("Stock Entry", "create")],
 		}
 		for profile, work in refused.items():
 			for doctype, permission in work:
 				with self.subTest(profile=profile, doctype=doctype, permission=permission):
 					self.assertFalse(can(self.users[profile], doctype, permission))
+
+
+@verifies("URS-CMP-014", "URS-CMP-015")
+class TestSupportingPermissions(ProfileTestCase):
+	def test_stores_can_select_an_account_but_not_read_it(self):
+		stores = self.users["Stores"]
+
+		self.assertTrue(can(stores, "Account", "select"))
+		self.assertFalse(can(stores, "Account", "read"))
+		self.assertFalse(can(stores, "Account", "write"))
+
+	def test_erpnext_permissions_on_the_record_type_are_kept(self):
+		for doctype in SUPPORTING_PERMISSIONS:
+			standard = frappe.get_all(
+				"DocPerm", filters={"parent": doctype}, fields=["role", "permlevel", *FLAGS]
+			)
+			applied = applied_rows(doctype)
+			for row in standard:
+				with self.subTest(doctype=doctype, role=row.role):
+					for flag in FLAGS:
+						self.assertGreaterEqual(
+							applied[(row.role, row.permlevel)][flag], int(row.get(flag) or 0), flag
+						)
 
 
 @verifies("URS-CMP-016")
