@@ -30,10 +30,15 @@ def prepare_test_site() -> None:
 	if not frappe.conf.allow_tests:
 		frappe.throw(f"{frappe.local.site} does not allow tests; refusing to prepare it as a test site")
 
+	complete_setup_wizard(TEST_COMPANY)
+
+
+def complete_setup_wizard(company: dict) -> None:
+	"""Complete the setup wizard with `company`, once; also used for the pilot site."""
 	if frappe.is_setup_complete():
 		return
 
 	# The wizard reports most failures in its result rather than raising.
-	result = setup_complete(TEST_COMPANY)
+	result = setup_complete(company)
 	if not frappe.is_setup_complete():
 		frappe.throw(f"Setup wizard did not complete on {frappe.local.site}: {result}")

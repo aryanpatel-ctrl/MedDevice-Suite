@@ -41,13 +41,14 @@ REGULATED_DOCTYPES: frozenset[str] = frozenset(
 		"Packing Slip",
 		"Asset Maintenance Log",
 		"Asset Repair",
-		# Access control (21 CFR 11.10(d), (g))
+		# Access control and system settings (21 CFR 11.10(d), (g))
 		"User",
 		"Role",
 		"Role Profile",
 		"User Permission",
 		"Custom DocPerm",
 		"System Settings",
+		"Stock Settings",
 	}
 )
 
