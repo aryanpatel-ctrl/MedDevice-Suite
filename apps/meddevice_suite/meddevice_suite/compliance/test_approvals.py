@@ -399,7 +399,11 @@ class TestApprovedPricesStand(ApprovalTestCase):
 
 		self.as_user(self.approver)
 		doc = frappe.get_doc("Quotation", quotation.name)
-		self.refused(lambda: self.update_items(doc, rate=1))
+		# Refused for the approval, not for want of a reason, which would mislead the user.
+		frappe.db.savepoint("refused")
+		with self.assertRaisesRegex(frappe.ValidationError, "has been approved"):
+			self.update_items(doc, rate=1)
+		frappe.db.rollback(save_point="refused")
 
 		self.assertEqual(frappe.db.get_value("Quotation", quotation.name, "grand_total"), 1250)
 
