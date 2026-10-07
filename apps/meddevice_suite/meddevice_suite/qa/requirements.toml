@@ -497,6 +497,13 @@ title = "Whoever administers the system holds no business role, so no one can bo
 source = "21 CFR 11.10(g); EU GMP Annex 11 §12; decided on the client's instruction of 2026-10-07"
 status = "implemented"
 
+[[requirement]]
+id = "URS-CMP-035"
+module = 47
+title = "After a person signs out, the next person starts on a clean sign-in page and is never taken to the record the previous person had open."
+source = "21 CFR 11.10(d); shared shop-floor terminals; found in the live pilot test of 2026-10-07"
+status = "implemented"
+
 # --- Module 48: approval workflows (D1 approval points "A") ----------------
 [[requirement]]
 id = "URS-CMP-019"

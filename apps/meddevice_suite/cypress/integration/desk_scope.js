@@ -59,3 +59,15 @@ context("Desk scope", () => {
 		});
 	});
 });
+
+context("Signing out", () => {
+	it("[URS-CMP-035] starts the next person on a clean sign-in page", () => {
+		cy.login();
+		cy.visit("/desk/user/Administrator");
+		cy.window().its("frappe.app").invoke("logout");
+		cy.get(".modal:visible .btn-primary").click();
+
+		cy.location("pathname").should("eq", "/login");
+		cy.location("search").should("eq", "");
+	});
+});
