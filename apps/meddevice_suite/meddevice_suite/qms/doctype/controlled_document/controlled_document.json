@@ -16,7 +16,8 @@
   "current_revision",
   "effective_since",
   "next_review_date",
-  "withdrawn_reason"
+  "withdrawn_reason",
+  "review_alerted_for"
  ],
  "fields": [
   {
@@ -99,10 +100,18 @@
    "fieldtype": "Small Text",
    "label": "Withdrawn Because",
    "read_only": 1
+  },
+  {
+   "description": "The review date its process owner and QA were last alerted about.",
+   "fieldname": "review_alerted_for",
+   "fieldtype": "Date",
+   "label": "Review Alert Sent For",
+   "no_copy": 1,
+   "read_only": 1
   }
  ],
  "links": [],
- "modified": "2026-10-07 14:00:00.000000",
+ "modified": "2026-10-07 23:00:00.000000",
  "modified_by": "Administrator",
  "module": "QMS",
  "name": "Controlled Document",

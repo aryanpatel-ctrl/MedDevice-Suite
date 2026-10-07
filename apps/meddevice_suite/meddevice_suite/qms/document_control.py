@@ -28,7 +28,7 @@ from pathlib import Path
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import add_years, getdate, nowdate, today
+from frappe.utils import add_days, add_years, getdate, nowdate, today
 
 from meddevice_suite.compliance.esign import sign
 
@@ -36,6 +36,7 @@ QA_ROLE = "Quality Manager"
 IN_PROGRESS = ("Draft", "In Review", "Awaiting Approval", "Approved")
 CHUNK = 1 << 20
 EFFECTIVE_SAVEPOINT = "document_revision_effective"
+REVIEW_SAVEPOINT = "controlled_document_review_alert"
 
 
 def is_qa(user: str | None = None) -> bool:
@@ -105,6 +106,9 @@ def approve(doc: Document, password: str, reason: str | None = None) -> None:
 	doc.status = "Approved"
 	sign(doc, "Approved", "Approve", password, reason)
 	doc.flags.document_control = True
+	# Nobody holds Frappe's submit permission on a revision, so its Submit button never
+	# offers a way round the signature; the signed approval is the only submit.
+	doc.flags.ignore_permissions = True
 	doc.submit()
 	if getdate(doc.effective_date) <= getdate(today()):
 		make_effective(doc.name)
@@ -179,6 +183,43 @@ def make_due_revisions_effective() -> None:
 			frappe.log_error(title=f"Document revision {name} could not take effect")
 		else:
 			frappe.db.release_savepoint(EFFECTIVE_SAVEPOINT)
+
+
+# --- Periodic review -------------------------------------------------------------------
+
+REVIEW_ALERT = "Document Review Due"
+REVIEW_WARNING_DAYS = 30
+
+
+def send_review_alerts() -> None:
+	"""Daily: alert each effective document's process owner and QA once when its review falls
+	due within 30 days, including a review already overdue or a day the alerts did not run."""
+	notification = frappe.get_doc("Notification", REVIEW_ALERT)
+	for name, review_date in frappe.get_all(
+		"Controlled Document",
+		filters=[
+			["status", "=", "Effective"],
+			["next_review_date", "is", "set"],
+			["next_review_date", "<=", add_days(today(), REVIEW_WARNING_DAYS)],
+		],
+		fields=["name", "next_review_date"],
+		as_list=True,
+		order_by="next_review_date asc",
+	):
+		if frappe.db.get_value("Controlled Document", name, "review_alerted_for") == review_date:
+			continue
+		frappe.db.savepoint(REVIEW_SAVEPOINT)
+		try:
+			notification.send(frappe.get_doc("Controlled Document", name))
+			# Bookkeeping of the alert itself, not a change to the document: not audited.
+			frappe.db.set_value(
+				"Controlled Document", name, "review_alerted_for", review_date, update_modified=False
+			)
+		except Exception:
+			frappe.db.rollback(save_point=REVIEW_SAVEPOINT)
+			frappe.log_error(title=f"Review alert for document {name} could not be sent")
+		else:
+			frappe.db.release_savepoint(REVIEW_SAVEPOINT)
 
 
 # --- Who sees which revisions -------------------------------------------------------------

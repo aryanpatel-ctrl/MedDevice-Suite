@@ -366,7 +366,7 @@ id = "URS-CMP-003"
 module = 49
 title = "The signatures on a record are shown with the record, on screen and on its printouts, with name, date and time, and meaning."
 source = "21 CFR 11.50(b)"
-status = "planned"
+status = "implemented"
 
 [[requirement]]
 id = "URS-CMP-004"
@@ -394,7 +394,7 @@ id = "URS-CMP-030"
 module = 49
 title = "A person signs from the record, in a dialog that names the act and the meaning of the signature and asks for their own password; only the acts declared for that record type can be signed, and only by someone who may open the record."
 source = "21 CFR 11.50, 11.200; design approved 2026-10-07 (document control)"
-status = "planned"
+status = "implemented"
 
 # --- Module 50: tamper-evident audit trail (21 CFR 11.10(e); EU GMP Annex 11 §9) ---
 
@@ -648,6 +648,13 @@ title = "Each job's desk shows only the areas its work uses, every chart, card a
 source = "Least privilege (21 CFR 11.10(d)); found in the live pilot test of 2026-10-07 (report and page permission errors)"
 status = "implemented"
 
+[[requirement]]
+id = "URS-PLT-009"
+module = 0
+title = "Signed in as each job, the browser opens every area of that job's desk, and the list and new form of every record type the job may create, with every lookup in those forms, without a refused or failed request, and every such form can be filled in; checked on every change."
+source = "Found necessary in the live pilot test of 2026-10-07: the screens each job uses were not tested as that job"
+status = "planned"
+
 # --- Module 30: document control (D2 Document Control; ISO 13485 4.2.4) ----
 [[requirement]]
 id = "URS-QMS-001"
@@ -689,4 +696,19 @@ id = "URS-QMS-006"
 module = 30
 title = "QA can withdraw a document with an electronic signature and a reason, once no revision is in progress; the document and its effective revision become obsolete and are kept."
 source = "ISO 13485 4.2.4 g), h); 4.2.5"
+status = "implemented"
+
+
+[[requirement]]
+id = "URS-QMS-007"
+module = 30
+title = "Each effective document's process owner and QA are alerted once when its periodic review falls due within 30 days, including a review already overdue or a day the alerts did not run, and again for each new review date."
+source = "ISO 13485 4.2.4 b) (review and update documents); 30 days as for lot expiry, decided on the client's instruction of 2026-10-07"
+status = "implemented"
+
+[[requirement]]
+id = "URS-QMS-008"
+module = 30
+title = "A revision prints as a controlled copy with its signatures only while it is effective, and otherwise as uncontrolled and not for use; its form says whether it is in use, and offers each signed act only to the person allowed to take it, with no other way to approve it."
+source = "ISO 13485 4.2.4 d), g); 21 CFR 11.50(b); design approved 2026-10-07 (document control step C)"
 status = "implemented"

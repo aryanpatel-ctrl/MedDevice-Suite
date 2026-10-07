@@ -269,7 +269,7 @@ class TestAlertsAreDeclared(IntegrationTestCase):
 				)
 				self.assertEqual(
 					(alert.is_standard, alert.enabled, alert.module, alert.channel, alert.message_type),
-					(1, 1, "Compliance", "System Notification", "HTML"),
+					(1, 1, ALERTS[name], "System Notification", "HTML"),
 				)
 				# What the site holds is the shipped version (Frappe re-imports only on a new timestamp).
 				self.assertTrue(alert.notification_message)
