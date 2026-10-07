@@ -5,8 +5,11 @@ its complete audit history and electronic signatures, plus the period's login
 history. It is one ZIP file that a person can read without this system:
 
 - records/<record type>/<name>.json   one file per record
-- index.csv                            one line per record, with the SHA-256
-                                       fingerprint of its file
+- deleted/<record type>/<name> <event>.json
+                                       each record deleted in the period: its
+                                       content when deleted, and its history
+- index.csv                            one line per file above, with the SHA-256
+                                       fingerprint of the file
 - logins.csv                           the period's login history
 - manifest.json                        what the archive covers, and the
                                        fingerprints of index.csv and logins.csv
@@ -14,8 +17,14 @@ history. It is one ZIP file that a person can read without this system:
 The fingerprint of the whole file is kept on the Record Archive, so the archive
 can be verified at any time. Records stay in the system: an archive is a copy.
 
-Scale: records are read in pages ordered by their last change, and the file is
-written as it goes, so millions of records never sit in memory at once.
+Scale: records are read in pages ordered by their last change (indexed for
+every archived record type), and the file is written as it goes, so millions of
+records never sit in memory at once. The finished file is registered where it
+lies, never read into memory or copied. A large archive is verified in the
+background and the person who asked is notified of the result.
+
+An archive whose job stopped without finishing (a worker restarted or ran out
+of memory) is marked Failed by a daily check, so a new one can be requested.
 """
 
 import csv
@@ -24,6 +33,7 @@ import io
 import json
 import tempfile
 import zipfile
+import zlib
 from collections import Counter
 from datetime import datetime, time
 from pathlib import Path
@@ -32,8 +42,9 @@ from urllib.parse import quote
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import get_datetime, getdate, now_datetime
+from frappe.utils import add_to_date, get_datetime, getdate, now_datetime
 
+from meddevice_suite.compliance.audit import as_data
 from meddevice_suite.compliance.retention import LOGIN_HISTORY, RETENTION_SCHEDULE, scheduled_doctypes
 
 PAGE_SIZE = 500
@@ -42,13 +53,40 @@ NOT_ARCHIVED_AS_RECORDS = frozenset({"Audit Event", "Electronic Signature", LOGI
 MANIFEST, INDEX, LOGINS = "manifest.json", "index.csv", "logins.csv"
 INDEX_COLUMNS = ["record_type", "name", "docstatus", "last_changed", "file", "sha256"]
 CHUNK = 1 << 20
+# Larger archives are verified in a background job instead of the web request.
+INLINE_VERIFY_BYTES = 256 << 20
+# Longer than the build job may run (six hours), so only a stopped job is caught.
+STALLED_AFTER_HOURS = 12
+# Names Windows cannot open as files, and a length every unzip tool accepts.
+RESERVED_FILE_NAMES = frozenset(
+	{"CON", "PRN", "AUX", "NUL", *(f"COM{n}" for n in range(1, 10)), *(f"LPT{n}" for n in range(1, 10))}
+)
+NAME_LENGTH = 150
+# What a damaged or tampered archive may raise while it is read.
+UNREADABLE = (
+	zipfile.BadZipFile,
+	zlib.error,
+	EOFError,
+	KeyError,
+	ValueError,
+	TypeError,
+	AttributeError,
+	NotImplementedError,
+	RuntimeError,
+	OSError,
+)
 
 
 def build_archive(archive: str) -> None:
 	doc = frappe.get_doc("Record Archive", archive)
 	doc.db_set("status", "Running")
+	if not frappe.in_test:
+		# Visible while the job runs, and left for the daily check if the job is stopped.
+		# A background job owns its transaction, so committing here commits nothing else.
+		frappe.db.commit()  # nosemgrep
+	path = Path(frappe.get_site_path("private", "files", f"{doc.name}.zip"))
 	try:
-		path, counts = write_archive(doc)
+		counts = write_archive(doc, path)
 		sha256, md5 = file_digests(path)
 		file = frappe.get_doc(
 			{
@@ -59,9 +97,14 @@ def build_archive(archive: str) -> None:
 				"attached_to_doctype": "Record Archive",
 				"attached_to_name": doc.name,
 				"attached_to_field": "archive_file",
-				"content_hash": md5,  # given, so Frappe never reads the whole file into memory
+				"content_hash": md5,
+				"file_size": path.stat().st_size,
 			}
-		).insert(ignore_permissions=True)  # the archive service is the only writer
+		)
+		# Registered where it lies: Frappe would otherwise read it into memory, refuse it above
+		# its upload size limit, and write a second copy under another name.
+		file.flags.copy_from_existing_file = True
+		file.insert(ignore_permissions=True)  # the archive service is the only writer
 		doc.db_set(
 			{
 				"status": "Completed",
@@ -73,13 +116,41 @@ def build_archive(archive: str) -> None:
 		)
 	except Exception:
 		frappe.log_error(title=f"Record archive {archive} failed")
+		path.unlink(missing_ok=True)  # never leave a partial archive behind
 		doc.db_set({"status": "Failed", "error": frappe.get_traceback(with_context=False)[-2000:]})
 
 
-def write_archive(doc: Document) -> tuple[Path, Counter]:
+def fail_stalled_archives() -> None:
+	"""Daily: an archive whose job stopped without finishing is marked Failed."""
+	for name in frappe.get_all(
+		"Record Archive",
+		filters={
+			"status": ["in", ["Queued", "Running"]],
+			"modified": ["<", add_to_date(now_datetime(), hours=-STALLED_AFTER_HOURS)],
+		},
+		pluck="name",
+	):
+		Path(frappe.get_site_path("private", "files", f"{name}.zip")).unlink(missing_ok=True)
+		frappe.get_doc("Record Archive", name).db_set(
+			{
+				"status": "Failed",
+				"error": _("The archive job stopped before it finished. Request a new archive."),
+			}
+		)
+
+
+def ensure_indexes() -> None:
+	"""Each archived record type is read by its last change; ERPNext indexes that only for some."""
+	for doctype in archived_doctypes():
+		if not frappe.get_meta(doctype).issingle:
+			frappe.db.add_index(doctype, ["modified", "name"])
+	frappe.db.add_index(LOGIN_HISTORY, ["creation", "name"])
+	frappe.db.add_index("Audit Event", ["action", "event_at"])
+
+
+def write_archive(doc: Document, path: Path) -> Counter:
 	start = datetime.combine(getdate(doc.from_date), time.min)
 	end = datetime.combine(getdate(doc.to_date), time.max)
-	path = Path(frappe.get_site_path("private", "files", f"{doc.name}.zip"))
 	counts: Counter = Counter()
 
 	# The index is buffered on disk past 16 MB: only one archive entry can be written at a time.
@@ -92,12 +163,28 @@ def write_archive(doc: Document) -> tuple[Path, Counter]:
 		for doctype in archived_doctypes():
 			for name in changed_records(doctype, start, end):
 				record = frappe.get_doc(doctype, name)
-				arcname = f"records/{frappe.scrub(doctype)}/{quote(str(name), safe=' -_.()')}.json"
+				arcname = f"records/{frappe.scrub(doctype)}/{file_name(name)}.json"
 				data = as_json(record_file(record))
 				archive.writestr(arcname, data)
 				digest = hashlib.sha256(data).hexdigest()
 				index_writer.writerow([doctype, name, record.docstatus, record.modified, arcname, digest])
 				counts[doctype] += 1
+
+		archived = set(archived_doctypes())
+		for event in deletions(start, end):
+			if event.reference_doctype not in archived:
+				continue
+			arcname = (
+				f"deleted/{frappe.scrub(event.reference_doctype)}/"
+				f"{file_name(event.reference_name)} {event.name}.json"
+			)
+			data = as_json(deleted_record_file(event))
+			archive.writestr(arcname, data)
+			digest = hashlib.sha256(data).hexdigest()
+			index_writer.writerow(
+				[event.reference_doctype, event.reference_name, "deleted", event.event_at, arcname, digest]
+			)
+			counts[event.reference_doctype] += 1
 
 		index.seek(0)
 		manifest_files = {
@@ -123,7 +210,19 @@ def write_archive(doc: Document) -> tuple[Path, Counter]:
 				}
 			),
 		)
-	return path, counts
+	return counts
+
+
+def file_name(name: str) -> str:
+	"""A record name as a file name any system can open: separators encoded, reserved device
+	names avoided, and long names shortened with a fingerprint that keeps them distinct (the
+	index line still gives the full name)."""
+	encoded = quote(str(name), safe=" -_.()")
+	if len(encoded) > NAME_LENGTH:
+		encoded = f"{encoded[:100]}~{hashlib.sha256(str(name).encode()).hexdigest()[:16]}"
+	if encoded.split(".")[0].upper() in RESERVED_FILE_NAMES:
+		encoded = f"_{encoded}"
+	return encoded
 
 
 def write_entry(archive: zipfile.ZipFile, arcname: str, chunks) -> str:
@@ -171,10 +270,25 @@ def changed_records(doctype: str, start: datetime, end: datetime):
 
 
 def record_file(record: Document) -> dict:
-	reference = {"reference_doctype": record.doctype, "reference_name": record.name}
 	return {
 		"record_type": record.doctype,
 		"record": record.as_dict(convert_dates_to_str=True, no_private_properties=True),
+		**history(record.doctype, record.name),
+	}
+
+
+def deleted_record_file(event: frappe._dict) -> dict:
+	return {
+		"record_type": event.reference_doctype,
+		"deleted": {"by": event.user, "at": event.event_at, "audit_event": event.name},
+		"record": as_data(event.changes).get("snapshot"),
+		**history(event.reference_doctype, event.reference_name),
+	}
+
+
+def history(doctype: str, name: str) -> dict:
+	reference = {"reference_doctype": doctype, "reference_name": name}
+	return {
 		"audit_events": frappe.get_all(
 			"Audit Event", filters=reference, fields=["*"], order_by="event_at asc, creation asc"
 		),
@@ -182,6 +296,39 @@ def record_file(record: Document) -> dict:
 			"Electronic Signature", filters=reference, fields=["*"], order_by="signed_at asc, creation asc"
 		),
 	}
+
+
+def deletions(start: datetime, end: datetime):
+	"""The period's deletions of records, page by page."""
+	table = frappe.qb.DocType("Audit Event")
+	after = None
+	while True:
+		query = (
+			frappe.qb.from_(table)
+			.select(
+				table.name,
+				table.reference_doctype,
+				table.reference_name,
+				table.user,
+				table.event_at,
+				table.changes,
+			)
+			.where(table.action == "Deleted")
+			.where(table.event_at[start:end])
+			.orderby(table.event_at)
+			.orderby(table.name)
+			.limit(PAGE_SIZE)
+		)
+		if after:
+			query = query.where(
+				(table.event_at > after.event_at)
+				| ((table.event_at == after.event_at) & (table.name > after.name))
+			)
+		page = query.run(as_dict=True)
+		yield from page
+		if len(page) < PAGE_SIZE:
+			return
+		after = page[-1]
 
 
 def login_history(start: datetime, end: datetime):
@@ -215,15 +362,51 @@ def login_history(start: datetime, end: datetime):
 		after = page[-1]
 
 
-@frappe.whitelist()
-def verify(archive: str) -> list[str]:
-	"""Problems found in the archive; an empty list means it is exactly as it was made."""
+@frappe.whitelist(methods=["POST"])
+def verify(archive: str) -> list[str] | None:
+	"""Problems found in the archive; an empty list means it is exactly as it was made. A large
+	archive is verified in the background (None is returned) and the requester is notified."""
 	doc = frappe.get_doc("Record Archive", archive)
 	doc.check_permission("read")
 	if doc.status != "Completed":
 		frappe.throw(_("Only a completed archive can be verified."))
 
-	path = Path(frappe.get_site_path("private", "files", Path(doc.archive_file).name))
+	path = archive_file_path(doc)
+	if path.exists() and path.stat().st_size > INLINE_VERIFY_BYTES:
+		frappe.enqueue(
+			verify_in_background,
+			queue="long",
+			timeout=6 * 60 * 60,
+			now=frappe.in_test,
+			archive=archive,
+			user=frappe.session.user,
+		)
+		return None
+	return problems_in(doc)
+
+
+def verify_in_background(archive: str, user: str) -> None:
+	problems = problems_in(frappe.get_doc("Record Archive", archive))
+	frappe.get_doc(
+		{
+			"doctype": "Notification Log",
+			"for_user": user,
+			"type": "Alert",
+			"document_type": "Record Archive",
+			"document_name": archive,
+			"subject": _("Archive {0} verified: every file is as it was made").format(archive)
+			if not problems
+			else _("Archive {0} has changed: {1}").format(archive, "; ".join(problems[:20])),
+		}
+	).insert(ignore_permissions=True)  # the system's notice to the person who asked
+
+
+def archive_file_path(doc: Document) -> Path:
+	return Path(frappe.get_site_path("private", "files", Path(doc.archive_file).name))
+
+
+def problems_in(doc: Document) -> list[str]:
+	path = archive_file_path(doc)
 	if not path.exists():
 		return [_("The archive file is missing.")]
 
@@ -232,7 +415,7 @@ def verify(archive: str) -> list[str]:
 		problems.append(_("The archive file has changed since it was made."))
 	try:
 		with zipfile.ZipFile(path) as archive:
-			expected = json.loads(archive.read(MANIFEST))["files"]
+			expected = dict(json.loads(archive.read(MANIFEST))["files"])
 			stored = set(archive.namelist())
 			for arcname, digest in expected.items():
 				problems += entry_problems(archive, stored, arcname, digest)
@@ -245,7 +428,7 @@ def verify(archive: str) -> list[str]:
 			problems += [
 				_("{0} was added to the archive.").format(arcname) for arcname in sorted(stored - listed)
 			]
-	except (zipfile.BadZipFile, KeyError, ValueError):
+	except UNREADABLE:
 		problems.append(_("The archive file cannot be read."))
 	return problems
 
@@ -254,9 +437,12 @@ def entry_problems(archive: zipfile.ZipFile, stored: set[str], arcname: str, dig
 	if arcname not in stored:
 		return [_("{0} is missing from the archive.").format(arcname)]
 	sha256 = hashlib.sha256()
-	with archive.open(arcname) as entry:
-		while chunk := entry.read(CHUNK):
-			sha256.update(chunk)
+	try:
+		with archive.open(arcname) as entry:
+			while chunk := entry.read(CHUNK):
+				sha256.update(chunk)
+	except UNREADABLE:
+		return [_("{0} cannot be read.").format(arcname)]
 	return [] if sha256.hexdigest() == digest else [_("{0} has changed.").format(arcname)]
 
 

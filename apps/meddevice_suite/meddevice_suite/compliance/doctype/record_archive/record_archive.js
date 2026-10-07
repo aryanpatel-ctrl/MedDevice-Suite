@@ -6,7 +6,15 @@ frappe.ui.form.on("Record Archive", {
 			frappe
 				.xcall("meddevice_suite.compliance.archive.verify", { archive: frm.doc.name })
 				.then((problems) =>
-					problems.length
+					!Array.isArray(problems)
+						? frappe.msgprint({
+								title: __("Verification started"),
+								indicator: "blue",
+								message: __(
+									"This archive is large, so it is verified in the background. You will be notified of the result."
+								),
+						  })
+						: problems.length
 						? frappe.msgprint({
 								title: __("Archive has changed"),
 								indicator: "red",
