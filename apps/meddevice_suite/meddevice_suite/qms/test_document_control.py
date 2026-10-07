@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 import frappe
 from frappe.desk.search import search_link
+from frappe.email.doctype.notification.notification import Notification
 from frappe.tests import IntegrationTestCase
 from frappe.utils import add_days, add_years, getdate, today
 from frappe.utils.password import update_password
@@ -18,6 +19,7 @@ from meddevice_suite.qms.document_control import (
 	make_due_revisions_effective,
 	make_effective,
 	revision_query_conditions,
+	send_review_alerts,
 )
 from meddevice_suite.setup.roles import apply_roles
 from meddevice_suite.setup.test_roles import user_with_profile
@@ -448,6 +450,23 @@ class TestNoWayAroundTheSignedActs(DocumentControlTestCase):
 			frappe.get_doc("Document Revision", revision.name).submit()
 		self.assertEqual(frappe.db.get_value("Document Revision", revision.name, "docstatus"), 0)
 
+	def test_even_code_skipping_permissions_cannot_submit_or_change_a_revision_unsigned(self):
+		revision = self.draft(self.register())
+		self.act(self.author, revision, "Author")
+		self.act(self.reviewer, revision, "Review")
+
+		self.as_user(self.qa)
+		unsigned = frappe.get_doc("Document Revision", revision.name)
+		unsigned.flags.ignore_permissions = True
+		with self.assertRaises(frappe.PermissionError):
+			unsigned.submit()
+
+		approved = self.act(self.qa, revision, "Approve")
+		approved.flags.ignore_permissions = True
+		approved.superseded_by = approved.name
+		with self.assertRaises(frappe.PermissionError):
+			approved.save()
+
 	def test_an_approved_revision_cannot_be_changed_through_the_api(self):
 		revision = self.issue(self.register())
 
@@ -582,4 +601,141 @@ class TestOutsidersCannotReachDrafts(DocumentControlTestCase):
 				frappe.client.get("Document Revision", name)
 		self.assertEqual(
 			{row["value"] for row in search_link("Document Revision", document.name)}, {current.name}
+		)
+
+
+@verifies("URS-QMS-008", "URS-CMP-003")
+class TestControlledCopy(DocumentControlTestCase):
+	def printout(self, revision) -> str:
+		self.as_user(self.qa)
+		return frappe.get_print("Document Revision", revision.name, "Controlled Copy")
+
+	def test_an_effective_revision_prints_as_a_controlled_copy_with_its_signatures(self):
+		revision = self.issue(self.register())
+
+		html = self.printout(revision)
+
+		self.assertIn("CONTROLLED COPY", html)
+		self.assertNotIn("UNCONTROLLED", html)
+		self.assertIn(revision.file_sha256, html)
+		for user in (self.author, self.reviewer, self.qa):
+			self.assertIn(user, html)
+		for meaning in ("Authored", "Reviewed", "Approved"):
+			self.assertIn(meaning, html)
+
+	def test_any_other_revision_prints_as_uncontrolled(self):
+		document = self.register()
+		first = self.issue(document)
+		self.issue(document, summary="Clarified step 3")
+		draft = self.draft(document, summary="Work in progress")
+
+		for revision, status in ((first, "Superseded"), (draft, "Draft")):
+			with self.subTest(status=status):
+				html = self.printout(frappe.get_doc("Document Revision", revision.name))
+				self.assertIn("UNCONTROLLED", html)
+				self.assertNotIn("CONTROLLED COPY", html)
+				self.assertIn(status, html)
+
+	def test_it_is_the_revisions_default_printout(self):
+		self.assertEqual(frappe.get_meta("Document Revision").default_print_format, "Controlled Copy")
+
+	def test_nobody_may_submit_a_revision_except_through_the_signed_approval(self):
+		for user in (self.qa, self.author, self.reviewer):
+			with self.subTest(user=user):
+				self.assertFalse(frappe.has_permission("Document Revision", "submit", user=user))
+
+	def test_the_form_knows_whether_a_revision_is_in_progress(self):
+		document = self.register()
+		self.issue(document)
+		self.as_user(self.qa)
+		loaded = frappe.get_doc("Controlled Document", document.name)
+		loaded.run_method("onload")
+		self.assertIsNone(loaded.get_onload().get("revision_in_progress"))
+
+		draft = self.draft(document, summary="Next")
+		self.as_user(self.qa)
+		loaded = frappe.get_doc("Controlled Document", document.name)
+		loaded.run_method("onload")
+		self.assertEqual(loaded.get_onload().get("revision_in_progress"), draft.name)
+
+
+@verifies("URS-QMS-007")
+class TestPeriodicReviewAlerts(DocumentControlTestCase):
+	def due_in(self, days: int):
+		document = self.register()
+		self.issue(document)
+		frappe.db.set_value("Controlled Document", document.name, "next_review_date", add_days(today(), days))
+		return document
+
+	def alerts(self, user: str, document) -> list[str]:
+		return frappe.get_all(
+			"Notification Log",
+			filters={
+				"for_user": user,
+				"document_type": "Controlled Document",
+				"document_name": document.name,
+			},
+			pluck="subject",
+		)
+
+	def test_the_owner_and_qa_are_alerted_once_when_the_review_falls_due(self):
+		document = self.due_in(30)
+
+		send_review_alerts()
+		send_review_alerts()
+
+		for user in (self.author, self.qa):
+			with self.subTest(user=user):
+				self.assertEqual(len(self.alerts(user, document)), 1)
+		self.assertEqual(self.alerts(self.outsider, document), [])
+
+	def test_an_overdue_review_is_alerted_and_a_later_one_waits(self):
+		overdue, later = self.due_in(-10), self.due_in(31)
+
+		send_review_alerts()
+
+		self.assertEqual(len(self.alerts(self.qa, overdue)), 1)
+		self.assertEqual(self.alerts(self.qa, later), [])
+
+	def test_a_new_review_date_is_alerted_afresh(self):
+		document = self.due_in(5)
+		send_review_alerts()
+		frappe.db.set_value("Controlled Document", document.name, "next_review_date", add_days(today(), 20))
+
+		send_review_alerts()
+
+		self.assertEqual(len(self.alerts(self.qa, document)), 2)
+
+	def test_withdrawn_documents_raise_no_review_alert(self):
+		document = self.due_in(5)
+		frappe.db.set_value("Controlled Document", document.name, "status", "Obsolete")
+
+		send_review_alerts()
+
+		self.assertEqual(self.alerts(self.qa, document), [])
+
+	def test_one_document_failing_does_not_hold_back_the_others(self):
+		failing, other = self.due_in(5), self.due_in(5)
+		real = Notification.send
+
+		def send(notification, doc):
+			if doc.name == failing.name:
+				raise frappe.ValidationError("template broken")
+			return real(notification, doc)
+
+		with patch.object(Notification, "send", send):
+			send_review_alerts()
+
+		self.assertEqual(self.alerts(self.qa, failing), [])
+		self.assertEqual(len(self.alerts(self.qa, other)), 1)
+		self.assertTrue(
+			frappe.db.exists(
+				"Error Log", {"method": f"Review alert for document {failing.name} could not be sent"}
+			)
+		)
+
+	def test_the_review_alerts_run_daily(self):
+		self.assertIn(
+			"meddevice_suite.qms.document_control.send_review_alerts",
+			frappe.get_hooks("scheduler_events").get("daily", []),
 		)

@@ -7,6 +7,8 @@ from frappe.model.document import Document
 from frappe.model.naming import make_autoname
 from frappe.utils import cint
 
+from meddevice_suite.qms.document_control import IN_PROGRESS
+
 # Numbering TYPE-DEPARTMENT-###, decided on the client's instruction of 2026-10-07.
 TYPE_CODES = {
 	"SOP": "SOP",
@@ -41,6 +43,15 @@ class ControlledDocument(Document):
 			)
 		if self.status == "Obsolete":
 			frappe.throw(_("{0} has been withdrawn and cannot be changed.").format(self.name))
+
+	def onload(self):
+		# The form offers a new revision only when none is in progress (the server checks again).
+		self.set_onload(
+			"revision_in_progress",
+			frappe.db.get_value(
+				"Document Revision", {"controlled_document": self.name, "status": ["in", IN_PROGRESS]}, "name"
+			),
+		)
 
 	def on_trash(self):
 		frappe.throw(_("A controlled document is withdrawn, never deleted."), frappe.PermissionError)

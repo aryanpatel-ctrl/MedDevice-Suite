@@ -25,14 +25,16 @@ from frappe.utils import add_days, today
 MODULE = "Compliance"
 EXPIRING_SOON = "Lot Expiring Soon"
 EXPIRED = "Lot Expired"
-ALERTS = (
-	EXPIRING_SOON,
-	EXPIRED,
-	"Quotation Awaiting Price Approval",
-	"Purchase Order Awaiting Approval",
-	"Quotation Price Approval Decided",
-	"Purchase Order Approval Decided",
-)
+# alert -> the module that ships it
+ALERTS: dict[str, str] = {
+	EXPIRING_SOON: MODULE,
+	EXPIRED: MODULE,
+	"Quotation Awaiting Price Approval": MODULE,
+	"Purchase Order Awaiting Approval": MODULE,
+	"Quotation Price Approval Decided": MODULE,
+	"Purchase Order Approval Decided": MODULE,
+	"Document Review Due": "QMS",  # periodic review of controlled documents (module 30)
+}
 WARNING_DAYS = 30
 # On the lot: the last expiry alert it has had. Bookkeeping of this module only.
 ALERT_FIELD = "mds_expiry_alert"
@@ -53,10 +55,10 @@ CUSTOM_FIELDS = {
 
 def apply_alerts() -> None:
 	create_custom_fields(CUSTOM_FIELDS, ignore_validate=True)
-	for name in ALERTS:
+	for name, module in ALERTS.items():
 		# As shipped, whatever happened on the site since the last migrate. Frappe's import
 		# keeps a site's choice to switch a standard alert off; a declared alert is always on.
-		import_file(MODULE, "Notification", name, force=True)
+		import_file(module, "Notification", name, force=True)
 		frappe.db.set_value("Notification", name, "enabled", 1, update_modified=False)
 	# The daily expiry lookup reads lots by expiry date, which ERPNext does not index.
 	frappe.db.add_index("Batch", ["expiry_date"])

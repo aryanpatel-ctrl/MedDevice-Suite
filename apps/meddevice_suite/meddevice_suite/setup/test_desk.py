@@ -220,6 +220,19 @@ class TestEachJobsDesk(IntegrationTestCase):
 						kind, name = target
 						self.assertIn(name, reports if kind == "Report" else readable)
 
+	def test_area_roles_changed_on_a_site_are_restored_on_migrate(self):
+		# A QC inspector reads records of the buying module, so only the area's roles keep it out.
+		frappe.db.delete("Has Role", {"parent": "Buying", "parenttype": "Workspace"})
+		frappe.clear_document_cache("Workspace", "Buying")
+		frappe.set_user(user_with_profile("QC Inspector"))
+		self.assertTrue(can_open("Buying"))
+
+		frappe.set_user("Administrator")
+		apply_configuration()
+
+		frappe.set_user(user_with_profile("QC Inspector"))
+		self.assertFalse(can_open("Buying"))
+
 	def test_a_record_type_one_may_not_open_is_refused_plainly(self):
 		frappe.set_user(user_with_profile("Sales"))
 
