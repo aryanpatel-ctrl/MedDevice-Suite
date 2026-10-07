@@ -1,0 +1,21 @@
+{
+ "app": "meddevice_suite",
+ "creation": "2026-10-07 23:30:00.000000",
+ "docstatus": 0,
+ "doctype": "Desktop Icon",
+ "hidden": 0,
+ "icon": "compliance",
+ "icon_type": "Link",
+ "idx": 0,
+ "label": "Compliance",
+ "link_to": "Compliance",
+ "link_type": "Workspace Sidebar",
+ "modified": "2026-10-07 23:30:00.000000",
+ "modified_by": "Administrator",
+ "name": "Compliance",
+ "owner": "Administrator",
+ "parent_icon": "",
+ "restrict_removal": 0,
+ "roles": [],
+ "standard": 1
+}
