@@ -34,5 +34,7 @@ bench --site "$SITE" set-config pilot_user_password "$PILOT_USER_PASSWORD"
 
 bench --site "$SITE" execute meddevice_suite.pilot.site.prepare_pilot_site
 bench --site "$SITE" execute meddevice_suite.pilot.demo.load_demo_data
+# One record at every stage of the standard flow, made by each job's demo user.
+bench --site "$SITE" execute meddevice_suite.pilot.samples.load_sample_records
 
 echo "Pilot site ready: http://$SITE:8000 (run 'bench --site $SITE add-to-hosts' once if the name does not resolve)"
