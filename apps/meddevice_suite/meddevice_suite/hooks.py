@@ -19,9 +19,10 @@ doc_events = {
 		"before_insert": "meddevice_suite.compliance.audit.before_insert",
 		"before_change": "meddevice_suite.compliance.audit.before_change",
 		"before_cancel": "meddevice_suite.compliance.audit.before_cancel",
+		# What an approval forbids is refused first; asking a reason for it would mislead.
 		"before_update_after_submit": [
-			"meddevice_suite.compliance.audit.before_update_after_submit",
 			"meddevice_suite.compliance.approvals.before_update_after_submit",
+			"meddevice_suite.compliance.audit.before_update_after_submit",
 		],
 		# Approval workflows: returns at once for record types without one.
 		"validate": "meddevice_suite.compliance.approvals.validate",
