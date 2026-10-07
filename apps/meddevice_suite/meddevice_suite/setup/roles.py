@@ -20,8 +20,9 @@ Access-control and settings record types (User, Role, Role Profile, User Permiss
 Custom DocPerm, System Settings, Stock Settings) keep Frappe's own permissions: they
 are changed by configuration code, not by jobs.
 
-The job and role names are proposals built from the departments in the client's
-diagrams, which do not name job roles (requirement baseline, question 3).
+The diagrams do not name job roles; these jobs were decided from their departments
+on the client's instruction of 2026-10-07, which left such choices to us. Job titles
+can be renamed without changing what each job may do.
 """
 
 import frappe
