@@ -46,9 +46,14 @@ function setup() {
 	}
 }
 
+// Leaves the previous person's page first: a page left open while the sessions change can end
+// the new session on a slow machine (as in standard_flow.js).
 function as_user(user) {
+	cy.window({ log: false }).then((win) => win.location.replace("about:blank"));
+	cy.location("href", { log: false }).should("eq", "about:blank");
 	cy.login(user, PASSWORD);
 	cy.visit("/desk");
+	cy.window().its("frappe.session.user").should("eq", user);
 }
 
 function open_order(name) {

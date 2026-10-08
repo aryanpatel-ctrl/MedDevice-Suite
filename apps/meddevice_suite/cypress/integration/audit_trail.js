@@ -160,7 +160,12 @@ context("Audit trail review", () => {
 			).click();
 			cy.get('.page-container:visible .dropdown-item[data-label="Audit%20Trail"]').click();
 			cy.location("pathname").should("eq", "/desk/audit-event");
-			cy.get(".page-container:visible .list-row-container").should("have.length", 2);
+			// The record's events, without the list's header row, which Frappe gives the same class.
+			cy.get(".page-container:visible .list-row-container:not(:has(.list-row-head))")
+				.should("have.length", 2)
+				.and("contain", "Submitted")
+				.and("contain", "Cancelled");
+			cy.get(".page-container:visible .list-count").should("contain", "2 of 2");
 		});
 	});
 

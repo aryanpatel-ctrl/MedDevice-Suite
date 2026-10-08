@@ -15,9 +15,15 @@ const email = (who) => PEOPLE[who][0];
 let document_name;
 let change;
 
+// Signs in as `who`, leaving the previous person's page first, as a person signs out before the
+// next signs in: a page left open while the sessions change can end the new session on a slow
+// machine (found in CI, 2026-10-08; standard_flow.js sign_in does the same).
 function as(who) {
+	cy.window({ log: false }).then((win) => win.location.replace("about:blank"));
+	cy.location("href", { log: false }).should("eq", "about:blank");
 	cy.login(email(who), PASSWORD);
 	cy.visit("/desk");
+	cy.window().its("frappe.session.user").should("eq", email(who));
 }
 
 function as_call(who, method, args) {
