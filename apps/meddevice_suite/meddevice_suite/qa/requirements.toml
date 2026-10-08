@@ -804,8 +804,10 @@ status = "implemented"
 
 # --- Wave 1: lot status and incoming QC (modules 1, 4, 6, 16, 17) ----------------
 # Planned on 2026-10-08 from the Phase 0 gap audit: the diagrams' first quality gate.
-# Each becomes `implemented` only with its passing tests; the client approves the
-# titles before any code is written.
+# Each becomes `implemented` only with its passing tests. On 2026-10-08 the client
+# instructed that the certification details come at the end and that every open choice
+# is ours until then, taken on the standard; the choices taken are named in each source
+# and are confirmed or changed through change control when those details arrive.
 
 [[requirement]]
 id = "URS-STK-004"
@@ -832,14 +834,14 @@ status = "planned"
 id = "URS-STK-007"
 module = 17
 title = "When lot status is installed on a site that already holds stock, every lot is given a status by a migration recorded in the audit trail: lots in the approved and finished goods stores become Approved, every other lot Quarantine."
-source = "Engineering rules section 8 (schema changes migrate existing data); ISO 13485 4.2.5; to be confirmed by the client with the real stock"
+source = "Engineering rules section 8 (schema changes migrate existing data); ISO 13485 4.2.5; status by store role decided under the client's instruction of 2026-10-08, confirmed against the physical count at cutover"
 status = "planned"
 
 [[requirement]]
 id = "URS-QC-001"
 module = 16
-title = "A goods receipt records, per line, the supplier's lot number and the supplier's certificate (analysis or conformity) as an attached file with its verification against the purchase specification; incoming inspection cannot start for a lot whose certificate verification is not complete."
-source = "D3 Document Verification (COA / COC / ISO); D4 3.1, 3.2; ISO 13485 7.4.3"
+title = "A goods receipt records, per line, the supplier's lot number and the supplier's certificate (analysis or conformity) as a file attached by Stores; the QC Inspector records its verification against the purchase specification, and incoming inspection cannot start for a lot whose certificate is not verified."
+source = "D3 Document Verification (COA / COC / ISO); D4 3.1, 3.2; ISO 13485 7.4.3; verification by QC decided under the client's instruction of 2026-10-08"
 status = "planned"
 
 [[requirement]]
@@ -852,8 +854,8 @@ status = "planned"
 [[requirement]]
 id = "URS-QC-003"
 module = 16
-title = "A received lot is released by QA with an electronic signature only once an accepted incoming inspection exists for it: release sets the lot Approved and moves its stock to the approved store in one audited transaction; QA can instead reject it with a signature and a reason, which sets it Rejected, moves the stock to the rejected store and creates the return to the supplier for Purchase; or hold it, which sets it Hold and moves it to the hold store."
-source = "D2 Pass? No: Reject / Return To Supplier, Yes: Put Away; D3 Accepted / Rejected; D4 3.5, 3.6; ISO 13485 7.4.3, 8.3; 21 CFR 11.50"
+title = "A received lot is released by QA with an electronic signature only once an accepted incoming inspection exists for it: release sets the lot Approved and moves its stock to the approved store in one audited transaction; QA can instead reject it with a signature and a reason, which sets it Rejected, moves the stock to the rejected store and creates the return to the supplier for Purchase; or hold it, which sets it Hold and moves it to the hold store; a held lot is released only after a new accepted inspection and with a reason."
+source = "D2 Pass? No: Reject / Return To Supplier, Yes: Put Away; D3 Accepted / Rejected; D4 3.5, 3.6; ISO 13485 7.4.3, 8.3; 21 CFR 11.50; release of a held lot after retest decided under the client's instruction of 2026-10-08"
 status = "planned"
 
 [[requirement]]
@@ -866,8 +868,8 @@ status = "planned"
 [[requirement]]
 id = "URS-PUR-001"
 module = 4
-title = "Every supplier has an approval status, Approved, Conditional or Not Approved, set by QA with an electronic signature and a reason, with the items it is approved for and the expiry date of its certificate; a purchase order for an item from a supplier not approved for it is refused, and QA and Purchase are alerted before a supplier certificate expires."
-source = "D2 Vendor Master, Supplier; D3 Purchase Order to Vendor; D4 2.5 Vendor Management; ISO 13485 7.4.1; alert period to be confirmed by the client (30 days as for lots)"
+title = "Every supplier has an approval status, Approved, Conditional or Not Approved, set by QA with an electronic signature and a reason, with the items it is approved for and the expiry date of its certificate; a purchase order for an item from a supplier not approved for it is refused; a Conditional approval has an expiry date, each purchase order under it needs a reason and its lots are inspected at 100 percent; QA and Purchase are alerted once, 30 days before a supplier certificate expires."
+source = "D2 Vendor Master, Supplier; D3 Purchase Order to Vendor; D4 2.5 Vendor Management; ISO 13485 7.4.1; conditional approval rules and the 30-day alert decided under the client's instruction of 2026-10-08"
 status = "planned"
 
 [[requirement]]
