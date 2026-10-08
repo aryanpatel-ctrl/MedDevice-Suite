@@ -27,10 +27,10 @@ class ControlledDocument(Document):
 	"""A document of the quality system (module 30). QA registers it; its content lives in
 	its revisions (`Document Revision`), and `qms.document_control` moves it through its life."""
 
-	def autoname(self):
+	def autoname(self) -> None:
 		self.name = make_autoname(f"{TYPE_CODES[self.document_type]}-{self.department}-.###", doc=self)
 
-	def validate(self):
+	def validate(self) -> None:
 		if cint(self.review_period_years) < 1:
 			frappe.throw(_("A document is reviewed at least every year."))
 		if self.is_new() or self.flags.document_control:
@@ -44,7 +44,7 @@ class ControlledDocument(Document):
 		if self.status == "Obsolete":
 			frappe.throw(_("{0} has been withdrawn and cannot be changed.").format(self.name))
 
-	def onload(self):
+	def onload(self) -> None:
 		# The form offers a new revision only when none is in progress (the server checks again).
 		self.set_onload(
 			"revision_in_progress",
@@ -53,5 +53,5 @@ class ControlledDocument(Document):
 			),
 		)
 
-	def on_trash(self):
+	def on_trash(self) -> None:
 		frappe.throw(_("A controlled document is withdrawn, never deleted."), frappe.PermissionError)

@@ -19,11 +19,11 @@ class DocumentRevision(Document):
 	"""One issue of a controlled document (module 30). Its life is driven by the signed acts
 	in `qms.document_control`; this controller keeps everyone else to the rules."""
 
-	def autoname(self):
+	def autoname(self) -> None:
 		self.revision = next_revision_number(self.controlled_document)
 		self.name = f"{self.controlled_document}-REV-{self.revision}"
 
-	def before_insert(self):
+	def before_insert(self) -> None:
 		lock_document(self.controlled_document)
 		document = frappe.get_doc("Controlled Document", self.controlled_document)
 		if document.status == "Obsolete":
@@ -43,7 +43,7 @@ class DocumentRevision(Document):
 		for field in SET_BY_DOCUMENT_CONTROL:
 			self.set(field, None)
 
-	def validate(self):
+	def validate(self) -> None:
 		if self.is_new() or self.flags.document_control:
 			return
 		before = self.get_doc_before_save()
@@ -65,13 +65,13 @@ class DocumentRevision(Document):
 				frappe.PermissionError,
 			)
 
-	def before_submit(self):
+	def before_submit(self) -> None:
 		self.only_by_document_control()
 
-	def before_update_after_submit(self):
+	def before_update_after_submit(self) -> None:
 		self.only_by_document_control()
 
-	def only_by_document_control(self):
+	def only_by_document_control(self) -> None:
 		# Frappe's Submit button and the API would otherwise approve or change a revision unsigned.
 		if not self.flags.document_control:
 			frappe.throw(
@@ -79,10 +79,10 @@ class DocumentRevision(Document):
 				frappe.PermissionError,
 			)
 
-	def on_trash(self):
+	def on_trash(self) -> None:
 		frappe.throw(_("A document revision is never deleted."), frappe.PermissionError)
 
-	def before_cancel(self):
+	def before_cancel(self) -> None:
 		frappe.throw(
 			_("An approved revision is superseded or withdrawn, never cancelled."), frappe.PermissionError
 		)

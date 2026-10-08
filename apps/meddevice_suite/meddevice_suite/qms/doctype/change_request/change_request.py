@@ -57,7 +57,7 @@ class ChangeRequest(Document):
 	"""A proposed change (module 36). Its life is driven by the acts in `qms.change_control`;
 	this controller keeps everyone else to the rules."""
 
-	def before_insert(self):
+	def before_insert(self) -> None:
 		if not in_business_job():
 			frappe.throw(
 				_("A change request is raised by someone in a business job."), frappe.PermissionError
@@ -72,7 +72,7 @@ class ChangeRequest(Document):
 			for field in COMPLETION_FIELDS:
 				row.set(field, 0 if field == "done" else None)
 
-	def validate(self):
+	def validate(self) -> None:
 		if self.is_new() or self.flags.change_control:
 			return
 		if any(row.get(field) for row in self.actions for field in COMPLETION_FIELDS):
@@ -93,13 +93,13 @@ class ChangeRequest(Document):
 				frappe.PermissionError,
 			)
 
-	def before_submit(self):
+	def before_submit(self) -> None:
 		self.only_by_change_control()
 
-	def before_update_after_submit(self):
+	def before_update_after_submit(self) -> None:
 		self.only_by_change_control()
 
-	def only_by_change_control(self):
+	def only_by_change_control(self) -> None:
 		# Frappe's Submit button and the API would otherwise approve or change a request unsigned.
 		if not self.flags.change_control:
 			frappe.throw(
@@ -107,10 +107,10 @@ class ChangeRequest(Document):
 				frappe.PermissionError,
 			)
 
-	def on_trash(self):
+	def on_trash(self) -> None:
 		frappe.throw(_("A change request is never deleted."), frappe.PermissionError)
 
-	def before_cancel(self):
+	def before_cancel(self) -> None:
 		frappe.throw(
 			_("An approved change is implemented and closed, never cancelled."), frappe.PermissionError
 		)

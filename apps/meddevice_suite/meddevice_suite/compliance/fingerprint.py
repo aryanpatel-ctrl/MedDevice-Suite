@@ -6,6 +6,7 @@ always gives the same fingerprint and any change gives a different one.
 
 import hashlib
 import json
+from typing import Any
 
 import frappe
 from frappe import _
@@ -22,7 +23,7 @@ def record_content(doc: Document) -> dict:
 	return without_volatile_fields(doc.as_dict(no_private_properties=True, convert_dates_to_str=True))
 
 
-def without_volatile_fields(value):
+def without_volatile_fields(value: Any) -> Any:
 	if isinstance(value, dict):
 		return {
 			key: without_volatile_fields(item) for key, item in value.items() if key not in VOLATILE_FIELDS
@@ -32,7 +33,7 @@ def without_volatile_fields(value):
 	return value
 
 
-def sha256(value) -> str:
+def sha256(value: Any) -> str:
 	canonical = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str, ensure_ascii=False)
 	return hashlib.sha256(canonical.encode()).hexdigest()
 
