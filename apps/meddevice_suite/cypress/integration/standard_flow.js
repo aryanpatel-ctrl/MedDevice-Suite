@@ -34,9 +34,14 @@ const run = { problems: [], expected: [] };
 
 // --- Signing in -----------------------------------------------------------------------
 
-// Signs in without writing the password into the command log or screenshots.
+// Signs in without writing the password into the command log or screenshots. The previous
+// person's page is left first, as a person signs out before the next signs in: a request
+// that page still made while the sessions change (a reload of its record, say) would go out
+// with no one signed in, be refused, and be counted against this step.
 function sign_in(job) {
 	const email = users[job];
+	cy.window({ log: false }).then((win) => win.location.replace("about:blank"));
+	cy.location("href", { log: false }).should("eq", "about:blank");
 	cy.session(["journey", email], () => {
 		cy.request({
 			url: "/api/method/login",
