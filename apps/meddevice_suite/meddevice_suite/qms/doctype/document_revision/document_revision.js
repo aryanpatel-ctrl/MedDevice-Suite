@@ -4,8 +4,23 @@
 const esign = frappe.provide("meddevice_suite.esign");
 
 frappe.ui.form.on("Document Revision", {
+	setup(frm) {
+		// Only approved change requests that list this document (module 36, URS-QMS-014).
+		frm.set_query("change_request", () => ({
+			query: "meddevice_suite.qms.change_control.approved_changes_for",
+			filters: { controlled_document: frm.doc.controlled_document },
+		}));
+	},
+
+	controlled_document(frm) {
+		require_change_when_in_effect(frm);
+	},
+
 	refresh(frm) {
-		if (frm.is_new()) return;
+		if (frm.is_new()) {
+			require_change_when_in_effect(frm);
+			return;
+		}
 		show_status(frm);
 		if (frm.is_dirty()) return; // sign what is saved, never unsaved edits
 
@@ -33,6 +48,17 @@ frappe.ui.form.on("Document Revision", {
 		}
 	},
 });
+
+// A new revision of a document in effect is started only under an approved change request.
+function require_change_when_in_effect(frm) {
+	const document = frm.doc.controlled_document;
+	if (!frm.is_new() || !document) return;
+	frappe.db
+		.get_value("Controlled Document", document, "current_revision")
+		.then(({ message }) => {
+			frm.toggle_reqd("change_request", Boolean(message?.current_revision));
+		});
+}
 
 function show_status(frm) {
 	const { status, superseded_by, effective_date } = frm.doc;
