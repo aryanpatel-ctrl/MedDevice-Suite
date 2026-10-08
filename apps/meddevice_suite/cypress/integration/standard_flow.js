@@ -270,7 +270,11 @@ function choose($input, value) {
 		.click();
 }
 
+// A person types the next field once the form has finished updating from the last one: a
+// value typed while the form still fetches what the last one brings (a supplier's details
+// and prices, say) is wiped when the form refreshes with them.
 function fill(fieldname, value, kind = "Data") {
+	settle();
 	reveal(fieldname);
 	cy.get(inputs_of(`${FORM} .frappe-control[data-fieldname="${fieldname}"]`))
 		.first()
@@ -305,6 +309,7 @@ function rows_up_to(table, count) {
 }
 
 function fill_row(table, idx, fieldname, value, kind = "Data") {
+	settle(); // as in fill()
 	const cell = `${FORM} .frappe-control[data-fieldname="${table}"] .grid-row[data-idx="${idx}"] [data-fieldname="${fieldname}"]`;
 	cy.get(cell).first().click();
 	cy.get(inputs_of(cell))

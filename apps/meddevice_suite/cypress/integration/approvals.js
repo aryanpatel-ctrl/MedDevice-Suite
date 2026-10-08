@@ -125,6 +125,12 @@ context("Purchase approval", () => {
 				.last()
 				.find('[data-fieldname="reason"] textarea')
 				.type("Supplier cannot deliver");
+			// Frappe takes a typed value a moment after the keystrokes; go on once the dialog has it.
+			cy.window()
+				.its("cur_dialog")
+				.should((dialog) =>
+					expect(dialog.get_value("reason")).to.equal("Supplier cannot deliver")
+				);
 			cy.get(".modal:visible").last().find(".btn-primary").contains("Continue").click();
 
 			cy.get(".page-container:visible .indicator-pill").should("contain", "Cancelled");

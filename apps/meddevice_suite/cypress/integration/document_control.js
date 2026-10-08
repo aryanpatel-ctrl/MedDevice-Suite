@@ -224,9 +224,13 @@ context("Document control", () => {
 			cy.get('.modal.show input[data-fieldname="password"]')
 				.click()
 				.type(PASSWORD, { log: false });
+			// Sign once the dialog has both values, as with the password alone above.
 			cy.window()
 				.its("cur_dialog")
-				.should((dialog) => expect(dialog.get_value("password")).to.equal(PASSWORD));
+				.should((dialog) => {
+					expect(dialog.get_value("reason")).to.equal("Replaced by a new procedure");
+					expect(dialog.get_value("password")).to.equal(PASSWORD);
+				});
 			cy.get(".modal:visible .btn-primary").contains("Sign").click();
 
 			cy.window().its("cur_frm.doc.status").should("eq", "Obsolete");

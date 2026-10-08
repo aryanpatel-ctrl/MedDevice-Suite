@@ -21,6 +21,10 @@ function open_dialog() {
 function give_reason(title, reason) {
 	open_dialog().should("contain", title);
 	open_dialog().find('[data-fieldname="reason"] textarea').type(reason);
+	// Frappe takes a typed value a moment after the keystrokes; go on once the dialog has it.
+	cy.window()
+		.its("cur_dialog")
+		.should((dialog) => expect(dialog.get_value("reason")).to.equal(reason));
 	open_dialog().find(".btn-primary").contains("Continue").click();
 }
 
@@ -90,6 +94,7 @@ context("Reason for change", () => {
 			cy.get('.page-container:visible [data-fieldname="remarks"] textarea').type(
 				"Label reprinted"
 			);
+			cy.window().its("cur_frm.doc.remarks").should("eq", "Label reprinted");
 			cy.get('.page-container:visible button[data-label="Update"]').click();
 			give_reason(`Reason for changing ${doc.name}`, "Label damaged");
 
