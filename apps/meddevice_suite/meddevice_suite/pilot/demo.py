@@ -165,7 +165,7 @@ def load_demo_data() -> None:
 
 	for code, (name, unit, hsn, shelf_life, supplier, rate) in RAW_MATERIALS.items():
 		ensure_item(
-			code, name, "Raw Material", unit, hsn, shelf_life, company, store("Quarantine"), supplier=supplier
+			code, name, "Raw Material", unit, hsn, shelf_life, company, store("Stores"), supplier=supplier
 		)
 		ensure_price(code, "Standard Buying", rate)
 	for code, (name, hsn, rate, _line, _materials) in PRODUCTS.items():
@@ -216,6 +216,15 @@ def ensure_item(
 	warehouse: str,
 	supplier: str | None = None,
 ) -> None:
+	if frappe.db.exists("Item", code):
+		# An item loaded before lot control defaulted to the quarantine store; its default is the
+		# approved store a release moves the lot to, so the loader corrects it.
+		item = frappe.get_doc("Item", code)
+		default = next((row for row in item.item_defaults if row.company == company), None)
+		if default and default.default_warehouse != warehouse:
+			default.default_warehouse = warehouse
+			item.save(ignore_permissions=True)  # demo loader
+		return
 	ensure(
 		"Item",
 		code,

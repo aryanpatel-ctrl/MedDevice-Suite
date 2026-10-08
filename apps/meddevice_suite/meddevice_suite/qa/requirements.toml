@@ -821,21 +821,21 @@ id = "URS-STK-005"
 module = 17
 title = "No stock of a lot that is not Approved can be issued to production, transferred to an approved store, picked, packed or delivered, through the form or the API; a Quarantine, Hold or Rejected lot moves only into the quarantine, hold, rejected or returns stores, or back to its supplier."
 source = "D2 Material Issue (From Approved Stock), Reject / Return To Supplier; D3 Rejected (return flow); D4 4.3 Issue Material, 7.2 Allocate Released Batch; ISO 13485 7.5.8, 8.3"
-status = "planned"
+status = "implemented"
 
 [[requirement]]
 id = "URS-STK-006"
 module = 17
 title = "A lot shows its status, who set it, when and why, and the stock reports show quantities by lot status, so Stores and QA see at any time what is in quarantine, on hold, rejected or approved."
 source = "D2 Inventory by Batch (Lot Control); D4 D4 Inventory & Batch Ledger; ISO 13485 7.5.8"
-status = "planned"
+status = "implemented"
 
 [[requirement]]
 id = "URS-STK-007"
 module = 17
 title = "When lot status is installed on a site that already holds stock, every lot is given a status by a migration recorded in the audit trail: lots in the approved and finished goods stores become Approved, every other lot Quarantine."
 source = "Engineering rules section 8 (schema changes migrate existing data); ISO 13485 4.2.5; status by store role decided under the client's instruction of 2026-10-08, confirmed against the physical count at cutover"
-status = "planned"
+status = "implemented"
 
 [[requirement]]
 id = "URS-QC-001"

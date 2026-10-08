@@ -90,7 +90,7 @@ class TestDemoData(PilotTestCase):
 			with self.subTest(item=code):
 				self.assertEqual(
 					frappe.db.get_value("Item Default", {"parent": code}, "default_warehouse"),
-					f"Quarantine - {self.abbr}",
+					f"Stores - {self.abbr}",  # the approved store a release moves the lot to
 				)
 
 	def test_the_quarantine_rejected_and_hold_stores_exist(self):

@@ -10,7 +10,7 @@ the browser test of each job (URS-PLT-009) leaves exactly those unsearched.
 import frappe
 
 from meddevice_suite.setup.desk import DESK_AREAS
-from meddevice_suite.setup.roles import JOB_PROFILES, PERMISSIONS, SYSTEM_ADMINISTRATION
+from meddevice_suite.setup.roles import JOB_PROFILES, PERMISSIONS, SYSTEM_ADMINISTRATION, fills_in_by_hand
 
 AUTOMATIC_ROLES = ("All", "Desk User")
 
@@ -155,11 +155,7 @@ def job_forms(roles: tuple[str, ...]) -> set[str]:
 	"""The forms a job fills in: the regulated record types it may write or create, and the
 	record types the sidebars of its desk areas list that it may create, which are the new
 	forms the browser test of each job opens (URS-PLT-009)."""
-	regulated = {
-		doctype
-		for doctype, rows in PERMISSIONS.items()
-		if any({"write", "create"} & set(rows.get(role, ())) for role in roles)
-	}
+	regulated = {doctype for doctype in PERMISSIONS if fills_in(doctype, roles)}
 	areas = [area for area, area_roles in DESK_AREAS.items() if set(area_roles) & set(roles)]
 	listed = frappe.get_all(
 		"Workspace Sidebar Item",
@@ -167,9 +163,21 @@ def job_forms(roles: tuple[str, ...]) -> set[str]:
 		pluck="link_to",
 		distinct=True,
 	)
-	return regulated | {
-		doctype for doctype in listed if is_form(doctype) and granted(doctype, roles, "create")
-	}
+	return regulated | {doctype for doctype in listed if is_form(doctype) and creates_by_hand(doctype, roles)}
+
+
+def fills_in(doctype: str, roles: tuple[str, ...]) -> bool:
+	"""Whether any of the roles fills in a regulated record type's form by hand."""
+	rows = PERMISSIONS[doctype]
+	return any(fills_in_by_hand(doctype, role, rows.get(role, ())) for role in roles)
+
+
+def creates_by_hand(doctype: str, roles: tuple[str, ...]) -> bool:
+	"""A listed record type the job opens a new form for: by the matrix when it is regulated,
+	by ERPNext's own create permission otherwise."""
+	if doctype in PERMISSIONS:
+		return fills_in(doctype, roles)
+	return granted(doctype, roles, "create")
 
 
 def is_form(doctype: str | None) -> bool:
