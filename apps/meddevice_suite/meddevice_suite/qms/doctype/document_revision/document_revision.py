@@ -5,6 +5,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+from meddevice_suite.qms.change_control import require_change_for_revision
 from meddevice_suite.qms.document_control import IN_PROGRESS, is_qa, lock_document
 
 # What the author may change while the revision is a draft; everything else is
@@ -36,6 +37,7 @@ class DocumentRevision(Document):
 			"Document Revision", {"controlled_document": document.name, "status": ["in", IN_PROGRESS]}
 		):
 			frappe.throw(_("{0} already has a revision in progress.").format(document.name))
+		require_change_for_revision(self, document)
 		self.author = frappe.session.user
 		self.status = "Draft"
 		for field in SET_BY_DOCUMENT_CONTROL:

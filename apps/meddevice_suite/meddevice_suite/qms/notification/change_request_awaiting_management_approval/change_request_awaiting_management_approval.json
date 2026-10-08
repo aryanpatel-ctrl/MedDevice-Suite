@@ -1,0 +1,38 @@
+{
+ "attach_print": 0,
+ "channel": "System Notification",
+ "condition_type": "Python",
+ "creation": "2026-10-08 12:00:00.000000",
+ "docstatus": 0,
+ "doctype": "Notification",
+ "document_type": "Change Request",
+ "enabled": 1,
+ "event": "Custom",
+ "idx": 0,
+ "is_standard": 1,
+ "message_type": "HTML",
+ "minutes_offset": 0,
+ "modified": "2026-10-08 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "QMS",
+ "name": "Change Request Awaiting Management Approval",
+ "notification_message": "{{ _(\"{0} {1} is a Major change approved by QA and is waiting for Management approval.\").format(doc.name, doc.title) }}",
+ "owner": "Administrator",
+ "recipients": [
+  {
+   "receiver_by_role": "Sales Manager"
+  },
+  {
+   "receiver_by_role": "Purchase Manager"
+  },
+  {
+   "receiver_by_role": "Stock Manager"
+  },
+  {
+   "receiver_by_role": "Manufacturing Manager"
+  }
+ ],
+ "send_system_notification": 0,
+ "send_to_all_assignees": 0,
+ "subject": "Major change request {{ doc.name }} is waiting for Management approval"
+}

@@ -1,0 +1,29 @@
+{
+ "attach_print": 0,
+ "channel": "System Notification",
+ "condition_type": "Python",
+ "creation": "2026-10-08 12:00:00.000000",
+ "docstatus": 0,
+ "doctype": "Notification",
+ "document_type": "Change Request",
+ "enabled": 1,
+ "event": "Custom",
+ "idx": 0,
+ "is_standard": 1,
+ "message_type": "HTML",
+ "minutes_offset": 0,
+ "modified": "2026-10-08 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "QMS",
+ "name": "Change Effectiveness Check Due",
+ "notification_message": "{{ _(\"{0} {1} was implemented on {2}; check whether it was effective, then close it.\").format(doc.name, doc.title, frappe.format_value(doc.implemented_on, {'fieldtype': 'Date'})) }}",
+ "owner": "Administrator",
+ "recipients": [
+  {
+   "receiver_by_role": "Quality Manager"
+  }
+ ],
+ "send_system_notification": 0,
+ "send_to_all_assignees": 0,
+ "subject": "The effectiveness of change {{ doc.name }} is due to be checked"
+}

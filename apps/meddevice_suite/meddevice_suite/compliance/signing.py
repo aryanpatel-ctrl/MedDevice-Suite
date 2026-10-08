@@ -27,6 +27,7 @@ class SignedAct:
 
 
 DOCUMENT_CONTROL = "meddevice_suite.qms.document_control"
+CHANGE_CONTROL = "meddevice_suite.qms.change_control"
 
 # (record type, act) -> the signed act. Each module adds the acts it signs.
 SIGNING_ACTIONS: dict[tuple[str, str], SignedAct] = {
@@ -36,6 +37,15 @@ SIGNING_ACTIONS: dict[tuple[str, str], SignedAct] = {
 	("Document Revision", "Return"): SignedAct("Rejected", f"{DOCUMENT_CONTROL}.return_for_changes"),
 	("Document Revision", "Approve"): SignedAct("Approved", f"{DOCUMENT_CONTROL}.approve"),
 	("Controlled Document", "Withdraw"): SignedAct("Approved", f"{DOCUMENT_CONTROL}.withdraw"),
+	# Module 36, change control
+	("Change Request", "Assess"): SignedAct("Reviewed", f"{CHANGE_CONTROL}.assess"),
+	("Change Request", "Approve"): SignedAct("Approved", f"{CHANGE_CONTROL}.approve"),
+	("Change Request", "Return"): SignedAct("Rejected", f"{CHANGE_CONTROL}.return_for_changes"),
+	("Change Request", "Reject"): SignedAct("Rejected", f"{CHANGE_CONTROL}.reject"),
+	("Change Request", "Verify Effective"): SignedAct("Verified", f"{CHANGE_CONTROL}.verify_effective"),
+	("Change Request", "Verify Not Effective"): SignedAct(
+		"Verified", f"{CHANGE_CONTROL}.verify_not_effective"
+	),
 }
 
 

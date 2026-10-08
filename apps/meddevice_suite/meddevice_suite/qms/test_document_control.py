@@ -92,6 +92,12 @@ class DocumentControlTestCase(IntegrationTestCase):
 		).insert()
 
 	def draft(self, document, summary: str | None = None, reviewer: str | None = None):
+		# A document in effect is revised only under an approved change request (URS-QMS-014).
+		change_request = None
+		if frappe.db.get_value("Controlled Document", document.name, "current_revision"):
+			from meddevice_suite.qms.test_change_control import approved_change
+
+			change_request = approved_change(self.author, self.qa, document.name)
 		self.as_user(self.author)
 		return frappe.get_doc(
 			{
@@ -100,6 +106,7 @@ class DocumentControlTestCase(IntegrationTestCase):
 				"file": private_file(),
 				"reviewer": reviewer or self.reviewer,
 				"summary_of_change": summary,
+				"change_request": change_request,
 			}
 		).insert()
 

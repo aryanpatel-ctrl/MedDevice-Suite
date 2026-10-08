@@ -14,6 +14,7 @@
   "file",
   "file_sha256",
   "summary_of_change",
+  "change_request",
   "column_break_people",
   "status",
   "author",
@@ -70,6 +71,14 @@
    "fieldname": "summary_of_change",
    "fieldtype": "Small Text",
    "label": "Summary of Change"
+  },
+  {
+   "description": "The approved change request this revision implements; needed for every revision of a document in effect.",
+   "fieldname": "change_request",
+   "fieldtype": "Link",
+   "label": "Change Request",
+   "options": "Change Request",
+   "set_only_once": 1
   },
   {
    "fieldname": "column_break_people",
@@ -132,7 +141,7 @@
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2026-10-07 23:00:00.000000",
+ "modified": "2026-10-08 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "QMS",
  "name": "Document Revision",

@@ -17,9 +17,9 @@ Frappe signs a user out on its own authentication error, which a mistyped
 signing password must not do.
 
 The content a signature binds is what the person signed. Fields the system keeps
-up to date as the record's life moves on (its status, links to later records) are
-left out, as is the record's name, which a rename may change; the audit trail
-records every one of those changes.
+up to date as the record's life moves on (its status, links to later records, what
+is recorded on its rows as they are done) are left out, as is the record's name,
+which a rename may change; the audit trail records every one of those changes.
 """
 
 import frappe
@@ -40,6 +40,23 @@ SHARED_ACCOUNTS = ("Administrator", "Guest")
 SYSTEM_MAINTAINED: dict[str, tuple[str, ...]] = {
 	"Document Revision": ("status", "docstatus", "superseded_by"),
 	"Controlled Document": ("status", "current_revision", "effective_since", "next_review_date"),
+	# The plan approved with a change stays what was signed while its actions are done.
+	"Change Request": (
+		"status",
+		"docstatus",
+		"implemented_on",
+		"effectiveness_due_on",
+		"effectiveness_alerted",
+	),
+	"Change Request Action": (
+		"done",
+		"done_on",
+		"done_by",
+		"completion_note",
+		"result_doctype",
+		"result_name",
+		"alerted_for",
+	),
 }
 
 
@@ -150,7 +167,9 @@ def record_fingerprint(doc: Document) -> str:
 		if isinstance(rows, list):
 			for row in rows:
 				if isinstance(row, dict):
-					row.pop("parent", None)
+					# A row's docstatus is its parent's, set as the parent is submitted.
+					for field in ("parent", "docstatus", *SYSTEM_MAINTAINED.get(row.get("doctype"), ())):
+						row.pop(field, None)
 	return sha256(content)
 
 

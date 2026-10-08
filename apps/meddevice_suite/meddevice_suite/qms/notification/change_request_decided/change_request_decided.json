@@ -1,0 +1,29 @@
+{
+ "attach_print": 0,
+ "channel": "System Notification",
+ "condition_type": "Python",
+ "creation": "2026-10-08 12:00:00.000000",
+ "docstatus": 0,
+ "doctype": "Notification",
+ "document_type": "Change Request",
+ "enabled": 1,
+ "event": "Custom",
+ "idx": 0,
+ "is_standard": 1,
+ "message_type": "HTML",
+ "minutes_offset": 0,
+ "modified": "2026-10-08 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "QMS",
+ "name": "Change Request Decided",
+ "notification_message": "{% if doc.status == 'Approved' %}{{ _(\"{0} {1} is approved; its actions can now be carried out.\").format(doc.name, doc.title) }}{% else %}{{ _(\"{0} {1}: {2}\").format(doc.name, doc.title, doc.decision_reason or '') }}{% endif %}",
+ "owner": "Administrator",
+ "recipients": [
+  {
+   "receiver_by_document_field": "requested_by"
+  }
+ ],
+ "send_system_notification": 0,
+ "send_to_all_assignees": 0,
+ "subject": "{{ doc.name }} {{ 'was approved' if doc.status == 'Approved' else ('was rejected' if doc.status == 'Rejected' else 'was returned') }}"
+}
