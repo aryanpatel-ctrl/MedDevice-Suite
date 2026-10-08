@@ -22,6 +22,8 @@ press, so they are enforced here on every save:
   cancelling and amending instead, and the amendment is approved again.
 """
 
+from typing import Any
+
 import frappe
 from frappe import _
 from frappe.model.document import Document
@@ -118,7 +120,7 @@ def approved_terms(doc: Document) -> tuple:
 	return (tuple(flt_or_value(doc.get(field)) for field in APPROVED_TOTALS), tuple(items))
 
 
-def flt_or_value(value):
+def flt_or_value(value: Any) -> Any:
 	# Numbers compared at a fixed precision, so float noise from recalculation is not a change.
 	return round(float(value), 6) if isinstance(value, int | float) else value
 

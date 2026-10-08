@@ -10,7 +10,7 @@ Every area the desk shows has its list, and the lists are allowlists: an entry
 a future release adds stays out until it is checked against the requirement and
 added here. A declared sidebar that a release renames or removes fails the tests
 instead of being skipped. Module numbers refer to the
-agreed 57-module scope in qa/requirements.toml.
+agreed 62-module scope in qa/requirements.toml.
 """
 
 import frappe

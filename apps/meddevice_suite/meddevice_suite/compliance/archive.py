@@ -35,6 +35,7 @@ import tempfile
 import zipfile
 import zlib
 from collections import Counter
+from collections.abc import Iterable, Iterator
 from datetime import datetime, time
 from pathlib import Path
 from urllib.parse import quote
@@ -225,7 +226,7 @@ def file_name(name: str) -> str:
 	return encoded
 
 
-def write_entry(archive: zipfile.ZipFile, arcname: str, chunks) -> str:
+def write_entry(archive: zipfile.ZipFile, arcname: str, chunks: Iterable[bytes]) -> str:
 	"""Stream an entry into the archive and return its SHA-256."""
 	digest = hashlib.sha256()
 	with archive.open(arcname, "w", force_zip64=True) as entry:
@@ -239,7 +240,7 @@ def archived_doctypes() -> list[str]:
 	return [doctype for doctype in scheduled_doctypes() if doctype not in NOT_ARCHIVED_AS_RECORDS]
 
 
-def changed_records(doctype: str, start: datetime, end: datetime):
+def changed_records(doctype: str, start: datetime, end: datetime) -> Iterator[str]:
 	"""Names of the records last changed in the period, page by page, using the index on `modified`."""
 	if frappe.get_meta(doctype).issingle:
 		modified = get_datetime(frappe.db.get_single_value(doctype, "modified") or "1900-01-01")
@@ -298,7 +299,7 @@ def history(doctype: str, name: str) -> dict:
 	}
 
 
-def deletions(start: datetime, end: datetime):
+def deletions(start: datetime, end: datetime) -> Iterator[frappe._dict]:
 	"""The period's deletions of records, page by page."""
 	table = frappe.qb.DocType("Audit Event")
 	after = None
@@ -331,7 +332,7 @@ def deletions(start: datetime, end: datetime):
 		after = page[-1]
 
 
-def login_history(start: datetime, end: datetime):
+def login_history(start: datetime, end: datetime) -> Iterator[bytes]:
 	"""The period's login history as CSV, page by page."""
 	columns = ["creation", "name", "user", "full_name", "operation", "status", "subject", "ip_address"]
 	out = io.StringIO()
