@@ -12,6 +12,7 @@ from meddevice_suite.setup.roles import (
 	JOB_PROFILES,
 	NEW_ROLES,
 	PERMISSIONS,
+	POSTED_BY_SERVICES,
 	SUPPORTING_PERMISSIONS,
 	apply_roles,
 	declared_rows,
@@ -346,3 +347,12 @@ class TestOwnFormsAreUsable(IntegrationTestCase):
 		for doctype in CREATED_THROUGH_TRANSACTIONS:
 			with self.subTest(doctype=doctype):
 				self.assertTrue(any("write" in flags for flags in PERMISSIONS[doctype].values()))
+
+	@verifies("URS-PLT-009")
+	def test_a_service_posts_for_a_job_what_the_job_never_fills_in(self):
+		# A service of this app posts the record under the job's own account, so the job holds
+		# write and create; the form is still not the job's (the lot control refuses it by hand).
+		for doctype, roles in POSTED_BY_SERVICES.items():
+			for role in roles:
+				with self.subTest(doctype=doctype, role=role):
+					self.assertTrue({"write", "create"} <= set(PERMISSIONS[doctype][role]))

@@ -657,7 +657,7 @@ context("The standard flow, through the screens of each job", { retries: 0 }, ()
 		no_problems("Stores receives");
 	});
 
-	it("[URS-PLT-007] [URS-STK-003] Stores moves the lots to the approved store; moving them again is refused, for none is left", () => {
+	it("[URS-PLT-007] [URS-STK-005] Stores cannot move the quarantined lots to the approved store; the form refuses it plainly", () => {
 		sign_in("Stores");
 		open_form("Purchase Receipt", made.receipt);
 		from_menu("Create", "Make Stock Entry");
@@ -671,18 +671,54 @@ context("The standard flow, through the screens of each job", { retries: 0 }, ()
 				expect(row.batch_no, row.item_code).to.equal(made.received_lots[row.item_code]);
 			})
 		);
-		save();
-		submit();
-		cy.window().then((win) => {
-			made.transfer = current(win).name;
-		});
-		cy.then(() => lots_of("Stock Entry", made.transfer)).then((lots) =>
-			lots.forEach((lot) => {
-				expect(lot.batch_no).to.equal(made.received_lots[lot.item_code]);
-				expect(lot.to_store).to.equal(data.stores.approved);
-			})
-		);
+		expect_refusal(/is Quarantine and cannot leave/);
+		primary_action().should("contain", "Save").click();
+		refused_with(/is Quarantine and cannot leave .* only an Approved lot can be issued/);
+		cy.window().should((win) => expect(current(win).__islocal, "nothing was saved").to.be.ok);
+		no_problems("Stores is refused the move");
+	});
 
+	it("[URS-PLT-007] [URS-STK-004] [URS-STK-005] QA releases the received lots; they are Approved in the approved store", () => {
+		// The signed Lot Release screen of module 16 replaces this call; until then QA releases
+		// through the service, under its own account, which the audit trail records.
+		sign_in("QA Manager");
+		cy.visit("/desk");
+		made.transfers = [];
+		cy.then(() => {
+			for (const [item, lot] of Object.entries(made.received_lots)) {
+				cy.call("meddevice_suite.lot_control.lot_status.release_lot", {
+					lot,
+					reason: `Incoming inspection accepted (browser test, ${item})`,
+				}).then(({ message }) => made.transfers.push(message));
+			}
+		});
+		cy.then(() => {
+			for (const lot of Object.values(made.received_lots)) {
+				cy.call("frappe.client.get_value", {
+					doctype: "Batch",
+					filters: { name: lot },
+					fieldname: ["mds_lot_status", "mds_status_set_by"],
+				}).then(({ message }) => {
+					expect(message.mds_lot_status, lot).to.equal("Approved");
+					expect(message.mds_status_set_by, lot).to.equal(users["QA Manager"]);
+				});
+			}
+		});
+		cy.then(() =>
+			made.transfers.forEach((transfer) =>
+				lots_of("Stock Entry", transfer).then((lots) =>
+					lots.forEach((lot) => {
+						expect(lot.from_store).to.equal(data.stores.quarantine);
+						expect(lot.to_store).to.equal(data.stores.approved);
+					})
+				)
+			)
+		);
+		no_problems("QA releases the lots");
+	});
+
+	it("[URS-PLT-007] [URS-STK-003] Stores cannot move the released lots out of quarantine again, for none is left", () => {
+		sign_in("Stores");
 		// The same lots again: quarantine holds none of them any more.
 		open_form("Purchase Receipt", made.receipt);
 		from_menu("Create", "Make Stock Entry");
@@ -709,11 +745,11 @@ context("The standard flow, through the screens of each job", { retries: 0 }, ()
 			})
 		).then(({ message }) =>
 			expect(
-				[...new Set(message.map((entry) => entry.name))],
+				[...new Set(message.map((entry) => entry.name))].sort(),
 				"moves of these lots out of quarantine"
-			).to.deep.equal([made.transfer])
+			).to.deep.equal([...made.transfers].sort())
 		);
-		no_problems("Stores moves the lots");
+		no_problems("Stores cannot move the lots again");
 	});
 
 	it("[URS-PLT-007] [URS-STK-002] Production plans the work order on its routing and starts it; the lots that expire first are issued", () => {
@@ -725,7 +761,7 @@ context("The standard flow, through the screens of each job", { retries: 0 }, ()
 		fill("sales_order", made.sales_order, "Link");
 		fill("source_warehouse", data.stores.approved, "Link");
 		fill("wip_warehouse", data.stores.work_in_progress, "Link");
-		fill("fg_warehouse", data.stores.finished_goods, "Link");
+		fill("fg_warehouse", data.stores.quarantine, "Link"); // the finished lot waits there for QA
 		cy.window().should((win) =>
 			expect(
 				current(win).operations.map((row) => row.operation),
@@ -877,7 +913,7 @@ context("The standard flow, through the screens of each job", { retries: 0 }, ()
 			const finished = lots.filter((lot) => lot.item_code === data.product);
 			expect(finished, "finished lots").to.have.length(1);
 			const [lot] = finished;
-			expect(lot.to_store).to.equal(data.stores.finished_goods);
+			expect(lot.to_store).to.equal(data.stores.quarantine);
 			expect(lot.qty).to.equal(data.quantity);
 			expect(lot.batch_no).to.be.ok.and.not.equal(data.lots_in_store[data.product]);
 			expect(lot.expiry_date, "expiry date").to.equal(made.expected_expiry);
@@ -888,6 +924,27 @@ context("The standard flow, through the screens of each job", { retries: 0 }, ()
 			expect(order.produced_qty).to.equal(data.quantity);
 		});
 		no_problems("Production finishes");
+	});
+
+	it("[URS-PLT-007] [URS-STK-004] QA releases the finished lot to the finished goods store", () => {
+		sign_in("QA Manager");
+		cy.visit("/desk");
+		cy.then(() =>
+			cy.call("meddevice_suite.lot_control.lot_status.release_lot", {
+				lot: made.finished_lot,
+				reason: "Final inspection accepted (browser test)",
+			})
+		).then(({ message: transfer }) => {
+			made.finished_release = transfer;
+			lots_of("Stock Entry", transfer).then((lots) =>
+				expect(
+					lots.map((lot) => [lot.batch_no, lot.from_store, lot.to_store])
+				).to.deep.equal([
+					[made.finished_lot, data.stores.quarantine, data.stores.finished_goods],
+				])
+			);
+		});
+		no_problems("QA releases the finished lot");
 	});
 
 	it("[URS-PLT-007] [URS-STK-002] Stores delivers the order; the lot delivered is the one just made, which expires first", () => {
@@ -1009,9 +1066,10 @@ context("The standard flow, through the screens of each job", { retries: 0 }, ()
 						"in",
 						[
 							made.receipt,
-							made.transfer,
+							...made.transfers,
 							made.work_order,
 							made.manufacture,
+							made.finished_release,
 							made.delivery,
 						],
 					],
@@ -1025,9 +1083,12 @@ context("The standard flow, through the screens of each job", { retries: 0 }, ()
 			);
 			expect(by).to.deep.equal({
 				[made.receipt]: users.Stores,
-				[made.transfer]: users.Stores,
+				...Object.fromEntries(
+					made.transfers.map((transfer) => [transfer, users["QA Manager"]])
+				),
 				[made.work_order]: users["Production Supervisor"],
 				[made.manufacture]: users["Production Supervisor"],
+				[made.finished_release]: users["QA Manager"],
 				[made.delivery]: users.Stores,
 			});
 		});

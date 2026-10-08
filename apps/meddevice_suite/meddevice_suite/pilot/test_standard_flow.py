@@ -4,6 +4,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 from frappe.utils import add_days, getdate, today
 
+from meddevice_suite.lot_control.lot_status import STATUS_FIELD
 from meddevice_suite.pilot import flow
 from meddevice_suite.pilot.demo import CUSTOMERS, PRODUCT_SHELF_LIFE_DAYS, load_demo_data
 from meddevice_suite.pilot.test_demo import PILOT
@@ -48,7 +49,14 @@ class TestStandardFlow(FlowTestCase):
 				with self.subTest(material=row.item_code):
 					self.assertEqual(row.warehouse, flow.store("Quarantine"))
 					self.assertTrue(frappe.db.get_value("Batch", flow.lot_of(row), "expiry_date"))
-			flow.move_to_approved_store(receipt)
+					self.assertEqual(
+						frappe.db.get_value("Batch", flow.lot_of(row), STATUS_FIELD), "Quarantine"
+					)
+			# QA releases what quarantine holds; the lots become Approved in the approved store.
+			for moved in flow.release_received_lots(receipt):
+				self.assertEqual({row.t_warehouse for row in moved.items}, {flow.store("Stores")})
+			for row in frappe.get_doc("Purchase Receipt", receipt.name).items:
+				self.assertEqual(frappe.db.get_value("Batch", flow.lot_of(row), STATUS_FIELD), "Approved")
 
 		# Production: work order on the D3 routing, materials issued, operations logged, finished lot (D2, D3)
 		work_order = flow.plan_production(order, PRODUCT, QUANTITY)
@@ -61,6 +69,10 @@ class TestStandardFlow(FlowTestCase):
 			getdate(frappe.db.get_value("Batch", lot, "expiry_date")),
 			getdate(add_days(today(), PRODUCT_SHELF_LIFE_DAYS)),
 		)
+		# The finished lot waits in quarantine until QA releases it to the finished goods store.
+		self.assertEqual(frappe.db.get_value("Batch", lot, STATUS_FIELD), "Quarantine")
+		self.assertEqual(flow.release_finished_lot(finished), lot)
+		self.assertEqual(frappe.db.get_value("Batch", lot, STATUS_FIELD), "Approved")
 
 		# Dispatch: the finished lot goes to the customer (D2, D3)
 		delivery = flow.deliver(order)
@@ -84,8 +96,8 @@ class TestExpiryFirst(FlowTestCase):
 		# Expiry follows the supplier's lot (its certificate), not the day it arrived.
 		frappe.db.set_value("Batch", later_lot, "expiry_date", add_days(today(), 600))
 		frappe.db.set_value("Batch", sooner_lot, "expiry_date", add_days(today(), 200))
-		flow.move_to_approved_store(later)
-		flow.move_to_approved_store(sooner)
+		flow.release_received_lots(later)
+		flow.release_received_lots(sooner)
 
 		with flow.as_job("Stores"):
 			issue = frappe.get_doc(

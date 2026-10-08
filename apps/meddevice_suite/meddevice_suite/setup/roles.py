@@ -216,6 +216,10 @@ PERMISSIONS: dict[str, dict[str, tuple[str, ...]]] = {
 			"Stock Manager": APPROVE,
 			"Manufacturing User": CORRECT,
 			"Accounts User": VIEW,
+			# QA's lot release moves the lot between stores (module 17): the release posts the
+			# transfer under the QA user, who never fills in a stock entry by hand (the lot
+			# control refuses any other stock entry of theirs) and never cancels one.
+			"Quality Manager": (*REVIEW, "write", "create", "submit"),
 		}
 	),
 	"Stock Reconciliation": oversight({"Stock Manager": APPROVE, "Accounts User": VIEW}),
@@ -246,6 +250,8 @@ PERMISSIONS: dict[str, dict[str, tuple[str, ...]]] = {
 			"Sales User": ENTER,
 			# purchasing traces a supplier's lots (the Serial No and Batch Traceability report)
 			"Purchase User": VIEW,
+			# the lots on the transfer QA's lot release posts (module 17)
+			"Quality Manager": (*REVIEW, "write", "create", "submit"),
 		}
 	),
 	"Pick List": oversight(
@@ -329,6 +335,25 @@ SUPPORTING_PERMISSIONS: dict[str, dict[str, tuple[str, ...]]] = {
 # with the job's own create permission. Changing a lot is QA's, so these jobs may not write
 # one, and a new lot's own form is QA's (Item Manager).
 CREATED_THROUGH_TRANSACTIONS: dict[str, tuple[str, ...]] = {"Batch": ("Stock User", "Manufacturing User")}
+
+# Record types a job writes only through a service of this app, never in their own form:
+# QA's lot release posts the transfer between stores (module 17), and the lot control refuses
+# any other stock entry of QA's. The job holds write and create for the service to post.
+POSTED_BY_SERVICES: dict[str, tuple[str, ...]] = {
+	"Stock Entry": ("Quality Manager",),
+	"Serial and Batch Bundle": ("Quality Manager",),
+}
+
+
+def fills_in_by_hand(doctype: str, role: str, flags: tuple[str, ...]) -> bool:
+	"""Whether the role fills in the record type's form itself: it may write or create it,
+	other than only through its transactions or through a service."""
+	if not ({"write", "create"} & set(flags)):
+		return False
+	return role not in CREATED_THROUGH_TRANSACTIONS.get(doctype, ()) and role not in POSTED_BY_SERVICES.get(
+		doctype, ()
+	)
+
 
 ACCESS_CONTROL = frozenset(
 	{"User", "Role", "Role Profile", "User Permission", "Custom DocPerm", "System Settings", "Stock Settings"}

@@ -24,6 +24,7 @@ import frappe
 from frappe import _
 from frappe.utils import add_days, today
 
+from meddevice_suite.lot_control.lot_status import APPROVED, REJECTED, set_status, stock_by_lot
 from meddevice_suite.pilot.demo import BOM_QUANTITY, ensure, ensure_bom, ensure_item, ensure_price
 from meddevice_suite.qa.site_setup import TEST_COMPANY
 from meddevice_suite.qa.ui_users import ensure_test_site
@@ -110,7 +111,7 @@ def ensure_masters() -> None:
 	ensure("Customer", CUSTOMER, customer_name=CUSTOMER, customer_group="Commercial", territory="India")
 	for code, (name, unit, hsn, shelf_life, rate, _per_batch) in RAW_MATERIALS.items():
 		ensure_item(
-			code, name, "Raw Material", unit, hsn, shelf_life, COMPANY, store(QUARANTINE), supplier=SUPPLIER
+			code, name, "Raw Material", unit, hsn, shelf_life, COMPANY, store("Stores"), supplier=SUPPLIER
 		)
 		ensure_price(code, "Standard Buying", rate)
 	name, hsn, rate, shelf_life = PRODUCT_DETAILS
@@ -138,23 +139,23 @@ def ensure_masters() -> None:
 
 
 def write_off_leftover_stock() -> None:
-	"""Issue whatever stock of the journey's items an earlier run left in any store."""
-	leftovers = frappe.get_all(
-		"Bin",
-		filters={"item_code": ["in", journey_items()], "actual_qty": [">", 0]},
-		fields=["item_code", "warehouse", "actual_qty"],
-		order_by="item_code, warehouse",
-	)
+	"""Scrap whatever stock of the journey's items an earlier run left in any store: each
+	leftover lot is rejected first, because only a rejected lot can be scrapped (module 17)."""
+	leftovers = [row for item in journey_items() for row in stock_by_lot(item)]
+	for lot in {row.batch_no for row in leftovers}:
+		set_status(lot, REJECTED, "Browser test: leftover of an earlier run, scrapped")
 	if leftovers:
 		post_stock_entry(
 			"Material Issue",
 			[
 				{
-					"item_code": leftover.item_code,
-					"s_warehouse": leftover.warehouse,
-					"qty": leftover.actual_qty,
+					"item_code": row.item_code,
+					"s_warehouse": row.warehouse,
+					"qty": row.qty,
+					"batch_no": row.batch_no,
+					"use_serial_batch_fields": 1,
 				}
-				for leftover in leftovers
+				for row in leftovers
 			],
 		)
 
@@ -183,6 +184,9 @@ def put_later_expiring_lots() -> dict[str, str]:
 			}
 		)
 	post_stock_entry("Material Receipt", rows)
+	# Stock that was already in an approved store before the run is approved stock.
+	for lot in lots.values():
+		set_status(lot, APPROVED, "Browser test: approved stock already in store before the run")
 	return lots
 
 

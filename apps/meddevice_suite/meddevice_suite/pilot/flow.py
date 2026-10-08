@@ -8,10 +8,10 @@ trail of this app:
 	Stores       purchase request                                           D2, D3
 	Purchase     purchase order → (purchase approval)                       D1, D2
 	Stores       goods receipt into quarantine, by batch                    D2, D3
-	Stores       move to the approved store (stands in for the QA release
-	             of Phase 5)
+	QA           release of the received lots after inspection (module 17)
 	Production   work order → material issue → operations → finished batch  D2, D3
 	Operator     records the operations on the job cards                    D3
+	QA           release of the finished lot from quarantine                D2, D3
 	Stores       delivery of the finished batch                             D2, D3
 
 The same steps build the pilot's sample records and are run end to end by the
@@ -32,6 +32,7 @@ from frappe.model.document import Document
 from frappe.model.workflow import apply_workflow
 from frappe.utils import add_days, add_to_date, now_datetime, today
 
+from meddevice_suite.lot_control import lot_status
 from meddevice_suite.pilot import refuse_unless_pilot_site
 from meddevice_suite.pilot.demo import BOM_QUANTITY, PRODUCTS, RAW_MATERIALS, demo_user_email
 
@@ -166,29 +167,25 @@ def receive(order: Document) -> Document:
 		return stored(receipt)
 
 
-def move_to_approved_store(receipt: Document) -> Document:
-	"""Stands in for the QA release of Phase 5, which will replace this step."""
-	with as_job("Stores"):
-		move = frappe.get_doc(
-			{
-				"doctype": "Stock Entry",
-				"stock_entry_type": "Material Transfer",
-				"company": company(),
-				"items": [
-					{
-						"item_code": row.item_code,
-						"qty": row.qty,
-						"batch_no": lot_of(row),
-						"use_serial_batch_fields": 1,
-						"s_warehouse": store("Quarantine"),
-						"t_warehouse": store("Stores"),
-					}
-					for row in frappe.get_doc("Purchase Receipt", receipt.name).items
-				],
-			}
-		).insert()
-		move.submit()
-		return stored(move)
+def release_received_lots(receipt: Document) -> list[Document]:
+	"""QA releases each lot the receipt brought into quarantine; the release moves it to the
+	approved store (module 17). The incoming inspection it rests on comes with module 16."""
+	with as_job("QA Manager"):
+		return [
+			moved
+			for row in frappe.get_doc("Purchase Receipt", receipt.name).items
+			if (moved := lot_status.release(lot_of(row), "Incoming inspection accepted (pilot)"))
+		]
+
+
+def reject_lot(lot: str, reason: str) -> Document | None:
+	with as_job("QA Manager"):
+		return lot_status.reject(lot, reason)
+
+
+def hold_lot(lot: str, reason: str) -> Document | None:
+	with as_job("QA Manager"):
+		return lot_status.hold(lot, reason)
 
 
 def buy(materials: dict[str, float]) -> list[Document]:
@@ -219,7 +216,7 @@ def plan_production(sales_order: Document, item: str, qty: float) -> Document:
 				"sales_order": sales_order.name,
 				"source_warehouse": store("Stores"),
 				"wip_warehouse": store("Work In Progress"),
-				"fg_warehouse": store("Finished Goods"),
+				"fg_warehouse": store("Quarantine"),  # the finished lot waits there for QA
 				"planned_start_date": now_datetime(),
 			}
 		)
@@ -271,12 +268,25 @@ def record_operations(work_order: Document) -> list[str]:
 
 
 def finish_production(work_order: Document) -> Document:
-	"""The finished lot is made; ERPNext creates its batch with the product's expiry."""
+	"""The finished lot is made into quarantine; ERPNext creates its batch with the product's expiry."""
 	with as_job("Production Supervisor"):
 		entry = frappe.get_doc(make_production_entry(work_order.name, "Manufacture", work_order.qty))
 		entry.insert()
 		entry.submit()
 		return stored(entry)
+
+
+def finished_lot_of(entry: Document) -> str:
+	return next(lot_of(row) for row in entry.items if row.get("t_warehouse") and row.is_finished_item)
+
+
+def release_finished_lot(entry: Document) -> str:
+	"""QA releases the finished lot to the finished goods store; final QC and batch release
+	(modules 25, 26) take this over."""
+	lot = finished_lot_of(entry)
+	with as_job("QA Manager"):
+		lot_status.release(lot, "Final inspection accepted (pilot)")
+	return lot
 
 
 # --- Dispatch ------------------------------------------------------------------
