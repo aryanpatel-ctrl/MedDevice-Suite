@@ -137,8 +137,12 @@ function new_sweep(job) {
 	};
 }
 
-// Signs in without writing the password into the command log or screenshots.
+// Signs in without writing the password into the command log or screenshots, leaving the
+// previous person's page first: a page left open while the sessions change can end the new
+// session on a slow machine (as in standard_flow.js).
 function sign_in(email, password) {
+	cy.window({ log: false }).then((win) => win.location.replace("about:blank"));
+	cy.location("href", { log: false }).should("eq", "about:blank");
 	cy.session(["job", email], () => {
 		cy.request({
 			url: "/api/method/login",
