@@ -42,10 +42,19 @@ function open_revision() {
 	cy.window().its("cur_frm.doc.name").should("eq", revision);
 }
 
+// As a person would: once the signing dialog has finished opening. Frappe makes it the
+// current dialog after its fade-in ends, when it also focuses its first field.
+function signing_dialog_open() {
+	cy.get(".modal.show").should("have.css", "opacity", "1");
+	cy.window().should((win) => {
+		expect(win.cur_dialog?.display, "the signing dialog is open").to.equal(true);
+		expect(win.cur_dialog.title).to.match(/^Sign: /);
+	});
+}
+
 function sign(button) {
 	cy.get(`.page-container:visible button[data-label="${encodeURIComponent(button)}"]`).click();
-	// As a person would: once the dialog has opened (it takes focus when its fade ends).
-	cy.get(".modal.show").should("have.css", "opacity", "1");
+	signing_dialog_open();
 	cy.get('.modal.show input[data-fieldname="password"]').click().type(PASSWORD, { log: false });
 	// Frappe takes a typed value a moment after the keystrokes; sign once the dialog has it.
 	cy.window()
@@ -217,14 +226,20 @@ context("Document control", () => {
 				'.page-container:visible .inner-group-button[data-label="Actions"] button'
 			).click();
 			cy.get('.page-container:visible .dropdown-item[data-label="Withdraw"]').click();
-			cy.get(".modal.show").should("have.css", "opacity", "1");
+			signing_dialog_open();
 			cy.get('.modal.show textarea[data-fieldname="reason"]').type(
 				"Replaced by a new procedure"
 			);
+			// One field after the other, as a person fills it in.
+			cy.window()
+				.its("cur_dialog")
+				.should((dialog) =>
+					expect(dialog.get_value("reason")).to.equal("Replaced by a new procedure")
+				);
 			cy.get('.modal.show input[data-fieldname="password"]')
 				.click()
 				.type(PASSWORD, { log: false });
-			// Sign once the dialog has both values, as with the password alone above.
+			// Sign once the dialog has both values.
 			cy.window()
 				.its("cur_dialog")
 				.should((dialog) => {

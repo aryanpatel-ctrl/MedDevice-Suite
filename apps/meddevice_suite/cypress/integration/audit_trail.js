@@ -20,6 +20,8 @@ function open_dialog() {
 
 function give_reason(title, reason) {
 	open_dialog().should("contain", title);
+	// Typed once the dialog has finished opening: Frappe then moves the focus to its first field.
+	cy.window().its("cur_dialog.display").should("eq", true);
 	open_dialog().find('[data-fieldname="reason"] textarea').type(reason);
 	// Frappe takes a typed value a moment after the keystrokes; go on once the dialog has it.
 	cy.window()
