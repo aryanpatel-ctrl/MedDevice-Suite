@@ -73,11 +73,15 @@ jinja = {"methods": ["meddevice_suite.compliance.signing.signatures_for_print"]}
 
 # Document control (module 30): outside QA, only effective revisions are visible.
 # Evidence files (an approved document's, an archive's) cannot be changed or deleted.
+# Change control (module 36): outside QA and Management, people see the requests they raised
+# or have an action on.
 permission_query_conditions = {
 	"Document Revision": "meddevice_suite.qms.document_control.revision_query_conditions",
+	"Change Request": "meddevice_suite.qms.change_control.query_conditions",
 }
 has_permission = {
 	"Document Revision": "meddevice_suite.qms.document_control.revision_has_permission",
+	"Change Request": "meddevice_suite.qms.change_control.has_permission",
 	"File": "meddevice_suite.compliance.evidence_files.has_permission",
 }
 
@@ -87,6 +91,7 @@ scheduler_events = {
 		"meddevice_suite.compliance.archive.fail_stalled_archives",
 		"meddevice_suite.qms.document_control.make_due_revisions_effective",
 		"meddevice_suite.qms.document_control.send_review_alerts",
+		"meddevice_suite.qms.change_control.send_change_alerts",
 	],
 }
 

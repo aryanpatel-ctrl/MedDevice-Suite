@@ -1,0 +1,600 @@
+{
+ "actions": [],
+ "autoname": "CR-.YYYY.-.####",
+ "creation": "2026-10-08 12:00:00.000000",
+ "description": "A proposed change to a product, process, document, supplier, equipment or system: assessed and approved with electronic signatures, implemented through its actions and closed after an effectiveness check (module 36).",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "title",
+  "change_type",
+  "description",
+  "reason",
+  "column_break_status",
+  "status",
+  "classification",
+  "requested_by",
+  "requested_on",
+  "decision_reason",
+  "section_affected",
+  "affected_records",
+  "section_impact",
+  "impact_product_quality",
+  "impact_risk",
+  "impact_regulatory",
+  "impact_validation",
+  "column_break_impact",
+  "impact_training",
+  "impact_documents",
+  "impact_stock",
+  "effectiveness_check_days",
+  "impact_summary",
+  "section_actions",
+  "actions",
+  "section_decisions",
+  "assessed_by",
+  "assessed_on",
+  "qa_approver",
+  "management_approver",
+  "approved_on",
+  "column_break_closure",
+  "implemented_on",
+  "effectiveness_due_on",
+  "effectiveness_outcome",
+  "effectiveness_note",
+  "closed_on",
+  "effectiveness_alerted",
+  "amended_from"
+ ],
+ "fields": [
+  {
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "label": "Title",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "change_type",
+   "fieldtype": "Select",
+   "label": "Type of Change",
+   "options": "\nDocument\nProduct or BOM\nProcess or Routing\nEquipment\nSupplier\nSystem",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "label": "What Is to Change",
+   "reqd": 1
+  },
+  {
+   "fieldname": "reason",
+   "fieldtype": "Small Text",
+   "label": "Why",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_status",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "Draft\nUnder Assessment\nAwaiting Approval\nAwaiting Management Approval\nApproved\nImplemented\nClosed\nRejected\nWithdrawn",
+   "default": "Draft",
+   "read_only": 1,
+   "allow_on_submit": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "classification",
+   "fieldtype": "Select",
+   "label": "Classification",
+   "options": "\nMinor\nMajor",
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "requested_by",
+   "fieldtype": "Link",
+   "label": "Raised By",
+   "options": "User",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "requested_on",
+   "fieldtype": "Date",
+   "label": "Raised On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "decision_reason",
+   "fieldtype": "Small Text",
+   "label": "Reason Given",
+   "read_only": 1,
+   "description": "Why the change was last returned, rejected or withdrawn."
+  },
+  {
+   "fieldname": "section_affected",
+   "fieldtype": "Section Break",
+   "label": "Records Affected"
+  },
+  {
+   "fieldname": "affected_records",
+   "fieldtype": "Table",
+   "label": "Affected Records",
+   "options": "Change Request Affected Record"
+  },
+  {
+   "fieldname": "section_impact",
+   "fieldtype": "Section Break",
+   "label": "Impact Assessment",
+   "description": "Recorded by QA before the change can be approved."
+  },
+  {
+   "fieldname": "impact_product_quality",
+   "fieldtype": "Select",
+   "label": "Product Quality",
+   "options": "\nYes\nNo"
+  },
+  {
+   "fieldname": "impact_risk",
+   "fieldtype": "Select",
+   "label": "Risk (ISO 14971)",
+   "options": "\nYes\nNo"
+  },
+  {
+   "fieldname": "impact_regulatory",
+   "fieldtype": "Select",
+   "label": "Regulatory Notification (CDSCO)",
+   "options": "\nYes\nNo",
+   "description": "A change that needs regulatory notification is a Major change."
+  },
+  {
+   "fieldname": "impact_validation",
+   "fieldtype": "Select",
+   "label": "Validation",
+   "options": "\nYes\nNo"
+  },
+  {
+   "fieldname": "column_break_impact",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "impact_training",
+   "fieldtype": "Select",
+   "label": "Training",
+   "options": "\nYes\nNo"
+  },
+  {
+   "fieldname": "impact_documents",
+   "fieldtype": "Select",
+   "label": "Documents",
+   "options": "\nYes\nNo"
+  },
+  {
+   "fieldname": "impact_stock",
+   "fieldtype": "Select",
+   "label": "Stock in Hand and Work in Progress",
+   "options": "\nYes\nNo"
+  },
+  {
+   "fieldname": "effectiveness_check_days",
+   "fieldtype": "Int",
+   "label": "Effectiveness Check After (Days)",
+   "default": "90",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "impact_summary",
+   "fieldtype": "Small Text",
+   "label": "Assessment"
+  },
+  {
+   "fieldname": "section_actions",
+   "fieldtype": "Section Break",
+   "label": "Implementation"
+  },
+  {
+   "fieldname": "actions",
+   "fieldtype": "Table",
+   "label": "Actions",
+   "options": "Change Request Action"
+  },
+  {
+   "fieldname": "section_decisions",
+   "fieldtype": "Section Break",
+   "label": "Approval and Closure"
+  },
+  {
+   "fieldname": "assessed_by",
+   "fieldtype": "Link",
+   "label": "Assessed By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "assessed_on",
+   "fieldtype": "Date",
+   "label": "Assessed On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "qa_approver",
+   "fieldtype": "Link",
+   "label": "Approved by QA",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "management_approver",
+   "fieldtype": "Link",
+   "label": "Approved by Management",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "approved_on",
+   "fieldtype": "Date",
+   "label": "Approved On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_closure",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "implemented_on",
+   "fieldtype": "Date",
+   "label": "Implemented On",
+   "read_only": 1,
+   "allow_on_submit": 1
+  },
+  {
+   "fieldname": "effectiveness_due_on",
+   "fieldtype": "Date",
+   "label": "Effectiveness Check Due",
+   "read_only": 1,
+   "allow_on_submit": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "effectiveness_outcome",
+   "fieldtype": "Select",
+   "label": "Effectiveness",
+   "options": "\nEffective\nNot effective",
+   "read_only": 1,
+   "allow_on_submit": 1
+  },
+  {
+   "fieldname": "effectiveness_note",
+   "fieldtype": "Small Text",
+   "label": "Effectiveness Check",
+   "read_only": 1,
+   "allow_on_submit": 1
+  },
+  {
+   "fieldname": "closed_on",
+   "fieldtype": "Date",
+   "label": "Closed On",
+   "read_only": 1,
+   "allow_on_submit": 1
+  },
+  {
+   "fieldname": "effectiveness_alerted",
+   "fieldtype": "Check",
+   "label": "Effectiveness Alert Sent",
+   "read_only": 1,
+   "hidden": 1,
+   "allow_on_submit": 1,
+   "no_copy": 1,
+   "default": "0"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "options": "Change Request",
+   "hidden": 1,
+   "no_copy": 1,
+   "print_hide": 1,
+   "read_only": 1
+  }
+ ],
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-10-08 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "QMS",
+ "name": "Change Request",
+ "naming_rule": "Expression (old style)",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "amend": 0,
+   "cancel": 0,
+   "create": 1,
+   "delete": 0,
+   "email": 0,
+   "export": 0,
+   "import": 0,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Accounts User",
+   "select": 1,
+   "share": 0,
+   "submit": 0,
+   "write": 1
+  },
+  {
+   "amend": 0,
+   "cancel": 0,
+   "create": 1,
+   "delete": 0,
+   "email": 0,
+   "export": 0,
+   "import": 0,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "HR User",
+   "select": 1,
+   "share": 0,
+   "submit": 0,
+   "write": 1
+  },
+  {
+   "amend": 0,
+   "cancel": 0,
+   "create": 1,
+   "delete": 0,
+   "email": 0,
+   "export": 0,
+   "import": 0,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Item Manager",
+   "select": 1,
+   "share": 0,
+   "submit": 0,
+   "write": 1
+  },
+  {
+   "amend": 0,
+   "cancel": 0,
+   "create": 1,
+   "delete": 0,
+   "email": 0,
+   "export": 0,
+   "import": 0,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Maintenance User",
+   "select": 1,
+   "share": 0,
+   "submit": 0,
+   "write": 1
+  },
+  {
+   "amend": 0,
+   "cancel": 0,
+   "create": 1,
+   "delete": 0,
+   "email": 0,
+   "export": 1,
+   "import": 0,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Manufacturing Manager",
+   "select": 1,
+   "share": 0,
+   "submit": 0,
+   "write": 1
+  },
+  {
+   "amend": 0,
+   "cancel": 0,
+   "create": 1,
+   "delete": 0,
+   "email": 0,
+   "export": 0,
+   "import": 0,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Manufacturing User",
+   "select": 1,
+   "share": 0,
+   "submit": 0,
+   "write": 1
+  },
+  {
+   "amend": 0,
+   "cancel": 0,
+   "create": 1,
+   "delete": 0,
+   "email": 0,
+   "export": 0,
+   "import": 0,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Operator",
+   "select": 1,
+   "share": 0,
+   "submit": 0,
+   "write": 1
+  },
+  {
+   "amend": 0,
+   "cancel": 0,
+   "create": 1,
+   "delete": 0,
+   "email": 0,
+   "export": 1,
+   "import": 0,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Purchase Manager",
+   "select": 1,
+   "share": 0,
+   "submit": 0,
+   "write": 1
+  },
+  {
+   "amend": 0,
+   "cancel": 0,
+   "create": 1,
+   "delete": 0,
+   "email": 0,
+   "export": 0,
+   "import": 0,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Purchase User",
+   "select": 1,
+   "share": 0,
+   "submit": 0,
+   "write": 1
+  },
+  {
+   "amend": 0,
+   "cancel": 0,
+   "create": 1,
+   "delete": 0,
+   "email": 0,
+   "export": 0,
+   "import": 0,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "QC Inspector",
+   "select": 1,
+   "share": 0,
+   "submit": 0,
+   "write": 1
+  },
+  {
+   "amend": 0,
+   "cancel": 0,
+   "create": 1,
+   "delete": 0,
+   "email": 0,
+   "export": 1,
+   "import": 0,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Quality Manager",
+   "select": 1,
+   "share": 0,
+   "submit": 0,
+   "write": 1
+  },
+  {
+   "amend": 0,
+   "cancel": 0,
+   "create": 1,
+   "delete": 0,
+   "email": 0,
+   "export": 1,
+   "import": 0,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Sales Manager",
+   "select": 1,
+   "share": 0,
+   "submit": 0,
+   "write": 1
+  },
+  {
+   "amend": 0,
+   "cancel": 0,
+   "create": 1,
+   "delete": 0,
+   "email": 0,
+   "export": 0,
+   "import": 0,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Sales User",
+   "select": 1,
+   "share": 0,
+   "submit": 0,
+   "write": 1
+  },
+  {
+   "amend": 0,
+   "cancel": 0,
+   "create": 1,
+   "delete": 0,
+   "email": 0,
+   "export": 1,
+   "import": 0,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Stock Manager",
+   "select": 1,
+   "share": 0,
+   "submit": 0,
+   "write": 1
+  },
+  {
+   "amend": 0,
+   "cancel": 0,
+   "create": 1,
+   "delete": 0,
+   "email": 0,
+   "export": 0,
+   "import": 0,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Stock User",
+   "select": 1,
+   "share": 0,
+   "submit": 0,
+   "write": 1
+  },
+  {
+   "amend": 0,
+   "cancel": 0,
+   "create": 0,
+   "delete": 0,
+   "email": 0,
+   "export": 0,
+   "import": 0,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "select": 1,
+   "share": 0,
+   "submit": 0,
+   "write": 0
+  }
+ ],
+ "row_format": "Dynamic",
+ "search_fields": "title,status",
+ "show_title_field_in_link": 1,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "title",
+ "track_changes": 0
+}

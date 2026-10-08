@@ -34,6 +34,12 @@ ALERTS: dict[str, str] = {
 	"Quotation Price Approval Decided": MODULE,
 	"Purchase Order Approval Decided": MODULE,
 	"Document Review Due": "QMS",  # periodic review of controlled documents (module 30)
+	# Change control (module 36)
+	"Change Request Awaiting Assessment": "QMS",
+	"Change Request Awaiting Approval": "QMS",
+	"Change Request Awaiting Management Approval": "QMS",
+	"Change Request Decided": "QMS",
+	"Change Effectiveness Check Due": "QMS",
 }
 WARNING_DAYS = 30
 # On the lot: the last expiry alert it has had. Bookkeeping of this module only.

@@ -52,7 +52,11 @@ RETENTION_SCHEDULE: dict[str, tuple[int, str, tuple[str, ...]]] = {
 	),
 	# Review of the customer's requirements before committing to supply (ISO 13485 7.2.2).
 	"Sales records": (10, QUALITY_BASIS, ("Quotation",)),
-	"Quality system records": (10, QUALITY_BASIS, ("Controlled Document", "Document Revision")),
+	"Quality system records": (
+		10,
+		QUALITY_BASIS,
+		("Controlled Document", "Document Revision", "Change Request"),
+	),
 	"Purchasing and supplier records": (
 		10,
 		QUALITY_BASIS,

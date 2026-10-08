@@ -721,53 +721,53 @@ id = "URS-QMS-009"
 module = 36
 title = "Anyone in a business job can raise a change request, numbered CR-YYYY-####, stating what is to change, why, its type (document, product or BOM, process or routing, equipment, supplier, system) and the records it affects; nothing changes under it until it is approved."
 source = "D2 Change Control: Change Request; ISO 13485 4.1.4, 7.3.9; who may raise decided under the client's instruction of 2026-10-07"
-status = "planned"
+status = "implemented"
 
 [[requirement]]
 id = "URS-QMS-010"
 module = 36
 title = "QA assesses every change request before it can be approved, recording its impact on product quality, risk, regulatory notification, validation, training, documents and stock in hand, and classifies it Minor or Major; a change that needs regulatory notification is always Major."
 source = "D2 Change Control: Impact Assessment; ISO 13485 7.3.9 (evaluate the effect of changes), 4.1.4; CDSCO MDR 2017 (notification of changes)"
-status = "planned"
+status = "implemented"
 
 [[requirement]]
 id = "URS-QMS-011"
 module = 36
-title = "A Minor change is approved by QA and a Major change by QA and then Management, by two different people, each with an electronic signature, and never by the person who raised it; QA can return it to the person who raised it, or reject it, with a signature and a reason."
+title = "A Minor change is approved by QA and a Major change by QA and then Management, by two different people, each with an electronic signature, and never by the person who raised it; QA, or Management for a Major change awaiting its approval, can return it to the person who raised it, or reject it, with a signature and a reason."
 source = "D2 Change Control: Review & Approval; ISO 13485 7.3.9; 21 CFR 11.50; Management approval of Major changes decided under the client's instruction of 2026-10-07"
-status = "planned"
+status = "implemented"
 
 [[requirement]]
 id = "URS-QMS-012"
 module = 36
 title = "A change is implemented through the actions approved with it, each with an owner, a due date and the record it changes; no action can be done before approval or changed after it, each is done by its owner or QA with a note, and the change is implemented once every action is done."
 source = "D2 Change Control: Implementation; ISO 13485 7.3.9, 4.2.5"
-status = "planned"
+status = "implemented"
 
 [[requirement]]
 id = "URS-QMS-013"
 module = 36
 title = "A change is closed only once QA has verified its effectiveness with an electronic signature, recording it as effective or not effective with a note, on or after its check date: 90 days after implementation unless QA set another number of days when assessing it."
 source = "D2 Change Control: Effectiveness Check, Change History; ISO 13485 7.3.9, 8.5.2; 90 days decided under the client's instruction of 2026-10-07"
-status = "planned"
+status = "implemented"
 
 [[requirement]]
 id = "URS-QMS-014"
 module = 36
 title = "A new revision of a controlled document that has an effective revision can be started only under an approved change request that lists that document; the first revision of a new document needs none, and revisions started before this rule are not affected."
 source = "D2 Change Control linked to Document Control; ISO 13485 4.2.4 b), 7.3.9"
-status = "planned"
+status = "implemented"
 
 [[requirement]]
 id = "URS-QMS-015"
 module = 36
 title = "QA is alerted when a change request awaits assessment or approval and Management when a Major change awaits its approval; the person who raised it when it is approved, returned or rejected; each action owner once when their action is due within 7 days or overdue; and QA once when an effectiveness check falls due."
 source = "D2 Alerts & Notifications; ISO 13485 7.3.9"
-status = "planned"
+status = "implemented"
 
 [[requirement]]
 id = "URS-QMS-016"
 module = 36
 title = "A change request is never deleted or cancelled: the person who raised it can withdraw it with a reason until it is approved, and withdrawn, rejected and closed requests are kept; QA and Management see every request, others only those they raised or have an action on."
 source = "ISO 13485 4.2.5; 21 CFR 11.10(c), (d); withdrawal by the requester decided under the client's instruction of 2026-10-07"
-status = "planned"
+status = "implemented"

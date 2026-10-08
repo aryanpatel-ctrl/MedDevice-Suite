@@ -1,0 +1,1 @@
+<p>{% if doc.status == 'Approved' %}{{ _("{0} {1} is approved; its actions can now be carried out.").format(doc.name, doc.title) }}{% else %}{{ _("{0} {1}: {2}").format(doc.name, doc.title, doc.decision_reason or '') }}{% endif %}</p>
