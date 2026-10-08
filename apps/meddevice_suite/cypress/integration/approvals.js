@@ -121,6 +121,8 @@ context("Purchase approval", () => {
 			cy.get(".modal:visible")
 				.last()
 				.should("contain", `Reason for cancelling ${order.name}`);
+			// Typed once the dialog has finished opening: Frappe then moves the focus to its first field.
+			cy.window().its("cur_dialog.display").should("eq", true);
 			cy.get(".modal:visible")
 				.last()
 				.find('[data-fieldname="reason"] textarea')

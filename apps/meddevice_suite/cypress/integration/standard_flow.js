@@ -123,12 +123,18 @@ function until(ready, timeout = TIMEOUT) {
 	});
 }
 
-// Waits until no request has been in flight for QUIET_MS and the screen is not frozen.
+// Waits until no request has been in flight for QUIET_MS, the screen is not frozen, and the
+// open form is not about to reload: told its record changed on the server, Frappe reloads
+// it a second later (form.js debounced_reload_doc), with no request in flight meanwhile.
 function settle() {
 	return cy.window({ log: false }).then({ timeout: TIMEOUT + 5000 }, (win) => {
 		let since = null;
 		return until(() => {
-			if (win.frappe.request.ajax_count > 0 || win.frappe.dom.freeze_count > 0) {
+			if (
+				win.frappe.request.ajax_count > 0 ||
+				win.frappe.dom.freeze_count > 0 ||
+				win.cur_frm?.doc?.__needs_refresh
+			) {
 				since = null;
 				return false;
 			}
@@ -312,6 +318,8 @@ function fill_row(table, idx, fieldname, value, kind = "Data") {
 	settle(); // as in fill()
 	const cell = `${FORM} .frappe-control[data-fieldname="${table}"] .grid-row[data-idx="${idx}"] [data-fieldname="${fieldname}"]`;
 	cy.get(cell).first().click();
+	// As in the Update Items dialog: typed once the clicked cell has the cursor.
+	cy.get(inputs_of(cell)).first().should("have.focus");
 	cy.get(inputs_of(cell))
 		.first()
 		.then(($input) =>
@@ -358,6 +366,9 @@ function take_action(action) {
 	cy.get(`${FORM} .actions-btn-group .dropdown-menu a.dropdown-item`)
 		.contains(new RegExp(`^\\s*${action}\\s*$`))
 		.click();
+	// The form reloads the record once the action is done; as with save() and submit(), the
+	// person goes on once it has (a row opened mid-reload trips ERPNext's purchase order form).
+	settle();
 }
 
 function actions_offered(win) {
@@ -381,10 +392,16 @@ function save() {
 	settle();
 }
 
-// Waits for the dialog that has just opened to finish opening (it takes focus when its fade
-// ends), as a person would before using it.
+// Waits for the dialog that has just opened to finish opening, as a person would before
+// using it: after its fade-in Frappe makes it the current dialog and moves the focus to its
+// first field, which would take keystrokes already being typed elsewhere.
 function open_dialog() {
-	return cy.get(".modal.show").should("have.css", "opacity", "1").last();
+	cy.get(".modal.show").should("have.css", "opacity", "1");
+	cy.window().should((win) => {
+		expect(win.cur_dialog?.display, "the dialog has finished opening").to.equal(true);
+		expect(win.cur_dialog.$wrapper.is(".modal.show"), "it is the dialog shown").to.equal(true);
+	});
+	return cy.get(".modal.show").last();
 }
 
 function submit() {
@@ -495,7 +512,16 @@ context("The standard flow, through the screens of each job", { retries: 0 }, ()
 		open_dialog().should("contain", "Update Items");
 		const rate =
 			'.modal.show [data-fieldname="trans_items"] .grid-row[data-idx="1"] [data-fieldname="rate"]';
+		// Opening the row for editing makes ERPNext fetch the item's details and then redraw
+		// the dialog's table (erpnext/public/js/utils.js update_child_items), wiping what was
+		// typed meanwhile; as a person would, the cell is clicked again once that is done.
+		settle();
 		cy.get(rate).first().click();
+		settle();
+		cy.get(rate).first().click();
+		// Typed once the cell has the cursor: Frappe turns a clicked cell into an input and
+		// moves the focus into it a moment later, taking keys already typed.
+		cy.get(`${rate} input:visible`).first().should("have.focus");
 		cy.get(`${rate} input:visible`)
 			.first()
 			.clear()
