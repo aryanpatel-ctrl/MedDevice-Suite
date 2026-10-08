@@ -15,6 +15,7 @@ from meddevice_suite.qms import change_control
 from meddevice_suite.qms.change_control import (
 	AFFECTED_TYPES,
 	RESULT_TYPES,
+	approved_changes_for,
 	complete_action,
 	query_conditions,
 	send_change_alerts,
@@ -206,6 +207,17 @@ class TestRaising(ChangeControlTestCase):
 				self.assertEqual(
 					(doc.status, doc.requested_by, str(doc.requested_on)), ("Draft", user, today())
 				)
+
+	def test_every_job_finds_change_requests_on_its_desk(self):
+		from meddevice_suite.setup.desk import DESK_AREAS
+
+		self.assertEqual(DESK_AREAS["Documents"], ("Desk User",))
+		self.assertTrue(
+			frappe.db.exists(
+				"Workspace Sidebar Item",
+				{"parent": "Documents", "link_type": "DocType", "link_to": DOCTYPE},
+			)
+		)
 
 	def test_requests_are_numbered_in_sequence(self):
 		first, second = self.raise_change(), self.raise_change()
@@ -733,6 +745,27 @@ class TestRevisionsUnderChangeControl(ChangeControlTestCase):
 		other = approved_change(self.requester, self.qa, self.document)
 		with self.assertRaisesRegex(frappe.ValidationError, "does not list"):
 			self.new_revision(document, other)
+
+	def test_the_revision_form_offers_only_approved_changes_listing_the_document(self):
+		document = self.effective_document()
+		approved = approved_change(self.requester, self.qa, document)
+		approved_change(self.requester, self.qa, self.document)  # lists another document
+		self.raise_change(
+			affected_records=[{"reference_doctype": "Controlled Document", "reference_name": document}]
+		)
+
+		def offered(user: str, **filters) -> list[str]:
+			self.as_user(user)
+			return [
+				name
+				for name, _title in approved_changes_for(
+					doctype=DOCTYPE, txt="", searchfield="name", start=0, page_len=20, filters=filters
+				)
+			]
+
+		self.assertEqual(offered(self.requester, controlled_document=document), [approved])
+		self.assertEqual(offered(self.outsider, controlled_document=document), [])  # may not see it
+		self.assertEqual(offered(self.requester), [])
 
 	def test_the_first_revision_of_a_new_document_needs_none(self):
 		self.as_user(self.qa)

@@ -328,6 +328,37 @@ def require_change_for_revision(revision: Document, document: Document) -> None:
 	)
 
 
+@frappe.whitelist()
+@frappe.validate_and_sanitize_search_inputs
+def approved_changes_for(
+	doctype: str, txt: str, searchfield: str, start: int, page_len: int, filters: dict
+) -> list[tuple[str, str]]:
+	"""The revision form's lookup: approved change requests that list the document, among those
+	the person may see."""
+	document = (filters or {}).get("controlled_document")
+	listing = frappe.get_all(
+		"Change Request Affected Record",
+		filters={
+			"parenttype": DOCTYPE,
+			"reference_doctype": "Controlled Document",
+			"reference_name": document,
+		},
+		pluck="parent",
+	)
+	if not document or not listing:
+		return []
+	return frappe.get_list(
+		DOCTYPE,
+		filters={"name": ["in", listing], "status": "Approved"},
+		or_filters={"name": ["like", f"%{txt}%"], "title": ["like", f"%{txt}%"]},
+		fields=["name", "title"],
+		order_by="approved_on desc",
+		limit_start=start,
+		limit_page_length=page_len,
+		as_list=True,
+	)
+
+
 # --- Alerts ----------------------------------------------------------------------------------
 
 
