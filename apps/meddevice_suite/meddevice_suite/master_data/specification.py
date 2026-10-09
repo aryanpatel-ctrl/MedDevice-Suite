@@ -9,8 +9,9 @@ stage.
 - An inspection is made against the item's specification for its stage, with the
   specification's parameters and limits as they stand, and samples at least its sample size.
 - A specification in use, one a submitted inspection was made against, changes only under
-  an approved change request that lists it (module 36); the change names the request, and
-  the audit trail keeps the values it replaced.
+  an approved change request that lists it (module 36). The request is named for each change
+  and recorded as the one the specification was last changed under; the audit trail keeps
+  the values the change replaced.
 - A template made before this rule becomes a specification once QA completes it; completing
   it is its first issue and needs no change request (as the first revision of a document).
 """
@@ -73,11 +74,21 @@ CUSTOM_FIELDS = {
 		},
 		{
 			"fieldname": "mds_change_request",
-			"label": "Changed Under",
+			"label": "Change Request for This Change",
 			"fieldtype": "Link",
 			"options": "Change Request",
 			"insert_after": "mds_sample_size",
-			"description": "Once the specification is in use: the approved change request a change is made under.",
+			"no_copy": 1,
+			"description": "Once the specification is in use: the approved change request this change is made under. Named for each change.",
+		},
+		{
+			"fieldname": "mds_changed_under",
+			"label": "Last Changed Under",
+			"fieldtype": "Link",
+			"options": "Change Request",
+			"insert_after": "mds_change_request",
+			"read_only": 1,
+			"no_copy": 1,
 		},
 	],
 	"Item Quality Inspection Parameter": [
@@ -169,15 +180,19 @@ def guard_template(doc: Document, method: str | None = None) -> None:
 				),
 				title=_("One specification per item and stage"),
 			)
+	if before is not None and not same(before.get("mds_changed_under"), doc.get("mds_changed_under"), "Link"):
+		frappe.throw(_("{0} records the change request a change was made under itself.").format(doc.name))
+	request, doc.mds_change_request = doc.get("mds_change_request"), None  # named afresh for each change
 	if was_specification and changed(before, doc) and in_use(doc.name):
-		if not doc.get("mds_change_request"):
+		if not request:
 			frappe.throw(
 				_(
 					"Specification {0} is in use: name the approved change request that lists it to change it."
 				).format(doc.name),
 				title=_("Change control"),
 			)
-		require_approved_change(doc.mds_change_request, DOCTYPE, doc.name)
+		require_approved_change(request, DOCTYPE, doc.name)
+		doc.mds_changed_under = request
 
 
 def protect_template(doc: Document, method: str | None = None) -> None:
@@ -257,6 +272,14 @@ def check_against_specification(doc: Document, method: str | None = None) -> Non
 		row.specification: row
 		for row in frappe.get_doc(DOCTYPE, doc.quality_inspection_template).get(PARAMETERS)
 	}
+	if doc.inspection_type == "In Process" and doc.reference_type == "Job Card":
+		# ERPNext's validate copies the limits of the item master's own template into a job
+		# card's readings (quality_inspection.py); the specification's limits apply instead, and
+		# the readings are judged against them again.
+		for reading in doc.readings:
+			if reading.specification in parameters:
+				reading.update({f: parameters[reading.specification].get(f) for f in CRITERIA})
+		doc.inspect_and_set_status()
 	read = [reading.specification for reading in doc.readings]
 	if sorted(read) != sorted(parameters):
 		frappe.throw(

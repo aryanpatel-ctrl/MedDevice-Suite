@@ -6,6 +6,7 @@ from meddevice_suite.master_data.specification import (
 	DOCTYPE,
 	FINAL,
 	INCOMING,
+	check_against_specification,
 	choose_specification,
 	specification_for,
 	specification_for_inspection,
@@ -154,6 +155,47 @@ class TestInspectionAgainstSpecification(SpecificationTestCase):
 		with self.assertRaisesRegex(frappe.ValidationError, "reads each of its parameters once"):
 			doc.insert()
 
+	def test_a_job_cards_inspection_is_judged_on_the_in_process_specification(self):
+		"""ERPNext copies the item master's template limits into a job card's readings; the
+		specification's limits replace them and the readings are judged against those."""
+		frappe.set_user("Administrator")
+		item = new_item()
+		frappe.set_user(self.qa)
+		spec = template(
+			f"MDS SPEC IPQC {item}", item, stage="In Process", rows=parameters(low=1, high=2)
+		).insert()
+		frappe.set_user(self.qc)
+		doc = frappe.get_doc(
+			{
+				"doctype": "Quality Inspection",
+				"inspection_type": "In Process",
+				"reference_type": "Job Card",
+				"reference_name": "JC-TEST",
+				"item_code": item,
+				"quality_inspection_template": spec.name,
+				"sample_size": 5,
+				"readings": [
+					{
+						"specification": APPEARANCE,
+						"numeric": 0,
+						"value": "Conforms",
+						"reading_value": "Conforms",
+					},
+					# As ERPNext leaves it: the limits of another template, read inside them.
+					{
+						"specification": DIMENSION,
+						"numeric": 1,
+						"min_value": 9,
+						"max_value": 10,
+						"reading_1": "9.5",
+					},
+				],
+			}
+		)
+		check_against_specification(doc)
+		dimension = next(r for r in doc.readings if r.specification == DIMENSION)
+		self.assertEqual((dimension.min_value, dimension.max_value, dimension.status), (1, 2, "Rejected"))
+
 	def test_the_sample_is_at_least_the_specifications(self):
 		receipt, lot = self.verified_lot()
 		doc = self.inspection(receipt, lot, sample_size=2)
@@ -211,7 +253,27 @@ class TestChangeControl(SpecificationTestCase):
 			self.widened(name, mds_change_request=elsewhere).save()
 		change = approved_change(self.requester, self.qa, name, DOCTYPE, "Product or BOM")
 		self.widened(name, mds_change_request=change).save()
-		self.assertEqual(frappe.db.get_value(DOCTYPE, name, "mds_change_request"), change)
+		self.assertEqual(
+			frappe.db.get_value(DOCTYPE, name, ["mds_changed_under", "mds_change_request"]), (change, None)
+		)
+
+	def test_each_change_names_its_change_request_again(self):
+		name = self.in_use_specification()
+		change = approved_change(self.requester, self.qa, name, DOCTYPE, "Product or BOM")
+		self.widened(name, mds_change_request=change).save()
+		# The next change, by anyone, does not ride on the request named for the last one.
+		spec = frappe.get_doc(DOCTYPE, name)
+		next(r for r in spec.item_quality_inspection_parameter if r.specification == DIMENSION).max_value = 4
+		with self.assertRaisesRegex(frappe.ValidationError, "name the approved change request"):
+			spec.save()
+
+	def test_the_request_a_change_was_made_under_is_recorded_only_by_the_change(self):
+		name = self.in_use_specification()
+		elsewhere = approved_change(self.requester, self.qa, self.template, DOCTYPE, "Product or BOM")
+		spec = frappe.get_doc(DOCTYPE, name)
+		spec.mds_changed_under = elsewhere
+		with self.assertRaisesRegex(frappe.ValidationError, "records the change request"):
+			spec.save()
 
 	def test_a_template_made_before_the_rule_is_completed_once_without_a_change_request(self):
 		frappe.set_user("Administrator")
