@@ -11,7 +11,7 @@
 #
 # Sources: client diagrams D1 (MedDevice Suite ERP flow map), D2 (Foley ERP
 # flowchart, ISO 13485), D3 (Foley full workflow diagram) and D4 (data flow
-# diagram, ERP + QMS + eCommerce, received 2026-10-08).
+# diagram, received 2026-10-08; its eCommerce process is out of scope, see module 58).
 
 # --- A. Master data ---------------------------------------------------------
 [[module]]
@@ -314,10 +314,10 @@ title = "Compliance reports and dashboards"
 approach = "build"
 
 # --- M. Added by the data flow diagram (D4, received 2026-10-08) ---------------
-[[module]]
-number = 58
-title = "eCommerce storefront: catalogue, registration, cart, checkout and payment, order sync and status"
-approach = "build"
+# Module 58, the eCommerce storefront (D4 process 1: catalogue, registration, cart,
+# checkout and payment, order sync and status), was withdrawn on 2026-10-09: the client
+# does not want it, every order comes from the sales team. Nothing of it was built; its
+# number is not reused.
 
 [[module]]
 number = 59
