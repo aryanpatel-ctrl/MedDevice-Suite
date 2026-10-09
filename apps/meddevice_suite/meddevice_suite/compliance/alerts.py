@@ -40,6 +40,7 @@ ALERTS: dict[str, str] = {
 	"Change Request Awaiting Management Approval": "QMS",
 	"Change Request Decided": "QMS",
 	"Change Effectiveness Check Due": "QMS",
+	"Supplier Certificate Expiring": "Master Data",  # approved suppliers (module 4)
 }
 WARNING_DAYS = 30
 # On the lot: the last expiry alert it has had. Bookkeeping of this module only.

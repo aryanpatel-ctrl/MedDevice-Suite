@@ -50,6 +50,8 @@ SYSTEM_MAINTAINED: dict[str, tuple[str, ...]] = {
 	),
 	# The move and the return the decision causes are recorded after the signature.
 	"Lot Release": ("docstatus", "stock_entry", "supplier_return"),
+	# The certificate alert is bookkeeping of the alert, not part of the decision.
+	"Supplier Approval": ("docstatus", "certificate_alerted"),
 	"Change Request Action": (
 		"done",
 		"done_on",

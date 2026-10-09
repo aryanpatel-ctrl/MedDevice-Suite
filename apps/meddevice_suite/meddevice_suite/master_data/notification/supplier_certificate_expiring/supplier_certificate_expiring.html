@@ -1,0 +1,1 @@
+<p>{{ _("The quality system certificate {0} of supplier {1} expires on {2}. Ask the supplier for the renewed certificate; QA decides the supplier again on it.").format(doc.certificate_number, doc.supplier_name or doc.supplier, frappe.format_value(doc.certificate_expiry, {"fieldtype": "Date"})) }}</p>

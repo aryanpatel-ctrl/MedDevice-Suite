@@ -1,0 +1,35 @@
+{
+ "attach_print": 0,
+ "channel": "System Notification",
+ "condition_type": "Python",
+ "creation": "2026-10-09 18:00:00.000000",
+ "docstatus": 0,
+ "doctype": "Notification",
+ "document_type": "Supplier Approval",
+ "enabled": 1,
+ "event": "Custom",
+ "idx": 0,
+ "is_standard": 1,
+ "message_type": "HTML",
+ "minutes_offset": 0,
+ "modified": "2026-10-09 18:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Master Data",
+ "name": "Supplier Certificate Expiring",
+ "notification_message": "{{ _(\"The quality system certificate {0} of supplier {1} expires on {2}. Ask the supplier for the renewed certificate; QA decides the supplier again on it.\").format(doc.certificate_number, doc.supplier_name or doc.supplier, frappe.format_value(doc.certificate_expiry, {\"fieldtype\": \"Date\"})) }}",
+ "owner": "Administrator",
+ "recipients": [
+  {
+   "receiver_by_role": "Quality Manager"
+  },
+  {
+   "receiver_by_role": "Purchase User"
+  },
+  {
+   "receiver_by_role": "Purchase Manager"
+  }
+ ],
+ "send_system_notification": 0,
+ "send_to_all_assignees": 0,
+ "subject": "Certificate of supplier {{ doc.supplier_name or doc.supplier }} expires on {{ doc.get_formatted('certificate_expiry') }}"
+}

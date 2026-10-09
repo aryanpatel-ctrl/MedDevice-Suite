@@ -74,10 +74,14 @@ doc_events = {
 		"validate": [
 			"meddevice_suite.lot_control.lot_status.guard_purchase_receipt",
 			"meddevice_suite.lot_control.receipt.protect_certificate",
+			"meddevice_suite.master_data.supplier_approval.mark_full_inspection",
 		],
 		"before_update_after_submit": "meddevice_suite.lot_control.receipt.protect_certificate",
 	},
 	"Quality Inspection": {"validate": "meddevice_suite.lot_control.receipt.guard_incoming_inspection"},
+	# Approved suppliers (module 4): orders only from approved suppliers, for approved items.
+	"Purchase Order": {"validate": "meddevice_suite.master_data.supplier_approval.guard_purchase_order"},
+	"Supplier": {"onload": "meddevice_suite.master_data.supplier_approval.supplier_onload"},
 	"Item": {"validate": "meddevice_suite.setup.stock.refuse_negative_stock"},
 	"Stock Settings": {"validate": "meddevice_suite.setup.stock.protect_stock_settings"},
 	"Log Settings": {"validate": "meddevice_suite.compliance.retention.protect_login_history"},
@@ -119,6 +123,7 @@ scheduler_events = {
 		"meddevice_suite.qms.document_control.make_due_revisions_effective",
 		"meddevice_suite.qms.document_control.send_review_alerts",
 		"meddevice_suite.qms.change_control.send_change_alerts",
+		"meddevice_suite.master_data.supplier_approval.send_certificate_alerts",
 	],
 }
 

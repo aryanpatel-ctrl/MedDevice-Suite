@@ -1,0 +1,290 @@
+{
+ "actions": [],
+ "autoname": "format:SA-{YYYY}-{#####}",
+ "creation": "2026-10-09 18:00:00.000000",
+ "description": "QA's signed decision on a supplier (module 4): approved, conditionally approved or not approved, with the items it may supply and its quality system certificate. A later decision replaces it; it is never cancelled or deleted.",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "supplier",
+  "supplier_name",
+  "valid_until",
+  "column_break_certificate",
+  "certificate_number",
+  "certificate_expiry",
+  "certificate",
+  "section_items",
+  "items",
+  "section_decision",
+  "decision",
+  "reason",
+  "column_break_decided",
+  "decided_by",
+  "decided_at",
+  "certificate_alerted",
+  "amended_from"
+ ],
+ "fields": [
+  {
+   "fieldname": "supplier",
+   "fieldtype": "Link",
+   "label": "Supplier",
+   "options": "Supplier",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "supplier_name",
+   "fieldtype": "Data",
+   "label": "Supplier Name",
+   "read_only": 1,
+   "fetch_from": "supplier.supplier_name"
+  },
+  {
+   "fieldname": "valid_until",
+   "fieldtype": "Date",
+   "label": "Conditional Until",
+   "description": "For a conditional approval only: the day the condition ends. The supplier is then decided again."
+  },
+  {
+   "fieldname": "column_break_certificate",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "certificate_number",
+   "fieldtype": "Data",
+   "label": "Quality System Certificate No",
+   "description": "The supplier's ISO 13485 or ISO 9001 certificate."
+  },
+  {
+   "fieldname": "certificate_expiry",
+   "fieldtype": "Date",
+   "label": "Certificate Expiry",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "certificate",
+   "fieldtype": "Attach",
+   "label": "Certificate"
+  },
+  {
+   "fieldname": "section_items",
+   "fieldtype": "Section Break",
+   "label": "Approved For"
+  },
+  {
+   "fieldname": "items",
+   "fieldtype": "Table",
+   "label": "Items",
+   "options": "Supplier Approval Item",
+   "description": "The items the supplier may supply. Not needed when it is not approved."
+  },
+  {
+   "fieldname": "section_decision",
+   "fieldtype": "Section Break",
+   "label": "Decision"
+  },
+  {
+   "fieldname": "decision",
+   "fieldtype": "Select",
+   "label": "Decision",
+   "options": "\nApproved\nConditional\nNot Approved",
+   "read_only": 1,
+   "no_copy": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "reason",
+   "fieldtype": "Small Text",
+   "label": "Reason",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "column_break_decided",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "decided_by",
+   "fieldtype": "Link",
+   "label": "Decided By",
+   "options": "User",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "decided_at",
+   "fieldtype": "Datetime",
+   "label": "Decided At",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "certificate_alerted",
+   "fieldtype": "Check",
+   "label": "Certificate Expiry Alerted",
+   "read_only": 1,
+   "no_copy": 1,
+   "description": "Set once QA and Purchase are alerted that the certificate expires within 30 days."
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "options": "Supplier Approval",
+   "read_only": 1,
+   "no_copy": 1,
+   "print_hide": 1,
+   "search_index": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-10-09 18:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Master Data",
+ "name": "Supplier Approval",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "role": "Quality Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "delete": 0,
+   "email": 0,
+   "export": 1,
+   "import": 0,
+   "report": 1,
+   "print": 1,
+   "share": 0
+  },
+  {
+   "role": "Purchase User",
+   "read": 1,
+   "write": 0,
+   "create": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "delete": 0,
+   "email": 0,
+   "export": 0,
+   "import": 0,
+   "report": 1,
+   "print": 1,
+   "share": 0
+  },
+  {
+   "role": "Purchase Manager",
+   "read": 1,
+   "write": 0,
+   "create": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "delete": 0,
+   "email": 0,
+   "export": 1,
+   "import": 0,
+   "report": 1,
+   "print": 1,
+   "share": 0
+  },
+  {
+   "role": "QC Inspector",
+   "read": 1,
+   "write": 0,
+   "create": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "delete": 0,
+   "email": 0,
+   "export": 0,
+   "import": 0,
+   "report": 1,
+   "print": 1,
+   "share": 0
+  },
+  {
+   "role": "Sales Manager",
+   "read": 1,
+   "write": 0,
+   "create": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "delete": 0,
+   "email": 0,
+   "export": 1,
+   "import": 0,
+   "report": 1,
+   "print": 1,
+   "share": 0
+  },
+  {
+   "role": "Stock Manager",
+   "read": 1,
+   "write": 0,
+   "create": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "delete": 0,
+   "email": 0,
+   "export": 1,
+   "import": 0,
+   "report": 1,
+   "print": 1,
+   "share": 0
+  },
+  {
+   "role": "Manufacturing Manager",
+   "read": 1,
+   "write": 0,
+   "create": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "delete": 0,
+   "email": 0,
+   "export": 1,
+   "import": 0,
+   "report": 1,
+   "print": 1,
+   "share": 0
+  },
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 0,
+   "create": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "delete": 0,
+   "email": 0,
+   "export": 0,
+   "import": 0,
+   "report": 1,
+   "print": 1,
+   "share": 0
+  }
+ ],
+ "row_format": "Dynamic",
+ "search_fields": "supplier_name,decision",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "supplier_name",
+ "track_changes": 0
+}
