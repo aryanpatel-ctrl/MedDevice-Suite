@@ -249,7 +249,8 @@ def mark_full_inspection(doc: Document, method: str | None = None) -> None:
 	its lots inspected in full."""
 	if doc.is_return:
 		return
-	unordered = [row.item_code for row in doc.items if not row.get("purchase_order")]
+	# Ordered only when the line names its order line: ERPNext then checks the item against it.
+	unordered = [row.item_code for row in doc.items if not row.get("purchase_order_item")]
 	if unordered:
 		approval_in_force(doc.supplier, unordered)
 	orders = list({row.purchase_order for row in doc.items if row.get("purchase_order")})
