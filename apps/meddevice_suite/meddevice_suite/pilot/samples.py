@@ -58,12 +58,11 @@ def load_sample_records() -> None:
 	flow.order_materials(
 		flow.request_materials(AWAITING_PURCHASE_APPROVAL), supplier_of(AWAITING_PURCHASE_APPROVAL)
 	)
-	flow.buy(IN_QUARANTINE)
-	for receipt in flow.buy(REJECTED):
+	flow.buy(IN_QUARANTINE, inspect=False)
+	for receipt in flow.buy(REJECTED, inspect=False):
+		flow.inspect_received_lots(receipt, flow.instrument(), accept=False)
 		for row in frappe.get_doc("Purchase Receipt", receipt.name).items:
-			flow.reject_lot(
-				flow.lot_of(row), "Certificate of analysis does not match the specification (pilot)"
-			)
+			flow.reject_lot(flow.lot_of(row), "Incoming inspection rejected: dimension out of limits (pilot)")
 
 
 def samples_loaded() -> bool:

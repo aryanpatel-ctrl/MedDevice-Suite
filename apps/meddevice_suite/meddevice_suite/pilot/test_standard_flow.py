@@ -29,8 +29,9 @@ class FlowTestCase(IntegrationTestCase):
 	def setUpClass(cls):
 		super().setUpClass()
 		apply_configuration()
-		with patch.dict(frappe.conf, PILOT):
-			load_demo_data()
+		# The pilot's configuration for the whole class: the demo users sign with its password.
+		cls.enterClassContext(patch.dict(frappe.conf, PILOT))
+		load_demo_data()
 
 
 @verifies("URS-PLT-007")
@@ -52,8 +53,12 @@ class TestStandardFlow(FlowTestCase):
 					self.assertEqual(
 						frappe.db.get_value("Batch", flow.lot_of(row), STATUS_FIELD), "Quarantine"
 					)
-			# QA releases what quarantine holds; the lots become Approved in the approved store.
-			for moved in flow.release_received_lots(receipt):
+			# QA releases what quarantine holds, with a signature; the lots become Approved in the
+			# approved store.
+			for decision in flow.release_received_lots(receipt):
+				self.assertEqual((decision.decision, decision.docstatus), ("Release", 1))
+				self.assertTrue(decision.quality_inspection)
+				moved = frappe.get_doc("Stock Entry", decision.stock_entry)
 				self.assertEqual({row.t_warehouse for row in moved.items}, {flow.store("Stores")})
 			for row in frappe.get_doc("Purchase Receipt", receipt.name).items:
 				self.assertEqual(frappe.db.get_value("Batch", flow.lot_of(row), STATUS_FIELD), "Approved")

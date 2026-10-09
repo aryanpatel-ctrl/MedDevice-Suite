@@ -6,7 +6,8 @@ from frappe.model.document import Document
 from frappe.tests import IntegrationTestCase
 from frappe.utils import add_days, today
 
-from meddevice_suite.lot_control import lot_status, stores
+from meddevice_suite.compliance.test_esign import PASSWORD
+from meddevice_suite.lot_control import lot_status, release, stores
 from meddevice_suite.lot_control.lot_status import (
 	APPROVED,
 	HOLD,
@@ -25,8 +26,8 @@ from meddevice_suite.lot_control.stores import role_of, store_for
 from meddevice_suite.patches.v0_1 import set_initial_lot_status
 from meddevice_suite.pilot.flow import lot_of
 from meddevice_suite.qa import verifies
+from meddevice_suite.qms.test_document_control import signer
 from meddevice_suite.setup.install import apply_configuration
-from meddevice_suite.setup.test_roles import user_with_profile
 from meddevice_suite.setup.test_stock import stock_item
 
 RAW = "MDS-LOT-RAW"
@@ -167,8 +168,8 @@ class LotTestCase(IntegrationTestCase):
 		lot_item(RAW)
 		lot_item(PRODUCT, "Products")
 		ensure_parties()
-		cls.qa = user_with_profile("QA Manager")
-		cls.stores_user = user_with_profile("Stores")
+		cls.qa = signer("QA Manager")
+		cls.stores_user = signer("Stores")
 
 	def tearDown(self):
 		frappe.set_user("Administrator")
@@ -186,15 +187,23 @@ class LotTestCase(IntegrationTestCase):
 		finally:
 			frappe.set_user(acting)
 
-	def approved(self, qty: float = 10) -> str:
-		"""A lot QA has released to the approved store, whoever is acting."""
-		lot = self.quarantined(qty)
+	def decide(self, lot: str, decision: str, reason: str = "decided in a test") -> Document:
+		"""QA's signed decision on the lot, whoever is acting. A material-receipt lot needs no
+		inspection; a supplier's lot is covered in test_release."""
 		acting = frappe.session.user
 		self.as_qa()
 		try:
-			lot_status.release(lot, "accepted")
+			record = frappe.get_doc({"doctype": "Lot Release", "batch": lot}).insert()
+			act = {"Release": release.release, "Reject": release.reject, "Hold": release.hold}[decision]
+			act(record, password=PASSWORD, reason=reason)
+			return frappe.get_doc("Lot Release", record.name)
 		finally:
 			frappe.set_user(acting)
+
+	def approved(self, qty: float = 10) -> str:
+		"""A lot QA has released to the approved store, whoever is acting."""
+		lot = self.quarantined(qty)
+		self.decide(lot, "Release", "accepted")
 		return lot
 
 
@@ -292,6 +301,17 @@ class TestOnlyAnApprovedLotLeaves(LotTestCase):
 			move(RAW, lot, 1, store(stores.QUARANTINE), store("Stores"))
 		self.assertEqual(qty_in(lot, store(stores.QUARANTINE)), 10)
 
+	def test_what_a_lot_may_still_do_within_its_own_kind_of_store(self):
+		allowed = lot_status.movement_allowed
+		self.assertTrue(
+			allowed(QUARANTINE, "Stock Entry", "Material Transfer", target_role=stores.QUARANTINE)
+		)
+		self.assertTrue(allowed(HOLD, "Stock Entry", "Material Transfer", target_role=stores.HOLD))
+		self.assertTrue(allowed(REJECTED, "Stock Entry", "Material Transfer", target_role=stores.RETURNS))
+		self.assertFalse(allowed(QUARANTINE, "Stock Entry", "Material Transfer", target_role=stores.RETURNS))
+		self.assertFalse(allowed(HOLD, "Stock Entry", "Material Issue"))
+		self.assertTrue(allowed(QUARANTINE, "Stock Entry", "Material Issue", lot_release_transfer=True))
+
 	def test_the_ledger_refuses_what_a_form_let_through(self):
 		# A document whose rows name no lot is checked where the lot is finally known.
 		lot = self.quarantined()
@@ -315,42 +335,6 @@ class TestOnlyAnApprovedLotLeaves(LotTestCase):
 		lot_status.guard_stock_ledger_entry(entry)  # stock coming in
 		entry.actual_qty, entry.voucher_type = -1, "Stock Reconciliation"
 		lot_status.guard_stock_ledger_entry(entry)  # a counted correction
-
-	def test_what_a_lot_may_still_do_within_its_own_kind_of_store(self):
-		allowed = lot_status.movement_allowed
-		self.assertTrue(
-			allowed(QUARANTINE, "Stock Entry", "Material Transfer", target_role=stores.QUARANTINE)
-		)
-		self.assertTrue(allowed(HOLD, "Stock Entry", "Material Transfer", target_role=stores.HOLD))
-		self.assertTrue(allowed(REJECTED, "Stock Entry", "Material Transfer", target_role=stores.RETURNS))
-		self.assertFalse(allowed(QUARANTINE, "Stock Entry", "Material Transfer", target_role=stores.RETURNS))
-		self.assertFalse(allowed(HOLD, "Stock Entry", "Material Issue"))
-		self.assertTrue(allowed(QUARANTINE, "Stock Entry", "Material Issue", lot_release_transfer=True))
-
-	def test_quantity_rejected_at_the_door_goes_to_the_rejected_store(self):
-		receipt = frappe.get_doc(
-			{
-				"doctype": "Purchase Receipt",
-				"supplier": SUPPLIER,
-				"company": company(),
-				"set_warehouse": store("Stores"),
-				"items": [
-					{
-						"item_code": RAW,
-						"qty": 1,
-						"received_qty": 2,
-						"rejected_qty": 1,
-						"rate": 10,
-						"warehouse": store("Stores"),
-						"rejected_warehouse": store(stores.HOLD),  # a store, but not the Rejected one
-					}
-				],
-			}
-		)
-		with self.assertRaises(frappe.ValidationError) as refused:
-			receipt.insert()
-		self.assertIn("rejected at receipt goes to the Rejected store", str(refused.exception))
-		self.assertEqual(receipt.set_warehouse, store(stores.QUARANTINE))
 
 	def test_a_quarantined_lot_cannot_be_delivered(self):
 		lot = self.quarantined()
@@ -424,52 +408,52 @@ class TestOnlyAnApprovedLotLeaves(LotTestCase):
 
 	def test_a_held_lot_waits_in_the_hold_store(self):
 		lot = self.quarantined()
-		self.as_qa()
-		moved = lot_status.hold(lot, "label unreadable")
+		held = self.decide(lot, "Hold", "label unreadable")
 
+		moved = frappe.get_doc("Stock Entry", held.stock_entry)
 		self.assertEqual({row.t_warehouse for row in moved.items}, {store(stores.HOLD)})
 		self.assertEqual(status_of([lot])[lot], HOLD)
-		frappe.set_user("Administrator")
 		with self.assertRaises(LotNotApproved):
 			move(RAW, lot, 1, store(stores.HOLD), store("Stores"))
-		self.as_qa()
-		lot_status.release(lot, "retested and accepted")
+		self.decide(lot, "Release", "retested and accepted")
 		self.assertEqual(status_of([lot])[lot], APPROVED)
 		self.assertEqual(qty_in(lot, store("Stores")), 10)
 
 	def test_an_approved_lot_can_be_put_on_hold_and_comes_back_to_the_hold_store(self):
 		lot = self.approved()
-		self.as_qa()
-		lot_status.hold(lot, "customer complaint under investigation")
+		self.decide(lot, "Hold", "customer complaint under investigation")
 
 		self.assertEqual(qty_in(lot, store(stores.HOLD)), 10)
 		self.assertEqual(qty_in(lot, store("Stores")), 0)
 
 	def test_a_rejected_lot_goes_back_to_its_supplier_or_is_scrapped_and_nowhere_else(self):
-		receipt = purchase_receive(RAW, 6)
-		lot = lot_of(receipt.items[0])
-		self.as_qa()
-		lot_status.reject(lot, "certificate does not match")
-		frappe.set_user("Administrator")
+		lot = self.quarantined(6)
+		self.decide(lot, "Reject", "certificate does not match")
 		self.assertEqual(qty_in(lot, store(stores.REJECTED)), 6)
 
 		with self.assertRaises(LotNotApproved):
 			move(RAW, lot, 1, store(stores.REJECTED), store("Stores"))
 		move(RAW, lot, 1, store(stores.REJECTED), store(stores.RETURNS))
 		issue(RAW, lot, 1, store(stores.REJECTED))
+		self.assertEqual(qty_in(lot, store(stores.REJECTED)), 4)
+
+		# A supplier's lot, once Rejected, goes back on a purchase return from the rejected store.
+		receipt = purchase_receive(RAW, 6)
+		supplier_lot = lot_of(receipt.items[0])
+		set_status(supplier_lot, REJECTED, "test: rejected without the record")
+		move(RAW, supplier_lot, 6, store(stores.QUARANTINE), store(stores.REJECTED))
 		back = make_purchase_return(receipt.name)
 		for row in back.items:
 			row.qty, row.received_qty, row.warehouse, row.batch_no, row.use_serial_batch_fields = (
 				-2,
 				-2,
 				store(stores.REJECTED),
-				lot,
+				supplier_lot,
 				1,
 			)
 		back.insert()
 		back.submit()
-
-		self.assertEqual(qty_in(lot, store(stores.REJECTED)), 2)
+		self.assertEqual(qty_in(supplier_lot, store(stores.REJECTED)), 4)
 
 	def test_a_work_order_draws_from_an_approved_store_and_finishes_into_quarantine(self):
 		bom = frappe.db.get_value("BOM", {"item": PRODUCT, "docstatus": 1}) or (
@@ -519,6 +503,31 @@ class TestOnlyAnApprovedLotLeaves(LotTestCase):
 		self.assertEqual(qty_in(lot_of(receipt.items[0]), store(stores.QUARANTINE)), 1)
 		self.assertEqual(qty_in(lot_of(receipt.items[0]), store("Stores")), 0)
 
+	def test_quantity_rejected_at_the_door_goes_to_the_rejected_store(self):
+		receipt = frappe.get_doc(
+			{
+				"doctype": "Purchase Receipt",
+				"supplier": SUPPLIER,
+				"company": company(),
+				"set_warehouse": store("Stores"),
+				"items": [
+					{
+						"item_code": RAW,
+						"qty": 1,
+						"received_qty": 2,
+						"rejected_qty": 1,
+						"rate": 10,
+						"warehouse": store("Stores"),
+						"rejected_warehouse": store(stores.HOLD),  # a store, but not the Rejected one
+					}
+				],
+			}
+		)
+		with self.assertRaises(frappe.ValidationError) as refused:
+			receipt.insert()
+		self.assertIn("rejected at receipt goes to the Rejected store", str(refused.exception))
+		self.assertEqual(receipt.set_warehouse, store(stores.QUARANTINE))
+
 	def test_only_the_release_marks_its_transfer(self):
 		lot = self.approved()
 		with self.assertRaises(frappe.PermissionError):
@@ -539,13 +548,13 @@ class TestOnlyAnApprovedLotLeaves(LotTestCase):
 
 
 @verifies("URS-STK-004", "URS-STK-005")
-class TestTheReleaseService(LotTestCase):
+class TestTheDecisionMovesTheStock(LotTestCase):
 	def test_release_moves_the_stock_to_the_approved_store_and_approves_the_lot(self):
 		lot = self.quarantined(7)
-		self.as_qa()
 
-		moved = lot_status.release(lot, "accepted")
+		decision = self.decide(lot, "Release", "accepted")
 
+		moved = frappe.get_doc("Stock Entry", decision.stock_entry)
 		self.assertTrue(moved.get(TRANSFER_FIELD))
 		self.assertEqual(moved.remarks, "accepted")
 		self.assertEqual(
@@ -554,6 +563,7 @@ class TestTheReleaseService(LotTestCase):
 		)
 		self.assertEqual(status_of([lot])[lot], APPROVED)
 		self.assertEqual(frappe.db.get_value("Batch", lot, "mds_status_set_by"), self.qa)
+		self.assertEqual(frappe.db.get_value("Batch", lot, "mds_lot_release"), decision.name)
 		self.assertIn("Submitted", audit_actions("Stock Entry", moved.name))
 
 	def test_qa_posts_no_stock_entry_other_than_a_release(self):
@@ -563,53 +573,20 @@ class TestTheReleaseService(LotTestCase):
 			move(RAW, lot, 1, store("Stores"), store("Work In Progress"))
 		self.assertIn("QA moves a lot through its release", str(refused.exception))
 
-	def test_release_needs_qa(self):
-		lot = self.quarantined()
-		frappe.set_user(self.stores_user)
-		with self.assertRaises(frappe.PermissionError):
-			lot_status.release(lot, "accepted")
-		with self.assertRaises(frappe.PermissionError):
-			lot_status.release_lot(lot, "accepted")
-		self.assertEqual(status_of([lot])[lot], QUARANTINE)
-
-	def test_release_from_the_desk_as_qa(self):
-		lot = self.quarantined()
-		self.as_qa()
-
-		transfer = lot_status.release_lot(lot, "accepted")
-
-		self.assertTrue(transfer)
-		self.assertEqual(status_of([lot])[lot], APPROVED)
-
-	def test_an_approved_lot_is_not_released_again_and_a_rejected_one_never(self):
-		lot = self.approved()
-		self.as_qa()
-		with self.assertRaises(frappe.ValidationError) as refused:
-			lot_status.release(lot, "again")
-		self.assertIn("only a Quarantine or Hold lot is released", str(refused.exception))
-		rejected = self.quarantined()
-		lot_status.reject(rejected, "no")
-		with self.assertRaises(frappe.ValidationError):
-			lot_status.release(rejected, "after all")
-
-	def test_hold_and_reject_refuse_the_wrong_starting_status(self):
-		rejected = self.quarantined()
-		self.as_qa()
-		lot_status.reject(rejected, "no")
-		with self.assertRaises(frappe.ValidationError) as refused:
-			lot_status.hold(rejected, "later")
-		self.assertIn("only a Quarantine or Approved lot is put on hold", str(refused.exception))
-		approved = self.approved()
-		with self.assertRaises(frappe.ValidationError) as refused:
-			lot_status.reject(approved, "no")
-		self.assertIn("only a Quarantine or Hold lot is rejected", str(refused.exception))
+	def test_the_release_transfer_is_never_cancelled(self):
+		decision = self.decide(self.quarantined(), "Release", "accepted")
+		moved = frappe.get_doc("Stock Entry", decision.stock_entry)
+		with self.assertRaises(frappe.PermissionError) as refused:
+			moved.cancel()
+		self.assertIn("put the lot on hold instead", str(refused.exception))
 
 	def test_a_lot_already_in_the_approved_store_is_approved_without_a_transfer(self):
 		# Opening stock posted straight into the approved store is still Quarantine until QA says so.
 		lot = receive(RAW, 2, store("Stores"))
-		self.as_qa()
 
-		self.assertIsNone(lot_status.release(lot, "opening stock, certificates checked"))
+		decision = self.decide(lot, "Release", "opening stock, certificates checked")
+
+		self.assertIsNone(decision.stock_entry)
 		self.assertEqual(status_of([lot])[lot], APPROVED)
 
 	def test_release_needs_an_approved_default_store_on_the_item(self):
@@ -622,14 +599,12 @@ class TestTheReleaseService(LotTestCase):
 			item_defaults=[{"company": company(), "default_warehouse": store(stores.QUARANTINE)}],
 		)
 		lot = receive(code, 1, store(stores.QUARANTINE))
-		self.as_qa()
 		with self.assertRaises(frappe.ValidationError) as refused:
-			lot_status.release(lot, "accepted")
+			self.decide(lot, "Release", "accepted")
 		self.assertIn("has no approved default store", str(refused.exception))
 
-	def test_a_lot_spread_over_two_companies_is_not_moved_by_the_service(self):
+	def test_a_lot_spread_over_two_companies_is_not_moved(self):
 		lot = self.quarantined()
-		self.as_qa()
 		elsewhere = frappe.db.get_value("Warehouse", {"company": ["!=", company()], "is_group": 0}) or store(
 			"Stores"
 		)
@@ -641,52 +616,21 @@ class TestTheReleaseService(LotTestCase):
 			patch("meddevice_suite.lot_control.lot_status.get_batch_qty", return_value=holdings),
 			patch(
 				"meddevice_suite.lot_control.lot_status.frappe.get_cached_value",
-				side_effect=lambda doctype, name, field: {"A": "A", "B": "B"}[
-					("A" if name == store(stores.QUARANTINE) else "B")
-				]
+				side_effect=lambda doctype, name, field: ("A" if name == store(stores.QUARANTINE) else "B")
 				if field == "company"
 				else frappe.get_cached_value(doctype, name, field),
 			),
 			self.assertRaises(frappe.ValidationError) as refused,
 		):
-			lot_status.release(lot, "accepted")
+			lot_status.move_to_role(frappe.get_doc("Batch", lot), None, "accepted")
 		self.assertIn("stock in more than one company", str(refused.exception))
-
-	def test_the_release_transfer_is_never_cancelled(self):
-		lot = self.quarantined()
-		self.as_qa()
-		moved = lot_status.release(lot, "accepted")
-		frappe.set_user("Administrator")
-		with self.assertRaises(frappe.PermissionError) as refused:
-			moved.cancel()
-		self.assertIn("put the lot on hold instead", str(refused.exception))
-
-	def test_a_lot_with_no_stock_is_approved_without_a_transfer(self):
-		lot = (
-			frappe.get_doc({"doctype": "Batch", "item": RAW, "expiry_date": add_days(today(), 30)})
-			.insert()
-			.name
-		)
-		self.as_qa()
-
-		self.assertIsNone(lot_status.release(lot, "documents only"))
-		self.assertEqual(status_of([lot])[lot], APPROVED)
-
-	def test_release_to_a_named_approved_store(self):
-		lot = self.quarantined()
-		self.as_qa()
-		moved = lot_status.release(lot, "accepted", to_store=store("Finished Goods"))
-		self.assertEqual(moved.items[0].t_warehouse, store("Finished Goods"))
-		with self.assertRaises(frappe.ValidationError):
-			lot_status.release(self.quarantined(), "accepted", to_store=store(stores.HOLD))
 
 
 @verifies("URS-STK-006")
 class TestStockByLotStatus(LotTestCase):
 	def test_the_report_shows_each_lot_with_its_status_store_and_reason(self):
 		held = self.quarantined(4)
-		self.as_qa()
-		lot_status.hold(held, "label unreadable")
+		self.decide(held, "Hold", "label unreadable")
 		approved = self.approved(3)
 
 		_columns, rows = report({"lot_status": HOLD})

@@ -160,7 +160,14 @@ PERMISSIONS: dict[str, dict[str, tuple[str, ...]]] = {
 			"Manufacturing User": VIEW,
 		}
 	),
-	"Asset": oversight({"Quality Manager": APPROVE, "Maintenance User": VIEW, "Accounts User": VIEW}),
+	"Asset": oversight(
+		{
+			"Quality Manager": APPROVE,
+			"Maintenance User": VIEW,
+			"Accounts User": VIEW,
+			"QC Inspector": PICK,  # the instrument a reading was taken with (module 16)
+		}
+	),
 	# An operator names themselves on the time they log against a job card.
 	"Employee": oversight({"HR User": EDIT, "Manufacturing User": VIEW, "Operator": PICK}),
 	# --- Purchasing and receiving

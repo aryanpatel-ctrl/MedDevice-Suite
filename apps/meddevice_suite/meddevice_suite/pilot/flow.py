@@ -7,8 +7,10 @@ trail of this app:
 	Sales        enquiry → quotation → (price approval) → sales order      D1, D3
 	Stores       purchase request                                           D2, D3
 	Purchase     purchase order → (purchase approval)                       D1, D2
-	Stores       goods receipt into quarantine, by batch                    D2, D3
-	QA           release of the received lots after inspection (module 17)
+	Stores       goods receipt into quarantine, by batch, with the
+	             supplier's certificate on each line                        D2, D3
+	QC           verifies the certificates and inspects each lot             D3
+	QA           releases each lot with an electronic signature             D2, D3
 	Production   work order → material issue → operations → finished batch  D2, D3
 	Operator     records the operations on the job cards                    D3
 	QA           release of the finished lot from quarantine                D2, D3
@@ -32,9 +34,11 @@ from frappe.model.document import Document
 from frappe.model.workflow import apply_workflow
 from frappe.utils import add_days, add_to_date, now_datetime, today
 
-from meddevice_suite.lot_control import lot_status
+from meddevice_suite.lot_control import release as lot_release
+from meddevice_suite.lot_control.receipt import verify_certificate
 from meddevice_suite.pilot import refuse_unless_pilot_site
 from meddevice_suite.pilot.demo import BOM_QUANTITY, PRODUCTS, RAW_MATERIALS, demo_user_email
+from meddevice_suite.pilot.inspection import readings_for
 
 
 @contextmanager
@@ -157,48 +161,108 @@ def approve_purchase(order: Document) -> Document:
 
 
 def receive(order: Document) -> Document:
-	"""Goods receipt into quarantine; ERPNext creates a batch per line, with its expiry."""
+	"""Goods receipt into quarantine with the supplier's lot number and certificate on each
+	line; ERPNext creates a batch per line, with its expiry."""
 	with as_job("Stores"):
 		receipt = make_purchase_receipt(order.name)
 		for row in receipt.items:
 			row.warehouse = store("Quarantine")
 		receipt.insert()
+		for row in receipt.items:
+			row.mds_supplier_lot_no = f"SUP-{row.item_code}-{frappe.generate_hash(length=4).upper()}"
+			row.mds_certificate = certificate_file(receipt, row.item_code)
+		receipt.save()
 		receipt.submit()
 		return stored(receipt)
 
 
-def release_received_lots(receipt: Document) -> list[Document]:
-	"""QA releases each lot the receipt brought into quarantine; the release moves it to the
-	approved store (module 17). The incoming inspection it rests on comes with module 16."""
+def certificate_file(receipt: Document, item: str) -> str:
+	"""A fictional certificate of analysis attached to the receipt; returns its address."""
+	file = frappe.get_doc(
+		{
+			"doctype": "File",
+			"file_name": f"COA-{item}-{receipt.name}.txt",
+			"content": f"Certificate of analysis (demo)\nItem: {item}\nReceipt: {receipt.name}\nResult: conforms\n",
+			"is_private": 1,
+			"attached_to_doctype": "Purchase Receipt",
+			"attached_to_name": receipt.name,
+		}
+	).insert()
+	return file.file_url
+
+
+def inspect_received_lots(receipt: Document, instrument: str, accept: bool = True) -> list[Document]:
+	"""QC verifies each line's certificate and inspects its lot against the item's template."""
+	inspections = []
+	with as_job("QC Inspector"):
+		for row in frappe.get_doc("Purchase Receipt", receipt.name).items:
+			verify_certificate(receipt.name, row.name)
+			template = frappe.db.get_value("Item", row.item_code, "quality_inspection_template")
+			inspection = frappe.get_doc(
+				{
+					"doctype": "Quality Inspection",
+					"inspection_type": "Incoming",
+					"reference_type": "Purchase Receipt",
+					"reference_name": receipt.name,
+					"item_code": row.item_code,
+					"batch_no": lot_of(row),
+					"sample_size": 5,
+					"inspected_by": frappe.session.user,
+					"readings": readings_for(template, instrument, within_limits=accept),
+				}
+			)
+			inspection.insert()
+			inspection.submit()
+			inspections.append(inspection)
+	return inspections
+
+
+def decide_lot(lot: str, decision: str, reason: str) -> Document:
+	"""QA signs its decision on the lot: Release, Reject or Hold (module 16)."""
 	with as_job("QA Manager"):
-		return [
-			moved
-			for row in frappe.get_doc("Purchase Receipt", receipt.name).items
-			if (moved := lot_status.release(lot_of(row), "Incoming inspection accepted (pilot)"))
+		record = frappe.get_doc({"doctype": "Lot Release", "batch": lot}).insert()
+		act = {"Release": lot_release.release, "Reject": lot_release.reject, "Hold": lot_release.hold}[
+			decision
 		]
+		act(record, password=frappe.conf.pilot_user_password, reason=reason)
+		return frappe.get_doc("Lot Release", record.name)
 
 
-def reject_lot(lot: str, reason: str) -> Document | None:
-	with as_job("QA Manager"):
-		return lot_status.reject(lot, reason)
+def release_received_lots(receipt: Document) -> list[Document]:
+	"""QA releases each inspected lot of the receipt with a signature; the release moves it to
+	the approved store (modules 16, 17). Returns the decisions."""
+	return [
+		decide_lot(lot_of(row), "Release", "Incoming inspection accepted (pilot)")
+		for row in frappe.get_doc("Purchase Receipt", receipt.name).items
+	]
 
 
-def hold_lot(lot: str, reason: str) -> Document | None:
-	with as_job("QA Manager"):
-		return lot_status.hold(lot, reason)
+def reject_lot(lot: str, reason: str) -> Document:
+	return decide_lot(lot, "Reject", reason)
 
 
-def buy(materials: dict[str, float]) -> list[Document]:
-	"""Request, order, approve and receive materials, one purchase order per supplier;
-	returns the goods receipts."""
+def hold_lot(lot: str, reason: str) -> Document:
+	return decide_lot(lot, "Hold", reason)
+
+
+def buy(materials: dict[str, float], inspect: bool = True) -> list[Document]:
+	"""Request, order, approve, receive and, unless told not to, inspect materials, one purchase
+	order per supplier; returns the goods receipts."""
 	by_supplier: dict[str, dict[str, float]] = {}
 	for item, qty in materials.items():
 		by_supplier.setdefault(RAW_MATERIALS[item][4], {})[item] = qty
 	receipts = []
 	for supplier, items in by_supplier.items():
 		order = order_materials(request_materials(items), supplier)
-		receipts.append(receive(approve_purchase(order)))
+		receipt = receive(approve_purchase(order))
+		if inspect:
+			inspect_received_lots(receipt, instrument())
+		receipts.append(receipt)
 	return receipts
+
+
+def instrument() -> str:
+	return frappe.db.get_value("Asset", {"company": company(), "item_code": "INST-CALIPER"})
 
 
 # --- Production ----------------------------------------------------------------
@@ -281,11 +345,10 @@ def finished_lot_of(entry: Document) -> str:
 
 
 def release_finished_lot(entry: Document) -> str:
-	"""QA releases the finished lot to the finished goods store; final QC and batch release
-	(modules 25, 26) take this over."""
+	"""QA releases the finished lot to the finished goods store with a signature; final QC and
+	batch release (modules 25, 26) take this over."""
 	lot = finished_lot_of(entry)
-	with as_job("QA Manager"):
-		lot_status.release(lot, "Final inspection accepted (pilot)")
+	decide_lot(lot, "Release", "Final inspection accepted (pilot)")
 	return lot
 
 

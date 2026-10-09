@@ -26,6 +26,7 @@ from frappe.utils import add_days, today
 
 from meddevice_suite.lot_control.lot_status import APPROVED, REJECTED, set_status, stock_by_lot
 from meddevice_suite.pilot.demo import BOM_QUANTITY, ensure, ensure_bom, ensure_item, ensure_price
+from meddevice_suite.pilot.inspection import ensure_inspection_masters, ensure_inspection_template
 from meddevice_suite.qa.site_setup import TEST_COMPANY
 from meddevice_suite.qa.ui_users import ensure_test_site
 
@@ -79,6 +80,7 @@ def prepare_journey() -> dict:
 	ensure_masters()
 	write_off_leftover_stock()
 	return {
+		"instrument": ensure_inspection_masters(COMPANY),
 		"company": COMPANY,
 		"customer": CUSTOMER,
 		"supplier": SUPPLIER,
@@ -100,6 +102,7 @@ def prepare_journey() -> dict:
 
 
 def ensure_masters() -> None:
+	ensure_inspection_masters(COMPANY)  # the parameters the templates below name
 	ensure(
 		"Warehouse",
 		store(QUARANTINE),
@@ -114,9 +117,11 @@ def ensure_masters() -> None:
 			code, name, "Raw Material", unit, hsn, shelf_life, COMPANY, store("Stores"), supplier=SUPPLIER
 		)
 		ensure_price(code, "Standard Buying", rate)
+		ensure_inspection_template(code, "Raw Material")
 	name, hsn, rate, shelf_life = PRODUCT_DETAILS
 	ensure_item(PRODUCT, name, "Products", "Nos", hsn, shelf_life, COMPANY, store("Finished Goods"))
 	ensure_price(PRODUCT, "Standard Selling", rate)
+	ensure_inspection_template(PRODUCT, "Products")
 
 	for operation, workstation, _minutes in OPERATIONS:
 		ensure("Workstation", workstation, workstation_name=workstation, production_capacity=1)
