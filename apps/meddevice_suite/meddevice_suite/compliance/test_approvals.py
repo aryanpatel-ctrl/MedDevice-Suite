@@ -5,6 +5,7 @@ from frappe.tests import IntegrationTestCase
 from frappe.utils import add_days, today
 
 from meddevice_suite.compliance.audit_reason import stage_reason
+from meddevice_suite.master_data.test_supplier_approval import approved_for
 from meddevice_suite.qa import verifies
 from meddevice_suite.setup.install import apply_configuration
 from meddevice_suite.setup.test_roles import user_with_profile
@@ -17,6 +18,11 @@ BOTH_ROLES = "requester.and.approver@job-profiles.example.com"
 
 
 def ensure_masters() -> None:
+	ensure_items_and_parties()
+	approved_for(SUPPLIER, [ITEM])  # purchase orders only from an approved supplier (module 4)
+
+
+def ensure_items_and_parties() -> None:
 	if not frappe.db.exists("Item", ITEM):
 		frappe.get_doc(
 			{

@@ -6,7 +6,9 @@ the supplier's certificate; the QC Inspector then verifies the certificate again
 purchase specification (`verify_certificate`). Incoming inspection of the lot, ERPNext's
 Quality Inspection of type Incoming against the item's template, cannot start until the
 certificate is verified (`guard_incoming_inspection`), and each numeric reading names
-the instrument it was read with. The decision on the lot is QA's, in `release`.
+the instrument it was read with. A lot ordered from a conditionally approved supplier is
+inspected in full (module 4, `master_data.supplier_approval`). The decision on the lot is
+QA's, in `release`.
 
 Who verifies was decided under the client's instruction of 2026-10-08: verification of
 purchased product is a quality activity (ISO 13485 7.4.3), so QC verifies and Stores
@@ -17,10 +19,11 @@ import frappe
 from frappe import _
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 from frappe.model.document import Document
-from frappe.utils import cint, now_datetime
+from frappe.utils import cint, flt, now_datetime
 
 from meddevice_suite.compliance.audit import same
 from meddevice_suite.lot_control.lot_status import lots_of_row
+from meddevice_suite.master_data.supplier_approval import check_full_inspection
 
 QC_ROLES = frozenset({"QC Inspector", "Quality Manager"})
 INCOMING = "Incoming"
@@ -188,8 +191,25 @@ def receipt_line_of(lot: str) -> frappe._dict | None:
 				supplier=receipt.supplier,
 				certificate=row.get("mds_certificate"),
 				verified=cint(row.get("mds_certificate_verified")),
+				full_inspection=cint(row.get("mds_full_inspection")),
+				quantity=received_quantity(row, lot),
 			)
 	return None
+
+
+def received_quantity(row: Document, lot: str) -> float:
+	"""How much of the lot the receipt line brought in, in the item's stock unit."""
+	if row.get("batch_no"):
+		return flt(row.stock_qty)
+	return abs(
+		flt(
+			frappe.db.get_value(
+				"Serial and Batch Entry",
+				{"parent": row.serial_and_batch_bundle, "batch_no": lot},
+				[{"SUM": "qty"}],
+			)
+		)
+	)
 
 
 # --- Incoming inspection ---------------------------------------------------------------------
@@ -218,6 +238,7 @@ def guard_incoming_inspection(doc: Document, method: str | None = None) -> None:
 				title=_("Certificate not verified"),
 			)
 		doc.child_row_reference = line.row
+		check_full_inspection(doc, line)
 	if not doc.readings:
 		frappe.throw(
 			_(

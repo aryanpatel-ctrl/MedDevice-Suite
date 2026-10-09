@@ -641,6 +641,34 @@ context("The standard flow, through the screens of each job", { retries: 0 }, ()
 		no_problems("Sales books the order");
 	});
 
+	it("[URS-PLT-007] [URS-PUR-001] QA approves the supplier for the raw materials, with its certificate and a signature", () => {
+		sign_in("QA Manager");
+		open_form("Supplier", data.supplier);
+		button("Decide Supplier Approval").click();
+		form_is("Supplier Approval", (doc) => doc.__islocal && doc.supplier === data.supplier);
+		settle();
+		fill("certificate_number", "ISO13485-UIJ-2026");
+		cy.window().then((win) => fill("certificate_expiry", in_days(win, 365), "Date"));
+		// The certificate file, as the attach control uploads it.
+		upload_private_file("ISO-13485-certificate.pdf").then((url) =>
+			cy.window().then((win) => win.cur_frm.set_value("certificate", url))
+		);
+		cy.window().should((win) => expect(current(win).certificate, "certificate").to.be.ok);
+		Object.keys(data.materials).forEach((item, index) => {
+			rows_up_to("items", index + 1);
+			fill_row("items", index + 1, "item_code", item, "Link");
+		});
+		save();
+		sign("Approve", "Supplier audited; ISO 13485 certificate checked (browser journey)");
+		cy.window().should((win) => {
+			expect(current(win).docstatus, "signed").to.equal(1);
+			expect(current(win).decision).to.equal("Approved");
+			expect(current(win).decided_by).to.equal(users["QA Manager"]);
+			made.supplier_approval = current(win).name;
+		});
+		no_problems("QA approves the supplier");
+	});
+
 	it("[URS-PLT-007] [URS-CMP-020] [URS-CMP-021] Purchase orders the raw materials and sends the order for approval, then cannot change it", () => {
 		sign_in("Purchase");
 		new_form("Purchase Order");
@@ -654,6 +682,10 @@ context("The standard flow, through the screens of each job", { retries: 0 }, ()
 			fill_row("items", index + 1, "qty", qty);
 		});
 		save();
+		// Placed under QA's approval of the supplier (module 4).
+		cy.window().should((win) =>
+			expect(current(win).mds_supplier_approval).to.equal(made.supplier_approval)
+		);
 		take_action("Send for Approval");
 		cy.window().should((win) => {
 			expect(current(win).workflow_state).to.equal("Awaiting Approval");

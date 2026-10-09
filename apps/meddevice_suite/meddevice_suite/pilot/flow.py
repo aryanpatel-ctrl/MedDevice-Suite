@@ -6,6 +6,7 @@ trail of this app:
 
 	Sales        enquiry → quotation → (price approval) → sales order      D1, D3
 	Stores       purchase request                                           D2, D3
+	QA           approves the supplier for the materials, with a signature   D2, D3
 	Purchase     purchase order → (purchase approval)                       D1, D2
 	Stores       goods receipt into quarantine, by batch, with the
 	             supplier's certificate on each line                        D2, D3
@@ -36,6 +37,7 @@ from frappe.utils import add_days, add_to_date, now_datetime, today
 
 from meddevice_suite.lot_control import release as lot_release
 from meddevice_suite.lot_control.receipt import verify_certificate
+from meddevice_suite.master_data import supplier_approval
 from meddevice_suite.pilot import refuse_unless_pilot_site
 from meddevice_suite.pilot.demo import BOM_QUANTITY, PRODUCTS, RAW_MATERIALS, demo_user_email
 from meddevice_suite.pilot.inspection import readings_for
@@ -147,6 +149,43 @@ def request_materials(materials: dict[str, float]) -> Document:
 		return request
 
 
+def approve_supplier(supplier: str, items: list[str]) -> str:
+	"""QA approves the supplier for the items with a signature, keeping the items it was already
+	approved for (module 4); returns the decision in force."""
+	approval = supplier_approval.current_approval(supplier)
+	approved = approval and approval.decision == supplier_approval.APPROVED
+	if approved and set(items) <= approval.item_codes:
+		return approval.name
+	with as_job("QA Manager"):
+		certificate = frappe.get_doc(
+			{
+				"doctype": "File",
+				"file_name": f"ISO-13485-{frappe.scrub(supplier)}.txt",
+				"content": f"ISO 13485 certificate (demo)\nSupplier: {supplier}\n",
+				"is_private": 1,
+			}
+		).insert()
+		record = frappe.get_doc(
+			{
+				"doctype": "Supplier Approval",
+				"supplier": supplier,
+				"certificate_number": f"QMS-{frappe.scrub(supplier).upper()[:12]}",
+				"certificate_expiry": add_days(today(), 365),
+				"certificate": certificate.file_url,
+				"items": [
+					{"item_code": item}
+					for item in sorted(set(items) | (approval.item_codes if approved else set()))
+				],
+			}
+		).insert()
+		supplier_approval.approve(
+			record,
+			password=frappe.conf.pilot_user_password,
+			reason="Supplier audited; quality system certificate checked (demo)",
+		)
+		return record.name
+
+
 def order_materials(request: Document, supplier: str) -> Document:
 	with as_job("Purchase"):
 		order = make_purchase_order(request.name)
@@ -253,6 +292,7 @@ def buy(materials: dict[str, float], inspect: bool = True) -> list[Document]:
 		by_supplier.setdefault(RAW_MATERIALS[item][4], {})[item] = qty
 	receipts = []
 	for supplier, items in by_supplier.items():
+		approve_supplier(supplier, list(items))
 		order = order_materials(request_materials(items), supplier)
 		receipt = receive(approve_purchase(order))
 		if inspect:

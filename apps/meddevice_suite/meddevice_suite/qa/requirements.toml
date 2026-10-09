@@ -870,7 +870,7 @@ id = "URS-PUR-001"
 module = 4
 title = "Every supplier has an approval status, Approved, Conditional or Not Approved, set by QA with an electronic signature and a reason, with the items it is approved for and the expiry date of its certificate; a purchase order for an item from a supplier not approved for it is refused; a Conditional approval has an expiry date, each purchase order under it needs a reason and its lots are inspected at 100 percent; QA and Purchase are alerted once, 30 days before a supplier certificate expires."
 source = "D2 Vendor Master, Supplier; D3 Purchase Order to Vendor; D4 2.5 Vendor Management; ISO 13485 7.4.1; conditional approval rules and the 30-day alert decided under the client's instruction of 2026-10-08"
-status = "planned"
+status = "implemented"
 
 [[requirement]]
 id = "URS-MST-001"

@@ -3,6 +3,7 @@
 const PASSWORD = "Ap9!rTq4#wZ7mXv2"; // test users on the test site only
 const PURCHASE = "cy.purchase@job-profiles.example.com";
 const MANAGEMENT = "cy.management@job-profiles.example.com";
+const QA = "cy.qa@job-profiles.example.com";
 const ITEM = "MDS-UI-WORKFLOW-ITEM";
 const SUPPLIER = "MDS UI Workflow Supplier";
 
@@ -31,6 +32,7 @@ function setup() {
 	for (const [email, profile] of [
 		[PURCHASE, "Purchase"],
 		[MANAGEMENT, "Management"],
+		[QA, "QA Manager"],
 	]) {
 		cy.insert_doc(
 			"User",
@@ -44,6 +46,36 @@ function setup() {
 			true
 		);
 	}
+	supplier_approved();
+}
+
+// QA approves the supplier for the item with a signature: purchase orders are placed only with
+// an approved supplier (module 4, URS-PUR-001).
+function supplier_approved() {
+	as_user(QA);
+	cy.insert_doc("File", {
+		file_name: "ISO-13485-ui-workflow-supplier.txt",
+		content: "ISO 13485 certificate (browser test)",
+		is_private: 1,
+	}).then((file) =>
+		cy
+			.insert_doc("Supplier Approval", {
+				supplier: SUPPLIER,
+				certificate_number: "QMS-UI-WORKFLOW",
+				certificate_expiry: in_days(365),
+				certificate: file.file_url,
+				items: [{ item_code: ITEM }],
+			})
+			.then((approval) =>
+				cy.call("meddevice_suite.compliance.signing.sign_action", {
+					doctype: "Supplier Approval",
+					name: approval.name,
+					action: "Approve",
+					password: PASSWORD,
+					reason: "Approved for the browser test",
+				})
+			)
+	);
 }
 
 // Leaves the previous person's page first: a page left open while the sessions change can end

@@ -55,9 +55,9 @@ def load_sample_records() -> None:
 	item, qty = AWAITING_PRICE_APPROVAL
 	flow.quote(flow.record_enquiry(CUSTOMERS[0], item, qty))
 
-	flow.order_materials(
-		flow.request_materials(AWAITING_PURCHASE_APPROVAL), supplier_of(AWAITING_PURCHASE_APPROVAL)
-	)
+	supplier = supplier_of(AWAITING_PURCHASE_APPROVAL)
+	flow.approve_supplier(supplier, list(AWAITING_PURCHASE_APPROVAL))
+	flow.order_materials(flow.request_materials(AWAITING_PURCHASE_APPROVAL), supplier)
 	flow.buy(IN_QUARANTINE, inspect=False)
 	for receipt in flow.buy(REJECTED, inspect=False):
 		flow.inspect_received_lots(receipt, flow.instrument(), accept=False)
