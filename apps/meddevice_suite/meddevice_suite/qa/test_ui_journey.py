@@ -4,6 +4,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 from frappe.utils import add_days, getdate, today
 
+from meddevice_suite.master_data.test_supplier_approval import approved_for
 from meddevice_suite.qa import verifies
 from meddevice_suite.qa.ui_journey import (
 	COMPANY,
@@ -157,6 +158,7 @@ class TestBrowserJourney(IntegrationTestCase):
 	def test_tells_the_lots_of_receipts_and_deliveries_by_their_store(self):
 		prepare_journey()
 		material = next(iter(RAW_MATERIALS))
+		approved_for(SUPPLIER, [material])  # goods come only from an approved supplier (module 4)
 		receipt = frappe.get_doc(
 			{
 				"doctype": "Purchase Receipt",
