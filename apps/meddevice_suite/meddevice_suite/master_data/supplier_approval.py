@@ -264,8 +264,22 @@ def ordered_lines(doc: Document) -> dict[str, frappe._dict]:
 
 def guard_order_update(doc: Document, method: str | None = None) -> None:
 	"""Purchase Order before_update_after_submit: ERPNext's Update Items adds or changes lines of a
-	submitted order past its validation; each line still needs the supplier approved for its item."""
-	approval_in_force(doc.supplier, [row.item_code for row in doc.items])
+	submitted order past its validation (it marks the order ignore_validate_update_after_submit,
+	having written the lines already); each line then needs the supplier approved for its item. Any
+	other change of a submitted order (its delivery date, a confirmation number) buys nothing new,
+	so only a line whose item, quantity or rate changed is checked."""
+	if doc.flags.ignore_validate_update_after_submit:
+		approval_in_force(doc.supplier, [row.item_code for row in doc.items])
+		return
+	before = doc.get_doc_before_save()
+	old = {row.name: (row.item_code, flt(row.qty), flt(row.rate)) for row in (before.items if before else [])}
+	changed = [
+		row.item_code
+		for row in doc.items
+		if old.get(row.name) != (row.item_code, flt(row.qty), flt(row.rate))
+	]
+	if changed:
+		approval_in_force(doc.supplier, changed)
 
 
 def mark_full_inspection(doc: Document, method: str | None = None) -> None:

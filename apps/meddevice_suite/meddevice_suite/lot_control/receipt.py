@@ -173,28 +173,83 @@ def protect_certificate(doc: Document, method: str | None = None) -> None:
 			)
 
 
+def origins_of(lots: list[str]) -> dict[str, frappe._dict]:
+	"""lot -> the document and line that first brought it into stock, read from the stock ledger
+	in two queries: the batch's own reference is set only when that document made the batch, so a
+	batch made beforehand would hide where its stock came from."""
+	if not lots:
+		return {}
+	entry, bundle = frappe.qb.DocType("Serial and Batch Entry"), frappe.qb.DocType("Serial and Batch Bundle")
+	bundled = (
+		frappe.qb.from_(entry)
+		.join(bundle)
+		.on(entry.parent == bundle.name)
+		.select(
+			entry.batch_no,
+			bundle.voucher_type,
+			bundle.voucher_no,
+			bundle.voucher_detail_no,
+			bundle.posting_datetime,
+			bundle.creation,
+		)
+		.where(
+			entry.batch_no.isin(lots)
+			& (bundle.type_of_transaction == "Inward")
+			& (bundle.docstatus == 1)
+			& (bundle.is_cancelled == 0)
+		)
+	).run(as_dict=True)
+	ledger = frappe.get_all(
+		"Stock Ledger Entry",
+		filters={"batch_no": ["in", lots], "actual_qty": [">", 0], "is_cancelled": 0},
+		fields=[
+			"batch_no",
+			"voucher_type",
+			"voucher_no",
+			"voucher_detail_no",
+			"posting_datetime",
+			"creation",
+		],
+	)
+	first: dict[str, frappe._dict] = {}
+	for row in sorted(bundled + ledger, key=lambda row: (row.posting_datetime, row.creation), reverse=True):
+		first[row.batch_no] = row
+	return first
+
+
+def origin_of(lot: str) -> frappe._dict | None:
+	return origins_of([lot]).get(lot)
+
+
 def material_receipt_of(lot: str) -> str | None:
 	"""The material receipt (opening stock, stock found in a count) that brought the lot in, if one
 	did: such a lot is inspected on that entry before QA releases it (decided 2026-10-09)."""
-	reference_doctype, reference_name = frappe.db.get_value(
-		"Batch", lot, ["reference_doctype", "reference_name"]
-	)
-	if reference_doctype != "Stock Entry" or not reference_name:
+	origin = origin_of(lot)
+	if not origin or origin.voucher_type != "Stock Entry":
 		return None
-	purpose = frappe.db.get_value("Stock Entry", reference_name, "purpose")
-	return reference_name if purpose == "Material Receipt" else None
+	purpose = frappe.db.get_value("Stock Entry", origin.voucher_no, "purpose")
+	return origin.voucher_no if purpose == "Material Receipt" else None
+
+
+def made_by_production(lot: str) -> bool:
+	"""Whether a manufacture entry (a work order's) brought the lot in: released on QA's signature
+	alone until final QC and batch release (modules 25, 26) take over."""
+	origin = origin_of(lot)
+	return bool(
+		origin
+		and origin.voucher_type == "Stock Entry"
+		and frappe.db.get_value("Stock Entry", origin.voucher_no, "purpose") == "Manufacture"
+	)
 
 
 def receipt_line_of(lot: str) -> frappe._dict | None:
 	"""The goods receipt line that brought the lot in, if a supplier delivered it."""
-	reference_doctype, reference_name = frappe.db.get_value(
-		"Batch", lot, ["reference_doctype", "reference_name"]
-	)
-	if reference_doctype != "Purchase Receipt" or not reference_name:
+	origin = origin_of(lot)
+	if not origin or origin.voucher_type != "Purchase Receipt":
 		return None
-	receipt = frappe.get_doc("Purchase Receipt", reference_name)
+	receipt = frappe.get_doc("Purchase Receipt", origin.voucher_no)
 	for row in receipt.items:
-		if lot in lots_of_row(row):
+		if row.name == origin.voucher_detail_no:
 			return frappe._dict(
 				receipt=receipt.name,
 				row=row.name,
@@ -207,6 +262,26 @@ def receipt_line_of(lot: str) -> frappe._dict | None:
 				quantity=received_quantity(row, lot),
 			)
 	return None
+
+
+def refuse_existing_lots(doc: Document, method: str | None = None) -> None:
+	"""Purchase Receipt validate: a delivery comes in as a new lot. A line naming a lot that exists
+	already would mix a supplier's goods into stock of another origin and its checks."""
+	if doc.is_return:
+		return
+	named = {lot: row.idx for row in doc.items for lot in lots_of_row(row)}
+	if not named:
+		return
+	for lot, reference in frappe.get_all(
+		"Batch", filters={"name": ["in", list(named)]}, fields=["name", "reference_name"], as_list=True
+	):
+		if reference != doc.name:
+			frappe.throw(
+				_("Line {0}: lot {1} exists already; a delivery comes in as a new lot.").format(
+					named[lot], lot
+				),
+				title=_("New lot needed"),
+			)
 
 
 def received_quantity(row: Document, lot: str) -> float:

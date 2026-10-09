@@ -707,6 +707,18 @@ class TestRequirementMatrix(SupplierApprovalTestCase):
 			[row.item_code for row in frappe.get_doc("Purchase Order", order.name).items], [ITEM]
 		)
 
+	def test_a_stopped_suppliers_order_still_takes_a_change_that_buys_nothing(self):
+		decide(SUPPLIER, [ITEM])
+		order = self.placed(purchase_order())
+		frappe.set_user(self.qa)
+		decide(SUPPLIER, [], act="Not Approve", reason="Failed the re-audit")
+		frappe.set_user("Administrator")
+		doc = frappe.get_doc("Purchase Order", order)
+		doc.order_confirmation_no = "SUP-CONF-1"
+		stage_reason("Purchase Order", order, "update_after_submit", "Supplier's confirmation number")
+		doc.save()
+		self.assertEqual(frappe.db.get_value("Purchase Order", order, "order_confirmation_no"), "SUP-CONF-1")
+
 	def test_changing_a_drafts_supplier_to_an_unapproved_one_is_refused(self):
 		decide(SUPPLIER, [ITEM])
 		frappe.set_user(self.purchase)
@@ -750,6 +762,11 @@ class TestRequirementMatrix(SupplierApprovalTestCase):
 		supplier_approval.refuse_stock_on_invoice(invoice)  # booked against a receipt: fine
 		invoice.update({"update_stock": 1, "is_return": 1})
 		supplier_approval.refuse_stock_on_invoice(invoice)  # goods going back: fine
+		# ... and the rule runs whenever a purchase invoice is saved.
+		self.assertIn(
+			"meddevice_suite.master_data.supplier_approval.refuse_stock_on_invoice",
+			frappe.get_hooks("doc_events")["Purchase Invoice"]["validate"],
+		)
 
 	def test_goods_ordered_earlier_are_refused_once_qa_stops_the_supplier(self):
 		decide(SUPPLIER, [ITEM])

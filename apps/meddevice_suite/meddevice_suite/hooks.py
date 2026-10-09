@@ -74,6 +74,7 @@ doc_events = {
 		"validate": [
 			"meddevice_suite.lot_control.lot_status.guard_purchase_receipt",
 			"meddevice_suite.lot_control.receipt.protect_certificate",
+			"meddevice_suite.lot_control.receipt.refuse_existing_lots",
 			"meddevice_suite.master_data.supplier_approval.mark_full_inspection",
 		],
 		"before_update_after_submit": "meddevice_suite.lot_control.receipt.protect_certificate",

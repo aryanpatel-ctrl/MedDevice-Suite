@@ -558,7 +558,9 @@ class TestTheSignedDecision(ReleaseTestCase):
 			stored.save()
 		self.assertIn("decided only by signing", str(refused.exception))
 
-	def test_a_lot_with_no_stock_is_decided_without_a_transfer(self):
+	def test_a_lot_that_never_came_in_is_not_released(self):
+		"""Released "on documents only", an empty lot would let stock arrive in it later with no
+		inspection (URS-QC-003: released only after an inspection on what brought it in)."""
 		frappe.set_user("Administrator")
 		lot = (
 			frappe.get_doc(
@@ -571,9 +573,9 @@ class TestTheSignedDecision(ReleaseTestCase):
 			.insert()
 			.name
 		)
-		decision = self.decide(lot, "Release", "documents only")
-		self.assertIsNone(decision.stock_entry)
-		self.assertEqual(status_of([lot])[lot], APPROVED)
+		with self.assertRaisesRegex(frappe.ValidationError, "only stock received on a goods receipt"):
+			self.decide(lot, "Release", "documents only")
+		self.assertNotEqual(status_of([lot])[lot], APPROVED)
 
 	def test_the_decisions_of_a_lot_are_indexed(self):
 		on_doctype_update()
@@ -700,3 +702,53 @@ class TestMaterialReceiptLots(ReleaseTestCase):
 		record = self.decide(lot, "Release", "Opening stock inspected")
 		self.assertEqual((record.decision, record.quality_inspection), ("Release", inspection.name))
 		self.assertEqual(status_of([lot])[lot], APPROVED)
+
+
+@verifies("URS-QC-003", "URS-QC-001")
+class TestWhereALotCameFrom(ReleaseTestCase):
+	"""Where a lot came from is read from the stock ledger, not the batch's own reference, which a
+	batch made beforehand would leave blank (found in the final review, 2026-10-09)."""
+
+	def test_a_delivery_does_not_come_in_on_a_lot_that_exists(self):
+		frappe.set_user("Administrator")
+		existing = frappe.get_doc(
+			{"doctype": "Batch", "item": ITEM, "batch_id": f"PRE-{frappe.generate_hash(length=6)}"}
+		).insert()
+		receipt = purchase_receive(ITEM, 2, submit=False)
+		receipt.items[0].update({"batch_no": existing.name, "use_serial_batch_fields": 1})
+		with self.assertRaisesRegex(frappe.ValidationError, "exists already"):
+			receipt.save()
+
+	def test_a_received_lot_is_known_by_its_receipt_even_without_the_batch_reference(self):
+		receipt, lot = self.received()
+		self.verified(receipt)
+		frappe.db.set_value("Batch", lot, {"reference_doctype": None, "reference_name": None})
+		self.assertEqual(receipt_line_of(lot).receipt, receipt.name)  # from the stock ledger
+		with self.assertRaisesRegex(frappe.ValidationError, "no accepted incoming inspection"):
+			self.decide(lot, "Release", "accepted")
+
+	def test_a_lot_that_came_in_any_other_way_is_not_released(self):
+		frappe.set_user("Administrator")
+		lot = frappe.get_doc(
+			{"doctype": "Batch", "item": ITEM, "batch_id": f"REC-{frappe.generate_hash(length=6)}"}
+		).insert()
+		reconciliation = frappe.get_doc(
+			{
+				"doctype": "Stock Reconciliation",
+				"company": company(),
+				"purpose": "Stock Reconciliation",
+				"items": [
+					{
+						"item_code": ITEM,
+						"warehouse": store(stores.QUARANTINE),
+						"qty": 3,
+						"valuation_rate": 10,
+						"batch_no": lot.name,
+						"use_serial_batch_fields": 1,
+					}
+				],
+			}
+		).insert()
+		reconciliation.submit()
+		with self.assertRaisesRegex(frappe.ValidationError, "only stock received on a goods receipt"):
+			self.decide(lot.name, "Release", "found in a count")
