@@ -347,7 +347,8 @@ class TestIncomingInspection(ReleaseTestCase):
 					"inspected_by": frappe.session.user,
 				}
 			).insert()
-		self.assertIn("has no inspection template", str(refused.exception))
+		# Nothing to read against: the item has no specification (module 6).
+		self.assertIn("has no incoming specification", str(refused.exception))
 
 	def test_only_incoming_inspections_are_held_to_the_receipt_rules(self):
 		# An in-process inspection names no receipt and no lot; module 20 sets its own rules.

@@ -884,7 +884,7 @@ id = "URS-MST-002"
 module = 6
 title = "An item's inspection template is a controlled specification that states, for each inspection stage (incoming, in-process, final), the parameters, method, limits and sample size, and a template in use changes only under an approved change request."
 source = "D2 Specifications & Tests; D3 Specification; D4 D3; ISO 13485 7.1, 8.2.6"
-status = "planned"
+status = "implemented"
 
 [[requirement]]
 id = "URS-PLT-010"

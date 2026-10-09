@@ -78,7 +78,20 @@ doc_events = {
 		],
 		"before_update_after_submit": "meddevice_suite.lot_control.receipt.protect_certificate",
 	},
-	"Quality Inspection": {"validate": "meddevice_suite.lot_control.receipt.guard_incoming_inspection"},
+	# Controlled specifications (module 6): each inspection against the item's specification for
+	# its stage; a specification in use changes only under an approved change request.
+	"Quality Inspection": {
+		"before_validate": "meddevice_suite.master_data.specification.choose_specification",
+		"validate": [
+			"meddevice_suite.master_data.specification.check_against_specification",
+			"meddevice_suite.lot_control.receipt.guard_incoming_inspection",
+		],
+		"before_submit": "meddevice_suite.master_data.specification.check_sample_size",
+	},
+	"Quality Inspection Template": {
+		"validate": "meddevice_suite.master_data.specification.guard_template",
+		"on_trash": "meddevice_suite.master_data.specification.protect_template",
+	},
 	# Approved suppliers (module 4): orders only from approved suppliers, for approved items.
 	"Purchase Order": {"validate": "meddevice_suite.master_data.supplier_approval.guard_purchase_order"},
 	"Supplier": {"onload": "meddevice_suite.master_data.supplier_approval.supplier_onload"},

@@ -20,6 +20,10 @@ PARAMETERS: dict[str, tuple[tuple[str, object], ...]] = {
 	"Raw Material": ((APPEARANCE, "Conforms"), (DIMENSION, (9.5, 10.5))),
 	"Products": ((APPEARANCE, "Conforms"), (DIMENSION, (5.0, 5.4))),
 }
+# item group -> the stage its demo specification is for (module 6)
+STAGES = {"Raw Material": "Incoming", "Products": "Final"}
+METHODS = {APPEARANCE: "Visual, under daylight (demo)", DIMENSION: "Digital caliper (demo)"}
+SAMPLE_SIZE = 5  # demo; the client's sampling plans (ISO 2859-1) replace it
 
 
 def ensure_inspection_masters(company: str) -> str:
@@ -33,29 +37,33 @@ def ensure_inspection_masters(company: str) -> str:
 
 
 def ensure_inspection_template(item: str, group: str) -> str:
-	"""An incoming inspection template for the item, set on the item; returns its name."""
+	"""The item's demo specification (module 6), set on the item; returns its name. A template
+	made before specifications were controlled is completed once, as its first issue."""
 	name = f"{item} IQC (Demo)"
+	rows = []
+	for specification, acceptance in PARAMETERS[group]:
+		row = {"specification": specification, "mds_method": METHODS[specification]}
+		if isinstance(acceptance, tuple):
+			row.update(numeric=1, min_value=acceptance[0], max_value=acceptance[1])
+		else:
+			row.update(numeric=0, value=acceptance)
+		rows.append(row)
+	stated = {"mds_item": item, "mds_stage": STAGES[group], "mds_sample_size": SAMPLE_SIZE}
 	if not frappe.db.exists("Quality Inspection Template", name):
-		rows = []
-		for specification, acceptance in PARAMETERS[group]:
-			if isinstance(acceptance, tuple):
-				rows.append(
-					{
-						"specification": specification,
-						"numeric": 1,
-						"min_value": acceptance[0],
-						"max_value": acceptance[1],
-					}
-				)
-			else:
-				rows.append({"specification": specification, "numeric": 0, "value": acceptance})
 		frappe.get_doc(
 			{
 				"doctype": "Quality Inspection Template",
 				"quality_inspection_template_name": name,
 				"item_quality_inspection_parameter": rows,
+				**stated,
 			}
 		).insert(ignore_permissions=True)  # demo loader
+	elif not frappe.db.get_value("Quality Inspection Template", name, "mds_item"):
+		template = frappe.get_doc("Quality Inspection Template", name)
+		template.update(stated)
+		for row in template.item_quality_inspection_parameter:
+			row.mds_method = METHODS.get(row.specification)
+		template.save(ignore_permissions=True)  # demo loader: the template's first issue
 	# A purchased item is inspected when it arrives (ERPNext's "Inspection Required before
 	# Purchase", which also lists it on the inspection form); with inspection after receipt
 	# switched on (setup/stock.py) the flag never holds up the receipt itself. Saved through the

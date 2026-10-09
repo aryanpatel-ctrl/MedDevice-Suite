@@ -309,22 +309,27 @@ def require_change_for_revision(revision: Document, document: Document) -> None:
 		revision.change_request,
 		_("{0} is in effect: name the approved change request for this revision.").format(document.name),
 	)
-	status = frappe.db.get_value(DOCTYPE, revision.change_request, "status")
+	require_approved_change(revision.change_request, "Controlled Document", document.name)
+
+
+def require_approved_change(change_request: str, doctype: str, name: str) -> None:
+	"""The change request is approved for implementation and lists the record it changes."""
+	status = frappe.db.get_value(DOCTYPE, change_request, "status")
 	require(
 		status == "Approved",
-		_("Change request {0} is not approved for implementation.").format(revision.change_request),
+		_("Change request {0} is not approved for implementation.").format(change_request),
 	)
 	require(
 		frappe.db.exists(
 			"Change Request Affected Record",
 			{
-				"parent": revision.change_request,
+				"parent": change_request,
 				"parenttype": DOCTYPE,
-				"reference_doctype": "Controlled Document",
-				"reference_name": document.name,
+				"reference_doctype": doctype,
+				"reference_name": name,
 			},
 		),
-		_("Change request {0} does not list {1}.").format(revision.change_request, document.name),
+		_("Change request {0} does not list {1}.").format(change_request, name),
 	)
 
 

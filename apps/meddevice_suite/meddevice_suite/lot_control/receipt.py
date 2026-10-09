@@ -239,12 +239,8 @@ def guard_incoming_inspection(doc: Document, method: str | None = None) -> None:
 			)
 		doc.child_row_reference = line.row
 		check_full_inspection(doc, line)
-	if not doc.readings:
-		frappe.throw(
-			_(
-				"Item {0} has no inspection template, so nothing can be read; QA registers its specification first."
-			).format(doc.item_code)
-		)
+	# The readings come from the item's specification (module 6, master_data.specification),
+	# which an inspection is refused without.
 	for reading in doc.readings:
 		if cint(reading.numeric) and not reading.get("mds_instrument"):
 			frappe.throw(
