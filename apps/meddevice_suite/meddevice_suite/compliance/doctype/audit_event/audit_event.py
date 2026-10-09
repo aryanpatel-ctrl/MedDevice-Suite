@@ -13,15 +13,15 @@ class AuditEvent(Document):
 	is refused for every user, whatever their permissions.
 	"""
 
-	def validate(self):
+	def validate(self) -> None:
 		if not self.is_new():
 			frappe.throw(_("An audit event cannot be changed."), frappe.PermissionError)
 
-	def on_trash(self):
+	def on_trash(self) -> None:
 		frappe.throw(_("An audit event cannot be deleted."), frappe.PermissionError)
 
 
-def on_doctype_update():
+def on_doctype_update() -> None:
 	# A record's history, a user's actions and a date range are the reviews an
 	# auditor runs; each stays an index lookup at millions of entries.
 	frappe.db.add_index("Audit Event", ["reference_doctype", "reference_name", "event_at"])

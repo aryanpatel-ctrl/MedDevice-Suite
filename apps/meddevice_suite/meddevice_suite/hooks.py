@@ -1,3 +1,10 @@
+"""Frappe hooks of MedDevice Suite.
+
+Every handler listed here lives in the folder that owns its feature (rules.md section 3);
+this file only wires them to Frappe. Handlers on "*" return at once for record types
+that are not regulated, so they cost nothing on the rest of ERPNext.
+"""
+
 app_name = "meddevice_suite"
 app_title = "MedDevice Suite"
 app_publisher = "Demo Medical Devices Pvt Ltd"

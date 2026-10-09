@@ -15,6 +15,7 @@ import json
 
 import frappe
 from frappe import _
+from frappe.model.document import Document
 
 # The areas the client requirement uses. Every other desktop icon is hidden,
 # including any a future release of Frappe, ERPNext or India Compliance adds,
@@ -167,7 +168,7 @@ def set_area_roles(area: str, roles: tuple[str, ...]) -> bool:
 # behaviour unchanged, and the plain refusal, given only to a signed-in user, names nothing
 # but a standard record type.
 @frappe.whitelist(allow_guest=True)  # nosemgrep
-def getpage(name: str):
+def getpage(name: str) -> None:
 	"""Frappe's page loader, with a plain refusal for a record type the user may not open.
 
 	The desk opens a record type the user may not read as if it were a page, and Frappe
@@ -183,7 +184,7 @@ def getpage(name: str):
 	return frappe_getpage(name)
 
 
-def enforce_on_desktop_layout(doc, method=None) -> None:
+def enforce_on_desktop_layout(doc: Document, method: str | None = None) -> None:
 	"""``validate`` hook of Desktop Layout."""
 	if (enforced := enforce_declared_visibility(doc.layout)) is not None:
 		doc.layout = enforced

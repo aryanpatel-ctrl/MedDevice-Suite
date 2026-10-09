@@ -21,6 +21,8 @@ record; there is no lock shared between records.
 
 import json
 from copy import deepcopy
+from datetime import date, datetime, timedelta
+from typing import Any
 
 import frappe
 from frappe import _
@@ -216,7 +218,7 @@ def differences(before: Document, after: Document) -> dict:
 	return json.loads(frappe.as_json({key: value for key, value in diff.items() if value}))
 
 
-def field_changes(before: Document, after: Document, fields) -> list:
+def field_changes(before: Document, after: Document, fields: list) -> list:
 	return [
 		[df.fieldname, before.get(df.fieldname), after.get(df.fieldname)]
 		for df in fields
@@ -230,7 +232,7 @@ def row_content(row: Document) -> dict:
 	return {key: value for key, value in record_content(row).items() if key not in child_table_fields}
 
 
-def same(old, new, fieldtype: str | None = None) -> bool:
+def same(old: Any, new: Any, fieldtype: str | None = None) -> bool:
 	"""Equal as stored values. An empty string and no value are the same; dates, times and numbers
 	are compared as values, because the database returns a date where the desk and ERPNext set
 	the same date as text, and a time as "9:30:00" where they set "09:30:00"."""
@@ -247,7 +249,7 @@ def same(old, new, fieldtype: str | None = None) -> bool:
 		return False  # a value that is not of its type is recorded as it is
 
 
-def as_value(value, fieldtype: str):
+def as_value(value: Any, fieldtype: str) -> date | datetime | timedelta | int | float:
 	"""A value of a field type as one comparable form, whatever form code holds it in."""
 	if fieldtype == "Date":
 		return getdate(value)
@@ -287,7 +289,7 @@ def last_event(doctype: str, name: str) -> frappe._dict | None:
 	return chain_head("Audit Event", "previous_event", "event_hash", (doctype, name))
 
 
-def event_fingerprint(event, previous_hash: str) -> str:
+def event_fingerprint(event: Document | frappe._dict, previous_hash: str) -> str:
 	# The name as it was at the event: renaming a record rewrites `reference_name`
 	# in its events, which must not read as tampering.
 	return sha256(
@@ -344,6 +346,6 @@ def verify_events(doctype: str, name: str) -> list[str]:
 	return problems
 
 
-def as_data(value):
+def as_data(value: Any) -> Any:
 	"""JSON fields come back from the database as text; compare their data."""
 	return json.loads(value) if isinstance(value, str) else value

@@ -17,6 +17,7 @@ other record.
 """
 
 import sys
+from collections.abc import Iterator
 
 import frappe
 from frappe import _
@@ -118,7 +119,7 @@ def saving(doc: Document) -> bool:
 	return any(outer is doc for outer in records_being_saved())
 
 
-def records_being_saved():
+def records_being_saved() -> Iterator[Document]:
 	frame = sys._getframe(1)
 	while frame:
 		if frame.f_code.co_name in SAVE_STEPS:

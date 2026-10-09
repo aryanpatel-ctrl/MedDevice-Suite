@@ -16,7 +16,7 @@ class RecordArchive(Document):
 	and `validate` refuses every save after the first.
 	"""
 
-	def validate(self):
+	def validate(self) -> None:
 		if not self.is_new():
 			frappe.throw(_("A record archive cannot be changed."), frappe.PermissionError)
 		if getdate(self.to_date) < getdate(self.from_date):
@@ -24,7 +24,7 @@ class RecordArchive(Document):
 		if getdate(self.to_date) > getdate(today()):
 			frappe.throw(_("The period cannot end in the future."))
 
-	def after_insert(self):
+	def after_insert(self) -> None:
 		frappe.enqueue(
 			"meddevice_suite.compliance.archive.build_archive",
 			queue="long",
@@ -34,5 +34,5 @@ class RecordArchive(Document):
 			archive=self.name,
 		)
 
-	def on_trash(self):
+	def on_trash(self) -> None:
 		frappe.throw(_("A record archive cannot be deleted."), frappe.PermissionError)

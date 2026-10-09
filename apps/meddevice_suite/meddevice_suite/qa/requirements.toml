@@ -10,7 +10,8 @@
 #                     an implemented requirement must be verified by at least one test
 #
 # Sources: client diagrams D1 (MedDevice Suite ERP flow map), D2 (Foley ERP
-# flowchart, ISO 13485) and D3 (Foley full workflow diagram).
+# flowchart, ISO 13485), D3 (Foley full workflow diagram) and D4 (data flow
+# diagram, ERP + QMS + eCommerce, received 2026-10-08).
 
 # --- A. Master data ---------------------------------------------------------
 [[module]]
@@ -160,10 +161,13 @@ number = 28
 title = "GST invoice, e-invoice and e-way bill"
 approach = "ready"
 
+# Accounting stays in Tally: confirmed by the client, 2026-10-08. The ERP posts its
+# invoices, receipts and notes to Tally and keeps costing as operational reporting;
+# ledgers, payables, receivables, bank and GST returns are Tally's.
 [[module]]
 number = 29
-title = "Accounts, payables, receivables and costing"
-approach = "ready"
+title = "Tally integration: invoices, receipts, credit and debit notes posted to Tally"
+approach = "build"
 
 # --- I. Quality management system ------------------------------------------
 [[module]]
@@ -308,6 +312,32 @@ approach = "ready"
 number = 57
 title = "Compliance reports and dashboards"
 approach = "build"
+
+# --- M. Added by the data flow diagram (D4, received 2026-10-08) ---------------
+[[module]]
+number = 58
+title = "eCommerce storefront: catalogue, registration, cart, checkout and payment, order sync and status"
+approach = "build"
+
+[[module]]
+number = 59
+title = "Task and approval engine shared by every module"
+approach = "build"
+
+[[module]]
+number = 60
+title = "Reminders and next-due engine: categories, frequency, notification and escalation"
+approach = "build"
+
+[[module]]
+number = 61
+title = "Important files repository: categories, sub-groups, versions and access control"
+approach = "build"
+
+[[module]]
+number = 62
+title = "Equipment history card and performance tracking"
+approach = "customise"
 
 # --- Requirements -----------------------------------------------------------
 [[requirement]]
@@ -771,3 +801,94 @@ module = 36
 title = "A change request is never deleted or cancelled: the person who raised it can withdraw it with a reason until it is approved, and withdrawn, rejected and closed requests are kept; QA and Management see every request, others only those they raised or have an action on."
 source = "ISO 13485 4.2.5; 21 CFR 11.10(c), (d); withdrawal by the requester decided under the client's instruction of 2026-10-07"
 status = "implemented"
+
+# --- Wave 1: lot status and incoming QC (modules 1, 4, 6, 16, 17) ----------------
+# Planned on 2026-10-08 from the Phase 0 gap audit: the diagrams' first quality gate.
+# Each becomes `implemented` only with its passing tests. On 2026-10-08 the client
+# instructed that the certification details come at the end and that every open choice
+# is ours until then, taken on the standard; the choices taken are named in each source
+# and are confirmed or changed through change control when those details arrive.
+
+[[requirement]]
+id = "URS-STK-004"
+module = 17
+title = "Every lot carries a status, Quarantine, Approved, Rejected or Hold; a lot received or produced starts in Quarantine, and the status changes only through a signed QA release or disposition, never by editing the lot."
+source = "D2 Quarantine / Approved Stock; D3 QC Approval / Rejection, Putaway in Warehouse (Batch/Location); D4 3.5 Accept / Reject / Hold; ISO 13485 7.5.8, 8.3; 21 CFR 11.50"
+status = "planned"
+
+[[requirement]]
+id = "URS-STK-005"
+module = 17
+title = "No stock of a lot that is not Approved can be issued to production, transferred to an approved store, picked, packed or delivered, through the form or the API; a Quarantine, Hold or Rejected lot moves only into the quarantine, hold, rejected or returns stores, or back to its supplier."
+source = "D2 Material Issue (From Approved Stock), Reject / Return To Supplier; D3 Rejected (return flow); D4 4.3 Issue Material, 7.2 Allocate Released Batch; ISO 13485 7.5.8, 8.3"
+status = "planned"
+
+[[requirement]]
+id = "URS-STK-006"
+module = 17
+title = "A lot shows its status, who set it, when and why, and the stock reports show quantities by lot status, so Stores and QA see at any time what is in quarantine, on hold, rejected or approved."
+source = "D2 Inventory by Batch (Lot Control); D4 D4 Inventory & Batch Ledger; ISO 13485 7.5.8"
+status = "planned"
+
+[[requirement]]
+id = "URS-STK-007"
+module = 17
+title = "When lot status is installed on a site that already holds stock, every lot is given a status by a migration recorded in the audit trail: lots in the approved and finished goods stores become Approved, every other lot Quarantine."
+source = "Engineering rules section 8 (schema changes migrate existing data); ISO 13485 4.2.5; status by store role decided under the client's instruction of 2026-10-08, confirmed against the physical count at cutover"
+status = "planned"
+
+[[requirement]]
+id = "URS-QC-001"
+module = 16
+title = "A goods receipt records, per line, the supplier's lot number and the supplier's certificate (analysis or conformity) as a file attached by Stores; the QC Inspector records its verification against the purchase specification, and incoming inspection cannot start for a lot whose certificate is not verified."
+source = "D3 Document Verification (COA / COC / ISO); D4 3.1, 3.2; ISO 13485 7.4.3; verification by QC decided under the client's instruction of 2026-10-08"
+status = "planned"
+
+[[requirement]]
+id = "URS-QC-002"
+module = 16
+title = "Incoming quality control is a Quality Inspection of type Incoming per received lot against the item's inspection template, recorded and submitted by a QC Inspector; the sample size, parameters and limits come from the template, each reading records the instrument used, and the result is Accepted or Rejected."
+source = "D2 Incoming QC (IQC); D3 Incoming Quality Inspection (IQC); D4 3.4 IQC Inspection; ISO 13485 7.4.3, 7.6, 8.2.6"
+status = "planned"
+
+[[requirement]]
+id = "URS-QC-003"
+module = 16
+title = "A received lot is released by QA with an electronic signature only once an accepted incoming inspection exists for it: release sets the lot Approved and moves its stock to the approved store in one audited transaction; QA can instead reject it with a signature and a reason, which sets it Rejected, moves the stock to the rejected store and creates the return to the supplier for Purchase; or hold it, which sets it Hold and moves it to the hold store; a held lot is released only after a new accepted inspection and with a reason."
+source = "D2 Pass? No: Reject / Return To Supplier, Yes: Put Away; D3 Accepted / Rejected; D4 3.5, 3.6; ISO 13485 7.4.3, 8.3; 21 CFR 11.50; release of a held lot after retest decided under the client's instruction of 2026-10-08"
+status = "planned"
+
+[[requirement]]
+id = "URS-QC-004"
+module = 16
+title = "QA and Stores see every lot awaiting inspection and every inspected lot awaiting release, with the days each has waited, and the finished lot of a work order is released for dispatch by the same signed QA release until final QC and batch release (modules 25, 26) replace it."
+source = "D2 Quarantine / Approved Stock; D4 3.5; interim scope decided in the Phase 0 gap audit of 2026-10-08"
+status = "planned"
+
+[[requirement]]
+id = "URS-PUR-001"
+module = 4
+title = "Every supplier has an approval status, Approved, Conditional or Not Approved, set by QA with an electronic signature and a reason, with the items it is approved for and the expiry date of its certificate; a purchase order for an item from a supplier not approved for it is refused; a Conditional approval has an expiry date, each purchase order under it needs a reason and its lots are inspected at 100 percent; QA and Purchase are alerted once, 30 days before a supplier certificate expires."
+source = "D2 Vendor Master, Supplier; D3 Purchase Order to Vendor; D4 2.5 Vendor Management; ISO 13485 7.4.1; conditional approval rules and the 30-day alert decided under the client's instruction of 2026-10-08"
+status = "planned"
+
+[[requirement]]
+id = "URS-MST-001"
+module = 1
+title = "Each of the nine masters (item, bill of materials, routing, operation and work centre, supplier, customer, warehouse, equipment, inspection template) carries a version number and an effective date; a change to the controlled fields of a master in use is made only under an approved change request that lists it, raises the version, and is recorded with the previous values in the audit trail."
+source = "D2 All masters are version controlled and linked with Document Control; D4 D3 Item / BOM / Routing Master; ISO 13485 4.2.4, 7.3.9"
+status = "planned"
+
+[[requirement]]
+id = "URS-MST-002"
+module = 6
+title = "An item's inspection template is a controlled specification that states, for each inspection stage (incoming, in-process, final), the parameters, method, limits and sample size, and a template in use changes only under an approved change request."
+source = "D2 Specifications & Tests; D3 Specification; D4 D3; ISO 13485 7.1, 8.2.6"
+status = "planned"
+
+[[requirement]]
+id = "URS-PLT-010"
+module = 0
+title = "The pilot's standard flow performs the certificate check, incoming inspection and signed release of every received lot, and the signed release of the finished lot, by the QC Inspector and QA Manager demo users, in place of the stand-in transfer to the approved store, in both the server and the browser journey."
+source = "Delivery plan Phase 2 (pilot); Phase 0 gap audit of 2026-10-08; D2, D3"
+status = "planned"
