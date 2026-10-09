@@ -242,9 +242,10 @@ def guard_purchase_order(doc: Document, method: str | None = None) -> None:
 		)
 
 
-def ordered_lines(doc: Document) -> dict[str, str]:
-	"""The order lines the receipt names that are lines of this supplier's submitted orders, with
-	their item: an order line of another supplier, or a draft, orders nothing for this receipt."""
+def ordered_lines(doc: Document) -> dict[str, frappe._dict]:
+	"""The order lines the receipt names that are lines of this supplier's submitted orders: each
+	with its item, its order and the approval the order was placed under. An order line of another
+	supplier, or of a draft, orders nothing for this receipt."""
 	named = [row.purchase_order_item for row in doc.items if row.get("purchase_order_item")]
 	if not named:
 		return {}
@@ -253,53 +254,40 @@ def ordered_lines(doc: Document) -> dict[str, str]:
 		frappe.qb.from_(line)
 		.join(order)
 		.on(line.parent == order.name)
-		.select(line.name, line.item_code)
+		.select(line.name, line.item_code, order[APPROVAL_FIELD].as_("approval"))
 		.where(line.name.isin(named) & (line.docstatus == 1) & (order.supplier == doc.supplier))
-	).run()
-	return dict(rows)
+	).run(as_dict=True)
+	return {row.name: row for row in rows}
 
 
 def mark_full_inspection(doc: Document, method: str | None = None) -> None:
 	"""Purchase Receipt validate: goods received without an order come only from a supplier QA
 	approved for them (an order was checked when it was placed); a line ordered under a
 	conditional approval, or received from a supplier approved only conditionally, has each of
-	its lots inspected in full."""
+	its lots inspected in full. What a line was ordered under is read from the order line it
+	names, as ERPNext checks the line by it."""
 	if doc.is_return:
 		return
-	# A line was ordered from this supplier when it names a line of its order for the same item;
-	# that order was checked when it was placed.
 	lines = ordered_lines(doc)
-	unordered = [
-		row.item_code for row in doc.items if lines.get(row.get("purchase_order_item")) != row.item_code
-	]
+
+	def ordered(row: Document) -> frappe._dict | None:
+		found = lines.get(row.get("purchase_order_item"))
+		return found if found and found.item_code == row.item_code else None
+
+	unordered = [row.item_code for row in doc.items if not ordered(row)]
 	if unordered:
 		approval_in_force(doc.supplier, unordered)
-	orders = list({row.purchase_order for row in doc.items if row.get("purchase_order")})
-	placed_under = (
-		dict(
-			frappe.get_all(
-				"Purchase Order",
-				filters={"name": ["in", orders]},
-				fields=["name", APPROVAL_FIELD],
-				as_list=True,
-			)
-		)
-		if orders
-		else {}
-	)
-	approvals = [approval for approval in placed_under.values() if approval]
-	conditional_approvals = set(
+	approvals = list({found.approval for found in lines.values() if found.approval})
+	conditional = set(
 		frappe.get_all(DOCTYPE, filters={"name": ["in", approvals], "decision": CONDITIONAL}, pluck="name")
 		if approvals
 		else []
 	)
-	conditional_orders = {
-		order for order, approval in placed_under.items() if approval in conditional_approvals
-	}
 	approval = current_approval(doc.supplier) if doc.supplier else None
 	supplier_conditional = bool(approval and approval.decision == CONDITIONAL)
 	for row in doc.items:
-		full = row.get("purchase_order") in conditional_orders or supplier_conditional
+		found = ordered(row)
+		full = bool(found and found.approval in conditional) or supplier_conditional
 		row.set(FULL_INSPECTION_FIELD, cint(full))
 
 

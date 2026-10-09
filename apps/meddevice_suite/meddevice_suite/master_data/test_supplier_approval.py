@@ -19,6 +19,7 @@ from meddevice_suite.master_data.supplier_approval import (
 	NOT_APPROVED,
 	check_full_inspection,
 	current_approval,
+	mark_full_inspection,
 	send_certificate_alerts,
 )
 from meddevice_suite.pilot.flow import lot_of
@@ -449,6 +450,33 @@ class TestFullInspection(SupplierApprovalTestCase):
 			frappe.ValidationError, "its incoming inspection is made on that receipt"
 		):
 			guard_incoming_inspection(elsewhere)
+
+	def test_a_line_is_inspected_by_the_order_its_order_line_belongs_to(self):
+		conditional = self.conditional_order()
+		frappe.set_user(self.qa)
+		decide(SUPPLIER, [ITEM])  # approved without condition from now on
+		unconditional = self.placed(purchase_order())
+		frappe.set_user("Administrator")
+		# The line names the unconditional order, but a line of the conditional one.
+		receipt = frappe.get_doc(
+			{
+				"doctype": "Purchase Receipt",
+				"supplier": SUPPLIER,
+				"company": company(),
+				"items": [
+					{
+						"item_code": ITEM,
+						"qty": 1,
+						"rate": 5,
+						"purchase_order": unconditional,
+						"purchase_order_item": frappe.get_doc("Purchase Order", conditional).items[0].name,
+						"warehouse": store(stores.QUARANTINE),
+					}
+				],
+			}
+		)
+		mark_full_inspection(receipt)
+		self.assertEqual(receipt.items[0].mds_full_inspection, 1)
 
 	def test_lots_from_a_supplier_approved_without_condition_are_sampled(self):
 		decide(SUPPLIER, [ITEM])
