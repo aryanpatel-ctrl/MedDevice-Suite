@@ -106,6 +106,42 @@ class TestStoreRoles(IntegrationTestCase):
 				self.assertEqual(store_for(role, NEW_COMPANY), f"{role} - {NEW_ABBR}")
 		self.assertEqual(frappe.db.count("Warehouse", {"company": NEW_COMPANY, ROLE_FIELD: ["is", "set"]}), 4)
 
+	def test_a_company_created_after_the_configuration_has_its_role_stores_at_once(self):
+		# As on a new site, where the setup wizard creates the company after the app is
+		# installed, or when a second company is added later: no migrate runs in between.
+		name, abbr = "MDS Lot Late Company", "MLL"
+		if not frappe.db.exists("Company", name):
+			frappe.get_doc(
+				{
+					"doctype": "Company",
+					"company_name": name,
+					"abbr": abbr,
+					"default_currency": "INR",
+					"country": "India",
+					"chart_of_accounts": "Standard",
+				}
+			).insert()
+
+		for role in ROLES:
+			with self.subTest(role=role):
+				self.assertEqual(role_of(store_for(role, name)), role)
+
+	def test_a_store_named_after_a_role_takes_the_role_when_none_holds_it(self):
+		# A company that existed before the app was installed (cutover): its own "Quarantine"
+		# store becomes the Quarantine store instead of a second one being made.
+		store = store_for(stores.QUARANTINE, company())
+		frappe.db.set_value("Warehouse", store, ROLE_FIELD, None)
+		frappe.clear_document_cache("Warehouse", store)
+		abbr = frappe.db.get_value("Company", company(), "abbr")
+		self.assertEqual(store, f"{stores.QUARANTINE} - {abbr}")
+
+		stores.ensure_role_stores(company(), abbr)
+
+		self.assertEqual(store_for(stores.QUARANTINE, company()), store)
+		self.assertEqual(
+			frappe.db.count("Warehouse", {"company": company(), ROLE_FIELD: stores.QUARANTINE}), 1
+		)
+
 	def test_a_store_holding_stock_keeps_its_role(self):
 		from meddevice_suite.lot_control.test_lot_status import RAW, lot_item, receive
 

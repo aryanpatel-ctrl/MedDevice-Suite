@@ -66,6 +66,15 @@ def ensure_role_stores(company: str, abbr: str) -> None:
 		).insert(ignore_permissions=True)  # setup code
 
 
+def stores_for_new_company(doc: Document, method: str | None = None) -> None:
+	"""Company on_update: a company gets its role stores as soon as it exists, whether the setup
+	wizard made it after the app was installed or it was added later, not only on the next
+	migrate (found in CI, 2026-10-09: a new site's company had no Quarantine store). ERPNext
+	creates the company's root store in its own on_update, which runs first."""
+	if frappe.get_meta("Warehouse").has_field(ROLE_FIELD) and root_store(doc.name):
+		ensure_role_stores(doc.name, doc.abbr)
+
+
 def root_store(company: str) -> str | None:
 	return frappe.db.get_value(
 		"Warehouse", {"company": company, "is_group": 1, "parent_warehouse": ["in", ("", None)]}
@@ -81,7 +90,9 @@ def store_for(role: str, company: str) -> str:
 
 
 def role_of(warehouse: str | None) -> str | None:
-	return frappe.get_cached_value("Warehouse", warehouse, ROLE_FIELD) if warehouse else None
+	"""The store's role, None for an approved store. A store made after the role field exists
+	holds an empty value rather than none, so the two are read alike on every site."""
+	return (frappe.get_cached_value("Warehouse", warehouse, ROLE_FIELD) or None) if warehouse else None
 
 
 def protect_store_role(doc: Document, method: str | None = None) -> None:

@@ -86,8 +86,9 @@ class TestRegistry(UnitTestCase):
 	def load(self, content: str) -> Registry:
 		return load_registry(self.tree.write("requirements.toml", content))
 
-	def test_project_registry_lists_the_62_modules(self):
-		self.assertEqual(sorted(load_registry().modules), list(range(1, 63)))
+	def test_project_registry_lists_the_61_modules_in_scope(self):
+		# Module 58, the eCommerce storefront, was withdrawn on 2026-10-09; its number is not reused.
+		self.assertEqual(sorted(load_registry().modules), [n for n in range(1, 63) if n != 58])
 
 	def test_loads_valid_registry(self):
 		loaded = self.load(VALID_MODULE + requirement_toml() + requirement_toml("URS-PLT-001", 0))
