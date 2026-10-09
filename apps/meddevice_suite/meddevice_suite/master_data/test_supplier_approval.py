@@ -361,6 +361,31 @@ class TestPurchaseOrder(SupplierApprovalTestCase):
 		with self.assertRaisesRegex(frappe.ValidationError, "not approved for"):
 			receipt.insert()
 
+	def test_a_receipt_line_naming_another_suppliers_order_line_is_checked(self):
+		decide(OTHER_SUPPLIER, [ITEM])
+		decide(SUPPLIER, [OTHER_ITEM])  # approved, but not for ITEM
+		frappe.set_user(self.purchase)
+		elsewhere = self.placed(purchase_order(supplier=OTHER_SUPPLIER))
+		frappe.set_user("Administrator")
+		receipt = frappe.get_doc(
+			{
+				"doctype": "Purchase Receipt",
+				"supplier": SUPPLIER,
+				"company": company(),
+				"items": [
+					{
+						"item_code": ITEM,
+						"qty": 1,
+						"rate": 5,
+						"purchase_order_item": frappe.get_doc("Purchase Order", elsewhere).items[0].name,
+						"warehouse": store(stores.QUARANTINE),
+					}
+				],
+			}
+		)
+		with self.assertRaisesRegex(frappe.ValidationError, "not approved for"):
+			receipt.insert()
+
 	def test_the_approval_is_checked_again_when_the_order_is_approved(self):
 		decide(SUPPLIER, [ITEM])
 		order = apply_workflow(self.order_as_purchase(), "Send for Approval")

@@ -242,6 +242,23 @@ def guard_purchase_order(doc: Document, method: str | None = None) -> None:
 		)
 
 
+def ordered_lines(doc: Document) -> dict[str, str]:
+	"""The order lines the receipt names that are lines of this supplier's submitted orders, with
+	their item: an order line of another supplier, or a draft, orders nothing for this receipt."""
+	named = [row.purchase_order_item for row in doc.items if row.get("purchase_order_item")]
+	if not named:
+		return {}
+	line, order = frappe.qb.DocType("Purchase Order Item"), frappe.qb.DocType("Purchase Order")
+	rows = (
+		frappe.qb.from_(line)
+		.join(order)
+		.on(line.parent == order.name)
+		.select(line.name, line.item_code)
+		.where(line.name.isin(named) & (line.docstatus == 1) & (order.supplier == doc.supplier))
+	).run()
+	return dict(rows)
+
+
 def mark_full_inspection(doc: Document, method: str | None = None) -> None:
 	"""Purchase Receipt validate: goods received without an order come only from a supplier QA
 	approved for them (an order was checked when it was placed); a line ordered under a
@@ -249,8 +266,12 @@ def mark_full_inspection(doc: Document, method: str | None = None) -> None:
 	its lots inspected in full."""
 	if doc.is_return:
 		return
-	# Ordered only when the line names its order line: ERPNext then checks the item against it.
-	unordered = [row.item_code for row in doc.items if not row.get("purchase_order_item")]
+	# A line was ordered from this supplier when it names a line of its order for the same item;
+	# that order was checked when it was placed.
+	lines = ordered_lines(doc)
+	unordered = [
+		row.item_code for row in doc.items if lines.get(row.get("purchase_order_item")) != row.item_code
+	]
 	if unordered:
 		approval_in_force(doc.supplier, unordered)
 	orders = list({row.purchase_order for row in doc.items if row.get("purchase_order")})
