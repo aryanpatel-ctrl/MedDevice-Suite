@@ -6,7 +6,8 @@ and its quality system certificate. The supplier's newest decision is the one in
 decision is never cancelled, a new one replaces it.
 
 - A purchase order is refused for a supplier with no decision, one not approved, a
-  conditional approval that has ended, or an item it is not approved for.
+  conditional approval that has ended, a certificate that has expired, or an item it is not
+  approved for; so are goods received without an order.
 - An order under a conditional approval says why it is placed, and each lot received
   against it is inspected in full: the incoming inspection's sample is the whole lot.
 - QA and Purchase are alerted once, 30 days before the certificate of a supplier's
@@ -190,30 +191,45 @@ def has_ended(approval: frappe._dict) -> bool:
 	return approval.decision == CONDITIONAL and getdate(approval.valid_until) < getdate(today())
 
 
-def guard_purchase_order(doc: Document, method: str | None = None) -> None:
-	"""Purchase Order validate: only from a supplier QA approved for every item ordered."""
-	approval = current_approval(doc.supplier) if doc.supplier else None
+def approval_in_force(supplier: str | None, items: list[str]) -> frappe._dict:
+	"""QA's decision in force on the supplier, if it lets the items be bought now: approved or
+	conditionally approved (and not ended), on a certificate that has not expired, for each item."""
+	approval = current_approval(supplier) if supplier else None
 	if approval is None or approval.decision == NOT_APPROVED:
 		frappe.throw(
-			_("Supplier {0} is not approved by QA; nothing can be ordered from it.").format(doc.supplier),
+			_("Supplier {0} is not approved by QA; nothing can be bought from it.").format(supplier),
 			title=_("Supplier not approved"),
 		)
 	if has_ended(approval):
 		frappe.throw(
 			_(
 				"The conditional approval of supplier {0} ended on {1}; QA decides the supplier again "
-				"before anything is ordered from it."
-			).format(doc.supplier, frappe.format_value(approval.valid_until, {"fieldtype": "Date"})),
+				"before anything is bought from it."
+			).format(supplier, frappe.format_value(approval.valid_until, {"fieldtype": "Date"})),
 			title=_("Supplier not approved"),
 		)
-	unapproved = sorted({row.item_code for row in doc.items if row.item_code not in approval.item_codes})
-	if unapproved:
+	if getdate(approval.certificate_expiry) < getdate(today()):
 		frappe.throw(
 			_(
-				"Supplier {0} is not approved for {1}; QA approves it for them before they are ordered."
-			).format(doc.supplier, ", ".join(unapproved)),
+				"The quality system certificate of supplier {0} expired on {1}; QA decides the supplier "
+				"again on its renewed certificate before anything is bought from it."
+			).format(supplier, frappe.format_value(approval.certificate_expiry, {"fieldtype": "Date"})),
+			title=_("Supplier certificate expired"),
+		)
+	unapproved = sorted({item for item in items if item not in approval.item_codes})
+	if unapproved:
+		frappe.throw(
+			_("Supplier {0} is not approved for {1}; QA approves it for them before they are bought.").format(
+				supplier, ", ".join(unapproved)
+			),
 			title=_("Supplier not approved"),
 		)
+	return approval
+
+
+def guard_purchase_order(doc: Document, method: str | None = None) -> None:
+	"""Purchase Order validate: only from a supplier QA approved for every item ordered."""
+	approval = approval_in_force(doc.supplier, [row.item_code for row in doc.items])
 	doc.set(APPROVAL_FIELD, approval.name)
 	if approval.decision != CONDITIONAL:
 		doc.set(CONDITIONAL_REASON_FIELD, None)
@@ -227,10 +243,15 @@ def guard_purchase_order(doc: Document, method: str | None = None) -> None:
 
 
 def mark_full_inspection(doc: Document, method: str | None = None) -> None:
-	"""Purchase Receipt validate: a line ordered under a conditional approval, or received from a
-	supplier approved only conditionally, has each of its lots inspected in full."""
+	"""Purchase Receipt validate: goods received without an order come only from a supplier QA
+	approved for them (an order was checked when it was placed); a line ordered under a
+	conditional approval, or received from a supplier approved only conditionally, has each of
+	its lots inspected in full."""
 	if doc.is_return:
 		return
+	unordered = [row.item_code for row in doc.items if not row.get("purchase_order")]
+	if unordered:
+		approval_in_force(doc.supplier, unordered)
 	orders = list({row.purchase_order for row in doc.items if row.get("purchase_order")})
 	placed_under = (
 		dict(

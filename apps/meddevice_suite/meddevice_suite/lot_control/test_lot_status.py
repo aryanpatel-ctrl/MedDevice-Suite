@@ -94,6 +94,11 @@ def receive(item: str, qty: float, warehouse: str) -> str:
 
 
 def purchase_receive(item: str, qty: float, warehouse: str | None = None, submit: bool = True) -> Document:
+	# Goods come only from a supplier QA approved for them (module 4). Imported here: that test
+	# module builds on this one.
+	from meddevice_suite.master_data.test_supplier_approval import approved_for
+
+	approved_for(SUPPLIER, [item])
 	receipt = frappe.get_doc(
 		{
 			"doctype": "Purchase Receipt",

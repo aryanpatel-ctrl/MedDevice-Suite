@@ -222,8 +222,16 @@ def guard_incoming_inspection(doc: Document, method: str | None = None) -> None:
 		return
 	if not doc.batch_no:
 		frappe.throw(_("Name the lot this incoming inspection is of."))
+	line = receipt_line_of(doc.batch_no)
+	if line is not None and doc.reference_type != "Purchase Receipt":
+		# Inspected against anything else, the receipt's rules (certificate, full inspection) would
+		# not apply to the lot.
+		frappe.throw(
+			_("Lot {0} came in on receipt {1}; its incoming inspection is made on that receipt.").format(
+				doc.batch_no, line.receipt
+			)
+		)
 	if doc.reference_type == "Purchase Receipt":
-		line = receipt_line_of(doc.batch_no)
 		if line is None or line.receipt != doc.reference_name or line.item_code != doc.item_code:
 			frappe.throw(
 				_("Lot {0} of {1} did not arrive on receipt {2}.").format(
@@ -251,9 +259,16 @@ def guard_incoming_inspection(doc: Document, method: str | None = None) -> None:
 
 
 def accepted_inspection(lot: str, after: str | None = None) -> str | None:
-	"""The newest submitted, accepted incoming inspection of the lot, made after `after`. Made,
-	not last modified: an older inspection changed after a hold is not a new inspection."""
-	filters = {"batch_no": lot, "inspection_type": INCOMING, "docstatus": 1, "status": "Accepted"}
+	"""The newest submitted, accepted incoming inspection of the lot on its goods receipt, made
+	after `after`. Made, not last modified: an older inspection changed after a hold is not a new
+	inspection."""
+	filters = {
+		"batch_no": lot,
+		"inspection_type": INCOMING,
+		"reference_type": "Purchase Receipt",
+		"docstatus": 1,
+		"status": "Accepted",
+	}
 	if after:
 		filters["creation"] = [">", after]
 	rows = frappe.get_all(

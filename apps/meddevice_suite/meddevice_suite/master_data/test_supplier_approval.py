@@ -312,6 +312,32 @@ class TestPurchaseOrder(SupplierApprovalTestCase):
 		with self.assertRaisesRegex(frappe.ValidationError, "ended on"):
 			self.order_as_purchase(mds_conditional_reason="Urgent")
 
+	def test_an_expired_certificate_refuses_the_order(self):
+		name = decide(SUPPLIER, [ITEM], certificate_expiry=add_days(today(), 10))
+		# As if the days had passed: the certificate expires, nothing else changed.
+		frappe.db.set_value("Supplier Approval", name, "certificate_expiry", add_days(today(), -1))
+		with self.assertRaisesRegex(frappe.ValidationError, "certificate of supplier .* expired"):
+			self.order_as_purchase()
+
+	def test_goods_received_without_an_order_come_only_from_an_approved_supplier(self):
+		decide(OTHER_SUPPLIER, [], act="Not Approve", reason="Failed the audit")
+		frappe.set_user("Administrator")
+		receipt = frappe.get_doc(
+			{
+				"doctype": "Purchase Receipt",
+				"supplier": OTHER_SUPPLIER,
+				"company": company(),
+				"items": [{"item_code": ITEM, "qty": 1, "rate": 5, "warehouse": store(stores.QUARANTINE)}],
+			}
+		)
+		with self.assertRaisesRegex(frappe.ValidationError, "not approved by QA"):
+			receipt.insert()
+		frappe.set_user(self.qa)
+		decide(SUPPLIER, [ITEM])
+		frappe.set_user("Administrator")
+		receipt.supplier = SUPPLIER
+		receipt.insert()  # approved for the item: received
+
 	def test_the_approval_is_checked_again_when_the_order_is_approved(self):
 		decide(SUPPLIER, [ITEM])
 		order = apply_workflow(self.order_as_purchase(), "Send for Approval")
@@ -363,6 +389,18 @@ class TestFullInspection(SupplierApprovalTestCase):
 		with self.assertRaisesRegex(frappe.ValidationError, "inspected in full"):
 			guard_incoming_inspection(self.inspection(lot, receipt.name, 5))
 		check_full_inspection(self.inspection(lot, receipt.name, 10), line)  # the whole lot: accepted
+
+	def test_a_received_lot_is_inspected_only_on_its_receipt(self):
+		"""Inspected on anything else, the receipt's rules (certificate, full inspection) would
+		not apply; such an inspection is refused and never releases the lot."""
+		receipt = self.receive(SUPPLIER, self.conditional_order())
+		lot = lot_of(receipt.items[0])
+		elsewhere = self.inspection(lot, receipt.name, 1)
+		elsewhere.reference_type, elsewhere.reference_name = "Stock Entry", "MAT-STE-ANY"
+		with self.assertRaisesRegex(
+			frappe.ValidationError, "its incoming inspection is made on that receipt"
+		):
+			guard_incoming_inspection(elsewhere)
 
 	def test_lots_from_a_supplier_approved_without_condition_are_sampled(self):
 		decide(SUPPLIER, [ITEM])
