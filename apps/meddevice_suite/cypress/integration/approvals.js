@@ -83,7 +83,8 @@ function supplier_approved() {
 function as_user(user) {
 	cy.window({ log: false }).then((win) => win.location.replace("about:blank"));
 	cy.location("href", { log: false }).should("eq", "about:blank");
-	cy.login(user, PASSWORD);
+	if (user === "Administrator") cy.login();
+	else cy.login(user, PASSWORD);
 	cy.visit("/desk");
 	cy.window().its("frappe.session.user").should("eq", user);
 }
@@ -174,8 +175,7 @@ context("Purchase approval", () => {
 
 			cy.get(".page-container:visible .indicator-pill").should("contain", "Cancelled");
 			// Management may not read the audit trail; a reviewer checks it.
-			cy.login();
-			cy.visit("/desk");
+			as_user("Administrator");
 			cy.call("frappe.client.get_list", {
 				doctype: "Audit Event",
 				filters: {

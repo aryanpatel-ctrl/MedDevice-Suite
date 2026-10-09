@@ -173,6 +173,18 @@ def protect_certificate(doc: Document, method: str | None = None) -> None:
 			)
 
 
+def material_receipt_of(lot: str) -> str | None:
+	"""The material receipt (opening stock, stock found in a count) that brought the lot in, if one
+	did: such a lot is inspected on that entry before QA releases it (decided 2026-10-09)."""
+	reference_doctype, reference_name = frappe.db.get_value(
+		"Batch", lot, ["reference_doctype", "reference_name"]
+	)
+	if reference_doctype != "Stock Entry" or not reference_name:
+		return None
+	purpose = frappe.db.get_value("Stock Entry", reference_name, "purpose")
+	return reference_name if purpose == "Material Receipt" else None
+
+
 def receipt_line_of(lot: str) -> frappe._dict | None:
 	"""The goods receipt line that brought the lot in, if a supplier delivered it."""
 	reference_doctype, reference_name = frappe.db.get_value(
@@ -231,6 +243,13 @@ def guard_incoming_inspection(doc: Document, method: str | None = None) -> None:
 				doc.batch_no, line.receipt
 			)
 		)
+	entry = material_receipt_of(doc.batch_no) if line is None else None
+	if entry and (doc.reference_type != "Stock Entry" or doc.reference_name != entry):
+		frappe.throw(
+			_(
+				"Lot {0} came in on material receipt {1}; its incoming inspection is made on that entry."
+			).format(doc.batch_no, entry)
+		)
 	if doc.reference_type == "Purchase Receipt":
 		if line is None or line.receipt != doc.reference_name or line.item_code != doc.item_code:
 			frappe.throw(
@@ -258,17 +277,24 @@ def guard_incoming_inspection(doc: Document, method: str | None = None) -> None:
 			)
 
 
-def accepted_inspection(lot: str, after: str | None = None) -> str | None:
-	"""The newest submitted, accepted incoming inspection of the lot on its goods receipt, made
-	after `after`. Made, not last modified: an older inspection changed after a hold is not a new
-	inspection."""
+def accepted_inspection(
+	lot: str,
+	after: str | None = None,
+	reference_type: str = "Purchase Receipt",
+	reference_name: str | None = None,
+) -> str | None:
+	"""The newest submitted, accepted incoming inspection of the lot on the document that brought
+	it in, made after `after`. Made, not last modified: an older inspection changed after a hold is
+	not a new inspection."""
 	filters = {
 		"batch_no": lot,
 		"inspection_type": INCOMING,
-		"reference_type": "Purchase Receipt",
+		"reference_type": reference_type,
 		"docstatus": 1,
 		"status": "Accepted",
 	}
+	if reference_name:
+		filters["reference_name"] = reference_name
 	if after:
 		filters["creation"] = [">", after]
 	rows = frappe.get_all(

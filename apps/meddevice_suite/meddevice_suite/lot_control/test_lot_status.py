@@ -175,6 +175,11 @@ class LotTestCase(IntegrationTestCase):
 		ensure_parties()
 		cls.qa = signer("QA Manager")
 		cls.stores_user = signer("Stores")
+		cls.qc = signer("QC Inspector")
+		from meddevice_suite.pilot.inspection import ensure_inspection_masters, ensure_inspection_template
+
+		cls.instrument = ensure_inspection_masters(company())
+		cls.template = ensure_inspection_template(RAW, "Raw Material")
 
 	def tearDown(self):
 		frappe.set_user("Administrator")
@@ -192,10 +197,39 @@ class LotTestCase(IntegrationTestCase):
 		finally:
 			frappe.set_user(acting)
 
+	def inspected_on_its_entry(self, lot: str) -> None:
+		"""The QC Inspector's accepted incoming inspection of a material-receipt lot, made on the
+		entry that brought it in, as QA's release needs (URS-QC-003, decided 2026-10-09)."""
+		from meddevice_suite.lot_control.receipt import material_receipt_of
+		from meddevice_suite.master_data.specification import INCOMING, specification_for
+		from meddevice_suite.pilot.inspection import readings_for
+
+		entry = material_receipt_of(lot)
+		if not entry:
+			return
+		item = frappe.db.get_value("Batch", lot, "item")
+		frappe.set_user(self.qc)
+		inspection = frappe.get_doc(
+			{
+				"doctype": "Quality Inspection",
+				"inspection_type": "Incoming",
+				"reference_type": "Stock Entry",
+				"reference_name": entry,
+				"item_code": item,
+				"batch_no": lot,
+				"sample_size": 5,
+				"inspected_by": self.qc,
+				"readings": readings_for(specification_for(item, INCOMING), self.instrument),
+			}
+		).insert()
+		inspection.submit()
+
 	def decide(self, lot: str, decision: str, reason: str = "decided in a test") -> Document:
-		"""QA's signed decision on the lot, whoever is acting. A material-receipt lot needs no
-		inspection; a supplier's lot is covered in test_release."""
+		"""QA's signed decision on the lot, whoever is acting; a release is preceded by the incoming
+		inspection the lot needs. A supplier's lot is covered in test_release."""
 		acting = frappe.session.user
+		if decision == "Release":
+			self.inspected_on_its_entry(lot)
 		self.as_qa()
 		try:
 			record = frappe.get_doc({"doctype": "Lot Release", "batch": lot}).insert()
@@ -603,6 +637,9 @@ class TestTheDecisionMovesTheStock(LotTestCase):
 			shelf_life_in_days=30,
 			item_defaults=[{"company": company(), "default_warehouse": store(stores.QUARANTINE)}],
 		)
+		from meddevice_suite.pilot.inspection import ensure_inspection_template
+
+		ensure_inspection_template(code, "Raw Material")  # inspected first, so the store is what is checked
 		lot = receive(code, 1, store(stores.QUARANTINE))
 		with self.assertRaises(frappe.ValidationError) as refused:
 			self.decide(lot, "Release", "accepted")

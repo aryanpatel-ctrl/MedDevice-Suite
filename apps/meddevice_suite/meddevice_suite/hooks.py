@@ -93,8 +93,12 @@ doc_events = {
 		"on_trash": "meddevice_suite.master_data.specification.protect_template",
 	},
 	# Approved suppliers (module 4): orders only from approved suppliers, for approved items.
-	"Purchase Order": {"validate": "meddevice_suite.master_data.supplier_approval.guard_purchase_order"},
+	"Purchase Order": {
+		"validate": "meddevice_suite.master_data.supplier_approval.guard_purchase_order",
+		"before_update_after_submit": "meddevice_suite.master_data.supplier_approval.guard_order_update",
+	},
 	"Supplier": {"onload": "meddevice_suite.master_data.supplier_approval.supplier_onload"},
+	"Purchase Invoice": {"validate": "meddevice_suite.master_data.supplier_approval.refuse_stock_on_invoice"},
 	"Item": {"validate": "meddevice_suite.setup.stock.refuse_negative_stock"},
 	"Stock Settings": {"validate": "meddevice_suite.setup.stock.protect_stock_settings"},
 	"Log Settings": {"validate": "meddevice_suite.compliance.retention.protect_login_history"},

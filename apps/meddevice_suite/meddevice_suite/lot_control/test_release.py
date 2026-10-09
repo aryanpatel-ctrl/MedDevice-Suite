@@ -13,6 +13,7 @@ from meddevice_suite.lot_control.lot_status import (
 	QUARANTINE,
 	REJECTED,
 	STATUS_FIELD,
+	set_status,
 	status_of,
 )
 from meddevice_suite.lot_control.receipt import (
@@ -45,6 +46,7 @@ from meddevice_suite.qms.test_document_control import signer
 from meddevice_suite.setup.install import apply_configuration
 
 ITEM = "MDS-REL-RAW"
+FINISHED_ITEM = "MDS-REL-FINISHED"
 NO_TEMPLATE_ITEM = "MDS-REL-NO-TEMPLATE"
 
 
@@ -615,9 +617,86 @@ class TestTheQueueAndTheFinishedLot(ReleaseTestCase):
 	def test_a_lot_a_work_order_made_is_released_on_the_signature_alone(self):
 		# Final QC and batch release (modules 25, 26) replace this; until then QA signs it out.
 		frappe.set_user("Administrator")
-		lot = receive(ITEM, 3, store(stores.QUARANTINE))  # stands in for the finished lot's entry
+		material = receive(ITEM, 2, store("Stores"))
+		set_status(material, APPROVED, "Approved material for the test's production")
+		lot_item(FINISHED_ITEM, "Products")
+		# Made by a manufacture entry, as a work order makes its finished lot.
+		entry = frappe.get_doc(
+			{
+				"doctype": "Stock Entry",
+				"stock_entry_type": "Manufacture",
+				"company": company(),
+				"fg_completed_qty": 1,
+				"items": [
+					{
+						"item_code": ITEM,
+						"qty": 1,
+						"s_warehouse": store("Stores"),
+						"batch_no": material,
+						"use_serial_batch_fields": 1,
+						"basic_rate": 10,
+					},
+					{
+						"item_code": FINISHED_ITEM,
+						"qty": 1,
+						"t_warehouse": store(stores.QUARANTINE),
+						"is_finished_item": 1,
+					},
+				],
+			}
+		).insert()
+		entry.submit()
+		lot = lot_of(frappe.get_doc("Stock Entry", entry.name).items[1])
 
 		decision = self.decide(lot, "Release", "Final inspection accepted")
 
 		self.assertEqual((decision.source_doctype, decision.quality_inspection), ("Stock Entry", None))
+		self.assertEqual(status_of([lot])[lot], APPROVED)
+
+
+@verifies("URS-QC-003")
+class TestMaterialReceiptLots(ReleaseTestCase):
+	"""A lot brought in on a material receipt (opening stock, stock found in a count) is released only
+	after an accepted incoming inspection made on that entry (decided 2026-10-09)."""
+
+	def material_receipt_lot(self) -> tuple[str, str]:
+		frappe.set_user("Administrator")
+		lot = receive(ITEM, 4, store(stores.QUARANTINE))
+		return lot, frappe.db.get_value("Batch", lot, "reference_name")
+
+	def inspection_on(self, lot: str, reference_type: str, reference_name: str) -> Document:
+		frappe.set_user(self.qc)
+		return frappe.get_doc(
+			{
+				"doctype": "Quality Inspection",
+				"inspection_type": "Incoming",
+				"reference_type": reference_type,
+				"reference_name": reference_name,
+				"item_code": ITEM,
+				"batch_no": lot,
+				"sample_size": 5,
+				"inspected_by": self.qc,
+				"readings": readings_for(self.template, self.instrument),
+			}
+		)
+
+	def test_a_material_receipt_lot_is_not_released_without_an_inspection(self):
+		lot, _entry = self.material_receipt_lot()
+		with self.assertRaisesRegex(frappe.ValidationError, "no accepted incoming inspection"):
+			self.decide(lot, "Release", "Opening stock")
+		self.assertEqual(status_of([lot])[lot], QUARANTINE)
+
+	def test_it_is_inspected_on_the_entry_that_brought_it_in(self):
+		lot, _entry = self.material_receipt_lot()
+		receipt, _ = self.received()
+		with self.assertRaisesRegex(frappe.ValidationError, "came in on material receipt"):
+			self.inspection_on(lot, "Purchase Receipt", receipt.name).insert()
+
+	def test_an_accepted_inspection_on_its_entry_lets_qa_release_it(self):
+		lot, entry = self.material_receipt_lot()
+		inspection = self.inspection_on(lot, "Stock Entry", entry)
+		inspection.insert()
+		inspection.submit()
+		record = self.decide(lot, "Release", "Opening stock inspected")
+		self.assertEqual((record.decision, record.quality_inspection), ("Release", inspection.name))
 		self.assertEqual(status_of([lot])[lot], APPROVED)

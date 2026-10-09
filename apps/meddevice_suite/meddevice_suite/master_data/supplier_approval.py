@@ -7,7 +7,9 @@ decision is never cancelled, a new one replaces it.
 
 - A purchase order is refused for a supplier with no decision, one not approved, a
   conditional approval that has ended, a certificate that has expired, or an item it is not
-  approved for; so are goods received without an order.
+  approved for. Goods enter only on a goods receipt, never on a purchase invoice that updates
+  stock, and each line only from a supplier approved for its item at receipt, whatever order it
+  was placed under (decided 2026-10-09).
 - An order under a conditional approval says why it is placed, and each lot received
   against it is inspected in full: the incoming inspection's sample is the whole lot.
 - QA and Purchase are alerted once, 30 days before the certificate of a supplier's
@@ -260,6 +262,12 @@ def ordered_lines(doc: Document) -> dict[str, frappe._dict]:
 	return {row.name: row for row in rows}
 
 
+def guard_order_update(doc: Document, method: str | None = None) -> None:
+	"""Purchase Order before_update_after_submit: ERPNext's Update Items adds or changes lines of a
+	submitted order past its validation; each line still needs the supplier approved for its item."""
+	approval_in_force(doc.supplier, [row.item_code for row in doc.items])
+
+
 def mark_full_inspection(doc: Document, method: str | None = None) -> None:
 	"""Purchase Receipt validate: goods received without an order come only from a supplier QA
 	approved for them (an order was checked when it was placed); a line ordered under a
@@ -268,15 +276,15 @@ def mark_full_inspection(doc: Document, method: str | None = None) -> None:
 	names, as ERPNext checks the line by it."""
 	if doc.is_return:
 		return
+	# Received only from a supplier approved for each item now, whatever order it was placed under:
+	# a supplier QA has since stopped is decided again first (decided 2026-10-09).
+	approval_in_force(doc.supplier, [row.item_code for row in doc.items])
 	lines = ordered_lines(doc)
 
 	def ordered(row: Document) -> frappe._dict | None:
 		found = lines.get(row.get("purchase_order_item"))
 		return found if found and found.item_code == row.item_code else None
 
-	unordered = [row.item_code for row in doc.items if not ordered(row)]
-	if unordered:
-		approval_in_force(doc.supplier, unordered)
 	approvals = list({found.approval for found in lines.values() if found.approval})
 	conditional = set(
 		frappe.get_all(DOCTYPE, filters={"name": ["in", approvals], "decision": CONDITIONAL}, pluck="name")
@@ -289,6 +297,22 @@ def mark_full_inspection(doc: Document, method: str | None = None) -> None:
 		found = ordered(row)
 		full = bool(found and found.approval in conditional) or supplier_conditional
 		row.set(FULL_INSPECTION_FIELD, cint(full))
+
+
+def refuse_stock_on_invoice(doc: Document, method: str | None = None) -> None:
+	"""Purchase Invoice validate: goods enter the store only on a goods receipt, where the supplier,
+	the certificate and the incoming inspection are checked; an invoice that updates stock would
+	take them past all three (decided 2026-10-09). The invoice is booked against the receipt."""
+	if not doc.get("update_stock") or doc.get("is_return"):
+		return
+	items = [row.item_code for row in doc.items if row.item_code]
+	if items and frappe.get_all("Item", filters={"name": ["in", items], "is_stock_item": 1}, limit=1):
+		frappe.throw(
+			_(
+				"Goods are received on a goods receipt, not on a purchase invoice; untick Update Stock and book the invoice against the receipt."
+			),
+			title=_("Receive on a goods receipt"),
+		)
 
 
 def check_full_inspection(inspection: Document, line: frappe._dict) -> None:

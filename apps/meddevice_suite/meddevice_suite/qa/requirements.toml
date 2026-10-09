@@ -854,8 +854,8 @@ status = "implemented"
 [[requirement]]
 id = "URS-QC-003"
 module = 16
-title = "A received lot is released by QA with an electronic signature only once an accepted incoming inspection exists for it: release sets the lot Approved and moves its stock to the approved store in one audited transaction; QA can instead reject it with a signature and a reason, which sets it Rejected, moves the stock to the rejected store and creates the return to the supplier for Purchase; or hold it, which sets it Hold and moves it to the hold store; a held lot is released only after a new accepted inspection and with a reason."
-source = "D2 Pass? No: Reject / Return To Supplier, Yes: Put Away; D3 Accepted / Rejected; D4 3.5, 3.6; ISO 13485 7.4.3, 8.3; 21 CFR 11.50; release of a held lot after retest decided under the client's instruction of 2026-10-08"
+title = "A lot that enters stock other than from a work order (on a goods receipt, or on a material receipt such as opening stock) is released by QA with an electronic signature only once an accepted incoming inspection made on the document that brought it in exists for it: release sets the lot Approved and moves its stock to the approved store in one audited transaction; QA can instead reject it with a signature and a reason, which sets it Rejected, moves the stock to the rejected store and creates the return to the supplier for Purchase; or hold it, which sets it Hold and moves it to the hold store; a held lot is released only after a new accepted inspection and with a reason."
+source = "D2 Pass? No: Reject / Return To Supplier, Yes: Put Away; D3 Accepted / Rejected; D4 3.5, 3.6; ISO 13485 7.4.3, 8.3; 21 CFR 11.50; release of a held lot after retest decided under the client's instruction of 2026-10-08; inspection of material-receipt lots decided on 2026-10-09"
 status = "implemented"
 
 [[requirement]]
@@ -868,8 +868,8 @@ status = "implemented"
 [[requirement]]
 id = "URS-PUR-001"
 module = 4
-title = "Every supplier has an approval status, Approved, Conditional or Not Approved, set by QA with an electronic signature and a reason, with the items it is approved for and the expiry date of its certificate; a purchase order for an item from a supplier not approved for it is refused; a Conditional approval has an expiry date, each purchase order under it needs a reason and its lots are inspected at 100 percent; QA and Purchase are alerted once, 30 days before a supplier certificate expires."
-source = "D2 Vendor Master, Supplier; D3 Purchase Order to Vendor; D4 2.5 Vendor Management; ISO 13485 7.4.1; conditional approval rules and the 30-day alert decided under the client's instruction of 2026-10-08"
+title = "Every supplier has an approval status, Approved, Conditional or Not Approved, set by QA with an electronic signature and a reason, with the items it is approved for and the expiry date of its certificate; a purchase order for an item from a supplier not approved for it is refused; goods are received only on a goods receipt, never by a purchase invoice that updates stock, and each line only from a supplier approved for its item at the time of receipt, whatever order it was placed under; a Conditional approval has an expiry date, each purchase order under it needs a reason and its lots are inspected at 100 percent; QA and Purchase are alerted once, 30 days before a supplier certificate expires."
+source = "D2 Vendor Master, Supplier; D3 Purchase Order to Vendor; D4 2.5 Vendor Management; ISO 13485 7.4.1; conditional approval rules and the 30-day alert decided under the client's instruction of 2026-10-08; the goods receipt as the only way in, and receipt only from a supplier approved at receipt, decided on 2026-10-09"
 status = "implemented"
 
 [[requirement]]
