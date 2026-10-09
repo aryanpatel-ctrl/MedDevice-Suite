@@ -18,6 +18,8 @@ releases of Frappe, ERPNext and India Compliance it runs on. Only secrets
 | `scripts/bootstrap.sh` | Turns a clone into a working bench. Used by developers and CI alike. |
 | `scripts/verify_vendored.sh` | Proves each official app is byte-for-byte its pinned release. Runs in CI. |
 | `scripts/create_pilot_site.sh` | Creates the pilot site with fictional demo data for the client walk-through. Never on production. |
+| `scripts/ci/` | The CI job's steps (test site, bench start), shared by CI and `scripts/ci-local.sh`. |
+| `scripts/ci-local.sh` | Runs the UI tests on this machine as CI runs them, to reproduce and fix a CI failure locally. |
 | `.github/` | CI: release integrity, traceability, server tests, coverage, UI tests, linters. |
 | `.pre-commit-config.yaml` | Checks run before every commit. |
 
@@ -63,6 +65,26 @@ scripts/bootstrap.sh --dev                    # after pulling changes
 bench --site <site> migrate                   # after pulling changes
 bench --site <test-site> run-tests --app meddevice_suite
 ```
+
+## Reproducing a CI failure
+
+The UI tests run in CI on a GitHub runner: 2 slow CPUs shared by the database,
+Redis, the bench and the browser, so a page takes about three times as long as
+on a developer's Mac, and a test that is too quick to act fails only there.
+`scripts/ci-local.sh` runs them the same way here, in Docker: Linux, 2 CPUs at
+the runner's pace, a fresh bench and test site built by CI's own scripts, and
+the same Electron browser.
+
+```bash
+scripts/ci-local.sh up      # once: the runner and its test site (about 5 minutes)
+scripts/ci-local.sh test --spec cypress/integration/standard_flow.js --config retries=0
+scripts/ci-local.sh down    # when done
+```
+
+`test` copies in the app as it is in the checkout, committed or not, so a fix
+is tried before it is pushed. Screenshots of failures land in
+`ci-local-results/`. Needs Docker Desktop; on a Mac that may sleep, run it under
+`caffeinate -i`.
 
 ## Upgrading Frappe, ERPNext or India Compliance
 
