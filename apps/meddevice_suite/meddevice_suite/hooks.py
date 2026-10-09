@@ -61,6 +61,7 @@ doc_events = {
 	},
 	# Lot status (module 17): only an Approved lot leaves a store; each status has its store.
 	"Warehouse": {"validate": "meddevice_suite.lot_control.stores.protect_store_role"},
+	"Company": {"on_update": "meddevice_suite.lot_control.stores.stores_for_new_company"},
 	"Stock Ledger Entry": {"validate": "meddevice_suite.lot_control.lot_status.guard_stock_ledger_entry"},
 	"Stock Entry": {
 		"validate": "meddevice_suite.lot_control.lot_status.guard_stock_entry",
