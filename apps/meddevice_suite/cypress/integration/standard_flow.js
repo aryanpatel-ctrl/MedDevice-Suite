@@ -19,6 +19,7 @@ const API = /^https?:\/\/[^/]+\/api\//;
 const FORM = ".page-container:visible";
 const TIMEOUT = 20000; // the longest a page or an action may take
 const QUIET_MS = 300; // no request in flight for this long: the page has finished
+const RELOAD_DELAY_MS = 1000; // the desk reloads a form this long after the server changes it
 
 // ERPNext's refusal of a move that would take a lot below zero (serial_and_batch_bundle.py).
 const NEGATIVE_LOT = /Batch No \S+ of an Item \S+ has negative stock/;
@@ -131,10 +132,10 @@ function until(ready, timeout = TIMEOUT) {
 	});
 }
 
-// Waits until no request has been in flight for QUIET_MS, the screen is not frozen, and the
+// Waits until no request has been in flight for quiet_ms, the screen is not frozen, and the
 // open form is not about to reload: told its record changed on the server, Frappe reloads
 // it a second later (form.js debounced_reload_doc), with no request in flight meanwhile.
-function settle() {
+function settle(quiet_ms = QUIET_MS) {
 	return cy.window({ log: false }).then({ timeout: TIMEOUT + 5000 }, (win) => {
 		let since = null;
 		return until(() => {
@@ -147,7 +148,7 @@ function settle() {
 				return false;
 			}
 			since = since ?? Date.now();
-			return Date.now() - since >= QUIET_MS;
+			return Date.now() - since >= quiet_ms;
 		}).then(
 			(settled) =>
 				expect(
@@ -404,7 +405,11 @@ function take_action(action) {
 		.click();
 	// The form reloads the record once the action is done; as with save() and submit(), the
 	// person goes on once it has (a row opened mid-reload trips ERPNext's purchase order form).
-	settle();
+	// A server save after the action (the approval engine's) makes the desk reload the form a
+	// second later; a row opened before that reload closes under the person (found on 2 CPUs,
+	// 2026-10-09, on the purchase order's first line). The person goes on once the page has
+	// been quiet for longer than that second.
+	settle(RELOAD_DELAY_MS + QUIET_MS);
 }
 
 function actions_offered(win) {

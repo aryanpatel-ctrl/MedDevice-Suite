@@ -49,12 +49,6 @@ runs:
 
     - name: Create test site
       shell: bash
-      run: |
-        bench new-site --db-root-password root --admin-password admin --install-app erpnext $SITE
-        bench --site $SITE install-app india_compliance
-        bench --site $SITE install-app meddevice_suite
-        bench --site $SITE set-config admin_password admin
-        bench --site $SITE set-config allow_tests true
-        bench --site $SITE execute meddevice_suite.qa.site_setup.prepare_test_site
+      run: scripts/ci/create_test_site.sh
       env:
         CI: 'Yes'
