@@ -111,6 +111,13 @@ const QUIRKS = [
 		script_error:
 			"Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.",
 	},
+	// The same Frappe redraw error, seen once in CI on the Account list (2026-10-09, passed on
+	// retry); the list opens. Accepted with this exact message on that list only.
+	{
+		where: "list Account",
+		script_error:
+			"Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.",
+	},
 ];
 
 function known_quirk(sweep, matches) {

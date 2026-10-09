@@ -284,11 +284,38 @@ function choose($input, value) {
 		.click();
 }
 
+// A lookup's list can open again after a choice, as the form refreshes with what the choice
+// brought (an item's details), and then lies over the fields below it; a person closes it before
+// going on to the next field (found in CI, 2026-10-09, over the inspection's lot field). A
+// lookup's list is the one its field names (aria-owns); leaving the field closes it. Not Escape:
+// the desk takes Escape anywhere as "close the open dialog or table row".
+function lookup_fields_with_open_lists($body) {
+	return $body
+		.find('[role="listbox"]:visible')
+		.toArray()
+		.map((list) => $body.find(`input[aria-owns="${list.id}"]`))
+		.filter(($field) => $field.length);
+}
+
+function close_open_lists() {
+	cy.get("body", { log: false }).then(($body) => {
+		for (const $field of lookup_fields_with_open_lists($body)) {
+			// The browser's own blur, not a Cypress command: the field's row may redraw once its
+			// list closes. An open list belongs to the field with the cursor.
+			$field[0].blur();
+		}
+	});
+	cy.get("body", { log: false }).should(($body) =>
+		expect(lookup_fields_with_open_lists($body), "lookup lists left open").to.have.length(0)
+	);
+}
+
 // A person types the next field once the form has finished updating from the last one: a
 // value typed while the form still fetches what the last one brings (a supplier's details
 // and prices, say) is wiped when the form refreshes with them.
 function fill(fieldname, value, kind = "Data") {
 	settle();
+	close_open_lists();
 	reveal(fieldname);
 	cy.get(inputs_of(`${FORM} .frappe-control[data-fieldname="${fieldname}"]`))
 		.first()
@@ -324,6 +351,7 @@ function rows_up_to(table, count) {
 
 function fill_row(table, idx, fieldname, value, kind = "Data") {
 	settle(); // as in fill()
+	close_open_lists();
 	const cell = `${FORM} .frappe-control[data-fieldname="${table}"] .grid-row[data-idx="${idx}"] [data-fieldname="${fieldname}"]`;
 	cy.get(cell).first().click();
 	// As in the Update Items dialog: typed once the clicked cell has the cursor.
