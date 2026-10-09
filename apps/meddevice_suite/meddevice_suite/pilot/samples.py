@@ -9,7 +9,8 @@ client can open, each made by the demo user of the job that makes it:
 - in production: urine bags with materials issued and job cards open for the
   operators;
 - waiting for approval: a quotation's price and a purchase order;
-- in quarantine: latex received and not yet released.
+- in quarantine: latex received and not yet released;
+- rejected: a lot of PVC film QA rejected, in the rejected store.
 
 Refuses to run on any site that is not a pilot site, and runs only once.
 """
@@ -24,6 +25,7 @@ IN_PRODUCTION = ("UB-2000-TAP", 300)
 AWAITING_PRICE_APPROVAL = ("FC-3W-SIL-18", 150)
 AWAITING_PURCHASE_APPROVAL = {"RM-LATEX": 25}
 IN_QUARANTINE = {"RM-LATEX": 40}
+REJECTED = {"RM-PVC-FILM": 10}
 
 
 def load_sample_records() -> None:
@@ -40,7 +42,7 @@ def load_sample_records() -> None:
 	work_order = flow.plan_production(order, item, qty)
 	flow.issue_materials(work_order)
 	flow.record_operations(work_order)
-	flow.finish_production(work_order)
+	flow.release_finished_lot(flow.finish_production(work_order))
 	flow.deliver(order)
 
 	item, qty = IN_PRODUCTION
@@ -56,7 +58,11 @@ def load_sample_records() -> None:
 	flow.order_materials(
 		flow.request_materials(AWAITING_PURCHASE_APPROVAL), supplier_of(AWAITING_PURCHASE_APPROVAL)
 	)
-	flow.buy(IN_QUARANTINE)
+	flow.buy(IN_QUARANTINE, inspect=False)
+	for receipt in flow.buy(REJECTED, inspect=False):
+		flow.inspect_received_lots(receipt, flow.instrument(), accept=False)
+		for row in frappe.get_doc("Purchase Receipt", receipt.name).items:
+			flow.reject_lot(flow.lot_of(row), "Incoming inspection rejected: dimension out of limits (pilot)")
 
 
 def samples_loaded() -> bool:
@@ -65,7 +71,7 @@ def samples_loaded() -> bool:
 
 def release(receipts: list) -> None:
 	for receipt in receipts:
-		flow.move_to_approved_store(receipt)
+		flow.release_received_lots(receipt)
 
 
 def supplier_of(materials: dict[str, float]) -> str:

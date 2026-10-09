@@ -56,8 +56,28 @@ doc_events = {
 		"validate": [
 			"meddevice_suite.compliance.alerts.reset_expiry_alert",
 			"meddevice_suite.setup.stock.refuse_negative_stock",
+			"meddevice_suite.lot_control.lot_status.guard_batch",
 		]
 	},
+	# Lot status (module 17): only an Approved lot leaves a store; each status has its store.
+	"Warehouse": {"validate": "meddevice_suite.lot_control.stores.protect_store_role"},
+	"Company": {"on_update": "meddevice_suite.lot_control.stores.stores_for_new_company"},
+	"Stock Ledger Entry": {"validate": "meddevice_suite.lot_control.lot_status.guard_stock_ledger_entry"},
+	"Stock Entry": {
+		"validate": "meddevice_suite.lot_control.lot_status.guard_stock_entry",
+		"before_cancel": "meddevice_suite.lot_control.lot_status.refuse_cancel_of_release_transfer",
+	},
+	"Delivery Note": {"validate": "meddevice_suite.lot_control.lot_status.guard_delivery_note"},
+	"Pick List": {"validate": "meddevice_suite.lot_control.lot_status.guard_pick_list"},
+	"Work Order": {"validate": "meddevice_suite.lot_control.lot_status.guard_work_order"},
+	"Purchase Receipt": {
+		"validate": [
+			"meddevice_suite.lot_control.lot_status.guard_purchase_receipt",
+			"meddevice_suite.lot_control.receipt.protect_certificate",
+		],
+		"before_update_after_submit": "meddevice_suite.lot_control.receipt.protect_certificate",
+	},
+	"Quality Inspection": {"validate": "meddevice_suite.lot_control.receipt.guard_incoming_inspection"},
 	"Item": {"validate": "meddevice_suite.setup.stock.refuse_negative_stock"},
 	"Stock Settings": {"validate": "meddevice_suite.setup.stock.protect_stock_settings"},
 	"Log Settings": {"validate": "meddevice_suite.compliance.retention.protect_login_history"},

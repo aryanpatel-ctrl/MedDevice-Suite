@@ -40,7 +40,15 @@ const run = { problems: [], expected: [] };
 // with no one signed in, be refused, and be counted against this step.
 function sign_in(job) {
 	const email = users[job];
-	cy.window({ log: false }).then((win) => win.location.replace("about:blank"));
+	// A form with unsaved changes asks "Leave site?" in a native dialog, which a person answers
+	// and which would freeze the test; the person leaves, so the test does too.
+	cy.window({ log: false }).then((win) => {
+		const frm = win.cur_frm;
+		if (frm?.beforeUnloadListener) {
+			win.removeEventListener("beforeunload", frm.beforeUnloadListener, { capture: true });
+		}
+		win.location.replace("about:blank");
+	});
 	cy.location("href", { log: false }).should("eq", "about:blank");
 	cy.session(["journey", email], () => {
 		cy.request({
@@ -276,11 +284,38 @@ function choose($input, value) {
 		.click();
 }
 
+// A lookup's list can open again after a choice, as the form refreshes with what the choice
+// brought (an item's details), and then lies over the fields below it; a person closes it before
+// going on to the next field (found in CI, 2026-10-09, over the inspection's lot field). A
+// lookup's list is the one its field names (aria-owns); leaving the field closes it. Not Escape:
+// the desk takes Escape anywhere as "close the open dialog or table row".
+function lookup_fields_with_open_lists($body) {
+	return $body
+		.find('[role="listbox"]:visible')
+		.toArray()
+		.map((list) => $body.find(`input[aria-owns="${list.id}"]`))
+		.filter(($field) => $field.length);
+}
+
+function close_open_lists() {
+	cy.get("body", { log: false }).then(($body) => {
+		for (const $field of lookup_fields_with_open_lists($body)) {
+			// The browser's own blur, not a Cypress command: the field's row may redraw once its
+			// list closes. An open list belongs to the field with the cursor.
+			$field[0].blur();
+		}
+	});
+	cy.get("body", { log: false }).should(($body) =>
+		expect(lookup_fields_with_open_lists($body), "lookup lists left open").to.have.length(0)
+	);
+}
+
 // A person types the next field once the form has finished updating from the last one: a
 // value typed while the form still fetches what the last one brings (a supplier's details
 // and prices, say) is wiped when the form refreshes with them.
 function fill(fieldname, value, kind = "Data") {
 	settle();
+	close_open_lists();
 	reveal(fieldname);
 	cy.get(inputs_of(`${FORM} .frappe-control[data-fieldname="${fieldname}"]`))
 		.first()
@@ -316,6 +351,7 @@ function rows_up_to(table, count) {
 
 function fill_row(table, idx, fieldname, value, kind = "Data") {
 	settle(); // as in fill()
+	close_open_lists();
 	const cell = `${FORM} .frappe-control[data-fieldname="${table}"] .grid-row[data-idx="${idx}"] [data-fieldname="${fieldname}"]`;
 	cy.get(cell).first().click();
 	// As in the Update Items dialog: typed once the clicked cell has the cursor.
@@ -410,6 +446,46 @@ function submit() {
 	cy.get(".modal.show .btn-primary").contains("Yes").click();
 	cy.window().should((win) => expect(current(win).docstatus, "submitted").to.equal(1));
 	settle();
+}
+
+// The signing dialog of a signed act (compliance/esign.js): the reason, then the password,
+// each once the dialog has taken it, as a person would; then Sign.
+function sign(label, reason) {
+	button(label).click();
+	cy.get(".modal.show").should("have.css", "opacity", "1");
+	cy.window().should((win) => {
+		expect(win.cur_dialog?.display, "the signing dialog has opened").to.equal(true);
+		expect(win.cur_dialog.title).to.match(/^Sign: /);
+	});
+	cy.get('.modal.show textarea[data-fieldname="reason"]').click().type(reason);
+	cy.window()
+		.its("cur_dialog")
+		.should((dialog) => expect(dialog.get_value("reason")).to.equal(reason));
+	cy.get('.modal.show input[data-fieldname="password"]').click().type(password, { log: false });
+	cy.window()
+		.its("cur_dialog")
+		.should((dialog) => expect(dialog.get_value("password")).to.equal(password));
+	cy.get(".modal:visible .btn-primary").contains("Sign").click();
+	settle();
+}
+
+// A private file uploaded by the signed-in user, as the attach control does; its address.
+function upload_private_file(name) {
+	return cy.fixture("controlled-document.pdf", null).then((pdf) =>
+		cy.window({ log: false }).then((win) => {
+			const form = new win.FormData();
+			form.append("file", new win.Blob([pdf], { type: "application/pdf" }), name);
+			form.append("is_private", "1");
+			return win
+				.fetch("/api/method/upload_file", {
+					method: "POST",
+					body: form,
+					headers: { "X-Frappe-CSRF-Token": win.frappe.csrf_token },
+				})
+				.then((response) => response.json())
+				.then((r) => r.message.file_url);
+		})
+	);
 }
 
 // The record as stored, read as the signed-in user.
@@ -633,8 +709,35 @@ context("The standard flow, through the screens of each job", { retries: 0 }, ()
 				expect(row.warehouse, row.item_code).to.equal(data.stores.quarantine)
 			)
 		);
+		// The supplier's lot number and certificate on each line, as the goods arrive with them
+		// (both sit in the line's own form, not in the grid's columns).
+		cy.window().then((win) =>
+			current(win).items.forEach((row) =>
+				upload_private_file(`COA-${row.item_code}.pdf`).then((url) =>
+					cy.window().then((w) => {
+						w.frappe.model.set_value(
+							row.doctype,
+							row.name,
+							"mds_supplier_lot_no",
+							`SUP-${row.item_code}`
+						);
+						w.frappe.model.set_value(row.doctype, row.name, "mds_certificate", url);
+					})
+				)
+			)
+		);
+		cy.window().should((win) =>
+			current(win).items.forEach((row) => {
+				expect(row.mds_supplier_lot_no, row.item_code).to.equal(`SUP-${row.item_code}`);
+				expect(row.mds_certificate, `${row.item_code} certificate`).to.be.ok;
+			})
+		);
 		save();
 		submit();
+		// A submitted receipt with its certificates opens clean: nothing left to update.
+		cy.window().should(
+			(win) => expect(win.cur_frm.is_dirty(), "receipt has unsaved changes").to.not.be.ok
+		);
 		cy.window().then((win) => {
 			made.receipt = current(win).name;
 			lots_of("Purchase Receipt", made.receipt).then((lots) => {
@@ -657,7 +760,7 @@ context("The standard flow, through the screens of each job", { retries: 0 }, ()
 		no_problems("Stores receives");
 	});
 
-	it("[URS-PLT-007] [URS-STK-003] Stores moves the lots to the approved store; moving them again is refused, for none is left", () => {
+	it("[URS-PLT-007] [URS-STK-005] Stores cannot move the quarantined lots to the approved store; the form refuses it plainly", () => {
 		sign_in("Stores");
 		open_form("Purchase Receipt", made.receipt);
 		from_menu("Create", "Make Stock Entry");
@@ -671,18 +774,138 @@ context("The standard flow, through the screens of each job", { retries: 0 }, ()
 				expect(row.batch_no, row.item_code).to.equal(made.received_lots[row.item_code]);
 			})
 		);
+		expect_refusal(/is Quarantine and cannot leave/);
+		primary_action().should("contain", "Save").click();
+		refused_with(/is Quarantine and cannot leave .* only an Approved lot can be issued/);
+		cy.window().should((win) => expect(current(win).__islocal, "nothing was saved").to.be.ok);
+		no_problems("Stores is refused the move");
+	});
+
+	it("[URS-PLT-007] [URS-QC-001] QC verifies the supplier certificates on the receipt; QA cannot release before that", () => {
+		sign_in("QA Manager");
+		new_form("Lot Release");
+		cy.then(() => fill("batch", Object.values(made.received_lots)[0], "Link"));
 		save();
-		submit();
+		cy.contains(FORM, "certificate of this lot is not verified yet").should("be.visible");
+		expect_refusal(/no accepted incoming inspection/);
+		sign("Release", "too early");
+		refused_with(/no accepted incoming inspection/);
+		cy.window().should((win) => expect(current(win).docstatus).to.equal(0));
 		cy.window().then((win) => {
-			made.transfer = current(win).name;
+			made.early_release = current(win).name;
 		});
-		cy.then(() => lots_of("Stock Entry", made.transfer)).then((lots) =>
-			lots.forEach((lot) => {
-				expect(lot.batch_no).to.equal(made.received_lots[lot.item_code]);
-				expect(lot.to_store).to.equal(data.stores.approved);
+
+		sign_in("QC Inspector");
+		open_form("Purchase Receipt", made.receipt);
+		button("Verify Certificates").click();
+		open_dialog().should("contain", "Verify supplier certificates");
+		cy.get(".modal.show .btn-primary").contains("Verify").click();
+		settle();
+		cy.window().should((win) =>
+			current(win).items.forEach((row) => {
+				expect(row.mds_certificate_verified, row.item_code).to.equal(1);
+				expect(row.mds_certificate_verified_by, row.item_code).to.equal(
+					users["QC Inspector"]
+				);
 			})
 		);
+		offered("Verify Certificates", false);
+		no_problems("QC verifies the certificates");
+	});
 
+	it("[URS-PLT-007] [URS-QC-002] QC inspects each received lot against its template and submits the inspection", () => {
+		sign_in("QC Inspector");
+		made.inspections = {};
+		cy.then(() => {
+			for (const [item, lot] of Object.entries(made.received_lots)) {
+				new_form("Quality Inspection");
+				fill("inspection_type", "Incoming", "Select");
+				fill("reference_type", "Purchase Receipt", "Select");
+				fill("reference_name", made.receipt, "Link");
+				fill("item_code", item, "Link");
+				// The item's template brings its parameters as readings.
+				cy.window().should((win) =>
+					expect(
+						rows(win, "readings").map((row) => row.specification),
+						"readings from the template"
+					).to.deep.equal(["Appearance", "Dimension (mm)"])
+				);
+				fill("batch_no", lot, "Link");
+				fill("sample_size", 5);
+				fill_row("readings", 1, "reading_value", "Conforms");
+				fill_row("readings", 2, "reading_1", "10.00");
+				fill_row("readings", 2, "mds_instrument", data.instrument, "Link");
+				save();
+				cy.window().should((win) => expect(current(win).status).to.equal("Accepted"));
+				submit();
+				cy.window().then((win) => {
+					made.inspections[item] = current(win).name;
+				});
+			}
+		});
+		no_problems("QC inspects the lots");
+	});
+
+	it("[URS-PLT-007] [URS-STK-004] [URS-QC-003] QA releases each inspected lot with a signature; it is Approved in the approved store", () => {
+		sign_in("QA Manager");
+		made.decisions = {};
+		made.transfers = [];
+		cy.then(() => {
+			const first = Object.values(made.received_lots)[0];
+			for (const [item, lot] of Object.entries(made.received_lots)) {
+				if (lot === first) {
+					open_form("Lot Release", made.early_release);
+				} else {
+					new_form("Lot Release");
+					fill("batch", lot, "Link");
+					save();
+				}
+				cy.window().should((win) => {
+					expect(current(win).lot_status_before).to.equal("Quarantine");
+					expect(current(win).source_name).to.equal(made.receipt);
+				});
+				sign("Release", `Incoming inspection accepted (${item})`);
+				cy.window().should((win) => {
+					expect(current(win).docstatus).to.equal(1);
+					expect(current(win).decision).to.equal("Release");
+					expect(current(win).quality_inspection).to.equal(made.inspections[item]);
+					expect(current(win).stock_entry).to.be.ok;
+				});
+				cy.window().then((win) => {
+					made.decisions[item] = current(win).name;
+					made.transfers.push(current(win).stock_entry);
+				});
+				cy.contains(FORM, "Electronic signatures").should("be.visible");
+			}
+		});
+		cy.then(() => {
+			for (const lot of Object.values(made.received_lots)) {
+				cy.call("frappe.client.get_value", {
+					doctype: "Batch",
+					filters: { name: lot },
+					fieldname: ["mds_lot_status", "mds_status_set_by", "mds_lot_release"],
+				}).then(({ message }) => {
+					expect(message.mds_lot_status, lot).to.equal("Approved");
+					expect(message.mds_status_set_by, lot).to.equal(users["QA Manager"]);
+					expect(Object.values(made.decisions)).to.include(message.mds_lot_release);
+				});
+			}
+		});
+		cy.then(() =>
+			made.transfers.forEach((transfer) =>
+				lots_of("Stock Entry", transfer).then((lots) =>
+					lots.forEach((lot) => {
+						expect(lot.from_store).to.equal(data.stores.quarantine);
+						expect(lot.to_store).to.equal(data.stores.approved);
+					})
+				)
+			)
+		);
+		no_problems("QA releases the lots");
+	});
+
+	it("[URS-PLT-007] [URS-STK-003] Stores cannot move the released lots out of quarantine again, for none is left", () => {
+		sign_in("Stores");
 		// The same lots again: quarantine holds none of them any more.
 		open_form("Purchase Receipt", made.receipt);
 		from_menu("Create", "Make Stock Entry");
@@ -709,11 +932,11 @@ context("The standard flow, through the screens of each job", { retries: 0 }, ()
 			})
 		).then(({ message }) =>
 			expect(
-				[...new Set(message.map((entry) => entry.name))],
+				[...new Set(message.map((entry) => entry.name))].sort(),
 				"moves of these lots out of quarantine"
-			).to.deep.equal([made.transfer])
+			).to.deep.equal([...made.transfers].sort())
 		);
-		no_problems("Stores moves the lots");
+		no_problems("Stores cannot move the lots again");
 	});
 
 	it("[URS-PLT-007] [URS-STK-002] Production plans the work order on its routing and starts it; the lots that expire first are issued", () => {
@@ -725,7 +948,7 @@ context("The standard flow, through the screens of each job", { retries: 0 }, ()
 		fill("sales_order", made.sales_order, "Link");
 		fill("source_warehouse", data.stores.approved, "Link");
 		fill("wip_warehouse", data.stores.work_in_progress, "Link");
-		fill("fg_warehouse", data.stores.finished_goods, "Link");
+		fill("fg_warehouse", data.stores.quarantine, "Link"); // the finished lot waits there for QA
 		cy.window().should((win) =>
 			expect(
 				current(win).operations.map((row) => row.operation),
@@ -877,7 +1100,7 @@ context("The standard flow, through the screens of each job", { retries: 0 }, ()
 			const finished = lots.filter((lot) => lot.item_code === data.product);
 			expect(finished, "finished lots").to.have.length(1);
 			const [lot] = finished;
-			expect(lot.to_store).to.equal(data.stores.finished_goods);
+			expect(lot.to_store).to.equal(data.stores.quarantine);
 			expect(lot.qty).to.equal(data.quantity);
 			expect(lot.batch_no).to.be.ok.and.not.equal(data.lots_in_store[data.product]);
 			expect(lot.expiry_date, "expiry date").to.equal(made.expected_expiry);
@@ -888,6 +1111,28 @@ context("The standard flow, through the screens of each job", { retries: 0 }, ()
 			expect(order.produced_qty).to.equal(data.quantity);
 		});
 		no_problems("Production finishes");
+	});
+
+	it("[URS-PLT-007] [URS-STK-004] [URS-QC-004] QA releases the finished lot to the finished goods store with a signature", () => {
+		sign_in("QA Manager");
+		cy.then(() => open_form("Batch", made.finished_lot));
+		button("Decide Lot").click();
+		form_is("Lot Release", (doc) => doc.__islocal && doc.batch === made.finished_lot);
+		settle();
+		save();
+		sign("Release", "Final inspection accepted (browser test)");
+		cy.window().should((win) => expect(current(win).docstatus).to.equal(1));
+		cy.window().then((win) => {
+			made.finished_release = current(win).stock_entry;
+			lots_of("Stock Entry", made.finished_release).then((lots) =>
+				expect(
+					lots.map((lot) => [lot.batch_no, lot.from_store, lot.to_store])
+				).to.deep.equal([
+					[made.finished_lot, data.stores.quarantine, data.stores.finished_goods],
+				])
+			);
+		});
+		no_problems("QA releases the finished lot");
 	});
 
 	it("[URS-PLT-007] [URS-STK-002] Stores delivers the order; the lot delivered is the one just made, which expires first", () => {
@@ -1009,9 +1254,10 @@ context("The standard flow, through the screens of each job", { retries: 0 }, ()
 						"in",
 						[
 							made.receipt,
-							made.transfer,
+							...made.transfers,
 							made.work_order,
 							made.manufacture,
+							made.finished_release,
 							made.delivery,
 						],
 					],
@@ -1025,9 +1271,12 @@ context("The standard flow, through the screens of each job", { retries: 0 }, ()
 			);
 			expect(by).to.deep.equal({
 				[made.receipt]: users.Stores,
-				[made.transfer]: users.Stores,
+				...Object.fromEntries(
+					made.transfers.map((transfer) => [transfer, users["QA Manager"]])
+				),
 				[made.work_order]: users["Production Supervisor"],
 				[made.manufacture]: users["Production Supervisor"],
+				[made.finished_release]: users["QA Manager"],
 				[made.delivery]: users.Stores,
 			});
 		});

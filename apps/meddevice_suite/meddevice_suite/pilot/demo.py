@@ -23,6 +23,7 @@ import frappe
 from frappe import _
 
 from meddevice_suite.pilot import refuse_unless_pilot_site
+from meddevice_suite.pilot.inspection import ensure_inspection_masters, ensure_inspection_template
 from meddevice_suite.setup.roles import JOB_PROFILES
 
 DEMO = "(Demo)"
@@ -163,16 +164,19 @@ def load_demo_data() -> None:
 	for name in CUSTOMERS:
 		ensure("Customer", name, customer_name=name, customer_group="Commercial", territory="India")
 
+	ensure_inspection_masters(company)
 	for code, (name, unit, hsn, shelf_life, supplier, rate) in RAW_MATERIALS.items():
 		ensure_item(
-			code, name, "Raw Material", unit, hsn, shelf_life, company, store("Quarantine"), supplier=supplier
+			code, name, "Raw Material", unit, hsn, shelf_life, company, store("Stores"), supplier=supplier
 		)
 		ensure_price(code, "Standard Buying", rate)
+		ensure_inspection_template(code, "Raw Material")
 	for code, (name, hsn, rate, _line, _materials) in PRODUCTS.items():
 		ensure_item(
 			code, name, "Products", "Nos", hsn, PRODUCT_SHELF_LIFE_DAYS, company, store("Finished Goods")
 		)
 		ensure_price(code, "Standard Selling", rate)
+		ensure_inspection_template(code, "Products")
 
 	for line, steps in ROUTINGS.items():
 		for operation, workstation, _minutes in steps:
@@ -216,6 +220,15 @@ def ensure_item(
 	warehouse: str,
 	supplier: str | None = None,
 ) -> None:
+	if frappe.db.exists("Item", code):
+		# An item loaded before lot control defaulted to the quarantine store; its default is the
+		# approved store a release moves the lot to, so the loader corrects it.
+		item = frappe.get_doc("Item", code)
+		default = next((row for row in item.item_defaults if row.company == company), None)
+		if default and default.default_warehouse != warehouse:
+			default.default_warehouse = warehouse
+			item.save(ignore_permissions=True)  # demo loader
+		return
 	ensure(
 		"Item",
 		code,

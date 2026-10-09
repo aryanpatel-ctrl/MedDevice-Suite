@@ -16,7 +16,7 @@ from frappe.desk.doctype.desktop_icon.desktop_icon import get_desktop_icons
 from frappe.utils.password import update_password
 
 from meddevice_suite.setup.lookups import REVIEWED_CLOSED
-from meddevice_suite.setup.roles import CREATED_THROUGH_TRANSACTIONS, JOB_PROFILES, PERMISSIONS
+from meddevice_suite.setup.roles import JOB_PROFILES, PERMISSIONS, fills_in_by_hand
 from meddevice_suite.setup.site_flags import site_flag
 
 DOMAIN = "ui-tests.example.com"
@@ -129,11 +129,18 @@ def fillable_form(doctype: str) -> bool:
 	"""A record type with a new form of its own that the session user may create and fill in.
 
 	Left out: record types the desk offers no new form for ("User Cannot Create"), those the
-	system writes (logs: every field is read-only, for everyone), and those the user creates
-	only through transactions (roles.CREATED_THROUGH_TRANSACTIONS)."""
+	system writes (logs: every field is read-only, for everyone), and regulated record types
+	the user's roles create only through transactions or a service (roles.fills_in_by_hand)."""
 	meta = frappe.get_meta(doctype)
 	if meta.istable or meta.issingle or meta.in_create or not frappe.has_permission(doctype, "create"):
 		return False
 	if all(df.read_only for df in meta.fields if df.fieldtype not in frappe.model.no_value_fields):
 		return False
-	return doctype not in CREATED_THROUGH_TRANSACTIONS or bool(frappe.has_permission(doctype, "write"))
+	if doctype not in PERMISSIONS:
+		return True
+	roles = frappe.get_roles()
+	return any(
+		fills_in_by_hand(doctype, role, flags)
+		for role, flags in PERMISSIONS[doctype].items()
+		if role in roles
+	)

@@ -20,6 +20,9 @@ STOCK_SETTINGS = {
 	# A negative balance would break the traceability of every lot it touches.
 	"allow_negative_stock": 0,
 	"allow_negative_stock_for_batch": 0,
+	# D3: goods are received into quarantine first and the lot is inspected afterwards (module
+	# 16); ERPNext's own gate, an inspection before the receipt, stays off on every item.
+	"allow_to_make_quality_inspection_after_purchase_or_delivery": 1,
 }
 # ERPNext also lets single items and lots go negative, whatever the settings say.
 NEGATIVE_STOCK_SWITCH = {"Item": "allow_negative_stock", "Batch": "allow_negative_stock_for_batch"}

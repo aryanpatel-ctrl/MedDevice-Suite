@@ -318,6 +318,16 @@ SIDEBAR_SCOPE: dict[str, tuple[str, ...]] = {
 # (label, link_type, link_to).
 SIDEBAR_ADDITIONS: dict[str, tuple[tuple[str, str, str], ...]] = {
 	"Organization": (("Employee", "DocType", "Employee"),),  # employee master, module 9
+	# lot status and release (modules 16, 17)
+	"Stock": (
+		("Lot Release", "DocType", "Lot Release"),
+		("Lots Awaiting Release", "Report", "Lots Awaiting Release"),
+		("Stock by Lot Status", "Report", "Stock by Lot Status"),
+	),
+	"Quality": (
+		("Lot Release", "DocType", "Lot Release"),
+		("Lots Awaiting Release", "Report", "Lots Awaiting Release"),
+	),
 }
 
 
