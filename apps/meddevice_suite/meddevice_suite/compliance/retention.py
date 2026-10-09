@@ -42,6 +42,7 @@ RETENTION_SCHEDULE: dict[str, tuple[int, str, tuple[str, ...]]] = {
 			"Batch",
 			"Quality Inspection Template",
 			"Quality Inspection",
+			"Lot Release",
 			"Work Order",
 			"Job Card",
 			"Stock Entry",

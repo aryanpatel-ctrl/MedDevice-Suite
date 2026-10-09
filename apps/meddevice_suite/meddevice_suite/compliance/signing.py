@@ -28,6 +28,7 @@ class SignedAct:
 
 DOCUMENT_CONTROL = "meddevice_suite.qms.document_control"
 CHANGE_CONTROL = "meddevice_suite.qms.change_control"
+LOT_RELEASE = "meddevice_suite.lot_control.release"
 
 # (record type, act) -> the signed act. Each module adds the acts it signs.
 SIGNING_ACTIONS: dict[tuple[str, str], SignedAct] = {
@@ -46,6 +47,10 @@ SIGNING_ACTIONS: dict[tuple[str, str], SignedAct] = {
 	("Change Request", "Verify Not Effective"): SignedAct(
 		"Verified", f"{CHANGE_CONTROL}.verify_not_effective"
 	),
+	# Modules 16 and 17, the decision on a lot
+	("Lot Release", "Release"): SignedAct("Released", f"{LOT_RELEASE}.release"),
+	("Lot Release", "Reject"): SignedAct("Rejected", f"{LOT_RELEASE}.reject"),
+	("Lot Release", "Hold"): SignedAct("Approved", f"{LOT_RELEASE}.hold"),
 }
 
 

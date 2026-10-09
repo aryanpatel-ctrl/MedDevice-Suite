@@ -3,8 +3,8 @@ D3 "QC Approval / Rejection", D4 3.5 "Accept / Reject / Hold").
 
 Every lot is Quarantine, Approved, Rejected or Hold. A lot is born Quarantine,
 whether a supplier delivered it or a work order made it, and only QA moves it
-on, with a reason, through the service at the end of this module; nothing else
-may write the status, not the form, not the API (`guard_batch`).
+on, with a reason and an electronic signature, through a Lot Release (`release`);
+nothing else may write the status, not the form, not the API (`guard_batch`).
 
 Only an Approved lot may be issued, moved to an approved store, picked or
 delivered. The rule is enforced where every stock movement must pass, the
@@ -45,7 +45,13 @@ QUARANTINE, APPROVED, REJECTED, HOLD = "Quarantine", "Approved", "Rejected", "Ho
 STATUSES = (QUARANTINE, APPROVED, REJECTED, HOLD)
 # status -> the role of the store its stock is kept in; Approved stock is in any store without a role
 ROLE_FOR_STATUS = {QUARANTINE: stores.QUARANTINE, HOLD: stores.HOLD, REJECTED: stores.REJECTED}
-STATUS_FIELDS = (STATUS_FIELD, "mds_status_set_by", "mds_status_set_at", "mds_status_reason")
+STATUS_FIELDS = (
+	STATUS_FIELD,
+	"mds_status_set_by",
+	"mds_status_set_at",
+	"mds_status_reason",
+	"mds_lot_release",
+)
 TRANSFER_FIELD = "mds_lot_release_transfer"
 MAX_REASON = 1000
 PRECISION = 6
@@ -100,6 +106,15 @@ CUSTOM_FIELDS = {
 			"read_only": 1,
 			"no_copy": 1,
 			"insert_after": "mds_status_set_at",
+		},
+		{
+			"fieldname": "mds_lot_release",
+			"label": "Latest Decision",
+			"fieldtype": "Link",
+			"options": "Lot Release",
+			"read_only": 1,
+			"no_copy": 1,
+			"insert_after": "mds_status_reason",
 		},
 	],
 	"Stock Entry": [
@@ -168,7 +183,7 @@ def status_of(lots: Iterable[str]) -> dict[str, str]:
 	return {name: status or QUARANTINE for name, status in rows}
 
 
-def set_status(lot: str, status: str, reason: str) -> Document:
+def set_status(lot: str, status: str, reason: str, release: str | None = None) -> Document:
 	"""The only writer of a lot's status: called by the release service after its own checks."""
 	if status not in STATUSES:
 		frappe.throw(_("Unknown lot status: {0}").format(status))
@@ -180,6 +195,7 @@ def set_status(lot: str, status: str, reason: str) -> Document:
 			"mds_status_set_by": frappe.session.user,
 			"mds_status_set_at": now_datetime(),
 			"mds_status_reason": clean_reason(reason),
+			"mds_lot_release": release,
 		}
 	)
 	doc.flags.lot_control = True
@@ -377,57 +393,7 @@ def guard_purchase_receipt(doc: Document, method: str | None = None) -> None:
 			)
 
 
-# --- The release service ------------------------------------------------------------------------
-
-
-def require_qa() -> None:
-	if not is_qa():
-		frappe.throw(_("Only QA can release, hold or reject a lot."), frappe.PermissionError)
-
-
-def release(lot: str, reason: str, to_store: str | None = None) -> Document | None:
-	"""Approve the lot and move its stock to the approved store (the item's default store of
-	the company unless `to_store` names one). Returns the transfer posted, if any stock moved.
-	Signed through the Lot Release record of module 16; until then QA calls it directly."""
-	require_qa()
-	batch = locked(lot)
-	if batch.get(STATUS_FIELD) not in (QUARANTINE, HOLD):
-		frappe.throw(
-			_("Lot {0} is {1}; only a Quarantine or Hold lot is released.").format(
-				lot, _(batch.get(STATUS_FIELD))
-			)
-		)
-	moved = move_to_role(batch, None, reason, to_store)
-	set_status(lot, APPROVED, reason)
-	return moved
-
-
-def hold(lot: str, reason: str) -> Document | None:
-	require_qa()
-	batch = locked(lot)
-	if batch.get(STATUS_FIELD) not in (QUARANTINE, APPROVED):
-		frappe.throw(
-			_("Lot {0} is {1}; only a Quarantine or Approved lot is put on hold.").format(
-				lot, _(batch.get(STATUS_FIELD))
-			)
-		)
-	moved = move_to_role(batch, stores.HOLD, reason)
-	set_status(lot, HOLD, reason)
-	return moved
-
-
-def reject(lot: str, reason: str) -> Document | None:
-	require_qa()
-	batch = locked(lot)
-	if batch.get(STATUS_FIELD) not in (QUARANTINE, HOLD):
-		frappe.throw(
-			_("Lot {0} is {1}; only a Quarantine or Hold lot is rejected.").format(
-				lot, _(batch.get(STATUS_FIELD))
-			)
-		)
-	moved = move_to_role(batch, stores.REJECTED, reason)
-	set_status(lot, REJECTED, reason)
-	return moved
+# --- Moving a lot between stores (for the signed decision in `release`) ---------------
 
 
 def locked(lot: str) -> Document:
@@ -437,12 +403,10 @@ def locked(lot: str) -> Document:
 	return frappe.get_doc("Batch", lot)
 
 
-def move_to_role(
-	batch: Document, role: str | None, reason: str, to_store: str | None = None
-) -> Document | None:
-	"""Move all the lot's stock into the store of `role` (None: the approved store), one
+def move_to_role(batch: Document, role: str | None, reason: str) -> Document | None:
+	"""Move all the lot's stock into the store of `role` (None: the item's approved store), one
 	transfer for every store that holds some; nothing is posted when it is already there."""
-	holdings = [h for h in get_batch_qty(batch_no=batch.name) if flt(h.get("qty"), PRECISION) > 0]
+	holdings = holdings_of(batch.name)
 	if not holdings:
 		return None
 	companies = {frappe.get_cached_value("Warehouse", h["warehouse"], "company") for h in holdings}
@@ -451,9 +415,7 @@ def move_to_role(
 			_("Lot {0} has stock in more than one company; move it by hand first.").format(batch.name)
 		)
 	company = companies.pop()
-	target = to_store or (stores.store_for(role, company) if role else approved_store(batch.item, company))
-	if stores.role_of(target) != role:
-		frappe.throw(_("{0} is not a {1} store.").format(target, _(role or "approved")))
+	target = stores.store_for(role, company) if role else approved_store(batch.item, company)
 	rows = [h for h in holdings if h["warehouse"] != target]
 	if not rows:
 		return None
@@ -487,6 +449,11 @@ def move_to_role(
 	finally:
 		frappe.flags.lot_release_transfer = None
 	return transfer
+
+
+def holdings_of(lot: str) -> list[dict]:
+	"""Where the lot's stock is: [{warehouse, qty}] for every store holding some."""
+	return [h for h in get_batch_qty(batch_no=lot) if flt(h.get("qty"), PRECISION) > 0]
 
 
 def approved_store(item: str, company: str) -> str:
@@ -551,12 +518,3 @@ def initial_status(holdings: Iterable[frappe._dict]) -> str:
 		if role in roles:
 			return status
 	return APPROVED
-
-
-@frappe.whitelist(methods=["POST"])
-def release_lot(lot: str, reason: str) -> str | None:
-	"""QA releases a lot from the desk. Interim entry until the signed Lot Release record of
-	module 16 replaces it; it checks the same rules and is audited the same way."""
-	frappe.has_permission("Batch", "read", doc=lot, throw=True)
-	moved = release(lot, reason)
-	return moved.name if moved else None

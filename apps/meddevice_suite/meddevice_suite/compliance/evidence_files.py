@@ -22,6 +22,8 @@ EVIDENCE: tuple[tuple[str, str, dict], ...] = (
 	# Once its author has signed and the file is fingerprinted.
 	("Document Revision", "file", {"file_sha256": ["is", "set"]}),
 	("Record Archive", "archive_file", {}),
+	# A supplier certificate, once the QC Inspector has verified it (module 16).
+	("Purchase Receipt Item", "mds_certificate", {"mds_certificate_verified": 1}),
 )
 # What identifies a file and where it is kept.
 IDENTITY = ("file_url", "is_private", "file_name", "content_hash", "attached_to_doctype", "attached_to_name")

@@ -48,6 +48,8 @@ SYSTEM_MAINTAINED: dict[str, tuple[str, ...]] = {
 		"effectiveness_due_on",
 		"effectiveness_alerted",
 	),
+	# The move and the return the decision causes are recorded after the signature.
+	"Lot Release": ("docstatus", "stock_entry", "supplier_return"),
 	"Change Request Action": (
 		"done",
 		"done_on",

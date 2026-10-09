@@ -23,6 +23,7 @@ import frappe
 from frappe import _
 
 from meddevice_suite.pilot import refuse_unless_pilot_site
+from meddevice_suite.pilot.inspection import ensure_inspection_masters, ensure_inspection_template
 from meddevice_suite.setup.roles import JOB_PROFILES
 
 DEMO = "(Demo)"
@@ -163,16 +164,19 @@ def load_demo_data() -> None:
 	for name in CUSTOMERS:
 		ensure("Customer", name, customer_name=name, customer_group="Commercial", territory="India")
 
+	ensure_inspection_masters(company)
 	for code, (name, unit, hsn, shelf_life, supplier, rate) in RAW_MATERIALS.items():
 		ensure_item(
 			code, name, "Raw Material", unit, hsn, shelf_life, company, store("Stores"), supplier=supplier
 		)
 		ensure_price(code, "Standard Buying", rate)
+		ensure_inspection_template(code, "Raw Material")
 	for code, (name, hsn, rate, _line, _materials) in PRODUCTS.items():
 		ensure_item(
 			code, name, "Products", "Nos", hsn, PRODUCT_SHELF_LIFE_DAYS, company, store("Finished Goods")
 		)
 		ensure_price(code, "Standard Selling", rate)
+		ensure_inspection_template(code, "Products")
 
 	for line, steps in ROUTINGS.items():
 		for operation, workstation, _minutes in steps:

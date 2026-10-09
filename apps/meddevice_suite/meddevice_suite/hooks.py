@@ -69,7 +69,14 @@ doc_events = {
 	"Delivery Note": {"validate": "meddevice_suite.lot_control.lot_status.guard_delivery_note"},
 	"Pick List": {"validate": "meddevice_suite.lot_control.lot_status.guard_pick_list"},
 	"Work Order": {"validate": "meddevice_suite.lot_control.lot_status.guard_work_order"},
-	"Purchase Receipt": {"validate": "meddevice_suite.lot_control.lot_status.guard_purchase_receipt"},
+	"Purchase Receipt": {
+		"validate": [
+			"meddevice_suite.lot_control.lot_status.guard_purchase_receipt",
+			"meddevice_suite.lot_control.receipt.protect_certificate",
+		],
+		"before_update_after_submit": "meddevice_suite.lot_control.receipt.protect_certificate",
+	},
+	"Quality Inspection": {"validate": "meddevice_suite.lot_control.receipt.guard_incoming_inspection"},
 	"Item": {"validate": "meddevice_suite.setup.stock.refuse_negative_stock"},
 	"Stock Settings": {"validate": "meddevice_suite.setup.stock.protect_stock_settings"},
 	"Log Settings": {"validate": "meddevice_suite.compliance.retention.protect_login_history"},
