@@ -751,7 +751,7 @@ class TestWhereALotCameFrom(ReleaseTestCase):
 		amended.submit()
 		self.assertEqual(receipt_line_of(lot).receipt, amended.name)
 
-	def count_of(self, lines: list[tuple[str, float]]) -> Document:
+	def count_of(self, lines: list[tuple[str, float]], rate: float = 10) -> Document:
 		"""Stores' count of the lots in the approved store, as ERPNext's stock reconciliation."""
 		frappe.set_user("Administrator")
 		count = frappe.get_doc(
@@ -764,7 +764,7 @@ class TestWhereALotCameFrom(ReleaseTestCase):
 						"item_code": ITEM,
 						"warehouse": store("Stores"),
 						"qty": qty,
-						"valuation_rate": 10,
+						"valuation_rate": rate,
 						"batch_no": lot,
 						"use_serial_batch_fields": 1,
 					}
@@ -785,6 +785,8 @@ class TestWhereALotCameFrom(ReleaseTestCase):
 		held_lost, held_unchanged = qty_in(lost, store("Stores")), qty_in(unchanged, store("Stores"))
 		self.count_of([(lost, held_lost - 1), (unchanged, held_unchanged)])
 		self.assertEqual(qty_in(lost, store("Stores")), held_lost - 1)
+		self.assertEqual(qty_in(unchanged, store("Stores")), held_unchanged)
+		self.count_of([(unchanged, held_unchanged)], rate=12)  # a corrected value, same stock
 		self.assertEqual(qty_in(unchanged, store("Stores")), held_unchanged)
 
 	def test_no_stock_is_added_to_a_lot_already_in_stock(self):

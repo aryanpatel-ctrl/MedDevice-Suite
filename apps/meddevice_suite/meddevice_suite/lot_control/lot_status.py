@@ -349,24 +349,21 @@ def counted_back(sle: Document, lot: str) -> bool:
 		},
 		fields=["batch_no", "serial_and_batch_bundle", "actual_qty"],
 	)
-	taken = sum(abs(flt(row.actual_qty)) for row in taken_out if row.batch_no == lot) + sum(
-		abs(flt(qty))
-		for qty in frappe.get_all(
-			"Serial and Batch Entry",
-			filters={
-				"parent": [
-					"in",
-					[row.serial_and_batch_bundle for row in taken_out if row.serial_and_batch_bundle] or [""],
-				],
-				"batch_no": lot,
-			},
-			pluck="qty",
+	# Counted the way this entry names the lot: by its batch field or by its bundle, not both.
+	if sle.batch_no == lot:
+		taken = sum(abs(flt(row.actual_qty)) for row in taken_out if row.batch_no == lot)
+		put_back = abs(flt(sle.actual_qty))
+	else:
+		bundles = [row.serial_and_batch_bundle for row in taken_out if row.serial_and_batch_bundle]
+		taken = sum(
+			abs(flt(qty))
+			for qty in frappe.get_all(
+				"Serial and Batch Entry",
+				filters={"parent": ["in", bundles or [""]], "batch_no": lot},
+				pluck="qty",
+			)
 		)
-	)
-	put_back = (
-		abs(flt(sle.actual_qty))
-		if sle.batch_no == lot
-		else sum(
+		put_back = sum(
 			abs(flt(qty))
 			for qty in frappe.get_all(
 				"Serial and Batch Entry",
@@ -374,7 +371,6 @@ def counted_back(sle: Document, lot: str) -> bool:
 				pluck="qty",
 			)
 		)
-	)
 	return flt(put_back, PRECISION) <= flt(taken, PRECISION)
 
 
