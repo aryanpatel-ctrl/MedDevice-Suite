@@ -185,7 +185,7 @@ The pilot's sample loader leaves one quotation (FC-3W-SIL-18, 150) awaiting pric
 | --- | --- |
 | Workflow records | `Workflow` *Quotation Price Approval* (Quotation), *Purchase Order Approval* (Purchase Order); Workflow States Draft, Awaiting Price Approval, Awaiting Approval, Approved, Cancelled; Workflow Action Masters Send for Price Approval, Send for Approval, Approve, Return for Revision, Cancel; state field `workflow_state` |
 | Declaration / apply | `setup/workflows.py`: `WORKFLOWS`, `STATE_DEFAULTS`, `TRANSITION_DEFAULTS`, `apply_workflows()` ← `setup/install.py` `apply_configuration()`; `declared_workflow`, `approves`, `sync_workflow`, `as_declared`, `stored`, `protect` |
-| Enforcement | `compliance/approvals.py`: `on_submit`, `validate`, `before_update_after_submit`, `approved_terms`, `APPROVED_TOTALS`, `APPROVED_ITEM_FIELDS`, `set_up_by_code` |
+| Enforcement | `compliance/approvals.py`: `on_submit`, `validate`, `before_update_after_submit`, `approved_terms`, `APPROVED_TOTALS`, `APPROVED_ITEM_FIELDS`, `APPROVED_TAX_FIELDS`, `set_up_by_code` |
 | Hooks (`hooks.py`) | `doc_events["*"]`: `validate` → `approvals.validate`; `on_submit` → `approvals.on_submit`; `before_update_after_submit` → `approvals.before_update_after_submit` (before the audit reason hook, so the approval refusal comes first). `Workflow`: `before_validate`, `on_trash` → `setup.workflows.protect`. `Notification`: `before_validate`, `on_trash` → `alerts.protect` |
 | Permissions (module 47) | Quotation: Sales User EDIT + cancel + amend, Sales Manager APPROVE; Purchase Order: Purchase User EDIT + amend, Purchase Manager APPROVE |
 | Alerts | `compliance/notification/quotation_awaiting_price_approval/`, `purchase_order_awaiting_approval/`, `quotation_price_approval_decided/`, `purchase_order_approval_decided/` (event Value Change on `workflow_state`, channel System Notification); registered in `alerts.ALERTS`, re-imported and enabled by `apply_alerts()` |
@@ -201,7 +201,7 @@ The pilot's sample loader leaves one quotation (FC-3W-SIL-18, 150) awaiting pric
 
 **Potential / unverified:**
 - The approver may edit a record awaiting approval and then approve it (section 2.3): the "four-eyes" check is on the requester, not on the approver's own correction. Audited, allowed by design; the client has not been asked.
-- `approved_terms` compares the listed item fields and three totals; a change to taxes or a discount that leaves `grand_total`, `net_total` and `total_qty` unchanged (unlikely in practice) would not be caught. No test.
+- Fixed 2026-10-10: `approved_terms` also compares the tax rows (`APPROVED_TAX_FIELDS`) and the discount fields, so a tax or discount change that leaves the totals unchanged is refused (`test_an_approved_quotation_keeps_its_taxes_even_when_the_totals_stand`); the refusal reads *…its items, quantities, prices, taxes and discounts cannot change.*
 - A draft quotation can be printed by Sales before approval (print flag); no draft watermark verified.
 - `Quotation Price Approval Decided` fires on *Draft after creation* (return for revision) by the condition `doc.modified != doc.creation`; a draft saved for the first time right after creation is not alerted (`test_creating_a_record_alerts_nobody`), but a requester who saves a never-sent draft a second time is not alerted either because the state did not change (Value Change on `workflow_state`). Behaviour as intended; edge of the condition not separately tested.
 - Email alerts depend on the mail server (module 51); bell only until then.

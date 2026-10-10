@@ -69,7 +69,7 @@ On screen, verification is the record's **View › Verify Integrity** button (mo
 
 On every regulated record's form (`signing.onload`, hooked on `*` onload), anyone who may open the record sees the dashboard section **Electronic signatures** with columns **Meaning**, **Signed by**, **Date and time**, **Act** (act, then ` · reason` when given), oldest first. Non-regulated record types and records without signatures show nothing.
 
-For printouts the Jinja method `signatures_for_print(doc)` is registered in `hooks.py`; the print format **Controlled Copy** (`qms/print_format/controlled_copy/`) uses it. Other print formats show signatures only if they call it (see 2.7).
+For printouts the Jinja method `signatures_for_print(doc)` is registered in `hooks.py`; the print formats **Controlled Copy** (`qms/print_format/controlled_copy/`) and, since 2026-10-10, **Lot Release (Signed)**, **Supplier Approval (Signed)** and **Change Request (Signed)** (each the default print format of its record type) use it. Other print formats show signatures only if they call it.
 
 ### 2.5 Permanence (URS-CMP-005)
 
@@ -89,7 +89,7 @@ For printouts the Jinja method `signatures_for_print(doc)` is registered in `hoo
 
 ### 2.7 What is intended but not implemented
 
-- **Printouts (URS-CMP-003):** only print formats that call `signatures_for_print` show signatures; on 2026-10-10 that is *Controlled Copy* for Document Revision. Standard prints of Lot Release, Supplier Approval and Change Request do not show their signatures (no print format of theirs calls it). Partial.
+- **Printouts (URS-CMP-003):** fixed 2026-10-10 — Lot Release, Supplier Approval and Change Request now print by default with their signatures (generic signed print format: fields, child tables, the **Electronic signatures** table). Only print formats that call `signatures_for_print` show signatures; Frappe's *Standard* format stays selectable and shows none.
 - **Guest** is listed as a shared account and refused by the same check as Administrator, but no test signs as Guest (Guest cannot open regulated records anyway).
 - A lockout started by signing failures also blocks login, and vice versa (one counter): by design, not configurable.
 - Signatures are shown per record; there is no signer-centred report beyond the Electronic Signature list filtered by **Signed By**.
@@ -107,7 +107,7 @@ For printouts the Jinja method `signatures_for_print(doc)` is registered in `hoo
 | C6 | URS-CMP-006: shared accounts refused; signer needs the act's permission on the record | `SHARED_ACCOUNTS`, `doc.check_permission(permission)` | `TestSignerIdentity`: `test_administrator_cannot_sign`, `test_signer_needs_permission_on_the_record`; `test_signing…test_someone_who_cannot_open_the_record_cannot_sign_it` |
 | C7 | URS-CMP-030: sign from the record in a dialog naming act and meaning, asking the password; only declared acts; only by someone who may open the record | `signing.sign_action` (POST), `signing_actions`, `esign.js` dialog | `TestSigningDialog` (7 tests incl. `test_signing_is_accepted_only_as_a_post_request`, `test_the_dialog_is_offered_only_the_declared_acts`); `qms/test_document_control.TestReviewAndApproval`; Cypress `document_control.js` "[URS-CMP-030] [URS-QMS-002] the author signs from the form; only the author is offered it" and "[URS-CMP-030] [URS-QMS-002] the reviewer signs, then QA approves; nobody can just submit" |
 
-**Partial:** C3 on printouts (only Controlled Copy; section 2.7).
+**Resolved 2026-10-10:** C3 on printouts (signed print formats for Lot Release, Supplier Approval and Change Request; tests `test_the_printout_shows_*`).
 **Ambiguous:** URS-CMP-002 says "optional reason" while several acts make it required in the dialog — the service accepts both, the act decides; not a conflict but worth confirming with the client. URS-CMP-001 "locked account cannot sign": the lockout is Frappe's login lockout (System Settings), so a site with *Allow Consecutive Login Attempts* = 0 (unlimited) never locks; the pilot's setting was not checked (section 7).
 **Not covered by this module:** which acts need a signature (each module's requirement); who may take each act (module 47 roles).
 
@@ -162,7 +162,7 @@ Actual result: ____  Pass/Fail: ____  Cleanup: discard the test site or restore 
 ### ES-07 Signatures on the printout (C3)
 Role: QA Manager. Preconditions: an effective Document Revision.
 1. Open the revision › **Print**, format **Controlled Copy**. Expected: the printout carries *CONTROLLED COPY* and the signatures (meaning, name, date/time) of author, reviewer and approver.
-2. Open a submitted **Supplier Approval** › **Print** (Standard). Expected (current behaviour, gap of section 2.7): no signatures on the standard printout.
+2. Open a submitted **Supplier Approval** › **Print** (default format *Supplier Approval (Signed)*). Expected: the printout carries the **Electronic signatures** table (meaning, act, signer, date and time, reason); a draft prints *DRAFT – not signed*.
 Actual result: ____  Pass/Fail: ____
 
 ### ES-08 Lists, filters and permissions of the Electronic Signature list
@@ -225,12 +225,12 @@ Cross-module data: Electronic Signature (new), Activity Log (failed signings), t
 **Confirmed and fixed (all with tests, from the git history of `compliance/`):** a wrong password signed the user out (Frappe's `AuthenticationError`; now `SigningRefused`); failed signings were lost with the rolled-back request (now queued to Activity Log); renaming a record broke its chain (now `document_name_at_signing` is hashed, not `reference_name`); a reason with `<`/`>` was stored altered after fingerprinting (now refused); a disabled account with a live session could still sign (now refused); signatures were slow at scale (indexes added, `b1ab3c75`); a second signing of the same record could chain to a stale head (now `FOR UPDATE` and link-based head, `15970df7`).
 
 **Potential (not confirmed as defects):**
-- A site whose *Allow Consecutive Login Attempts* is 0 never locks; the requirement assumes the lockout exists. Verify the pilot's System Settings (not checked here).
+- Fixed 2026-10-10: a site that allows unlimited attempts, or has no lockout time, is given the standard limit (5 attempts, 15 minutes) by `apply_lockout`, run on install and every migrate; a limit already set stands (`test_the_site_locks_an_account_after_wrong_passwords`).
 - `SYSTEM_MAINTAINED` is a hand-kept list: a module that later adds a system-set field to a signed record type without listing it makes `is_unchanged_since` report a change after every status move. `verify_signatures` (the chain) is unaffected. Reviewers should re-check the list when a signed DocType gains fields.
 - Guest is refused by the same `SHARED_ACCOUNTS` check but has no dedicated test.
 - The dialog's `__(meaning)` and act labels are translatable; the fingerprint uses the untranslated values, so language settings cannot break verification (by design, no test for a translated session).
 
-**Unverified in this review:** behaviour under a real lockout period in the browser (ES-02 step 5); printouts other than Controlled Copy (gap, section 2.7); the exact Frappe code path that locks an account (relied on through Frappe's tracker and covered by tests).
+**Unverified in this review:** behaviour under a real lockout period in the browser (ES-02 step 5); the exact Frappe code path that locks an account (relied on through Frappe's tracker and covered by tests).
 
 ## 8. Test results and verification summary
 
