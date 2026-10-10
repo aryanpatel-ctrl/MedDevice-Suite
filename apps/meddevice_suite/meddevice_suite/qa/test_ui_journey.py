@@ -65,6 +65,18 @@ class TestBrowserJourney(IntegrationTestCase):
 		with self.assertRaises(frappe.PermissionError):
 			prepare_journey(self.password)
 
+	def test_preparing_keeps_the_callers_session(self):
+		"""The items are approved as the run's QA user inside the browser's request; the browser's own
+		session (its sid and data) must come out of it untouched, or the browser is signed out."""
+		for item in journey_items():  # approved afresh, so the QA user signs in this request
+			frappe.db.set_value("Item", item, "mds_approval_status", "Draft")
+		frappe.local.session.sid = "a-browser-session-id"
+		frappe.local.session.data = frappe._dict(kept=1)
+		prepare_journey(self.password)
+		self.assertEqual(frappe.session.user, "Administrator")
+		self.assertEqual(frappe.local.session.sid, "a-browser-session-id")
+		self.assertEqual(frappe.local.session.data.get("kept"), 1)
+
 	def test_makes_the_masters_the_journey_needs(self):
 		journey = prepare_journey(self.password)
 
