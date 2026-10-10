@@ -90,7 +90,11 @@ On migrate every existing item is set to **Draft**; nothing is approved by migra
 | C13 | Desk banner, button, signing | `master_data.js`, `item_onload` | `TestForm.*`; browser `cypress/integration/item_master.js` |
 | C14 | The standard flow runs with approved items | loaders | `pilot/test_standard_flow.py`, `cypress/integration/standard_flow.js` |
 
-**Decisions taken under the DFD (2026-10-10), client to confirm:** device class and storage condition are kept on the item (D3 regulatory data); a template is never approved, its variants are; Equipment added as a type for asset items; existing items are not grandfathered.
+**Decisions (10 October 2026, recorded in the master plan, section 16):**
+- Device class and storage condition are kept on the item: MDR 2017 labelling requires the storage conditions on the label and the device class decides the licence; DFD D3 holds the item's regulatory data.
+- A template is never approved; each variant (each size) is approved on its own with its own GTIN, specification and BOM: GS1 gives each variant its own GTIN and label.
+- Item type *Equipment* for the items assets are made of: ERPNext needs an item behind each asset (module 8).
+- Items held before this module are not approved by migration; QA approves each one with a signature at go-live: an approval is a person's signed act (21 CFR 11.50, 11.70; ISO 13485 4.2.4). If the client loads several hundred items, a screen where QA signs each of a selected list in one pass can be added; each item keeps its own signature.
 
 ## 4. Step-by-step browser testing guide
 
@@ -191,4 +195,4 @@ Filled in from the runs of 2026-10-10 (see the pull request for the CI run).
 | Locked from approval; change only under change request; nothing lost | Verified (automated) |
 | Pilot and journey items approved through the signed act | Verified (automated) |
 | Manual IM-01…IM-06 | **Not tested** |
-| Client confirmation of the DFD-based decisions (section 3) | **Open** |
+| Decisions on device data, variants, Equipment type, existing items (section 3) | Decided 2026-10-10, recorded in the master plan |

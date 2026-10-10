@@ -890,14 +890,14 @@ status = "implemented"
 id = "URS-MST-003"
 module = 1
 title = "An item is set up in draft and approved by QA with an electronic signature before it is used; until then every record that puts it to use (a material request, request for quotation, supplier quotation, order, quotation, receipt, stock entry or count, lot, bill of materials, work order, job card, inspection, delivery, invoice, pick list, packing slip, product bundle, alternative or asset) is refused for it, from the desk or the API; the approval is given only by the signed act, a variant is approved on its own, and from approval the item's controlled fields change only under an approved change request."
-source = "D2 All masters are version controlled and linked with Document Control; master plan section 3 (masters approved before use); DFD D3 Item / BOM / Routing Master; ISO 13485 4.2.4, 7.5.1; 21 CFR 11.10(g); decided 2026-10-10 under the client's instruction to follow the DFD"
+source = "D2 All masters are version controlled and linked with Document Control; master plan section 3 (masters approved before use); DFD D3 Item / BOM / Routing Master; ISO 13485 4.2.4, 7.5.1; 21 CFR 11.10(g); decided 2026-10-10 under the client's instruction to follow the DFD: each variant approved on its own (GS1, one GTIN per variant); items held before the module approved by QA one by one, never by migration (21 CFR 11.50)"
 status = "planned"
 
 [[requirement]]
 id = "URS-MST-004"
 module = 1
 title = "Every item states its type (raw material, packaging, sub-assembly, finished good, consumable, spare part or equipment) and keeps it once approved; a raw material, packaging item, sub-assembly or finished good is lot-tracked with a shelf life, an expiry date on every lot and its storage condition, and QA cannot approve it otherwise."
-source = "D2 Inventory by Batch (Lot Control); DFD 3.3 Internal Batch Creation, D4; master plan section 3 (batch-tracked items cannot be received, issued or sold without a batch); ISO 13485 7.5.8, 7.5.9; item types from the master-data template of 2026-10-09"
+source = "D2 Inventory by Batch (Lot Control); DFD 3.3 Internal Batch Creation, D4; master plan section 3 (batch-tracked items cannot be received, issued or sold without a batch); ISO 13485 7.5.8, 7.5.9; item types from the master-data template of 2026-10-09, with Equipment for the items behind assets (decided 2026-10-10)"
 status = "planned"
 
 [[requirement]]
