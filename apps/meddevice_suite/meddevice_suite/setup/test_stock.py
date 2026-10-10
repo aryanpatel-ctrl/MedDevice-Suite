@@ -1,14 +1,19 @@
 import frappe
 from erpnext.stock.stock_ledger import NegativeStockError
 from frappe.tests import IntegrationTestCase
+from frappe.utils import now_datetime
 
+from meddevice_suite.master_data import item_master
 from meddevice_suite.qa import verifies
 from meddevice_suite.setup.install import apply_configuration
 from meddevice_suite.setup.stock import STOCK_SETTINGS
 
 
 def stock_item(code: str, **values) -> str:
+	"""An item for another module's tests, in draft like any new item (module 1); a record that
+	uses it approves it first (approve_for_test)."""
 	if not frappe.db.exists("Item", code):
+		group = values.get("item_group", "Raw Material")
 		frappe.get_doc(
 			{
 				"doctype": "Item",
@@ -17,10 +22,31 @@ def stock_item(code: str, **values) -> str:
 				"item_group": "Raw Material",
 				"stock_uom": "Nos",
 				"gst_hsn_code": "39269099",
+				item_master.ITEM_TYPE: item_master.FINISHED_GOOD
+				if group == "Products"
+				else item_master.RAW_MATERIAL,
+				item_master.STORAGE_CONDITION: "Below 30 °C (test)",
 				**values,
 			}
 		).insert()
 	return code
+
+
+def approve_for_test(*codes: str) -> None:
+	"""QA's approval of items that other modules' tests use (module 1), recorded as the signed act
+	records it, so that those tests need not set up everything an approval checks. The signed act
+	itself, with its checks and its signature, is tested in master_data/test_item_master.py."""
+	for code in codes:
+		if code and not item_master.approved(code):
+			frappe.db.set_value(  # test fixture only
+				"Item",
+				code,
+				{
+					item_master.APPROVAL_STATUS: item_master.APPROVED,
+					item_master.APPROVED_BY: "Administrator",
+					item_master.APPROVED_AT: now_datetime(),
+				},
+			)
 
 
 class StockSettingsTestCase(IntegrationTestCase):
@@ -63,6 +89,7 @@ class TestStockNeverGoesNegative(StockSettingsTestCase):
 		company = frappe.defaults.get_global_default("company")
 		warehouse = frappe.db.get_value("Warehouse", {"company": company, "warehouse_name": "Stores"})
 		code = stock_item("MDS-STK-NEGATIVE-ITEM", valuation_rate=10)
+		approve_for_test(code)  # module 1: only approved items move
 
 		issue = frappe.get_doc(
 			{

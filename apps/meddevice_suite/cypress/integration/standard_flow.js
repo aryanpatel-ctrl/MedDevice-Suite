@@ -41,6 +41,25 @@ const run = { problems: [], expected: [] };
 // with no one signed in, be refused, and be counted against this step.
 function sign_in(job) {
 	const email = users[job];
+	leave_page();
+	cy.session(["journey", email], () => {
+		cy.request({
+			url: "/api/method/login",
+			method: "POST",
+			body: { usr: email, pwd: password },
+			log: false,
+		});
+	});
+}
+
+// The Administrator, as reviewer: the page of the job before is left first, as in sign_in, so
+// that its last requests cannot end the new session.
+function sign_in_as_administrator() {
+	leave_page();
+	cy.login();
+}
+
+function leave_page() {
 	// A form with unsaved changes asks "Leave site?" in a native dialog, which a person answers
 	// and which would freeze the test; the person leaves, so the test does too.
 	cy.window({ log: false }).then((win) => {
@@ -51,14 +70,6 @@ function sign_in(job) {
 		win.location.replace("about:blank");
 	});
 	cy.location("href", { log: false }).should("eq", "about:blank");
-	cy.session(["journey", email], () => {
-		cy.request({
-			url: "/api/method/login",
-			method: "POST",
-			body: { usr: email, pwd: password },
-			log: false,
-		});
-	});
 }
 
 // --- Watching for problems ----------------------------------------------------------------
@@ -540,7 +551,8 @@ context("The standard flow, through the screens of each job", { retries: 0 }, ()
 			password = message.password;
 			users = message.users;
 		});
-		cy.call(`${JOURNEY}.prepare_journey`).then(({ message }) => {
+		// The run's QA Manager approves the journey's items with a signature (module 1).
+		cy.then(() => cy.call(`${JOURNEY}.prepare_journey`, { password })).then(({ message }) => {
 			data = message;
 		});
 	});
@@ -1270,8 +1282,9 @@ context("The standard flow, through the screens of each job", { retries: 0 }, ()
 		no_problems("Management cancels the order");
 
 		// Management may not read the audit trail; a reviewer checks it.
-		cy.login();
+		sign_in_as_administrator();
 		cy.visit("/desk");
+		cy.window().its("frappe.session.user").should("eq", "Administrator");
 		cy.then(() =>
 			cy.call("frappe.client.get_list", {
 				doctype: "Audit Event",

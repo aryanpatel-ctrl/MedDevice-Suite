@@ -54,6 +54,10 @@ def apply_lockout() -> None:
 
 
 # record type -> fields the system maintains after signing, outside what a signature binds.
+# Record types whose signature binds part of the record, not all of it: dotted path of
+# content(doc) -> dict. An item's approval binds what QA approved (master_data.item_master).
+SIGNED_CONTENT: dict[str, str] = {"Item": "meddevice_suite.master_data.item_master.signed_content"}
+
 SYSTEM_MAINTAINED: dict[str, tuple[str, ...]] = {
 	"Document Revision": ("status", "docstatus", "superseded_by"),
 	"Controlled Document": ("status", "current_revision", "effective_since", "next_review_date"),
@@ -181,6 +185,8 @@ def last_signature(doctype: str, name: str) -> frappe._dict | None:
 
 def record_fingerprint(doc: Document) -> str:
 	"""SHA-256 of the content a signature binds, child rows included (see the module docstring)."""
+	if doc.doctype in SIGNED_CONTENT:
+		return sha256(frappe.get_attr(SIGNED_CONTENT[doc.doctype])(doc))
 	content = record_content(doc)
 	for field in ("name", *SYSTEM_MAINTAINED.get(doc.doctype, ())):
 		content.pop(field, None)

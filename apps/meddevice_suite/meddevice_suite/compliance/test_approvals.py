@@ -33,8 +33,12 @@ def ensure_items_and_parties() -> None:
 				"stock_uom": "Nos",
 				"is_stock_item": 0,
 				"gst_hsn_code": "90183910",  # catheters (for urine, stool)
+				"mds_item_type": "Finished Good",
 			}
 		).insert()
+	from meddevice_suite.setup.test_stock import approve_for_test
+
+	approve_for_test(ITEM)  # module 1: quotations and orders name approved items only
 	if not frappe.db.exists("Customer", CUSTOMER):
 		frappe.get_doc(
 			{

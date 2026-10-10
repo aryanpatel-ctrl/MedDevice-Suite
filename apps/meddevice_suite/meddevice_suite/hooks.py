@@ -34,12 +34,16 @@ doc_events = {
 		"before_update_after_submit": [
 			"meddevice_suite.compliance.approvals.before_update_after_submit",
 			"meddevice_suite.master_data.versioning.version_master",
+			# Item master (module 1): an item a submitted record takes on is an approved one.
+			"meddevice_suite.master_data.item_master.refuse_unapproved",
 			"meddevice_suite.compliance.audit.before_update_after_submit",
 		],
 		# Approval workflows: returns at once for record types without one.
 		"validate": [
 			"meddevice_suite.compliance.approvals.validate",
 			"meddevice_suite.master_data.versioning.version_master",
+			# Item master (module 1): a draft item is used in no record; returns at once otherwise.
+			"meddevice_suite.master_data.item_master.refuse_unapproved",
 		],
 		"on_submit": "meddevice_suite.compliance.approvals.on_submit",
 		"onload": [
@@ -125,7 +129,11 @@ doc_events = {
 	"Purchase Invoice": {"validate": "meddevice_suite.master_data.supplier_approval.refuse_stock_on_invoice"},
 	"BOM Update Log": {"validate": "meddevice_suite.master_data.versioning.refuse_bom_replace"},
 	"Item": {
-		"validate": "meddevice_suite.setup.stock.refuse_negative_stock",
+		"validate": [
+			"meddevice_suite.setup.stock.refuse_negative_stock",
+			"meddevice_suite.master_data.item_master.guard_item",
+		],
+		"onload": "meddevice_suite.master_data.item_master.item_onload",
 		"on_update": "meddevice_suite.master_data.versioning.update_variants_under_control",
 	},
 	"Stock Settings": {"validate": "meddevice_suite.setup.stock.protect_stock_settings"},

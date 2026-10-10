@@ -46,6 +46,7 @@ from meddevice_suite.pilot.inspection import (
 from meddevice_suite.qa import verifies
 from meddevice_suite.qms.test_document_control import signer
 from meddevice_suite.setup.install import apply_configuration
+from meddevice_suite.setup.test_stock import approve_for_test
 
 ITEM = "MDS-REL-RAW"
 FINISHED_ITEM = "MDS-REL-FINISHED"
@@ -77,7 +78,7 @@ class ReleaseTestCase(IntegrationTestCase):
 		ensure_parties()
 		lot_item(ITEM)
 		lot_item(NO_TEMPLATE_ITEM)
-		cls.instrument = ensure_inspection_masters(company())
+		cls.instrument = ensure_inspection_masters(company(), approve_for_test)
 		cls.template = ensure_inspection_template(ITEM, "Raw Material")
 		cls.qa = signer("QA Manager")
 		cls.qc = signer("QC Inspector")
@@ -643,6 +644,7 @@ class TestTheQueueAndTheFinishedLot(ReleaseTestCase):
 		material = receive(ITEM, 2, store("Stores"))
 		set_status(material, APPROVED, "Approved material for the test's production")
 		lot_item(FINISHED_ITEM, "Products")
+		approve_for_test(ITEM, FINISHED_ITEM)  # module 1: production uses approved items only
 		# Made by a manufacture entry, as a work order makes its finished lot.
 		entry = frappe.get_doc(
 			{

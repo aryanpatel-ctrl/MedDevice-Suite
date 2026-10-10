@@ -40,8 +40,12 @@ def ensure_lot_item() -> None:
 				"gst_hsn_code": "90183910",  # catheters (for urine, stool)
 				"has_batch_no": 1,
 				"has_expiry_date": 1,
+				"mds_item_type": "Finished Good",
 			}
 		).insert()
+	from meddevice_suite.setup.test_stock import approve_for_test
+
+	approve_for_test(LOT_ITEM)  # module 1: its lots are made only for an approved item
 
 
 class AlertTestCase(IntegrationTestCase):

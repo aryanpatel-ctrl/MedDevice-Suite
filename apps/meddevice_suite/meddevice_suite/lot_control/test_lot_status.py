@@ -28,7 +28,7 @@ from meddevice_suite.pilot.flow import lot_of
 from meddevice_suite.qa import verifies
 from meddevice_suite.qms.test_document_control import signer
 from meddevice_suite.setup.install import apply_configuration
-from meddevice_suite.setup.test_stock import stock_item
+from meddevice_suite.setup.test_stock import approve_for_test, stock_item
 
 RAW = "MDS-LOT-RAW"
 PRODUCT = "MDS-LOT-PRODUCT"
@@ -76,6 +76,7 @@ def ensure_parties() -> None:
 
 
 def stock_entry(purpose: str, rows: list[dict], submit: bool = True, **values) -> Document:
+	approve_for_test(*(row["item_code"] for row in rows))  # module 1: only approved items move
 	entry = frappe.get_doc(
 		{"doctype": "Stock Entry", "stock_entry_type": purpose, "company": company(), "items": rows, **values}
 	)
@@ -99,6 +100,7 @@ def purchase_receive(item: str, qty: float, warehouse: str | None = None, submit
 	from meddevice_suite.master_data.test_supplier_approval import approved_for
 
 	approved_for(SUPPLIER, [item])
+	approve_for_test(item)  # module 1: only approved items are received
 	receipt = frappe.get_doc(
 		{
 			"doctype": "Purchase Receipt",
@@ -178,7 +180,7 @@ class LotTestCase(IntegrationTestCase):
 		cls.qc = signer("QC Inspector")
 		from meddevice_suite.pilot.inspection import ensure_inspection_masters, ensure_inspection_template
 
-		cls.instrument = ensure_inspection_masters(company())
+		cls.instrument = ensure_inspection_masters(company(), approve_for_test)
 		cls.template = ensure_inspection_template(RAW, "Raw Material")
 
 	def tearDown(self):
@@ -535,6 +537,7 @@ class TestOnlyAnApprovedLotLeaves(LotTestCase):
 		self.assertEqual(qty_in(supplier_lot, store(stores.REJECTED)), 4)
 
 	def test_a_work_order_draws_from_an_approved_store_and_finishes_into_quarantine(self):
+		approve_for_test(PRODUCT, RAW)  # module 1: production uses approved items only
 		bom = frappe.db.get_value("BOM", {"item": PRODUCT, "docstatus": 1}) or (
 			frappe.get_doc(
 				{

@@ -37,6 +37,8 @@ from frappe.query_builder.functions import Date
 from frappe.utils import cint, today
 
 from meddevice_suite.compliance.audit import record, row_content, same
+from meddevice_suite.master_data.item_master import APPROVAL_STATUS, APPROVED
+from meddevice_suite.master_data.item_master import CONTROLLED_FIELDS as ITEM_DEVICE_FIELDS
 from meddevice_suite.qms.change_control import require_approved_change
 
 VERSION, EFFECTIVE_FROM = "mds_version", "mds_effective_from"
@@ -51,14 +53,19 @@ def submitted(doctype: str, **filters) -> bool:
 
 
 def item_in_use(doc: Document) -> bool:
-	"""A submitted record depends on the item, or on one of its variants: a template's change
-	reaches its variants (ERPNext's update_variants)."""
+	"""QA has approved the item (module 1: from approval it is locked), or a submitted record
+	depends on it, or on one of its variants: a template's change reaches its variants (ERPNext's
+	update_variants)."""
 	codes = [doc.name]
 	if doc.get("has_variants"):
 		codes += frappe.get_all("Item", filters={"variant_of": doc.name}, pluck="name")
 	codes = ["in", codes]
 	return bool(
-		frappe.db.exists("Stock Ledger Entry", {"item_code": codes, "is_cancelled": 0})
+		(
+			frappe.get_meta("Item").get_field(APPROVAL_STATUS)  # once module 1 is configured
+			and frappe.db.exists("Item", {"name": codes, APPROVAL_STATUS: APPROVED})
+		)
+		or frappe.db.exists("Stock Ledger Entry", {"item_code": codes, "is_cancelled": 0})
 		or submitted("BOM", item=codes)
 		or submitted("BOM Item", item_code=codes)
 		or submitted("Purchase Order Item", item_code=codes)
@@ -89,6 +96,7 @@ MASTERS: dict[str, Master] = {
 			"inspection_required_before_purchase",
 			"inspection_required_before_delivery",
 			"disabled",
+			*ITEM_DEVICE_FIELDS,  # module 1: type, storage, device class, pack sizes, UDI
 		),
 		in_use=item_in_use,
 	),
@@ -267,6 +275,12 @@ def version_master(doc: Document, method: str | None = None) -> None:
 		doc.flags.dont_update_variants = True
 		doc.flags.variant_update_from = before
 	touched = changed_fields(doc, before)
+	if doc.doctype == "Item" and before.get(APPROVAL_STATUS) != APPROVED and not before.get("has_variants"):
+		# An item held before the item master (module 1) gets its type, storage and device data
+		# once, before QA approves it, as a specification made before control gets its first issue.
+		# Only what was never filled: 0 is a value (0 °C), and a template passes its data to
+		# variants that may be approved.
+		touched = [f for f in touched if not (f in ITEM_DEVICE_FIELDS and before.get(f) in (None, ""))]
 	# A request counts only when named with the change, not one left on the record before.
 	named = (
 		doc.get(CHANGE_REQUEST)
