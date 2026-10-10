@@ -49,7 +49,7 @@
    "fieldname": "target_doctype",
    "fieldtype": "Select",
    "label": "Record Type",
-   "options": "\nControlled Document\nItem\nBOM\nRouting\nOperation\nWorkstation\nAsset\nSupplier\nQuality Inspection Template\nWarehouse"
+   "options": "\nControlled Document\nItem\nBOM\nRouting\nOperation\nWorkstation\nAsset\nSupplier\nCustomer\nQuality Inspection Template\nWarehouse"
   },
   {
    "fieldname": "target_name",
@@ -93,7 +93,7 @@
    "fieldname": "result_doctype",
    "fieldtype": "Select",
    "label": "Resulting Record Type",
-   "options": "\nControlled Document\nItem\nBOM\nRouting\nOperation\nWorkstation\nAsset\nSupplier\nQuality Inspection Template\nWarehouse\nDocument Revision",
+   "options": "\nControlled Document\nItem\nBOM\nRouting\nOperation\nWorkstation\nAsset\nSupplier\nCustomer\nQuality Inspection Template\nWarehouse\nDocument Revision",
    "read_only": 1,
    "allow_on_submit": 1
   },
@@ -117,7 +117,7 @@
  ],
  "istable": 1,
  "links": [],
- "modified": "2026-10-08 12:00:00.000000",
+ "modified": "2026-10-09 20:00:00.000000",
  "modified_by": "Administrator",
  "module": "QMS",
  "name": "Change Request Action",

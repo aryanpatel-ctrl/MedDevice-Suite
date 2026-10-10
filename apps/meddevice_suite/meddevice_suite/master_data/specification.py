@@ -23,6 +23,7 @@ from frappe.model.document import Document
 from frappe.utils import cint, flt
 
 from meddevice_suite.compliance.audit import same
+from meddevice_suite.master_data.versioning import raise_version
 from meddevice_suite.qms.change_control import require_approved_change
 
 DOCTYPE = "Quality Inspection Template"
@@ -193,6 +194,7 @@ def guard_template(doc: Document, method: str | None = None) -> None:
 			)
 		require_approved_change(request, DOCTYPE, doc.name)
 		doc.mds_changed_under = request
+		raise_version(doc)  # URS-MST-001
 
 
 def protect_template(doc: Document, method: str | None = None) -> None:

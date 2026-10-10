@@ -875,9 +875,9 @@ status = "implemented"
 [[requirement]]
 id = "URS-MST-001"
 module = 1
-title = "Each of the nine masters (item, bill of materials, routing, operation and work centre, supplier, customer, warehouse, equipment, inspection template) carries a version number and an effective date; a change to the controlled fields of a master in use is made only under an approved change request that lists it, raises the version, and is recorded with the previous values in the audit trail."
-source = "D2 All masters are version controlled and linked with Document Control; D4 D3 Item / BOM / Routing Master; ISO 13485 4.2.4, 7.3.9"
-status = "planned"
+title = "Each of the nine masters (item, bill of materials, routing, operation and work centre, supplier, customer, warehouse, equipment, inspection template) carries a version number and an effective date; a change to the controlled fields of a master in use is made only under an approved change request that lists it, raises the version, and is recorded with the previous values in the audit trail; ERPNext's BOM Update Tool does not replace a bill of materials inside approved ones, a changed bill of materials being a new one under change control."
+source = "D2 All masters are version controlled and linked with Document Control; D4 D3 Item / BOM / Routing Master; ISO 13485 4.2.4, 7.3.9; blocking the BOM Update Tool's replace decided on 2026-10-09"
+status = "implemented"
 
 [[requirement]]
 id = "URS-MST-002"
