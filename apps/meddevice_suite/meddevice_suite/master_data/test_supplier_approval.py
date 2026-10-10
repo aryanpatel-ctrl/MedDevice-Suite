@@ -3,6 +3,7 @@ from frappe.model.workflow import apply_workflow
 from frappe.tests import IntegrationTestCase
 from frappe.utils import add_days, today
 
+from meddevice_suite.compliance.audit_reason import stage_reason
 from meddevice_suite.compliance.esign import verify_signatures
 from meddevice_suite.compliance.evidence_files import is_evidence
 from meddevice_suite.compliance.signing import sign_action
@@ -19,6 +20,7 @@ from meddevice_suite.master_data.supplier_approval import (
 	NOT_APPROVED,
 	check_full_inspection,
 	current_approval,
+	mark_full_inspection,
 	send_certificate_alerts,
 )
 from meddevice_suite.pilot.flow import lot_of
@@ -312,6 +314,80 @@ class TestPurchaseOrder(SupplierApprovalTestCase):
 		with self.assertRaisesRegex(frappe.ValidationError, "ended on"):
 			self.order_as_purchase(mds_conditional_reason="Urgent")
 
+	def test_an_expired_certificate_refuses_the_order(self):
+		name = decide(SUPPLIER, [ITEM], certificate_expiry=add_days(today(), 10))
+		# As if the days had passed: the certificate expires, nothing else changed.
+		frappe.db.set_value("Supplier Approval", name, "certificate_expiry", add_days(today(), -1))
+		with self.assertRaisesRegex(frappe.ValidationError, "certificate of supplier .* expired"):
+			self.order_as_purchase()
+
+	def test_goods_received_without_an_order_come_only_from_an_approved_supplier(self):
+		decide(OTHER_SUPPLIER, [], act="Not Approve", reason="Failed the audit")
+		frappe.set_user("Administrator")
+		receipt = frappe.get_doc(
+			{
+				"doctype": "Purchase Receipt",
+				"supplier": OTHER_SUPPLIER,
+				"company": company(),
+				"items": [{"item_code": ITEM, "qty": 1, "rate": 5, "warehouse": store(stores.QUARANTINE)}],
+			}
+		)
+		with self.assertRaisesRegex(frappe.ValidationError, "not approved by QA"):
+			receipt.insert()
+		frappe.set_user(self.qa)
+		decide(SUPPLIER, [ITEM])
+		frappe.set_user("Administrator")
+		receipt.supplier = SUPPLIER
+		receipt.insert()  # approved for the item: received
+
+	def test_a_receipt_line_naming_an_order_but_no_order_line_is_checked(self):
+		decide(SUPPLIER, [ITEM])
+		order = self.placed(purchase_order())
+		frappe.set_user("Administrator")
+		receipt = frappe.get_doc(
+			{
+				"doctype": "Purchase Receipt",
+				"supplier": SUPPLIER,
+				"company": company(),
+				"items": [
+					{
+						"item_code": OTHER_ITEM,  # not approved from this supplier
+						"qty": 1,
+						"rate": 5,
+						"purchase_order": order,
+						"warehouse": store(stores.QUARANTINE),
+					}
+				],
+			}
+		)
+		with self.assertRaisesRegex(frappe.ValidationError, "not approved for"):
+			receipt.insert()
+
+	def test_a_receipt_line_naming_another_suppliers_order_line_is_checked(self):
+		decide(OTHER_SUPPLIER, [ITEM])
+		decide(SUPPLIER, [OTHER_ITEM])  # approved, but not for ITEM
+		frappe.set_user(self.purchase)
+		elsewhere = self.placed(purchase_order(supplier=OTHER_SUPPLIER))
+		frappe.set_user("Administrator")
+		receipt = frappe.get_doc(
+			{
+				"doctype": "Purchase Receipt",
+				"supplier": SUPPLIER,
+				"company": company(),
+				"items": [
+					{
+						"item_code": ITEM,
+						"qty": 1,
+						"rate": 5,
+						"purchase_order_item": frappe.get_doc("Purchase Order", elsewhere).items[0].name,
+						"warehouse": store(stores.QUARANTINE),
+					}
+				],
+			}
+		)
+		with self.assertRaisesRegex(frappe.ValidationError, "not approved for"):
+			receipt.insert()
+
 	def test_the_approval_is_checked_again_when_the_order_is_approved(self):
 		decide(SUPPLIER, [ITEM])
 		order = apply_workflow(self.order_as_purchase(), "Send for Approval")
@@ -364,6 +440,45 @@ class TestFullInspection(SupplierApprovalTestCase):
 			guard_incoming_inspection(self.inspection(lot, receipt.name, 5))
 		check_full_inspection(self.inspection(lot, receipt.name, 10), line)  # the whole lot: accepted
 
+	def test_a_received_lot_is_inspected_only_on_its_receipt(self):
+		"""Inspected on anything else, the receipt's rules (certificate, full inspection) would
+		not apply; such an inspection is refused and never releases the lot."""
+		receipt = self.receive(SUPPLIER, self.conditional_order())
+		lot = lot_of(receipt.items[0])
+		elsewhere = self.inspection(lot, receipt.name, 1)
+		elsewhere.reference_type, elsewhere.reference_name = "Stock Entry", "MAT-STE-ANY"
+		with self.assertRaisesRegex(
+			frappe.ValidationError, "its incoming inspection is made on that receipt"
+		):
+			guard_incoming_inspection(elsewhere)
+
+	def test_a_line_is_inspected_by_the_order_its_order_line_belongs_to(self):
+		conditional = self.conditional_order()
+		frappe.set_user(self.qa)
+		decide(SUPPLIER, [ITEM])  # approved without condition from now on
+		unconditional = self.placed(purchase_order())
+		frappe.set_user("Administrator")
+		# The line names the unconditional order, but a line of the conditional one.
+		receipt = frappe.get_doc(
+			{
+				"doctype": "Purchase Receipt",
+				"supplier": SUPPLIER,
+				"company": company(),
+				"items": [
+					{
+						"item_code": ITEM,
+						"qty": 1,
+						"rate": 5,
+						"purchase_order": unconditional,
+						"purchase_order_item": frappe.get_doc("Purchase Order", conditional).items[0].name,
+						"warehouse": store(stores.QUARANTINE),
+					}
+				],
+			}
+		)
+		mark_full_inspection(receipt)
+		self.assertEqual(receipt.items[0].mds_full_inspection, 1)
+
 	def test_lots_from_a_supplier_approved_without_condition_are_sampled(self):
 		decide(SUPPLIER, [ITEM])
 		receipt = self.receive(SUPPLIER)
@@ -415,3 +530,282 @@ class TestCertificateAlert(SupplierApprovalTestCase):
 		notification.send = fail
 		supplier_approval.alert(notification, name)
 		self.assertFalse(frappe.db.get_value("Supplier Approval", name, "certificate_alerted"))
+
+
+@verifies("URS-PUR-001")
+class TestRequirementMatrix(SupplierApprovalTestCase):
+	"""The acceptance matrix of URS-PUR-001 (2026-10-09): each way an order or goods can reach the
+	company, and the decision itself, judged against the requirement, not the implementation."""
+
+	def unapproved_supplier(self) -> str:
+		frappe.set_user("Administrator")
+		name = f"MDS Unapproved {frappe.generate_hash(length=6)}"
+		ensure_supplier(name)
+		return name
+
+	# --- The decision (PUR-03 to PUR-06)
+
+	def test_the_decision_is_signed_with_its_meaning_and_reason_and_audited(self):
+		approved = decide(SUPPLIER, [ITEM], reason="Audited on site")
+		stopped = decide(OTHER_SUPPLIER, [], act="Not Approve", reason="Failed the audit")
+		for name, meaning, reason in (
+			(approved, "Approved", "Audited on site"),
+			(stopped, "Rejected", "Failed the audit"),
+		):
+			signature = frappe.get_all(
+				"Electronic Signature",
+				filters={"reference_doctype": "Supplier Approval", "reference_name": name},
+				fields=["signer", "meaning", "reason", "signed_at"],
+			)
+			self.assertEqual(len(signature), 1)
+			self.assertEqual(
+				(signature[0].signer, signature[0].meaning, signature[0].reason), (self.qa, meaning, reason)
+			)
+			self.assertTrue(signature[0].signed_at)
+			self.assertIn(
+				"Submitted",
+				frappe.get_all(
+					"Audit Event",
+					filters={"reference_doctype": "Supplier Approval", "reference_name": name},
+					pluck="action",
+				),
+			)
+
+	def test_a_wrong_password_decides_nothing(self):
+		doc = draft_approval(SUPPLIER, [ITEM])
+		with self.assertRaises(frappe.ValidationError):
+			sign_action("Supplier Approval", doc.name, "Approve", "not-the-password", "Audited")
+		self.assertEqual(
+			frappe.db.get_value("Supplier Approval", doc.name, ["docstatus", "decision"]), (0, None)
+		)
+
+	def test_a_decision_sent_with_the_record_is_not_taken(self):
+		"""Data Import or the API may send the decision fields; only the signature sets them."""
+		doc = new_approval(SUPPLIER, [ITEM])
+		doc.update({"decision": APPROVED, "reason": "Imported", "decided_by": self.qa})
+		doc.insert()
+		self.assertEqual((doc.docstatus, doc.decision, doc.reason, doc.decided_by), (0, None, None, None))
+
+	def test_not_even_the_administrator_sets_a_decision_by_hand(self):
+		doc = draft_approval(SUPPLIER, [ITEM])
+		frappe.set_user("Administrator")
+		doc = frappe.get_doc("Supplier Approval", doc.name)
+		doc.decision = APPROVED
+		with self.assertRaises(frappe.PermissionError):
+			doc.save()
+
+	# --- Every way an order is made (PUR-11 to PUR-21)
+
+	def test_an_order_made_from_a_material_request_is_refused_for_an_unapproved_supplier(self):
+		from erpnext.stock.doctype.material_request.material_request import make_purchase_order
+
+		supplier = self.unapproved_supplier()
+		request = frappe.get_doc(
+			{
+				"doctype": "Material Request",
+				"material_request_type": "Purchase",
+				"company": company(),
+				"schedule_date": add_days(today(), 7),
+				"items": [
+					{
+						"item_code": ITEM,
+						"qty": 5,
+						"schedule_date": add_days(today(), 7),
+						"warehouse": store("Stores"),
+					}
+				],
+			}
+		).insert()
+		request.submit()
+		order = make_purchase_order(request.name)
+		order.supplier = supplier
+		with self.assertRaisesRegex(frappe.ValidationError, "not approved by QA"):
+			order.insert()
+
+	def test_an_order_made_from_a_supplier_quotation_is_refused_for_an_unapproved_item(self):
+		from erpnext.buying.doctype.supplier_quotation.supplier_quotation import make_purchase_order
+
+		decide(SUPPLIER, [OTHER_ITEM])  # approved, but not for ITEM
+		frappe.set_user("Administrator")
+		quotation = frappe.get_doc(
+			{
+				"doctype": "Supplier Quotation",
+				"supplier": SUPPLIER,
+				"company": company(),
+				"items": [{"item_code": ITEM, "qty": 5, "rate": 5, "warehouse": store("Stores")}],
+			}
+		).insert()
+		quotation.submit()
+		order = make_purchase_order(quotation.name)
+		order.schedule_date = add_days(today(), 7)
+		for row in order.items:
+			row.schedule_date = add_days(today(), 7)
+		with self.assertRaisesRegex(frappe.ValidationError, "not approved for"):
+			order.insert()
+
+	def test_an_order_saved_past_validation_is_stopped_before_it_is_approved(self):
+		"""ERPNext's production plan and bulk tools insert orders without validation (ignore_validate);
+		the order is checked again when it goes for approval."""
+		supplier = self.unapproved_supplier()
+		order = purchase_order(supplier=supplier)
+		# As ERPNext's tools build it: values filled in, then inserted past validation.
+		order.set_missing_values()
+		order.calculate_taxes_and_totals()
+		order.flags.ignore_validate = True
+		order.insert()
+		frappe.set_user(self.purchase)
+		with self.assertRaisesRegex(frappe.ValidationError, "not approved by QA"):
+			apply_workflow(frappe.get_doc("Purchase Order", order.name), "Send for Approval")
+
+	def test_a_copied_or_amended_order_is_checked_again(self):
+		"""Auto Repeat, Duplicate and Amend all make a new order from an old one."""
+		decide(SUPPLIER, [ITEM])
+		order = self.placed(purchase_order())  # placed while approved
+		frappe.set_user(self.qa)
+		decide(SUPPLIER, [], act="Not Approve", reason="Certificate withdrawn")
+		frappe.set_user("Administrator")
+		for label, amended in (("duplicate or auto repeat", False), ("amend", True)):
+			with self.subTest(label):
+				copy = frappe.copy_doc(frappe.get_doc("Purchase Order", order))
+				if amended:
+					copy.amended_from = order
+					stage_reason("Purchase Order", order, "amend", "Quantity corrected")
+				with self.assertRaisesRegex(frappe.ValidationError, "not approved by QA"):
+					copy.insert()
+
+	def test_an_approved_order_takes_no_new_unapproved_item(self):
+		"""ERPNext's Update Items adds lines to a submitted order without its validation."""
+		from erpnext.controllers.accounts_controller import update_child_qty_rate
+
+		decide(SUPPLIER, [ITEM])
+		order = frappe.get_doc("Purchase Order", self.placed(purchase_order()))
+		frappe.set_user("Administrator")
+		rows = [
+			{
+				"docname": row.name,
+				"item_code": row.item_code,
+				"qty": row.qty,
+				"rate": row.rate,
+				"conversion_factor": 1,
+				"schedule_date": str(row.schedule_date),
+			}
+			for row in order.items
+		] + [
+			{
+				"item_code": OTHER_ITEM,
+				"qty": 1,
+				"rate": 5,
+				"conversion_factor": 1,
+				"schedule_date": add_days(today(), 7),
+			}
+		]
+		frappe.db.savepoint("update_items")
+		with self.assertRaisesRegex(frappe.ValidationError, "not approved for"):
+			update_child_qty_rate("Purchase Order", frappe.as_json(rows), order.name)
+		frappe.db.rollback(save_point="update_items")  # as the refused request is rolled back
+		self.assertEqual(
+			[row.item_code for row in frappe.get_doc("Purchase Order", order.name).items], [ITEM]
+		)
+
+	def test_a_stopped_suppliers_order_still_takes_a_change_that_buys_nothing(self):
+		decide(SUPPLIER, [ITEM])
+		order = self.placed(purchase_order())
+		frappe.set_user(self.qa)
+		decide(SUPPLIER, [], act="Not Approve", reason="Failed the re-audit")
+		frappe.set_user("Administrator")
+		doc = frappe.get_doc("Purchase Order", order)
+		doc.order_confirmation_no = "SUP-CONF-1"
+		stage_reason("Purchase Order", order, "update_after_submit", "Supplier's confirmation number")
+		doc.save()
+		self.assertEqual(frappe.db.get_value("Purchase Order", order, "order_confirmation_no"), "SUP-CONF-1")
+
+	def test_changing_a_drafts_supplier_to_an_unapproved_one_is_refused(self):
+		decide(SUPPLIER, [ITEM])
+		frappe.set_user(self.purchase)
+		order = purchase_order().insert()
+		order.supplier = self.unapproved_supplier()
+		frappe.set_user(self.purchase)
+		with self.assertRaisesRegex(frappe.ValidationError, "not approved by QA"):
+			order.save()
+
+	# --- Dates (PUR-28, PUR-29)
+
+	def test_a_conditional_approval_and_a_certificate_hold_through_their_last_day(self):
+		name = decide(
+			SUPPLIER,
+			[ITEM],
+			act="Approve Conditionally",
+			valid_until=add_days(today(), 5),
+			certificate_expiry=add_days(today(), 5),
+		)
+		frappe.db.set_value(
+			"Supplier Approval", name, {"valid_until": today(), "certificate_expiry": today()}
+		)
+		frappe.set_user(self.purchase)
+		purchase_order(mds_conditional_reason="Last day of the condition").insert()  # still in force today
+
+	# --- Goods in (PUR-22, PUR-23)
+
+	def test_goods_are_received_only_on_a_goods_receipt(self):
+		invoice = frappe.get_doc(
+			{
+				"doctype": "Purchase Invoice",
+				"supplier": SUPPLIER,
+				"company": company(),
+				"update_stock": 1,
+				"items": [{"item_code": ITEM, "qty": 1, "rate": 5, "warehouse": store(stores.QUARANTINE)}],
+			}
+		)
+		with self.assertRaisesRegex(frappe.ValidationError, "received on a goods receipt"):
+			supplier_approval.refuse_stock_on_invoice(invoice)
+		invoice.update_stock = 0
+		supplier_approval.refuse_stock_on_invoice(invoice)  # booked against a receipt: fine
+		invoice.update({"update_stock": 1, "is_return": 1})
+		supplier_approval.refuse_stock_on_invoice(invoice)  # goods going back: fine
+		# ... and the rule runs whenever a purchase invoice is saved.
+		self.assertIn(
+			"meddevice_suite.master_data.supplier_approval.refuse_stock_on_invoice",
+			frappe.get_hooks("doc_events")["Purchase Invoice"]["validate"],
+		)
+
+	def test_goods_ordered_earlier_are_refused_once_qa_stops_the_supplier(self):
+		decide(SUPPLIER, [ITEM])
+		order = frappe.get_doc("Purchase Order", self.placed(purchase_order()))
+		frappe.set_user(self.qa)
+		decide(SUPPLIER, [], act="Not Approve", reason="Failed the re-audit")
+		frappe.set_user("Administrator")
+		receipt = frappe.get_doc(
+			{
+				"doctype": "Purchase Receipt",
+				"supplier": SUPPLIER,
+				"company": company(),
+				"items": [
+					{
+						"item_code": ITEM,
+						"qty": 1,
+						"rate": 5,
+						"purchase_order": order.name,
+						"purchase_order_item": order.items[0].name,
+						"warehouse": store(stores.QUARANTINE),
+					}
+				],
+			}
+		)
+		with self.assertRaisesRegex(frappe.ValidationError, "not approved by QA"):
+			receipt.insert()
+
+	# --- The alert (PUR-35 to PUR-38)
+
+	def test_a_certificate_inside_30_days_is_alerted_once_even_after_a_missed_day(self):
+		"""The job did not run on the 30th day; on the 29th it alerts, once."""
+		name = decide(SUPPLIER, [ITEM], certificate_expiry=add_days(today(), 29))
+		frappe.set_user("Administrator")
+		send_certificate_alerts()
+		send_certificate_alerts()
+		recipients = frappe.get_all(
+			"Notification Log",
+			filters={"document_type": "Supplier Approval", "document_name": name},
+			pluck="for_user",
+		)
+		self.assertTrue({self.qa, self.purchase} <= set(recipients))
+		self.assertEqual(len(recipients), len(set(recipients)))

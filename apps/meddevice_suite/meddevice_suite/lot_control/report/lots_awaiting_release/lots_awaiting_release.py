@@ -6,6 +6,7 @@ from frappe import _
 from frappe.utils import date_diff, getdate, today
 
 from meddevice_suite.lot_control.lot_status import HOLD, QUARANTINE, STATUS_FIELD, stock_by_lot
+from meddevice_suite.lot_control.receipt import origins_of
 
 WAITING_FOR = {
 	"no_certificate": "Supplier certificate",
@@ -13,6 +14,7 @@ WAITING_FOR = {
 	"inspection": "Incoming inspection",
 	"rejected": "Decision on a rejected inspection",
 	"release": "QA release",
+	"not_releasable": "Nothing: it did not come in on a receipt",
 }
 
 
@@ -54,6 +56,34 @@ def execute(filters: dict | None = None) -> tuple[list[dict], list[dict]]:
 			],
 		)
 	}
+	# Where each lot came from, as the stock ledger says, not the batch's own reference.
+	origins = origins_of(list(lots))
+	purposes = dict(
+		frappe.get_all(
+			"Stock Entry",
+			filters={
+				"name": [
+					"in",
+					[o.voucher_no for o in origins.values() if o.voucher_type == "Stock Entry"] or [""],
+				]
+			},
+			fields=["name", "purpose"],
+			as_list=True,
+		)
+	)
+	for name, lot in lots.items():
+		origin = origins.get(name)
+		lot.reference_doctype = origin.voucher_type if origin else None
+		lot.reference_name = origin.voucher_no if origin else None
+		lot.origin = (
+			"receipt"
+			if lot.reference_doctype == "Purchase Receipt"
+			else {"Material Receipt": "material_receipt", "Manufacture": "production"}.get(
+				purposes.get(lot.reference_name)
+			)
+			if lot.reference_doctype == "Stock Entry"
+			else None
+		)
 	inspections = latest_inspections(list(lots))
 	lines = receipt_lines(lots.values())
 	data = []
@@ -88,7 +118,9 @@ def waiting_for(lot: frappe._dict, line: frappe._dict | None, inspection: frappe
 			return "no_certificate"
 		if not line.verified:
 			return "verification"
-	if lot.reference_doctype == "Purchase Receipt":
+	if lot.origin is None:
+		return "not_releasable"
+	if lot.origin in ("receipt", "material_receipt"):
 		if inspection is None or (
 			lot.get(STATUS_FIELD) == HOLD and inspection.modified <= lot.mds_status_set_at
 		):

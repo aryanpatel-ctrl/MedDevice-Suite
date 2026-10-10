@@ -812,8 +812,8 @@ status = "implemented"
 [[requirement]]
 id = "URS-STK-004"
 module = 17
-title = "Every lot carries a status, Quarantine, Approved, Rejected or Hold; a lot received or produced starts in Quarantine, and the status changes only through a signed QA release or disposition, never by editing the lot."
-source = "D2 Quarantine / Approved Stock; D3 QC Approval / Rejection, Putaway in Warehouse (Batch/Location); D4 3.5 Accept / Reject / Hold; ISO 13485 7.5.8, 8.3; 21 CFR 11.50"
+title = "Every lot carries a status, Quarantine, Approved, Rejected or Hold; a lot received or produced starts in Quarantine, and the status changes only through a signed QA release or disposition, never by editing the lot; stock comes into a lot only on the document that made it, lots moved between stores and returns aside, so more stock, a count gain or opening stock comes in as a new lot."
+source = "D2 Quarantine / Approved Stock; D3 QC Approval / Rejection, Putaway in Warehouse (Batch/Location); D4 3.5 Accept / Reject / Hold, 3.3 Internal Batch Creation, 4.6 Batch Creation; ISO 13485 7.5.8, 8.3; 21 CFR 11.50; no stock into an existing lot decided on 2026-10-09 from DFD 3.1-3.6"
 status = "implemented"
 
 [[requirement]]
@@ -854,8 +854,8 @@ status = "implemented"
 [[requirement]]
 id = "URS-QC-003"
 module = 16
-title = "A received lot is released by QA with an electronic signature only once an accepted incoming inspection exists for it: release sets the lot Approved and moves its stock to the approved store in one audited transaction; QA can instead reject it with a signature and a reason, which sets it Rejected, moves the stock to the rejected store and creates the return to the supplier for Purchase; or hold it, which sets it Hold and moves it to the hold store; a held lot is released only after a new accepted inspection and with a reason."
-source = "D2 Pass? No: Reject / Return To Supplier, Yes: Put Away; D3 Accepted / Rejected; D4 3.5, 3.6; ISO 13485 7.4.3, 8.3; 21 CFR 11.50; release of a held lot after retest decided under the client's instruction of 2026-10-08"
+title = "A lot that enters stock other than from a work order (on a goods receipt, or on a material receipt such as opening stock) is released by QA with an electronic signature only once an accepted incoming inspection made on the document that brought it in exists for it: release sets the lot Approved and moves its stock to the approved store in one audited transaction; QA can instead reject it with a signature and a reason, which sets it Rejected, moves the stock to the rejected store and creates the return to the supplier for Purchase; or hold it, which sets it Hold and moves it to the hold store; a held lot is released only after a new accepted inspection and with a reason."
+source = "D2 Pass? No: Reject / Return To Supplier, Yes: Put Away; D3 Accepted / Rejected; D4 3.5, 3.6; ISO 13485 7.4.3, 8.3; 21 CFR 11.50; release of a held lot after retest decided under the client's instruction of 2026-10-08; inspection of material-receipt lots, and opening stock loaded as material receipts and inspected (DFD 3.1-3.5), decided on 2026-10-09"
 status = "implemented"
 
 [[requirement]]
@@ -868,8 +868,8 @@ status = "implemented"
 [[requirement]]
 id = "URS-PUR-001"
 module = 4
-title = "Every supplier has an approval status, Approved, Conditional or Not Approved, set by QA with an electronic signature and a reason, with the items it is approved for and the expiry date of its certificate; a purchase order for an item from a supplier not approved for it is refused; a Conditional approval has an expiry date, each purchase order under it needs a reason and its lots are inspected at 100 percent; QA and Purchase are alerted once, 30 days before a supplier certificate expires."
-source = "D2 Vendor Master, Supplier; D3 Purchase Order to Vendor; D4 2.5 Vendor Management; ISO 13485 7.4.1; conditional approval rules and the 30-day alert decided under the client's instruction of 2026-10-08"
+title = "Every supplier has an approval status, Approved, Conditional or Not Approved, set by QA with an electronic signature and a reason, with the items it is approved for and the expiry date of its certificate; a purchase order for an item from a supplier not approved for it is refused; goods are received only on a goods receipt, never by a purchase invoice that updates stock, and each line only from a supplier approved for its item at the time of receipt, whatever order it was placed under; a Conditional approval has an expiry date, each purchase order under it needs a reason and its lots are inspected at 100 percent; QA and Purchase are alerted once, 30 days before a supplier certificate expires."
+source = "D2 Vendor Master, Supplier; D3 Purchase Order to Vendor; D4 2.5 Vendor Management; ISO 13485 7.4.1; conditional approval rules and the 30-day alert decided under the client's instruction of 2026-10-08; the goods receipt as the only way in, and receipt only from a supplier approved at receipt, decided on 2026-10-09"
 status = "implemented"
 
 [[requirement]]
@@ -884,7 +884,7 @@ id = "URS-MST-002"
 module = 6
 title = "An item's inspection template is a controlled specification that states, for each inspection stage (incoming, in-process, final), the parameters, method, limits and sample size, and a template in use changes only under an approved change request."
 source = "D2 Specifications & Tests; D3 Specification; D4 D3; ISO 13485 7.1, 8.2.6"
-status = "planned"
+status = "implemented"
 
 [[requirement]]
 id = "URS-PLT-010"

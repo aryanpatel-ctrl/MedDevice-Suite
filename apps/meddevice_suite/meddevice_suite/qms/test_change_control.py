@@ -55,17 +55,24 @@ def dual_role_user() -> str:
 	return email
 
 
-def approved_change(requester: str, qa: str, document: str) -> str:
-	"""A Minor change request listing a controlled document, approved by QA. Leaves the session as QA."""
+def approved_change(
+	requester: str,
+	qa: str,
+	document: str,
+	record_type: str = "Controlled Document",
+	change_type: str = "Document",
+) -> str:
+	"""A Minor change request listing a record (a controlled document unless told otherwise),
+	approved by QA. Leaves the session as QA."""
 	frappe.set_user(requester)
 	doc = frappe.get_doc(
 		{
 			"doctype": DOCTYPE,
 			"title": f"Revise {document}",
-			"change_type": "Document",
+			"change_type": change_type,
 			"description": "Update the procedure",
 			"reason": "Found in an internal audit",
-			"affected_records": [{"reference_doctype": "Controlled Document", "reference_name": document}],
+			"affected_records": [{"reference_doctype": record_type, "reference_name": document}],
 			"actions": [
 				{"description": f"New revision of {document}", "action_owner": requester, "due_date": today()}
 			],

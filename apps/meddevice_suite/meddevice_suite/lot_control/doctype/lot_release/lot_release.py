@@ -9,7 +9,7 @@ from frappe.utils import flt
 from meddevice_suite.compliance.audit import same
 from meddevice_suite.lot_control import lot_status
 from meddevice_suite.lot_control.lot_status import HOLD, STATUS_FIELD
-from meddevice_suite.lot_control.receipt import receipt_line_of
+from meddevice_suite.lot_control.receipt import origin_of, receipt_line_of
 
 # What QA may set while the decision is a draft; everything else the signed act sets.
 QA_FIELDS = frozenset({"batch"})
@@ -50,16 +50,18 @@ class LotRelease(Document):
 		self.item = lot.item
 		self.lot_status_before = lot.get(STATUS_FIELD)
 		self.quantity = sum(flt(holding.get("qty")) for holding in lot_status.holdings_of(lot.name))
-		self.source_doctype = lot.reference_doctype
-		self.source_name = lot.reference_name
-		line = receipt_line_of(lot.name) if lot.reference_doctype == "Purchase Receipt" else None
+		# Where the stock came from, as the stock ledger says, not the batch's own reference.
+		origin = origin_of(lot.name)
+		self.source_doctype = origin.voucher_type if origin else None
+		self.source_name = origin.voucher_no if origin else None
+		line = receipt_line_of(lot.name) if self.source_doctype == "Purchase Receipt" else None
 		self.supplier = line.supplier if line else lot.supplier
 		self.held_since = lot.mds_status_set_at if lot.get(STATUS_FIELD) == HOLD else None
 
 	def onload(self) -> None:
 		if self.docstatus == 0 and self.batch:
 			lot = frappe.get_doc("Batch", self.batch)
-			line = receipt_line_of(lot.name) if lot.reference_doctype == "Purchase Receipt" else None
+			line = receipt_line_of(lot.name)
 			self.set_onload(
 				"lot",
 				{

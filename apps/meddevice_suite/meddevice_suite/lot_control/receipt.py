@@ -173,16 +173,83 @@ def protect_certificate(doc: Document, method: str | None = None) -> None:
 			)
 
 
+def origins_of(lots: list[str]) -> dict[str, frappe._dict]:
+	"""lot -> the document and line that first brought it into stock, read from the stock ledger
+	in two queries: the batch's own reference is set only when that document made the batch, so a
+	batch made beforehand would hide where its stock came from."""
+	if not lots:
+		return {}
+	entry, bundle = frappe.qb.DocType("Serial and Batch Entry"), frappe.qb.DocType("Serial and Batch Bundle")
+	bundled = (
+		frappe.qb.from_(entry)
+		.join(bundle)
+		.on(entry.parent == bundle.name)
+		.select(
+			entry.batch_no,
+			bundle.voucher_type,
+			bundle.voucher_no,
+			bundle.voucher_detail_no,
+			bundle.posting_datetime,
+			bundle.creation,
+		)
+		.where(
+			entry.batch_no.isin(lots)
+			& (bundle.type_of_transaction == "Inward")
+			& (bundle.docstatus == 1)
+			& (bundle.is_cancelled == 0)
+		)
+	).run(as_dict=True)
+	ledger = frappe.get_all(
+		"Stock Ledger Entry",
+		filters={"batch_no": ["in", lots], "actual_qty": [">", 0], "is_cancelled": 0},
+		fields=[
+			"batch_no",
+			"voucher_type",
+			"voucher_no",
+			"voucher_detail_no",
+			"posting_datetime",
+			"creation",
+		],
+	)
+	first: dict[str, frappe._dict] = {}
+	for row in sorted(bundled + ledger, key=lambda row: (row.posting_datetime, row.creation), reverse=True):
+		first[row.batch_no] = row
+	return first
+
+
+def origin_of(lot: str) -> frappe._dict | None:
+	return origins_of([lot]).get(lot)
+
+
+def material_receipt_of(lot: str) -> str | None:
+	"""The material receipt (opening stock, stock found in a count) that brought the lot in, if one
+	did: such a lot is inspected on that entry before QA releases it (decided 2026-10-09)."""
+	origin = origin_of(lot)
+	if not origin or origin.voucher_type != "Stock Entry":
+		return None
+	purpose = frappe.db.get_value("Stock Entry", origin.voucher_no, "purpose")
+	return origin.voucher_no if purpose == "Material Receipt" else None
+
+
+def made_by_production(lot: str) -> bool:
+	"""Whether a manufacture entry (a work order's) brought the lot in: released on QA's signature
+	alone until final QC and batch release (modules 25, 26) take over."""
+	origin = origin_of(lot)
+	return bool(
+		origin
+		and origin.voucher_type == "Stock Entry"
+		and frappe.db.get_value("Stock Entry", origin.voucher_no, "purpose") == "Manufacture"
+	)
+
+
 def receipt_line_of(lot: str) -> frappe._dict | None:
 	"""The goods receipt line that brought the lot in, if a supplier delivered it."""
-	reference_doctype, reference_name = frappe.db.get_value(
-		"Batch", lot, ["reference_doctype", "reference_name"]
-	)
-	if reference_doctype != "Purchase Receipt" or not reference_name:
+	origin = origin_of(lot)
+	if not origin or origin.voucher_type != "Purchase Receipt":
 		return None
-	receipt = frappe.get_doc("Purchase Receipt", reference_name)
+	receipt = frappe.get_doc("Purchase Receipt", origin.voucher_no)
 	for row in receipt.items:
-		if lot in lots_of_row(row):
+		if row.name == origin.voucher_detail_no:
 			return frappe._dict(
 				receipt=receipt.name,
 				row=row.name,
@@ -195,6 +262,24 @@ def receipt_line_of(lot: str) -> frappe._dict | None:
 				quantity=received_quantity(row, lot),
 			)
 	return None
+
+
+def refuse_existing_lots(doc: Document, method: str | None = None) -> None:
+	"""Purchase Receipt validate: a delivery comes in as a new lot (DFD 3.3 Internal Batch Creation).
+	A line naming a lot that already holds stock would mix a supplier's goods into stock of another
+	origin and its checks; a lot made beforehand without stock (scanned on the receipt, say) is new.
+	The stock ledger refuses it too (lot_status.guard_inward); this says so on the form."""
+	if doc.is_return:
+		return
+	named = {lot: row.idx for row in doc.items for lot in lots_of_row(row)}
+	for lot, origin in origins_of(list(named)).items():
+		if origin.voucher_no != doc.name:
+			frappe.throw(
+				_("Line {0}: lot {1} came in on {2} {3}; a delivery comes in as a new lot.").format(
+					named[lot], lot, _(origin.voucher_type), origin.voucher_no
+				),
+				title=_("New lot needed"),
+			)
 
 
 def received_quantity(row: Document, lot: str) -> float:
@@ -222,8 +307,23 @@ def guard_incoming_inspection(doc: Document, method: str | None = None) -> None:
 		return
 	if not doc.batch_no:
 		frappe.throw(_("Name the lot this incoming inspection is of."))
+	line = receipt_line_of(doc.batch_no)
+	if line is not None and doc.reference_type != "Purchase Receipt":
+		# Inspected against anything else, the receipt's rules (certificate, full inspection) would
+		# not apply to the lot.
+		frappe.throw(
+			_("Lot {0} came in on receipt {1}; its incoming inspection is made on that receipt.").format(
+				doc.batch_no, line.receipt
+			)
+		)
+	entry = material_receipt_of(doc.batch_no) if line is None else None
+	if entry and (doc.reference_type != "Stock Entry" or doc.reference_name != entry):
+		frappe.throw(
+			_(
+				"Lot {0} came in on material receipt {1}; its incoming inspection is made on that entry."
+			).format(doc.batch_no, entry)
+		)
 	if doc.reference_type == "Purchase Receipt":
-		line = receipt_line_of(doc.batch_no)
 		if line is None or line.receipt != doc.reference_name or line.item_code != doc.item_code:
 			frappe.throw(
 				_("Lot {0} of {1} did not arrive on receipt {2}.").format(
@@ -239,12 +339,8 @@ def guard_incoming_inspection(doc: Document, method: str | None = None) -> None:
 			)
 		doc.child_row_reference = line.row
 		check_full_inspection(doc, line)
-	if not doc.readings:
-		frappe.throw(
-			_(
-				"Item {0} has no inspection template, so nothing can be read; QA registers its specification first."
-			).format(doc.item_code)
-		)
+	# The readings come from the item's specification (module 6, master_data.specification),
+	# which an inspection is refused without.
 	for reading in doc.readings:
 		if cint(reading.numeric) and not reading.get("mds_instrument"):
 			frappe.throw(
@@ -254,10 +350,24 @@ def guard_incoming_inspection(doc: Document, method: str | None = None) -> None:
 			)
 
 
-def accepted_inspection(lot: str, after: str | None = None) -> str | None:
-	"""The newest submitted, accepted incoming inspection of the lot, made after `after`. Made,
-	not last modified: an older inspection changed after a hold is not a new inspection."""
-	filters = {"batch_no": lot, "inspection_type": INCOMING, "docstatus": 1, "status": "Accepted"}
+def accepted_inspection(
+	lot: str,
+	after: str | None = None,
+	reference_type: str = "Purchase Receipt",
+	reference_name: str | None = None,
+) -> str | None:
+	"""The newest submitted, accepted incoming inspection of the lot on the document that brought
+	it in, made after `after`. Made, not last modified: an older inspection changed after a hold is
+	not a new inspection."""
+	filters = {
+		"batch_no": lot,
+		"inspection_type": INCOMING,
+		"reference_type": reference_type,
+		"docstatus": 1,
+		"status": "Accepted",
+	}
+	if reference_name:
+		filters["reference_name"] = reference_name
 	if after:
 		filters["creation"] = [">", after]
 	rows = frappe.get_all(

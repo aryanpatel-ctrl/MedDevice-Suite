@@ -2,6 +2,7 @@ import frappe
 from frappe.model.document import Document
 from frappe.tests import IntegrationTestCase
 
+from meddevice_suite.compliance.audit_reason import stage_reason
 from meddevice_suite.compliance.esign import verify_signatures
 from meddevice_suite.compliance.signing import sign_action
 from meddevice_suite.compliance.test_esign import PASSWORD
@@ -13,6 +14,7 @@ from meddevice_suite.lot_control.lot_status import (
 	QUARANTINE,
 	REJECTED,
 	STATUS_FIELD,
+	set_status,
 	status_of,
 )
 from meddevice_suite.lot_control.receipt import (
@@ -32,6 +34,7 @@ from meddevice_suite.lot_control.test_lot_status import (
 	purchase_receive,
 	qty_in,
 	receive,
+	stock_entry,
 	store,
 )
 from meddevice_suite.pilot.flow import lot_of
@@ -45,6 +48,7 @@ from meddevice_suite.qms.test_document_control import signer
 from meddevice_suite.setup.install import apply_configuration
 
 ITEM = "MDS-REL-RAW"
+FINISHED_ITEM = "MDS-REL-FINISHED"
 NO_TEMPLATE_ITEM = "MDS-REL-NO-TEMPLATE"
 
 
@@ -347,7 +351,8 @@ class TestIncomingInspection(ReleaseTestCase):
 					"inspected_by": frappe.session.user,
 				}
 			).insert()
-		self.assertIn("has no inspection template", str(refused.exception))
+		# Nothing to read against: the item has no specification (module 6).
+		self.assertIn("has no incoming specification", str(refused.exception))
 
 	def test_only_incoming_inspections_are_held_to_the_receipt_rules(self):
 		# An in-process inspection names no receipt and no lot; module 20 sets its own rules.
@@ -555,7 +560,9 @@ class TestTheSignedDecision(ReleaseTestCase):
 			stored.save()
 		self.assertIn("decided only by signing", str(refused.exception))
 
-	def test_a_lot_with_no_stock_is_decided_without_a_transfer(self):
+	def test_a_lot_that_never_came_in_is_not_released(self):
+		"""Released "on documents only", an empty lot would let stock arrive in it later with no
+		inspection (URS-QC-003: released only after an inspection on what brought it in)."""
 		frappe.set_user("Administrator")
 		lot = (
 			frappe.get_doc(
@@ -568,9 +575,9 @@ class TestTheSignedDecision(ReleaseTestCase):
 			.insert()
 			.name
 		)
-		decision = self.decide(lot, "Release", "documents only")
-		self.assertIsNone(decision.stock_entry)
-		self.assertEqual(status_of([lot])[lot], APPROVED)
+		with self.assertRaisesRegex(frappe.ValidationError, "only stock received on a goods receipt"):
+			self.decide(lot, "Release", "documents only")
+		self.assertNotEqual(status_of([lot])[lot], APPROVED)
 
 	def test_the_decisions_of_a_lot_are_indexed(self):
 		on_doctype_update()
@@ -614,9 +621,232 @@ class TestTheQueueAndTheFinishedLot(ReleaseTestCase):
 	def test_a_lot_a_work_order_made_is_released_on_the_signature_alone(self):
 		# Final QC and batch release (modules 25, 26) replace this; until then QA signs it out.
 		frappe.set_user("Administrator")
-		lot = receive(ITEM, 3, store(stores.QUARANTINE))  # stands in for the finished lot's entry
+		material = receive(ITEM, 2, store("Stores"))
+		set_status(material, APPROVED, "Approved material for the test's production")
+		lot_item(FINISHED_ITEM, "Products")
+		# Made by a manufacture entry, as a work order makes its finished lot.
+		entry = frappe.get_doc(
+			{
+				"doctype": "Stock Entry",
+				"stock_entry_type": "Manufacture",
+				"company": company(),
+				"fg_completed_qty": 1,
+				"items": [
+					{
+						"item_code": ITEM,
+						"qty": 1,
+						"s_warehouse": store("Stores"),
+						"batch_no": material,
+						"use_serial_batch_fields": 1,
+						"basic_rate": 10,
+					},
+					{
+						"item_code": FINISHED_ITEM,
+						"qty": 1,
+						"t_warehouse": store(stores.QUARANTINE),
+						"is_finished_item": 1,
+					},
+				],
+			}
+		).insert()
+		entry.submit()
+		lot = lot_of(frappe.get_doc("Stock Entry", entry.name).items[1])
 
 		decision = self.decide(lot, "Release", "Final inspection accepted")
 
 		self.assertEqual((decision.source_doctype, decision.quality_inspection), ("Stock Entry", None))
 		self.assertEqual(status_of([lot])[lot], APPROVED)
+
+
+@verifies("URS-QC-003")
+class TestMaterialReceiptLots(ReleaseTestCase):
+	"""A lot brought in on a material receipt (opening stock, stock found in a count) is released only
+	after an accepted incoming inspection made on that entry (decided 2026-10-09)."""
+
+	def material_receipt_lot(self) -> tuple[str, str]:
+		frappe.set_user("Administrator")
+		lot = receive(ITEM, 4, store(stores.QUARANTINE))
+		return lot, frappe.db.get_value("Batch", lot, "reference_name")
+
+	def inspection_on(self, lot: str, reference_type: str, reference_name: str) -> Document:
+		frappe.set_user(self.qc)
+		return frappe.get_doc(
+			{
+				"doctype": "Quality Inspection",
+				"inspection_type": "Incoming",
+				"reference_type": reference_type,
+				"reference_name": reference_name,
+				"item_code": ITEM,
+				"batch_no": lot,
+				"sample_size": 5,
+				"inspected_by": self.qc,
+				"readings": readings_for(self.template, self.instrument),
+			}
+		)
+
+	def test_a_material_receipt_lot_is_not_released_without_an_inspection(self):
+		lot, _entry = self.material_receipt_lot()
+		with self.assertRaisesRegex(frappe.ValidationError, "no accepted incoming inspection"):
+			self.decide(lot, "Release", "Opening stock")
+		self.assertEqual(status_of([lot])[lot], QUARANTINE)
+
+	def test_it_is_inspected_on_the_entry_that_brought_it_in(self):
+		lot, _entry = self.material_receipt_lot()
+		receipt, _ = self.received()
+		with self.assertRaisesRegex(frappe.ValidationError, "came in on material receipt"):
+			self.inspection_on(lot, "Purchase Receipt", receipt.name).insert()
+
+	def test_an_accepted_inspection_on_its_entry_lets_qa_release_it(self):
+		lot, entry = self.material_receipt_lot()
+		inspection = self.inspection_on(lot, "Stock Entry", entry)
+		inspection.insert()
+		inspection.submit()
+		record = self.decide(lot, "Release", "Opening stock inspected")
+		self.assertEqual((record.decision, record.quality_inspection), ("Release", inspection.name))
+		self.assertEqual(status_of([lot])[lot], APPROVED)
+
+
+@verifies("URS-QC-003", "URS-QC-001")
+class TestWhereALotCameFrom(ReleaseTestCase):
+	"""Where a lot came from is read from the stock ledger, not the batch's own reference, which a
+	batch made beforehand would leave blank (found in the final review, 2026-10-09)."""
+
+	def test_a_delivery_does_not_come_in_on_a_lot_that_holds_stock(self):
+		frappe.set_user("Administrator")
+		existing = receive(ITEM, 2, store(stores.QUARANTINE))  # a lot that came in already
+		receipt = purchase_receive(ITEM, 2, submit=False)
+		receipt.items[0].update({"batch_no": existing, "use_serial_batch_fields": 1})
+		with self.assertRaisesRegex(frappe.ValidationError, "a delivery comes in as a new lot"):
+			receipt.save()
+
+	def test_a_lot_scanned_on_the_receipt_is_a_new_lot_of_that_receipt(self):
+		"""ERPNext's batch selector and barcode scan make the batch before the receipt, without stock."""
+		frappe.set_user("Administrator")
+		scanned = frappe.get_doc(
+			{"doctype": "Batch", "item": ITEM, "batch_id": f"SCAN-{frappe.generate_hash(length=6)}"}
+		).insert()
+		receipt = purchase_receive(ITEM, 2, submit=False)
+		receipt.items[0].update({"batch_no": scanned.name, "use_serial_batch_fields": 1})
+		receipt.save()
+		receipt.submit()
+		self.assertEqual(receipt_line_of(scanned.name).receipt, receipt.name)
+		with self.assertRaisesRegex(frappe.ValidationError, "no accepted incoming inspection"):
+			self.decide(scanned.name, "Release", "accepted")
+
+	def test_an_amended_receipt_brings_its_lot_in_again(self):
+		"""A cancelled receipt's lot holds no stock; the receipt's amendment is its new origin."""
+		frappe.set_user("Administrator")
+		receipt = purchase_receive(ITEM, 2)
+		lot = lot_of(receipt.items[0])
+		stage_reason("Purchase Receipt", receipt.name, "cancel", "Wrong price entered")
+		frappe.get_doc("Purchase Receipt", receipt.name).cancel()
+		amended = frappe.copy_doc(frappe.get_doc("Purchase Receipt", receipt.name))
+		amended.amended_from = receipt.name
+		amended.docstatus = 0  # as the desk's Amend makes it: a new draft
+		amended.items[0].update(
+			{"rate": 11, "batch_no": lot, "use_serial_batch_fields": 1, "serial_and_batch_bundle": None}
+		)
+		stage_reason("Purchase Receipt", receipt.name, "amend", "Wrong price entered")
+		amended.insert()
+		amended.submit()
+		self.assertEqual(receipt_line_of(lot).receipt, amended.name)
+
+	def count_of(self, lines: list[tuple[str, float]], rate: float = 10) -> Document:
+		"""Stores' count of the lots in the approved store, as ERPNext's stock reconciliation."""
+		frappe.set_user("Administrator")
+		count = frappe.get_doc(
+			{
+				"doctype": "Stock Reconciliation",
+				"company": company(),
+				"purpose": "Stock Reconciliation",
+				"items": [
+					{
+						"item_code": ITEM,
+						"warehouse": store("Stores"),
+						"qty": qty,
+						"valuation_rate": rate,
+						"batch_no": lot,
+						"use_serial_batch_fields": 1,
+					}
+					for lot, qty in lines
+				],
+			}
+		).insert()
+		count.submit()
+		return count
+
+	def test_a_count_records_a_loss_or_no_change_on_approved_lots(self):
+		"""ERPNext posts a count line as the lot's stock taken out and the counted stock put back;
+		that is the count, not new stock. (A count with no change at all ERPNext refuses itself.)"""
+		_receipt, lost = self.ready()
+		self.decide(lost, "Release", "accepted")
+		_receipt, unchanged = self.ready()
+		self.decide(unchanged, "Release", "accepted")
+		held_lost, held_unchanged = qty_in(lost, store("Stores")), qty_in(unchanged, store("Stores"))
+		self.count_of([(lost, held_lost - 1), (unchanged, held_unchanged)])
+		self.assertEqual(qty_in(lost, store("Stores")), held_lost - 1)
+		self.assertEqual(qty_in(unchanged, store("Stores")), held_unchanged)
+		self.count_of([(unchanged, held_unchanged)], rate=12)  # a corrected value, same stock
+		self.assertEqual(qty_in(unchanged, store("Stores")), held_unchanged)
+
+	def test_no_stock_is_added_to_a_lot_already_in_stock(self):
+		"""A material receipt or a count gain into an approved lot would take its status uninspected."""
+		_receipt, lot = self.ready()
+		self.decide(lot, "Release", "accepted")
+		frappe.set_user("Administrator")
+		with self.assertRaisesRegex(frappe.ValidationError, "new stock comes in as a new lot"):
+			stock_entry(
+				"Material Receipt",
+				[
+					{
+						"item_code": ITEM,
+						"qty": 5,
+						"t_warehouse": store("Stores"),
+						"basic_rate": 10,
+						"batch_no": lot,
+						"use_serial_batch_fields": 1,
+					}
+				],
+			)
+		with self.assertRaisesRegex(frappe.ValidationError, "new stock comes in as a new lot"):
+			self.count_of([(lot, qty_in(lot, store("Stores")) + 2)])  # two found: a gain
+
+	def test_a_received_lot_is_known_by_its_receipt_even_without_the_batch_reference(self):
+		receipt, lot = self.received()
+		self.verified(receipt)
+		frappe.db.set_value("Batch", lot, {"reference_doctype": None, "reference_name": None})
+		self.assertEqual(receipt_line_of(lot).receipt, receipt.name)  # from the stock ledger
+		with self.assertRaisesRegex(frappe.ValidationError, "no accepted incoming inspection"):
+			self.decide(lot, "Release", "accepted")
+
+	def test_a_lot_that_came_in_any_other_way_is_not_released(self):
+		"""Opening stock loaded by a stock reconciliation, as ERPNext offers, is never released:
+		opening stock comes in on material receipts and is inspected (DFD 3.1-3.5)."""
+		frappe.set_user("Administrator")
+		lot = frappe.get_doc(
+			{"doctype": "Batch", "item": ITEM, "batch_id": f"REC-{frappe.generate_hash(length=6)}"}
+		).insert()
+		reconciliation = frappe.get_doc(
+			{
+				"doctype": "Stock Reconciliation",
+				"company": company(),
+				"purpose": "Opening Stock",
+				# An opening entry's difference goes to the temporary opening account, as ERPNext requires.
+				"expense_account": frappe.db.get_value(
+					"Account", {"company": company(), "account_type": "Temporary", "is_group": 0}
+				),
+				"items": [
+					{
+						"item_code": ITEM,
+						"warehouse": store(stores.QUARANTINE),
+						"qty": 3,
+						"valuation_rate": 10,
+						"batch_no": lot.name,
+						"use_serial_batch_fields": 1,
+					}
+				],
+			}
+		).insert()
+		reconciliation.submit()
+		with self.assertRaisesRegex(frappe.ValidationError, "only stock received on a goods receipt"):
+			self.decide(lot.name, "Release", "found in a count")

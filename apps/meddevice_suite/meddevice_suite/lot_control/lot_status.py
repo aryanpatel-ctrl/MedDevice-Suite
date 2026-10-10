@@ -269,9 +269,12 @@ def lots_of_row(row: Document) -> list[str]:
 
 
 def guard_stock_ledger_entry(sle: Document, method: str | None = None) -> None:
-	"""Stock Ledger Entry validate: the one place every outward movement passes, with its
-	document already stored (URS-STK-005)."""
-	if sle.is_cancelled or flt(sle.actual_qty, PRECISION) >= 0:
+	"""Stock Ledger Entry validate: the one place every movement passes, with its document already
+	stored. Outward, only an Approved lot leaves (URS-STK-005); inward, see guard_inward."""
+	if sle.is_cancelled or not flt(sle.actual_qty, PRECISION):
+		return
+	if flt(sle.actual_qty, PRECISION) > 0:
+		guard_inward(sle)
 		return
 	lots = [sle.batch_no] if sle.batch_no else lots_of_bundle(sle.serial_and_batch_bundle)
 	if not lots:
@@ -295,6 +298,80 @@ def guard_stock_ledger_entry(sle: Document, method: str | None = None) -> None:
 			status, sle.voucher_type, purpose, is_return, target_role, lot_release_transfer
 		):
 			refuse(lot, status, sle.warehouse)
+
+
+def guard_inward(sle: Document) -> None:
+	"""Stock comes into a lot only on the document that made it (a goods receipt, a material
+	receipt or production: DFD 3.3 Internal Batch Creation, 4.6 Batch Creation). More stock, a count
+	gain or opening stock comes in as a new lot, inspected and released on its own; added to a lot
+	already in stock, it would take that lot's status without inspection (decided 2026-10-09).
+	A lot moved between stores, and goods coming back on a return, are the same stock."""
+	from meddevice_suite.lot_control.receipt import origins_of  # receipt builds on this module
+
+	lots = [sle.batch_no] if sle.batch_no else lots_of_bundle(sle.serial_and_batch_bundle)
+	if not lots:
+		return
+	if sle.voucher_type == "Stock Entry" and frappe.db.get_value(
+		"Stock Entry Detail", sle.voucher_detail_no, "s_warehouse"
+	):
+		return  # moved from one store to another
+	if frappe.get_meta(sle.voucher_type).has_field("is_return") and frappe.db.get_value(
+		sle.voucher_type, sle.voucher_no, "is_return"
+	):
+		return
+	for lot, origin in origins_of(lots).items():
+		if origin.voucher_no != sle.voucher_no and not counted_back(sle, lot):
+			frappe.throw(
+				_("Lot {0} came in on {1} {2}; new stock comes in as a new lot.").format(
+					lot, _(origin.voucher_type), origin.voucher_no
+				),
+				title=_("New lot needed"),
+			)
+
+
+def counted_back(sle: Document, lot: str) -> bool:
+	"""A stock count posts each line of a batch as the lot's stock taken out and the counted stock
+	put back (ERPNext's stock_reconciliation.get_sle_for_serialized_items, the taking out first).
+	Putting back no more than the same line took out is the count, not new stock: a loss, an
+	unchanged line or a corrected value. Only a gain beyond it would be new stock in an existing
+	lot. Read from the ledger entries of the line, which exist by now; the bundles may not yet be
+	submitted."""
+	if sle.voucher_type != "Stock Reconciliation":
+		return False
+	taken_out = frappe.get_all(
+		"Stock Ledger Entry",
+		filters={
+			"voucher_type": sle.voucher_type,
+			"voucher_no": sle.voucher_no,
+			"voucher_detail_no": sle.voucher_detail_no,
+			"actual_qty": ["<", 0],
+			"is_cancelled": 0,
+		},
+		fields=["batch_no", "serial_and_batch_bundle", "actual_qty"],
+	)
+	# Counted the way this entry names the lot: by its batch field or by its bundle, not both.
+	if sle.batch_no == lot:
+		taken = sum(abs(flt(row.actual_qty)) for row in taken_out if row.batch_no == lot)
+		put_back = abs(flt(sle.actual_qty))
+	else:
+		bundles = [row.serial_and_batch_bundle for row in taken_out if row.serial_and_batch_bundle]
+		taken = sum(
+			abs(flt(qty))
+			for qty in frappe.get_all(
+				"Serial and Batch Entry",
+				filters={"parent": ["in", bundles or [""]], "batch_no": lot},
+				pluck="qty",
+			)
+		)
+		put_back = sum(
+			abs(flt(qty))
+			for qty in frappe.get_all(
+				"Serial and Batch Entry",
+				filters={"parent": sle.serial_and_batch_bundle, "batch_no": lot},
+				pluck="qty",
+			)
+		)
+	return flt(put_back, PRECISION) <= flt(taken, PRECISION)
 
 
 def guard_stock_entry(doc: Document, method: str | None = None) -> None:

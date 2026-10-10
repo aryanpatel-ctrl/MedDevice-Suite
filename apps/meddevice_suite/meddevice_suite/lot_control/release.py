@@ -25,7 +25,12 @@ from frappe.utils import flt, now_datetime
 from meddevice_suite.compliance.esign import sign
 from meddevice_suite.lot_control import lot_status, stores
 from meddevice_suite.lot_control.lot_status import APPROVED, HOLD, QUARANTINE, REJECTED, STATUS_FIELD
-from meddevice_suite.lot_control.receipt import accepted_inspection, receipt_line_of
+from meddevice_suite.lot_control.receipt import (
+	accepted_inspection,
+	made_by_production,
+	material_receipt_of,
+	receipt_line_of,
+)
 
 DOCTYPE = "Lot Release"
 RELEASE, REJECT, HOLD_DECISION = "Release", "Reject", "Hold"
@@ -61,9 +66,19 @@ def decide(doc: Document, decision: str, meaning: str, password: str, reason: st
 		status in starts,
 		_("Lot {0} is {1}; it cannot be {2}.").format(lot.name, _(status), _(ends).lower()),
 	)
-	if decision == RELEASE and doc.source_doctype == "Purchase Receipt":
+	# A lot not made by production is released only after an accepted incoming inspection on the
+	# document that brought it in, a goods receipt or a material receipt (decided 2026-10-09); a lot
+	# that came in any other way is not released at all.
+	brought_in = not made_by_production(lot.name)
+	if decision == RELEASE and brought_in:
+		require(
+			doc.source_doctype == "Purchase Receipt" or material_receipt_of(lot.name),
+			_(
+				"Lot {0} came in on {1} {2}; only stock received on a goods receipt or a material receipt is released."
+			).format(lot.name, _(doc.source_doctype or "an unknown document"), doc.source_name or ""),
+		)
 		after = doc.held_since if status == HOLD else None
-		inspection = accepted_inspection(lot.name, after)
+		inspection = accepted_inspection(lot.name, after, doc.source_doctype, doc.source_name)
 		missing = (
 			_(
 				"Lot {0} has no accepted incoming inspection made after it was put on hold; it cannot be released."
