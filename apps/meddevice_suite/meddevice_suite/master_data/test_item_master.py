@@ -464,6 +464,26 @@ class TestSignedApproval(ItemMasterTestCase):
 		doc.save()
 		self.assertFalse(is_unchanged_since(signature))  # what QA approved has changed, under its request
 
+	def test_a_table_changed_past_the_rules_shows_as_changed_since_signing(self):
+		"""The signature binds the item's tables, not only its fields: a unit conversion changed
+		straight in the database (no version raised) is detected (21 CFR 11.70)."""
+		from meddevice_suite.compliance.esign import is_unchanged_since
+
+		if not frappe.db.exists("UOM", "Box"):
+			frappe.get_doc({"doctype": "UOM", "uom_name": "Box"}).insert()
+		item = new_item(
+			uoms=[{"uom": "Nos", "conversion_factor": 1}, {"uom": "Box", "conversion_factor": 10}]
+		)
+		with_specification(item)
+		self.approve_as_qa(item.name)
+		signature = frappe.get_last_doc(
+			"Electronic Signature", filters={"reference_doctype": "Item", "reference_name": item.name}
+		)
+		self.assertTrue(is_unchanged_since(signature))
+		row = frappe.db.get_value("UOM Conversion Detail", {"parent": item.name, "uom": "Box"})
+		frappe.db.set_value("UOM Conversion Detail", row, "conversion_factor", 12)  # past every rule
+		self.assertFalse(is_unchanged_since(signature))
+
 	def test_a_draft_item_changes_freely(self):
 		doc = new_item(FINISHED_GOOD)
 		doc.update({DEVICE_CLASS: "C", STORAGE_CONDITION: "Below 25 °C", "shelf_life_in_days": 730})
