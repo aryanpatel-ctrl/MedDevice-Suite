@@ -38,3 +38,27 @@ function approval_colour(approval) {
 	if (!approval || approval.decision === "Not Approved" || approval.ended) return "red";
 	return approval.decision === "Conditional" ? "orange" : "green";
 }
+
+// Version-controlled masters (URS-MST-001): a change to a master in use names an approved change
+// request that lists it; the lookup offers only those (qms/change_control.py).
+for (const doctype of [
+	"Item",
+	"BOM",
+	"Routing",
+	"Operation",
+	"Workstation",
+	"Supplier",
+	"Customer",
+	"Warehouse",
+	"Asset",
+	"Quality Inspection Template",
+]) {
+	frappe.ui.form.on(doctype, {
+		setup(frm) {
+			frm.set_query("mds_change_request", () => ({
+				query: "meddevice_suite.qms.change_control.approved_changes_for",
+				filters: { reference_doctype: frm.doctype, reference_name: frm.doc.name },
+			}));
+		},
+	});
+}

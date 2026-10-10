@@ -256,6 +256,7 @@ class TestChangeControl(SpecificationTestCase):
 		self.assertEqual(
 			frappe.db.get_value(DOCTYPE, name, ["mds_changed_under", "mds_change_request"]), (change, None)
 		)
+		self.assertEqual(frappe.db.get_value(DOCTYPE, name, "mds_version"), 2)  # URS-MST-001
 
 	def test_each_change_names_its_change_request_again(self):
 		name = self.in_use_specification()
@@ -292,6 +293,32 @@ class TestChangeControl(SpecificationTestCase):
 		legacy.save()  # its first issue
 		with self.assertRaisesRegex(frappe.ValidationError, "name the approved change request"):
 			self.widened(name).save()
+
+	def test_a_parameter_read_by_a_specification_in_use_keeps_its_name(self):
+		self.in_use_specification()
+		frappe.set_user("Administrator")
+		with self.assertRaises(frappe.PermissionError):
+			frappe.rename_doc("Quality Inspection Parameter", DIMENSION, f"{DIMENSION} renamed")
+
+	def test_removing_a_parameter_of_a_specification_in_use_needs_a_request(self):
+		name = self.in_use_specification()
+		spec = frappe.get_doc(DOCTYPE, name)
+		spec.item_quality_inspection_parameter = spec.item_quality_inspection_parameter[:1]
+		with self.assertRaisesRegex(frappe.ValidationError, "name the approved change request"):
+			spec.save()
+
+	def test_a_request_not_yet_approved_does_not_allow_a_change(self):
+		from meddevice_suite.master_data.test_versioning import draft_change
+
+		name = self.in_use_specification()
+		draft = draft_change(self.requester, DOCTYPE, name)
+		with self.assertRaisesRegex(frappe.ValidationError, "not approved for implementation"):
+			self.widened(name, mds_change_request=draft).save()
+
+	def test_the_api_changes_a_specification_in_use_under_the_same_rule(self):
+		name = self.in_use_specification()
+		with self.assertRaisesRegex(frappe.ValidationError, "name the approved change request"):
+			frappe.client.set_value(DOCTYPE, name, "mds_sample_size", 10)
 
 	def test_a_specification_in_use_is_never_deleted(self):
 		name = self.in_use_specification()

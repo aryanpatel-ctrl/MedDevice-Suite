@@ -48,6 +48,7 @@ AFFECTED_TYPES = (
 	"Workstation",
 	"Asset",
 	"Supplier",
+	"Customer",  # the ninth master (URS-MST-001)
 	"Quality Inspection Template",
 	"Warehouse",
 )
@@ -338,14 +339,20 @@ def require_approved_change(change_request: str, doctype: str, name: str) -> Non
 def approved_changes_for(
 	doctype: str, txt: str, searchfield: str, start: int, page_len: int, filters: dict
 ) -> list[tuple[str, str]]:
-	"""The revision form's lookup: approved change requests that list the document, among those
-	the person may see."""
-	document = (filters or {}).get("controlled_document")
+	"""The lookup of a form that changes a record under change control: approved change requests
+	that list the record, among those the person may see. A document revision names its document
+	(`controlled_document`); a master names itself (`reference_doctype`, `reference_name`)."""
+	filters = filters or {}
+	record_type, document = (
+		("Controlled Document", filters.get("controlled_document"))
+		if filters.get("controlled_document")
+		else (filters.get("reference_doctype"), filters.get("reference_name"))
+	)
 	listing = frappe.get_all(
 		"Change Request Affected Record",
 		filters={
 			"parenttype": DOCTYPE,
-			"reference_doctype": "Controlled Document",
+			"reference_doctype": record_type,
 			"reference_name": document,
 		},
 		pluck="parent",

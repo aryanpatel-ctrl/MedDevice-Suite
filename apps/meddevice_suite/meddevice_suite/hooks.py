@@ -23,16 +23,24 @@ after_migrate = "meddevice_suite.setup.install.apply_configuration"
 doc_events = {
 	"*": {
 		# Audit trail: each handler returns at once for record types that are not regulated.
-		"before_insert": "meddevice_suite.compliance.audit.before_insert",
+		"before_insert": [
+			"meddevice_suite.compliance.audit.before_insert",
+			# Version-controlled masters (URS-MST-001): each returns at once for other record types.
+			"meddevice_suite.master_data.versioning.first_version",
+		],
 		"before_change": "meddevice_suite.compliance.audit.before_change",
 		"before_cancel": "meddevice_suite.compliance.audit.before_cancel",
 		# What an approval forbids is refused first; asking a reason for it would mislead.
 		"before_update_after_submit": [
 			"meddevice_suite.compliance.approvals.before_update_after_submit",
+			"meddevice_suite.master_data.versioning.version_master",
 			"meddevice_suite.compliance.audit.before_update_after_submit",
 		],
 		# Approval workflows: returns at once for record types without one.
-		"validate": "meddevice_suite.compliance.approvals.validate",
+		"validate": [
+			"meddevice_suite.compliance.approvals.validate",
+			"meddevice_suite.master_data.versioning.version_master",
+		],
 		"on_submit": "meddevice_suite.compliance.approvals.on_submit",
 		"onload": [
 			"meddevice_suite.compliance.audit_timeline.onload",
@@ -40,6 +48,7 @@ doc_events = {
 		],
 		"on_change": "meddevice_suite.compliance.audit.on_change",
 		"on_trash": "meddevice_suite.compliance.audit.on_trash",
+		"before_rename": "meddevice_suite.master_data.versioning.refuse_rename_in_use",
 		"after_rename": "meddevice_suite.compliance.audit.after_rename",
 	},
 	"Desktop Layout": {"validate": "meddevice_suite.setup.desk.enforce_on_desktop_layout"},
@@ -89,6 +98,19 @@ doc_events = {
 		],
 		"before_submit": "meddevice_suite.master_data.specification.check_sample_size",
 	},
+	# Version-controlled masters (URS-MST-001): the default bill of materials in force is replaced,
+	# and one is cancelled, only under an approved change request.
+	"BOM": {
+		"before_submit": "meddevice_suite.master_data.versioning.guard_new_default_bom",
+		"on_submit": "meddevice_suite.master_data.versioning.record_displaced_default",
+		"on_update_after_submit": "meddevice_suite.master_data.versioning.record_displaced_default",
+		"before_cancel": "meddevice_suite.master_data.versioning.guard_cancel",
+		"on_cancel": "meddevice_suite.master_data.versioning.let_change_requests_not_block_cancel",
+	},
+	"Asset": {
+		"before_cancel": "meddevice_suite.master_data.versioning.guard_cancel",
+		"on_cancel": "meddevice_suite.master_data.versioning.let_change_requests_not_block_cancel",
+	},
 	"Quality Inspection Template": {
 		"validate": "meddevice_suite.master_data.specification.guard_template",
 		"on_trash": "meddevice_suite.master_data.specification.protect_template",
@@ -100,7 +122,11 @@ doc_events = {
 	},
 	"Supplier": {"onload": "meddevice_suite.master_data.supplier_approval.supplier_onload"},
 	"Purchase Invoice": {"validate": "meddevice_suite.master_data.supplier_approval.refuse_stock_on_invoice"},
-	"Item": {"validate": "meddevice_suite.setup.stock.refuse_negative_stock"},
+	"BOM Update Log": {"validate": "meddevice_suite.master_data.versioning.refuse_bom_replace"},
+	"Item": {
+		"validate": "meddevice_suite.setup.stock.refuse_negative_stock",
+		"on_update": "meddevice_suite.master_data.versioning.update_variants_under_control",
+	},
 	"Stock Settings": {"validate": "meddevice_suite.setup.stock.protect_stock_settings"},
 	"Log Settings": {"validate": "meddevice_suite.compliance.retention.protect_login_history"},
 	"File": {"before_validate": "meddevice_suite.compliance.evidence_files.protect"},
