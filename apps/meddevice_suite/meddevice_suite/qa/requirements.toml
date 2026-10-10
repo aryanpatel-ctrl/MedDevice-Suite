@@ -903,8 +903,8 @@ status = "planned"
 [[requirement]]
 id = "URS-MST-005"
 module = 1
-title = "A finished good states whether it is supplied sterile, its device class under the Medical Devices Rules 2017 (A, B, C, D, or not a device), its storage condition, its pack sizes (units per box, boxes per carton) and its UDI device identifier, a well-formed GTIN that no other item carries; QA cannot approve a finished good without them, and the label of module 23 takes them from the item."
-source = "D2 Labels carry batch, manufacturing date, expiry date, UDI and barcode; DFD 6.2 Label Printing, D3; CDSCO MDR 2017 Chapter VI (labelling) and UDI; 21 CFR 830; device class and storage condition kept on 2026-10-10 as D3 regulatory data"
+title = "A finished good states whether it is supplied sterile, its device class under the Medical Devices Rules 2017 (A, B, C, D, or not a device), its storage condition, its pack sizes (units per box, boxes per carton) and its UDI device identifier, a well-formed GTIN that no other item carries; QA cannot approve a finished good without them."
+source = "D2 Labels carry batch, manufacturing date, expiry date, UDI and barcode; DFD 6.2 Label Printing, D3; CDSCO MDR 2017 Chapter VI (labelling) and UDI; 21 CFR 830; device class and storage condition kept on 2026-10-10 as D3 regulatory data; printing them on the label is module 23's requirement, not this one's"
 status = "planned"
 
 [[requirement]]

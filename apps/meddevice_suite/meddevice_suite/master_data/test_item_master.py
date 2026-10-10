@@ -4,7 +4,7 @@ way a record can be made (the matrix in docs/features/item-master.md, section 3)
 import frappe
 from frappe.model.workflow import apply_workflow
 from frappe.tests import IntegrationTestCase
-from frappe.utils import add_days, today
+from frappe.utils import add_days, getdate, today
 
 from meddevice_suite.compliance.esign import SigningRefused, verify_signatures
 from meddevice_suite.compliance.signing import sign_action
@@ -189,6 +189,29 @@ class TestSignedApproval(ItemMasterTestCase):
 		frappe.set_user("Administrator")
 		with self.assertRaises(frappe.PermissionError):  # a shared account never signs
 			sign_action("Item", doc.name, "Approve", PASSWORD, "Shared account")
+		# Someone who may edit items (Item Manager) but is not QA: the case the rule is for.
+		editor = "item.editor@item-master.example.com"
+		if not frappe.db.exists("User", editor):
+			frappe.get_doc(
+				{
+					"doctype": "User",
+					"email": editor,
+					"first_name": "Item editor",
+					"send_welcome_email": 0,
+					"roles": [{"role": "Item Manager"}],
+				}
+			).insert(ignore_permissions=True)
+		from frappe.utils.password import update_password
+
+		from meddevice_suite.compliance.test_esign import reset_lockout
+
+		update_password(editor, PASSWORD)
+		reset_lockout(editor)
+		self.assertTrue(frappe.has_permission("Item", "write", doc=doc.name, user=editor))
+		frappe.set_user(editor)
+		with self.assertRaisesRegex(frappe.PermissionError, "Only QA approves an item"):
+			sign_action("Item", doc.name, "Approve", PASSWORD, "Editing is not approving")
+		frappe.set_user("Administrator")
 		self.assertEqual(frappe.db.get_value("Item", doc.name, APPROVAL_STATUS), DRAFT)
 
 	def test_a_wrong_password_approves_nothing(self):
@@ -399,14 +422,67 @@ class TestNotUsedBeforeApproval(ItemMasterTestCase):
 			doc.insert()
 
 	def test_every_record_type_naming_an_item_refuses_a_draft_one(self):
-		"""The guard is on every record type; a record type naming an item that a later ERPNext adds
-		is covered without a change here. The list of exceptions is the only list kept."""
-		users = []
-		for doctype in frappe.get_all("DocType", filters={"istable": 0, "issingle": 0}, pluck="name"):
-			own, tables = item_fields_of(frappe.get_meta(doctype))
-			if (own or tables) and doctype not in SETUP_TYPES:
-				users.append(doctype)
-		# What the matrix names explicitly is among them (module 1 requirement text).
+		"""The reference is each installed app's own definition of its record types (their JSON
+		files), read here independently of the guard's code: every record type with a link to Item,
+		directly or in a table, is given a draft item in that field and must refuse it; only the
+		setup record types may take it."""
+		import glob
+		import json
+		import os
+
+		definitions = {}
+		for app in frappe.get_installed_apps():
+			for path in glob.glob(
+				os.path.join(frappe.get_app_path(app), "**", "doctype", "*", "*.json"), recursive=True
+			):
+				try:
+					definition = json.load(open(path))
+				except ValueError:
+					continue
+				if isinstance(definition, dict) and definition.get("doctype") == "DocType":
+					definitions[definition["name"]] = definition
+
+		def item_links(definition):
+			return [
+				f["fieldname"]
+				for f in definition.get("fields", [])
+				if f.get("fieldtype") == "Link" and f.get("options") == "Item"
+			]
+
+		draft = new_item().name
+		tried = set()
+		for name, definition in sorted(definitions.items()):
+			if (
+				definition.get("istable")
+				or definition.get("issingle")
+				or not frappe.db.exists("DocType", name)
+			):
+				continue
+			cases = [(field, None) for field in item_links(definition)]
+			for f in definition.get("fields", []):
+				# A virtual table is computed on the fly (from the BOM, say) and never stored.
+				if (
+					f.get("fieldtype") in ("Table", "Table MultiSelect")
+					and f.get("options") in definitions
+					and not f.get("is_virtual")
+				):
+					cases += [
+						(row_field, f["fieldname"]) for row_field in item_links(definitions[f["options"]])
+					]
+			for field, table in cases:
+				with self.subTest(doctype=name, field=field, table=table):
+					doc = frappe.new_doc(name)
+					if table:
+						doc.append(table, {field: draft})
+					else:
+						doc.set(field, draft)
+					if name in SETUP_TYPES or name in item_master.CORRECTIONS:
+						item_master.refuse_unapproved(doc, "validate")  # setup and corrections take it
+					else:
+						with self.assertRaisesRegex(frappe.ValidationError, NOT_APPROVED):
+							item_master.refuse_unapproved(doc, "validate")
+					tried.add(name)
+		# What the requirement names explicitly is among what was tried.
 		for doctype in (
 			"Material Request",
 			"Request for Quotation",
@@ -433,10 +509,78 @@ class TestNotUsedBeforeApproval(ItemMasterTestCase):
 			"Asset",
 			"Stock Ledger Entry",
 		):
-			with self.subTest(doctype=doctype):
-				self.assertIn(doctype, users)
-		# Setup records are only those that do not put an item to use.
-		self.assertTrue(SETUP_TYPES.isdisjoint({"Stock Ledger Entry", "Batch", "BOM", "Asset"}))
+			self.assertIn(doctype, tried)
+
+	def test_a_row_added_to_a_submitted_record_in_memory_is_checked(self):
+		"""Code that appends a row to a submitted record and saves it writes the row without the
+		row's own hooks; the record's update after submit is where the item is checked."""
+		product = self.approved_item(FINISHED_GOOD)
+		order = frappe.get_doc(
+			{
+				"doctype": "Sales Order",
+				"customer": CUSTOMER,
+				"company": company(),
+				"delivery_date": today(),
+				"items": [
+					{
+						"item_code": product,
+						"qty": 1,
+						"rate": 10,
+						"delivery_date": today(),
+						"warehouse": store("Stores"),
+					}
+				],
+			}
+		).insert()
+		order.submit()
+		order = frappe.get_doc("Sales Order", order.name)
+		draft = with_specification(new_item(FINISHED_GOOD)).name
+		order.append(
+			"items",
+			{
+				"item_code": draft,
+				"qty": 1,
+				"rate": 10,
+				"delivery_date": getdate(today()),
+				"warehouse": store("Stores"),
+			},
+		)
+		order.flags.ignore_validate_update_after_submit = True  # as ERPNext's own after-submit updates do
+		with self.assertRaisesRegex(frappe.ValidationError, NOT_APPROVED):
+			order.save()
+
+	def test_a_work_order_for_an_item_returned_to_draft_is_refused_on_save(self):
+		"""A real save, not the guard alone: a product with a BOM, then held as a draft (as an item
+		made before this module is), cannot be put into production."""
+		material = self.approved_item()
+		product = self.approved_item(FINISHED_GOOD)
+		bom = frappe.get_doc(
+			{
+				"doctype": "BOM",
+				"item": product,
+				"company": company(),
+				"quantity": 1,
+				"is_active": 1,
+				"is_default": 1,
+				"rm_cost_as_per": "Valuation Rate",
+				"items": [{"item_code": material, "qty": 1, "rate": 1}],
+			}
+		).insert()
+		bom.submit()
+		frappe.db.set_value("Item", product, APPROVAL_STATUS, DRAFT)  # held as a draft
+		order = frappe.get_doc(
+			{
+				"doctype": "Work Order",
+				"production_item": product,
+				"bom_no": bom.name,
+				"qty": 1,
+				"company": company(),
+				"wip_warehouse": store("Work In Progress"),
+				"fg_warehouse": store("Quarantine"),
+			}
+		)
+		with self.assertRaisesRegex(frappe.ValidationError, NOT_APPROVED):
+			order.insert()
 
 	def test_purchasing_refuses_a_draft_item(self):
 		from meddevice_suite.master_data.test_supplier_approval import approved_for
