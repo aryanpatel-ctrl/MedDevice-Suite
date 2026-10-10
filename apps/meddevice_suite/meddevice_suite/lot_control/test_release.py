@@ -751,6 +751,42 @@ class TestWhereALotCameFrom(ReleaseTestCase):
 		amended.submit()
 		self.assertEqual(receipt_line_of(lot).receipt, amended.name)
 
+	def count_of(self, lines: list[tuple[str, float]]) -> Document:
+		"""Stores' count of the lots in the approved store, as ERPNext's stock reconciliation."""
+		frappe.set_user("Administrator")
+		count = frappe.get_doc(
+			{
+				"doctype": "Stock Reconciliation",
+				"company": company(),
+				"purpose": "Stock Reconciliation",
+				"items": [
+					{
+						"item_code": ITEM,
+						"warehouse": store("Stores"),
+						"qty": qty,
+						"valuation_rate": 10,
+						"batch_no": lot,
+						"use_serial_batch_fields": 1,
+					}
+					for lot, qty in lines
+				],
+			}
+		).insert()
+		count.submit()
+		return count
+
+	def test_a_count_records_a_loss_or_no_change_on_approved_lots(self):
+		"""ERPNext posts a count line as the lot's stock taken out and the counted stock put back;
+		that is the count, not new stock. (A count with no change at all ERPNext refuses itself.)"""
+		_receipt, lost = self.ready()
+		self.decide(lost, "Release", "accepted")
+		_receipt, unchanged = self.ready()
+		self.decide(unchanged, "Release", "accepted")
+		held_lost, held_unchanged = qty_in(lost, store("Stores")), qty_in(unchanged, store("Stores"))
+		self.count_of([(lost, held_lost - 1), (unchanged, held_unchanged)])
+		self.assertEqual(qty_in(lost, store("Stores")), held_lost - 1)
+		self.assertEqual(qty_in(unchanged, store("Stores")), held_unchanged)
+
 	def test_no_stock_is_added_to_a_lot_already_in_stock(self):
 		"""A material receipt or a count gain into an approved lot would take its status uninspected."""
 		_receipt, lot = self.ready()
@@ -770,25 +806,8 @@ class TestWhereALotCameFrom(ReleaseTestCase):
 					}
 				],
 			)
-		count = frappe.get_doc(
-			{
-				"doctype": "Stock Reconciliation",
-				"company": company(),
-				"purpose": "Stock Reconciliation",
-				"items": [
-					{
-						"item_code": ITEM,
-						"warehouse": store("Stores"),
-						"qty": qty_in(lot, store("Stores")) + 2,
-						"valuation_rate": 10,
-						"batch_no": lot,
-						"use_serial_batch_fields": 1,
-					}
-				],
-			}
-		).insert()
 		with self.assertRaisesRegex(frappe.ValidationError, "new stock comes in as a new lot"):
-			count.submit()
+			self.count_of([(lot, qty_in(lot, store("Stores")) + 2)])  # two found: a gain
 
 	def test_a_received_lot_is_known_by_its_receipt_even_without_the_batch_reference(self):
 		receipt, lot = self.received()

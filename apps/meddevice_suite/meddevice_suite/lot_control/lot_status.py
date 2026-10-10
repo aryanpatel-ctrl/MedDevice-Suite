@@ -320,13 +320,62 @@ def guard_inward(sle: Document) -> None:
 	):
 		return
 	for lot, origin in origins_of(lots).items():
-		if origin.voucher_no != sle.voucher_no:
+		if origin.voucher_no != sle.voucher_no and not counted_back(sle, lot):
 			frappe.throw(
 				_("Lot {0} came in on {1} {2}; new stock comes in as a new lot.").format(
 					lot, _(origin.voucher_type), origin.voucher_no
 				),
 				title=_("New lot needed"),
 			)
+
+
+def counted_back(sle: Document, lot: str) -> bool:
+	"""A stock count posts each line of a batch as the lot's stock taken out and the counted stock
+	put back (ERPNext's stock_reconciliation.get_sle_for_serialized_items, the taking out first).
+	Putting back no more than the same line took out is the count, not new stock: a loss, an
+	unchanged line or a corrected value. Only a gain beyond it would be new stock in an existing
+	lot. Read from the ledger entries of the line, which exist by now; the bundles may not yet be
+	submitted."""
+	if sle.voucher_type != "Stock Reconciliation":
+		return False
+	taken_out = frappe.get_all(
+		"Stock Ledger Entry",
+		filters={
+			"voucher_type": sle.voucher_type,
+			"voucher_no": sle.voucher_no,
+			"voucher_detail_no": sle.voucher_detail_no,
+			"actual_qty": ["<", 0],
+			"is_cancelled": 0,
+		},
+		fields=["batch_no", "serial_and_batch_bundle", "actual_qty"],
+	)
+	taken = sum(abs(flt(row.actual_qty)) for row in taken_out if row.batch_no == lot) + sum(
+		abs(flt(qty))
+		for qty in frappe.get_all(
+			"Serial and Batch Entry",
+			filters={
+				"parent": [
+					"in",
+					[row.serial_and_batch_bundle for row in taken_out if row.serial_and_batch_bundle] or [""],
+				],
+				"batch_no": lot,
+			},
+			pluck="qty",
+		)
+	)
+	put_back = (
+		abs(flt(sle.actual_qty))
+		if sle.batch_no == lot
+		else sum(
+			abs(flt(qty))
+			for qty in frappe.get_all(
+				"Serial and Batch Entry",
+				filters={"parent": sle.serial_and_batch_bundle, "batch_no": lot},
+				pluck="qty",
+			)
+		)
+	)
+	return flt(put_back, PRECISION) <= flt(taken, PRECISION)
 
 
 def guard_stock_entry(doc: Document, method: str | None = None) -> None:
