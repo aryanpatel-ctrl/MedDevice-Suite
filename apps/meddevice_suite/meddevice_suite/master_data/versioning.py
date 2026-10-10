@@ -37,7 +37,7 @@ from frappe.query_builder.functions import Date
 from frappe.utils import cint, today
 
 from meddevice_suite.compliance.audit import record, row_content, same
-from meddevice_suite.master_data.item_master import APPROVAL_STATUS, APPROVED
+from meddevice_suite.master_data.item_master import APPROVAL_STATUS, APPROVED, UNSET_WHEN_ZERO
 from meddevice_suite.master_data.item_master import CONTROLLED_FIELDS as ITEM_DEVICE_FIELDS
 from meddevice_suite.qms.change_control import require_approved_change
 
@@ -98,6 +98,12 @@ MASTERS: dict[str, Master] = {
 			"disabled",
 			*ITEM_DEVICE_FIELDS,  # module 1: type, storage, device class, pack sizes, UDI
 		),
+		# Module 1: what a variant is (its attribute values), its units and its barcodes.
+		tables={
+			"attributes": ("attribute", "attribute_value"),
+			"uoms": ("uom", "conversion_factor"),
+			"barcodes": ("barcode", "barcode_type"),
+		},
 		in_use=item_in_use,
 	),
 	# A submitted bill of materials keeps its lines; which one is in force changes under control.
@@ -280,7 +286,7 @@ def version_master(doc: Document, method: str | None = None) -> None:
 		# once, before QA approves it, as a specification made before control gets its first issue.
 		# Only what was never filled: 0 is a value (0 °C), and a template passes its data to
 		# variants that may be approved.
-		touched = [f for f in touched if not (f in ITEM_DEVICE_FIELDS and before.get(f) in (None, ""))]
+		touched = [f for f in touched if not (f in ITEM_DEVICE_FIELDS and never_filled(before, f))]
 	# A request counts only when named with the change, not one left on the record before.
 	named = (
 		doc.get(CHANGE_REQUEST)
@@ -308,6 +314,11 @@ def version_master(doc: Document, method: str | None = None) -> None:
 			require_approved_change(request, "BOM", displaced)
 			doc.flags.displaces = (displaced, request)
 	record_change(doc, request)
+
+
+def never_filled(doc: Document, field: str) -> bool:
+	"""Blank, or a count still 0 (a number column is never blank; 0 is never a count)."""
+	return doc.get(field) in (None, "") or (field in UNSET_WHEN_ZERO and not cint(doc.get(field)))
 
 
 def drop_unused_request(doc: Document) -> None:
@@ -399,18 +410,28 @@ def update_variants_under_control(doc: Document, method: str | None = None) -> N
 def following_template(doc: Document, touched: list[str]) -> str | None:
 	"""A variant that only takes on its template's values while the template's controlled change
 	is passed to it follows that change, under the template's request."""
+	master = MASTERS["Item"]
+	# A variant's attribute values are what it is, never its template's (module 1).
+	followed_tables = {table: rows for table, rows in master.tables.items() if table != "attributes"}
 	if (
 		doc.doctype != "Item"
 		or not doc.get("variant_of")
 		or frappe.flags.variants_follow != doc.variant_of
-		or not set(touched) <= set(MASTERS["Item"].fields)
+		or not set(touched) <= set(master.fields) | set(followed_tables)
 	):
 		return None
-	template = frappe.db.get_value("Item", doc.variant_of, [*touched, CHANGED_UNDER], as_dict=True)
-	if not template or not template.get(CHANGED_UNDER):
+	template = frappe.get_doc("Item", doc.variant_of)
+	if not template.get(CHANGED_UNDER):
 		return None
-	if any(not same(doc.get(f), template.get(f), doc.meta.get_field(f).fieldtype) for f in touched):
-		return None
+	for f in touched:
+		if f in followed_tables:
+			row_fields = followed_tables[f]
+			ours = [[row.get(field) for field in row_fields] for row in doc.get(f) or []]
+			theirs = [[row.get(field) for field in row_fields] for row in template.get(f) or []]
+			if ours != theirs:
+				return None
+		elif not same(doc.get(f), template.get(f), doc.meta.get_field(f).fieldtype):
+			return None
 	return template.get(CHANGED_UNDER)
 
 

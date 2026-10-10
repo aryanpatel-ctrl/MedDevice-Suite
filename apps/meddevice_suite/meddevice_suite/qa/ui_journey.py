@@ -114,20 +114,19 @@ def approve_as_qa(password: str | None):
 			return
 		if not password:
 			frappe.throw(_("Give the run's password of the job users to approve {0}.").format(code))
-		# frappe.set_user replaces the request's session (its sid becomes the user name, its data is
-		# emptied, in place), which would sign the browser out; a copy is kept and put back.
-		session, qa = (
-			frappe._dict(frappe.local.session, data=frappe._dict(frappe.session.data)),
-			email_for("QA Manager"),
-		)
+		# frappe.set_user rewrites the request's session in place (its sid becomes the user name, its
+		# data is emptied); that same object is what Frappe saves for the browser's sid when the
+		# request ends, so it is restored in place, not replaced.
+		saved, qa = dict(frappe.local.session), email_for("QA Manager")
 		frappe.set_user(qa)  # nosemgrep: frappe-setuser - test site, Administrator only
 		try:
 			item_master.approve(
 				frappe.get_doc("Item", code), password=password, reason="Set up for the browser journey"
 			)
 		finally:
-			frappe.set_user(session.user)  # nosemgrep: frappe-setuser - back to the Administrator
-			frappe.local.session = session
+			frappe.set_user(saved["user"])  # nosemgrep: frappe-setuser - back to the Administrator
+			frappe.local.session.clear()
+			frappe.local.session.update(saved)
 
 	return approve
 

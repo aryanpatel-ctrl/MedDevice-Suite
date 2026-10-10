@@ -22,6 +22,8 @@ types follow the client's master-data template of 2026-10-09, with Equipment add
 items that stand behind the equipment register's assets (module 8).
 """
 
+import re
+
 import frappe
 from frappe import _
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
@@ -150,13 +152,17 @@ CUSTOM_FIELDS = {
 		{
 			"fieldname": MIN_TEMPERATURE,
 			"label": "Min Temperature (°C)",
-			"fieldtype": "Float",
+			# Text, not a number: a number column is never blank (Frappe stores 0), and 0 °C is a
+			# temperature; checked as a number on save.
+			"fieldtype": "Data",
 			"insert_after": STORAGE_CONDITION,
 		},
 		{
 			"fieldname": MAX_TEMPERATURE,
 			"label": "Max Temperature (°C)",
-			"fieldtype": "Float",
+			# Text, not a number: a number column is never blank (Frappe stores 0), and 0 °C is a
+			# temperature; checked as a number on save.
+			"fieldtype": "Data",
 			"insert_after": MIN_TEMPERATURE,
 		},
 		{
@@ -218,6 +224,9 @@ CUSTOM_FIELDS = {
 }
 
 
+# Counts that are 0 until stated (a number column is never blank): 0 is never a count.
+UNSET_WHEN_ZERO = (UNITS_PER_BOX, BOXES_PER_CARTON)
+
 # A variant takes these from its template, and follows the template's controlled changes (MST-001);
 # its identifier and its approval are its own.
 VARIANT_FIELDS = tuple(field for field in CONTROLLED_FIELDS if field != UDI_DI)
@@ -243,7 +252,10 @@ def apply_item_master_fields() -> None:
 		fields=["name", UDI_DI],
 		as_list=True,
 	):
-		frappe.db.set_value("Item", name, GTIN_KEY, gtin_key(udi), update_modified=False)  # setup code
+		# An identifier that is not a GTIN, or one another item holds, keeps no key: the item's next
+		# save is refused with the reason, and QA corrects it.
+		if valid_gtin(udi) and not frappe.db.exists("Item", {GTIN_KEY: gtin_key(udi)}):
+			frappe.db.set_value("Item", name, GTIN_KEY, gtin_key(udi), update_modified=False)  # setup code
 
 
 def configured() -> bool:
@@ -271,7 +283,8 @@ def approved(item: str | Document) -> bool:
 def valid_gtin(value: str) -> bool:
 	"""A GTIN-8, -12, -13 or -14: digits whose last one is the GS1 check digit."""
 	digits = (value or "").strip()
-	if not digits.isdigit() or len(digits) not in GTIN_LENGTHS:
+	# ASCII digits only (str.isdigit takes other scripts' digits too); all zeros is no identifier.
+	if not re.fullmatch(r"[0-9]+", digits) or len(digits) not in GTIN_LENGTHS or not digits.strip("0"):
 		return False
 	body, check = digits[:-1], int(digits[-1])
 	total = sum(int(d) * (3 if i % 2 == 0 else 1) for i, d in enumerate(reversed(body)))
@@ -363,11 +376,18 @@ def guard_item(doc: Document, method: str | None = None) -> None:
 	for field in (UNITS_PER_BOX, BOXES_PER_CARTON):
 		if doc.get(field) is not None and cint(doc.get(field)) < 0:
 			frappe.throw(_("{0} is a count.").format(_(doc.meta.get_label(field))))
-	if (
-		doc.get(MIN_TEMPERATURE) is not None
-		and doc.get(MAX_TEMPERATURE) is not None
-		and flt(doc.get(MIN_TEMPERATURE)) > flt(doc.get(MAX_TEMPERATURE))
-	):
+	temperatures = {}
+	for field in (MIN_TEMPERATURE, MAX_TEMPERATURE):
+		value = (doc.get(field) or "").strip()
+		doc.set(field, value or None)
+		if value:
+			try:
+				temperatures[field] = float(value)
+			except ValueError:
+				frappe.throw(
+					_("{0} is a temperature in °C, e.g. 2 or -20.").format(_(doc.meta.get_label(field)))
+				)
+	if len(temperatures) == 2 and temperatures[MIN_TEMPERATURE] > temperatures[MAX_TEMPERATURE]:
 		frappe.throw(_("The minimum storage temperature is not above the maximum."))
 	if not approved(doc) and doc.get("reorder_levels"):
 		# ERPNext's automatic reorder makes one batch of requests for every item; a draft item in it
@@ -417,8 +437,20 @@ def signed_content(doc: Document) -> dict:
 	then shown as a change since signing, made under its change request."""
 	from meddevice_suite.master_data.versioning import EFFECTIVE_FROM, MASTERS, VERSION
 
-	fields = ("item_code", *MASTERS["Item"].fields, *APPROVAL_FIELDS, VERSION, EFFECTIVE_FROM)
-	return {field: doc.get(field) for field in fields}
+	master = MASTERS["Item"]
+	fields = (
+		"item_code",
+		"variant_of",
+		"has_variants",
+		*master.fields,
+		*APPROVAL_FIELDS,
+		VERSION,
+		EFFECTIVE_FROM,
+	)
+	content = {field: doc.get(field) for field in fields}
+	for table, row_fields in master.tables.items():  # a variant's attributes, units, barcodes
+		content[table] = [{f: row.get(f) for f in row_fields} for row in doc.get(table) or []]
+	return content
 
 
 def approve(doc: Document, password: str, reason: str | None = None) -> None:
@@ -449,6 +481,60 @@ def require(condition, message: str, exception: type[Exception] = frappe.Validat
 		frappe.throw(message, exception)
 
 
+# --- Lots and serial numbers made in bulk ------------------------------------------------------
+# ERPNext's upload of lots and serial numbers from a file, and its making of serial numbers, insert
+# them straight into the database, past every record's rules; they are refused here for an item
+# QA has not approved (hooks.override_whitelisted_methods).
+
+SERIAL_AND_BATCH = "erpnext.stock.doctype.serial_and_batch_bundle.serial_and_batch_bundle"
+
+
+def refuse_unless_approved(item_code: str) -> None:
+	if configured() and not approved(item_code):
+		frappe.throw(
+			_("Not yet approved by QA, so no lots or serial numbers are made for {0}.").format(item_code),
+			title=_("Item not approved"),
+		)
+
+
+@frappe.whitelist()
+def upload_csv_file(item_code: str, file_path: str):
+	refuse_unless_approved(item_code)
+	return frappe.get_attr(f"{SERIAL_AND_BATCH}.upload_csv_file")(item_code, file_path)
+
+
+@frappe.whitelist()
+def create_serial_nos(item_code: str, serial_nos):
+	refuse_unless_approved(item_code)
+	return frappe.get_attr(f"{SERIAL_AND_BATCH}.create_serial_nos")(item_code, serial_nos)
+
+
+# --- Reorder levels left from before this module -----------------------------------------------
+
+
+def guard_auto_reorder(doc: Document, method: str | None = None) -> None:
+	"""Stock Settings validate: ERPNext's automatic reorder makes one request for all items and
+	drops it on any error; it is switched on only once no draft item has reorder levels (items held
+	before this module keep theirs until QA approves them)."""
+	if not doc.get("auto_indent") or not configured():
+		return
+	drafts = frappe.get_all(
+		"Item",
+		filters={
+			APPROVAL_STATUS: ["!=", APPROVED],
+			"name": ["in", frappe.get_all("Item Reorder", pluck="parent")],
+		},
+		pluck="name",
+		limit=20,
+	)
+	if drafts:
+		frappe.throw(
+			_("Automatic reorder waits until QA has approved the items with reorder levels: {0}.").format(
+				", ".join(drafts)
+			)
+		)
+
+
 # --- Before approval, used nowhere (every record's validate) ------------------------------------
 
 
@@ -464,9 +550,10 @@ def item_fields_of(meta) -> tuple[list[str], dict[str, list[str]]]:
 	cache = getattr(frappe.local, "mds_item_fields", None)
 	if cache is None:
 		cache = frappe.local.mds_item_fields = {}
-	if meta.name not in cache:
-		cache[meta.name] = item_fields_from(meta)
-	return cache[meta.name]
+	key = (meta.name, str(meta.get("modified")))  # a field added later gives a new definition
+	if key not in cache:
+		cache[key] = item_fields_from(meta)
+	return cache[key]
 
 
 def item_fields_from(meta) -> tuple[list[str], dict[str, list[str]]]:

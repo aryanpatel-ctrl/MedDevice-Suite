@@ -393,6 +393,77 @@ class TestSignedApproval(ItemMasterTestCase):
 		with self.assertRaisesRegex(frappe.ValidationError, "is in use"):
 			doc.save()  # a change of what was stated is controlled
 
+	def test_a_storage_temperature_may_have_one_end_only(self):
+		for values in (
+			{item_master.MIN_TEMPERATURE: "2"},
+			{item_master.MAX_TEMPERATURE: "-20"},
+			{item_master.MIN_TEMPERATURE: "0", item_master.MAX_TEMPERATURE: "25"},
+		):
+			with self.subTest(values=values):
+				doc = new_item(**values)
+				self.assertEqual({f: frappe.db.get_value("Item", doc.name, f) for f in values}, values)
+		with self.assertRaisesRegex(frappe.ValidationError, "is a temperature"):
+			new_item(**{item_master.MIN_TEMPERATURE: "cold"})
+		with self.assertRaisesRegex(frappe.ValidationError, "not above the maximum"):
+			new_item(**{item_master.MIN_TEMPERATURE: "8", item_master.MAX_TEMPERATURE: "2"})
+
+	def test_pack_sizes_of_an_item_held_before_the_module_are_filled_once(self):
+		item = self.approved_item(FINISHED_GOOD)
+		frappe.get_doc(
+			{
+				"doctype": "Stock Entry",
+				"stock_entry_type": "Material Receipt",
+				"company": company(),
+				"items": [{"item_code": item, "qty": 1, "t_warehouse": store("Stores"), "basic_rate": 1}],
+			}
+		).insert().submit()  # in use by its stock
+		frappe.db.set_value("Item", item, {APPROVAL_STATUS: DRAFT, UNITS_PER_BOX: 0})  # held before
+		doc = frappe.get_doc("Item", item)
+		doc.set(UNITS_PER_BOX, 12)
+		doc.save()  # stated once, without a change request
+		doc = frappe.get_doc("Item", item)
+		doc.set(UNITS_PER_BOX, 24)
+		with self.assertRaisesRegex(frappe.ValidationError, "is in use"):
+			doc.save()
+
+	def test_a_variants_attributes_change_only_under_a_change_request_once_approved(self):
+		from erpnext.controllers.item_variant import create_variant
+
+		from meddevice_suite.compliance.esign import is_unchanged_since
+
+		attribute = "MDS Size"
+		if not frappe.db.exists("Item Attribute", attribute):
+			frappe.get_doc(
+				{"doctype": "Item Attribute", "attribute_name": attribute, "item_attribute_values": []}
+			).insert()
+		values = frappe.get_doc("Item Attribute", attribute)
+		for value, abbr in (("16 Fr", "16"), ("18 Fr", "18")):
+			if value not in [row.attribute_value for row in values.item_attribute_values]:
+				values.append("item_attribute_values", {"attribute_value": value, "abbr": abbr})
+		values.save()
+		template = new_item(
+			FINISHED_GOOD, has_variants=1, attributes=[{"attribute": attribute}], **{UDI_DI: None}
+		)
+		variant = create_variant(template.name, {attribute: "16 Fr"})
+		variant.set(UDI_DI, gtin(variant.item_code))
+		variant.insert()
+		with_specification(variant)
+		self.approve_as_qa(variant.name)
+		signature = frappe.get_last_doc(
+			"Electronic Signature", filters={"reference_doctype": "Item", "reference_name": variant.name}
+		)
+		doc = frappe.get_doc("Item", variant.name)
+		doc.attributes[0].attribute_value = "18 Fr"
+		with self.assertRaisesRegex(frappe.ValidationError, "is in use"):
+			doc.save()
+		change = approved_change(self.requester, self.qa, variant.name, "Item", "Product or BOM")
+		frappe.set_user("Administrator")
+		doc = frappe.get_doc("Item", variant.name)
+		doc.attributes[0].attribute_value = "18 Fr"
+		doc.set(CHANGE_REQUEST, change)
+		doc.save()
+		self.assertFalse(is_unchanged_since(signature))  # what QA approved has changed, under its request
+
 	def test_a_draft_item_changes_freely(self):
 		doc = new_item(FINISHED_GOOD)
 		doc.update({DEVICE_CLASS: "C", STORAGE_CONDITION: "Below 25 °C", "shelf_life_in_days": 730})
@@ -867,6 +938,52 @@ class TestNotUsedBeforeApproval(ItemMasterTestCase):
 		frappe.get_doc("Stock Entry", entry.name).cancel()
 		self.assertEqual(frappe.db.get_value("Stock Entry", entry.name, "docstatus"), 2)
 
+	def test_the_guard_is_wired_to_every_record_type(self):
+		"""The sweep above calls the guard; this proves Frappe calls it on every save path."""
+		events = frappe.get_hooks("doc_events")["*"]
+		guard = "meddevice_suite.master_data.item_master.refuse_unapproved"
+		for event in ("before_validate", "validate", "before_update_after_submit"):
+			with self.subTest(event=event):
+				handlers = events.get(event)
+				self.assertIn(guard, handlers if isinstance(handlers, list) else [handlers])
+
+	def test_a_record_saved_without_its_validation_is_still_refused(self):
+		"""ERPNext saves some records with ignore_validate (Production Plan, bulk transactions)."""
+		item = with_specification(new_item(FINISHED_GOOD)).name
+		order = frappe.get_doc(
+			{
+				"doctype": "Sales Order",
+				"customer": CUSTOMER,
+				"company": company(),
+				"delivery_date": today(),
+				"items": [{"item_code": item, "qty": 1, "rate": 10, "delivery_date": today()}],
+			}
+		)
+		order.flags.ignore_validate = True
+		with self.assertRaisesRegex(frappe.ValidationError, NOT_APPROVED):
+			order.insert()
+
+	def test_lots_and_serial_numbers_made_in_bulk_need_an_approved_item(self):
+		"""ERPNext's file upload and its serial-number maker insert straight into the database."""
+		overrides = frappe.get_hooks("override_whitelisted_methods")
+		module = "erpnext.stock.doctype.serial_and_batch_bundle.serial_and_batch_bundle"
+		for method in ("upload_csv_file", "create_serial_nos"):
+			with self.subTest(method=method):
+				self.assertEqual(
+					overrides.get(f"{module}.{method}"), [f"meddevice_suite.master_data.item_master.{method}"]
+				)
+		draft = new_item(item_master.SPARE_PART, has_serial_no=1, serial_no_series="MDSSN-.####").name
+		frappe.set_user(self.stores_user)
+		with self.assertRaisesRegex(frappe.ValidationError, "no lots or serial numbers are made"):
+			item_master.create_serial_nos(draft, "MDS-SN-0001")
+		with self.assertRaisesRegex(frappe.ValidationError, "no lots or serial numbers are made"):
+			item_master.upload_csv_file(draft, "/private/files/none.csv")
+		frappe.set_user("Administrator")
+		self.assertFalse(frappe.db.exists("Serial No", "MDS-SN-0001"))
+		self.approve_as_qa(draft)
+		frappe.set_user(self.stores_user)
+		item_master.create_serial_nos(draft, f"MDS-SN-{frappe.generate_hash(length=6)}")  # approved: made
+
 	def test_an_approved_item_is_used(self):
 		item = self.approved_item()
 		frappe.get_doc(
@@ -965,6 +1082,25 @@ class TestTypeAndLots(ItemMasterTestCase):
 		item.save()  # not controlled: set freely once approved
 		self.assertEqual(len(frappe.get_doc("Item", item.name).reorder_levels), 1)
 
+	def test_automatic_reorder_waits_for_items_with_reorder_levels_to_be_approved(self):
+		item = new_item()
+		frappe.get_doc(
+			{
+				"doctype": "Item Reorder",
+				"parent": item.name,
+				"parenttype": "Item",
+				"parentfield": "reorder_levels",
+				"warehouse": store("Stores"),
+				"warehouse_reorder_level": 5,
+				"warehouse_reorder_qty": 10,
+				"material_request_type": "Purchase",
+			}
+		).db_insert()  # as an item held before the module keeps its reorder levels
+		settings = frappe.get_doc("Stock Settings")
+		settings.auto_indent = 1
+		with self.assertRaisesRegex(frappe.ValidationError, "Automatic reorder waits"):
+			item_master.guard_auto_reorder(settings)
+
 	def test_a_disabled_item_is_not_approved(self):
 		doc = new_item(SUB_ASSEMBLY, disabled=1)
 		frappe.set_user(self.qa)
@@ -979,6 +1115,22 @@ class TestTypeAndLots(ItemMasterTestCase):
 		doc.update({STORAGE_CONDITION: "", CHANGE_REQUEST: change})
 		with self.assertRaisesRegex(frappe.ValidationError, "cannot lose its storage condition"):
 			doc.save()
+		for values, lost in (
+			({"has_batch_no": 0, "create_new_batch": 0}, "cannot lose lot tracking"),
+			({"has_expiry_date": 0}, "cannot lose a shelf life"),
+			({"is_stock_item": 0}, "cannot lose stock item"),
+		):
+			with self.subTest(lost=lost):
+				doc = frappe.get_doc("Item", item)
+				doc.update({**values, CHANGE_REQUEST: change})
+				with self.assertRaisesRegex(frappe.ValidationError, lost):
+					doc.save()
+
+	def test_a_lot_tracked_item_is_a_stock_item(self):
+		doc = new_item(SUB_ASSEMBLY, is_stock_item=0, has_batch_no=0, create_new_batch=0, has_expiry_date=0)
+		frappe.set_user(self.qa)
+		with self.assertRaisesRegex(frappe.ValidationError, "stock item"):
+			sign_action("Item", doc.name, "Approve", PASSWORD, "Checked")
 
 
 # --- URS-MST-005: finished goods' regulatory and label data ----------------------------------------
@@ -1010,6 +1162,28 @@ class TestFinishedGoodData(ItemMasterTestCase):
 		self.assertEqual(frappe.db.get_value("Item", item, STERILE), "No")
 		with self.assertRaisesRegex(frappe.ValidationError, "is in use"):
 			frappe.client.set_value("Item", item, STERILE, "Yes")
+
+	def test_a_gtin_8_and_its_14_digit_form_are_one_identifier(self):
+		new_item(FINISHED_GOOD, **{UDI_DI: "96385074"})
+		with self.assertRaisesRegex(frappe.ValidationError, "identifies .* already"):
+			new_item(FINISHED_GOOD, **{UDI_DI: "00000096385074"})
+
+	def test_only_ascii_digits_make_a_gtin(self):
+		self.assertFalse(valid_gtin("٤٠٠٦٣٨١٣٣٣٩٣١"))  # Arabic-Indic digits
+		self.assertFalse(valid_gtin("0000000000000"))  # all zeros
+		self.assertFalse(valid_gtin("40063813339³1"))  # a superscript digit: refused, no server error
+
+	def test_identifiers_entered_before_the_key_get_it_on_migrate(self):
+		good = new_item(FINISHED_GOOD)
+		frappe.db.set_value("Item", good.name, item_master.GTIN_KEY, None)
+		bad = new_item(FINISHED_GOOD)
+		frappe.db.set_value("Item", bad.name, {UDI_DI: "123", item_master.GTIN_KEY: None})
+		twin = new_item(FINISHED_GOOD)
+		frappe.db.set_value("Item", twin.name, {UDI_DI: good.get(UDI_DI), item_master.GTIN_KEY: None})
+		item_master.apply_item_master_fields()  # no error, whatever is stored
+		keys = [frappe.db.get_value("Item", name, item_master.GTIN_KEY) for name in (good.name, twin.name)]
+		self.assertEqual(sorted(filter(None, keys)), [good.get(UDI_DI).zfill(14)])  # one of the two
+		self.assertIsNone(frappe.db.get_value("Item", bad.name, item_master.GTIN_KEY))
 
 	def test_one_gtin_written_at_another_length_is_the_same_identifier(self):
 		first = new_item(FINISHED_GOOD, **{UDI_DI: "036000291452"})  # GTIN-12
@@ -1103,7 +1277,7 @@ class TestInspectionBeforeApproval(ItemMasterTestCase):
 
 	def test_an_approved_item_keeps_its_inspection_and_specification(self):
 		item = self.approved_item()
-		with self.assertRaisesRegex(frappe.ValidationError, "cannot lose incoming inspection|is in use"):
+		with self.assertRaisesRegex(frappe.ValidationError, "cannot lose incoming inspection"):
 			frappe.client.set_value("Item", item, "inspection_required_before_purchase", 0)
 		specification = frappe.db.get_value("Quality Inspection Template", {"mds_item": item})
 		with self.assertRaisesRegex(frappe.PermissionError, "is in use and is never deleted"):

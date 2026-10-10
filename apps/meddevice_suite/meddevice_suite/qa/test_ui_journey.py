@@ -70,12 +70,16 @@ class TestBrowserJourney(IntegrationTestCase):
 		session (its sid and data) must come out of it untouched, or the browser is signed out."""
 		for item in journey_items():  # approved afresh, so the QA user signs in this request
 			frappe.db.set_value("Item", item, "mds_approval_status", "Draft")
-		frappe.local.session.sid = "a-browser-session-id"
-		frappe.local.session.data = frappe._dict(kept=1)
+		# The object Frappe saves for the browser's sid when the request ends is this one
+		# (session_obj.data): it must be the same object afterwards, unchanged.
+		live = frappe.local.session
+		live.sid = "a-browser-session-id"
+		live.data = frappe._dict(kept=1)
 		prepare_journey(self.password)
-		self.assertEqual(frappe.session.user, "Administrator")
-		self.assertEqual(frappe.local.session.sid, "a-browser-session-id")
-		self.assertEqual(frappe.local.session.data.get("kept"), 1)
+		self.assertIs(frappe.local.session, live)
+		self.assertEqual(live.user, "Administrator")
+		self.assertEqual(live.sid, "a-browser-session-id")
+		self.assertEqual(live.data.get("kept"), 1)
 
 	def test_makes_the_masters_the_journey_needs(self):
 		journey = prepare_journey(self.password)

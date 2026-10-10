@@ -461,7 +461,14 @@ class TestVersionedMasters(VersioningTestCase):
 			frappe.get_doc({"doctype": "UOM", "uom_name": "Box"}).insert()
 		template = frappe.get_doc("Item", template_code)
 		template.append("uoms", {"uom": "Box", "conversion_factor": 10})
-		template.save()  # not a controlled change: no request
+		# A unit conversion sets the quantity of every order and receipt in that unit: controlled
+		# (module 1, decided 2026-10-11).
+		with self.assertRaisesRegex(frappe.ValidationError, "is in use"):
+			template.save()
+		template = frappe.get_doc("Item", template_code)
+		template.append("uoms", {"uom": "Box", "conversion_factor": 10})
+		template.set(CHANGE_REQUEST, self.change_request_for("Item", template_code))
+		template.save()
 		self.assertIn(
 			("Box", 10.0),
 			[(row.uom, row.conversion_factor) for row in frappe.get_doc("Item", variant).uoms],
