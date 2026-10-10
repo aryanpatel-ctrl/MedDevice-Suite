@@ -29,6 +29,7 @@ from dataclasses import dataclass, field
 
 import frappe
 from frappe import _
+from frappe.core.doctype.docfield.docfield import DocField
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 from frappe.model import child_table_fields, default_fields, no_value_fields
 from frappe.model.document import Document
@@ -334,7 +335,7 @@ def drop_unused_request(doc: Document) -> None:
 ROW_IDENTITY = frozenset((*default_fields, *child_table_fields))
 
 
-def value_of(doc: Document, df) -> object:
+def value_of(doc: Document, df: DocField) -> object:
 	if df.fieldtype in ("Table", "Table MultiSelect"):
 		return [
 			{key: value for key, value in row_content(row).items() if key not in ROW_IDENTITY}
@@ -343,7 +344,7 @@ def value_of(doc: Document, df) -> object:
 	return doc.get(df.fieldname)
 
 
-def unchanged(old: object, new: object, df) -> bool:
+def unchanged(old: object, new: object, df: DocField) -> bool:
 	if df.fieldtype in ("Table", "Table MultiSelect"):
 		return old == new
 	return same(old, new, df.fieldtype)

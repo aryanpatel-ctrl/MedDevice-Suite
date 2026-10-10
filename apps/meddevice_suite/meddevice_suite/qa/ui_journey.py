@@ -22,6 +22,8 @@ Only the Administrator who runs the tests prepares the journey. Any signed-in us
 for the lots of a stock transaction they may read, which the browser checks after each step.
 """
 
+from collections.abc import Callable
+
 import frappe
 from frappe import _
 from frappe.utils import add_days, today
@@ -106,7 +108,7 @@ def prepare_journey(password: str | None = None) -> dict:
 	}
 
 
-def approve_as_qa(password: str | None):
+def approve_as_qa(password: str | None) -> Callable[[str], None]:
 	"""QA's signed approval of a journey item (module 1), as the run's QA Manager user."""
 
 	def approve(code: str) -> None:
@@ -131,7 +133,7 @@ def approve_as_qa(password: str | None):
 	return approve
 
 
-def ensure_masters(approve) -> None:
+def ensure_masters(approve: Callable[[str], None]) -> None:
 	ensure_inspection_masters(COMPANY, approve)  # the parameters the templates below name
 	ensure(
 		"Warehouse",

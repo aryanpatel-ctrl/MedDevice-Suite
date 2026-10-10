@@ -28,6 +28,7 @@ import frappe
 from frappe import _
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 from frappe.model.document import Document
+from frappe.model.meta import Meta
 from frappe.query_builder import DocType
 from frappe.utils import cint, flt, now_datetime
 
@@ -476,7 +477,7 @@ def approve(doc: Document, password: str, reason: str | None = None) -> None:
 	doc.save()
 
 
-def require(condition, message: str, exception: type[Exception] = frappe.ValidationError) -> None:
+def require(condition: object, message: str, exception: type[Exception] = frappe.ValidationError) -> None:
 	if not condition:
 		frappe.throw(message, exception)
 
@@ -498,13 +499,13 @@ def refuse_unless_approved(item_code: str) -> None:
 
 
 @frappe.whitelist()
-def upload_csv_file(item_code: str, file_path: str):
+def upload_csv_file(item_code: str, file_path: str) -> dict:
 	refuse_unless_approved(item_code)
 	return frappe.get_attr(f"{SERIAL_AND_BATCH}.upload_csv_file")(item_code, file_path)
 
 
 @frappe.whitelist()
-def create_serial_nos(item_code: str, serial_nos):
+def create_serial_nos(item_code: str, serial_nos: str | list) -> object:
 	refuse_unless_approved(item_code)
 	return frappe.get_attr(f"{SERIAL_AND_BATCH}.create_serial_nos")(item_code, serial_nos)
 
@@ -544,7 +545,7 @@ def guard_auto_reorder(doc: Document, method: str | None = None) -> None:
 CORRECTIONS = frozenset({"Repost Item Valuation"})
 
 
-def item_fields_of(meta) -> tuple[list[str], dict[str, list[str]]]:
+def item_fields_of(meta: Meta) -> tuple[list[str], dict[str, list[str]]]:
 	"""The fields of a record type that name an item: its own, and those of each of its tables;
 	worked out once per request for each record type."""
 	cache = getattr(frappe.local, "mds_item_fields", None)
@@ -556,7 +557,7 @@ def item_fields_of(meta) -> tuple[list[str], dict[str, list[str]]]:
 	return cache[key]
 
 
-def item_fields_from(meta) -> tuple[list[str], dict[str, list[str]]]:
+def item_fields_from(meta: Meta) -> tuple[list[str], dict[str, list[str]]]:
 	own = [df.fieldname for df in meta.fields if df.fieldtype == "Link" and df.options == "Item"]
 	tables = {}
 	for df in meta.get_table_fields():
