@@ -154,7 +154,14 @@ def changed(before: Document, after: Document) -> bool:
 
 
 def in_use(name: str) -> bool:
-	return bool(frappe.db.exists("Quality Inspection", {"quality_inspection_template": name, "docstatus": 1}))
+	"""An inspection was made against it, or its item is approved (module 1): what QA approved the
+	item with is what it is inspected against."""
+	from meddevice_suite.master_data.item_master import approved  # module 1 builds on module 6
+
+	if frappe.db.exists("Quality Inspection", {"quality_inspection_template": name, "docstatus": 1}):
+		return True
+	item = frappe.db.get_value(DOCTYPE, name, "mds_item")
+	return bool(item and approved(item))
 
 
 def guard_template(doc: Document, method: str | None = None) -> None:
@@ -180,6 +187,21 @@ def guard_template(doc: Document, method: str | None = None) -> None:
 					other, _(doc.mds_stage).lower(), doc.mds_item
 				),
 				title=_("One specification per item and stage"),
+			)
+	if (
+		before is not None
+		and before.get("mds_item")
+		and (before.get("mds_item") != doc.get("mds_item") or before.get("mds_stage") != doc.get("mds_stage"))
+	):
+		from meddevice_suite.master_data.item_master import approved  # module 1 builds on module 6
+
+		if approved(before.mds_item):
+			# The approved item is inspected against it; it would be left without its specification.
+			frappe.throw(
+				_("Specification {0} is the {1} specification of approved item {2}; it stays theirs.").format(
+					doc.name, _(before.mds_stage).lower(), before.mds_item
+				),
+				title=_("Change control"),
 			)
 	if before is not None and not same(before.get("mds_changed_under"), doc.get("mds_changed_under"), "Link"):
 		frappe.throw(_("{0} records the change request a change was made under itself.").format(doc.name))

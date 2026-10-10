@@ -15,6 +15,7 @@ from meddevice_suite.qa import verifies
 from meddevice_suite.qms.change_control import approved_changes_for
 from meddevice_suite.qms.test_change_control import approved_change, signer
 from meddevice_suite.setup.install import apply_configuration
+from meddevice_suite.setup.test_stock import approve_for_test
 
 NINE_MASTERS = {
 	"Item",
@@ -73,6 +74,7 @@ class VersioningTestCase(IntegrationTestCase):
 		return change
 
 	def bom(self, product: str, material: str, default: int = 1, **values):
+		approve_for_test(product, material)  # module 1: a bill names approved items only
 		bom = frappe.get_doc(
 			{
 				"doctype": "BOM",
@@ -192,6 +194,7 @@ class TestVersionedMasters(VersioningTestCase):
 
 	def test_a_submitted_bill_of_materials_changes_which_is_in_force_under_control(self):
 		product, material = lot_item(new_item_code(), "Products"), lot_item(new_item_code())
+		approve_for_test(product, material)  # module 1: a bill names approved items only
 		bom = frappe.get_doc(
 			{
 				"doctype": "BOM",
@@ -321,7 +324,7 @@ class TestVersionedMasters(VersioningTestCase):
 	def test_an_equipment_record_in_use_is_cancelled_only_under_control(self):
 		from meddevice_suite.pilot.inspection import ensure_instrument
 
-		asset = frappe.get_doc("Asset", ensure_instrument(company()))
+		asset = frappe.get_doc("Asset", ensure_instrument(company(), approve_for_test))
 		copy = frappe.copy_doc(asset)
 		copy.asset_name = f"Caliper {new_item_code()}"
 		copy.insert()
@@ -402,6 +405,8 @@ class TestVersionedMasters(VersioningTestCase):
 		# ... and in use once a submitted record depends on it.
 		from meddevice_suite.master_data.test_supplier_approval import approved_for
 
+		approve_for_test(item.name)  # module 1: received only once approved
+
 		approved_for(fresh["Supplier"].name, [item.name])
 		receipt = frappe.get_doc(
 			{
@@ -456,7 +461,14 @@ class TestVersionedMasters(VersioningTestCase):
 			frappe.get_doc({"doctype": "UOM", "uom_name": "Box"}).insert()
 		template = frappe.get_doc("Item", template_code)
 		template.append("uoms", {"uom": "Box", "conversion_factor": 10})
-		template.save()  # not a controlled change: no request
+		# A unit conversion sets the quantity of every order and receipt in that unit: controlled
+		# (module 1, decided 2026-10-11).
+		with self.assertRaisesRegex(frappe.ValidationError, "is in use"):
+			template.save()
+		template = frappe.get_doc("Item", template_code)
+		template.append("uoms", {"uom": "Box", "conversion_factor": 10})
+		template.set(CHANGE_REQUEST, self.change_request_for("Item", template_code))
+		template.save()
 		self.assertIn(
 			("Box", 10.0),
 			[(row.uom, row.conversion_factor) for row in frappe.get_doc("Item", variant).uoms],
@@ -674,7 +686,7 @@ class TestWiredIn(VersioningTestCase):
 	def test_a_submitted_assets_name_changes_only_under_a_request(self):
 		from meddevice_suite.pilot.inspection import ensure_instrument
 
-		copy = frappe.copy_doc(frappe.get_doc("Asset", ensure_instrument(company())))
+		copy = frappe.copy_doc(frappe.get_doc("Asset", ensure_instrument(company(), approve_for_test)))
 		copy.asset_name = f"Caliper {new_item_code()}"
 		copy.insert()
 		copy.submit()

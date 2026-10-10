@@ -29,6 +29,7 @@ from dataclasses import dataclass, field
 
 import frappe
 from frappe import _
+from frappe.core.doctype.docfield.docfield import DocField
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 from frappe.model import child_table_fields, default_fields, no_value_fields
 from frappe.model.document import Document
@@ -37,6 +38,8 @@ from frappe.query_builder.functions import Date
 from frappe.utils import cint, today
 
 from meddevice_suite.compliance.audit import record, row_content, same
+from meddevice_suite.master_data.item_master import APPROVAL_STATUS, APPROVED, UNSET_WHEN_ZERO
+from meddevice_suite.master_data.item_master import CONTROLLED_FIELDS as ITEM_DEVICE_FIELDS
 from meddevice_suite.qms.change_control import require_approved_change
 
 VERSION, EFFECTIVE_FROM = "mds_version", "mds_effective_from"
@@ -51,14 +54,19 @@ def submitted(doctype: str, **filters) -> bool:
 
 
 def item_in_use(doc: Document) -> bool:
-	"""A submitted record depends on the item, or on one of its variants: a template's change
-	reaches its variants (ERPNext's update_variants)."""
+	"""QA has approved the item (module 1: from approval it is locked), or a submitted record
+	depends on it, or on one of its variants: a template's change reaches its variants (ERPNext's
+	update_variants)."""
 	codes = [doc.name]
 	if doc.get("has_variants"):
 		codes += frappe.get_all("Item", filters={"variant_of": doc.name}, pluck="name")
 	codes = ["in", codes]
 	return bool(
-		frappe.db.exists("Stock Ledger Entry", {"item_code": codes, "is_cancelled": 0})
+		(
+			frappe.get_meta("Item").get_field(APPROVAL_STATUS)  # once module 1 is configured
+			and frappe.db.exists("Item", {"name": codes, APPROVAL_STATUS: APPROVED})
+		)
+		or frappe.db.exists("Stock Ledger Entry", {"item_code": codes, "is_cancelled": 0})
 		or submitted("BOM", item=codes)
 		or submitted("BOM Item", item_code=codes)
 		or submitted("Purchase Order Item", item_code=codes)
@@ -89,7 +97,14 @@ MASTERS: dict[str, Master] = {
 			"inspection_required_before_purchase",
 			"inspection_required_before_delivery",
 			"disabled",
+			*ITEM_DEVICE_FIELDS,  # module 1: type, storage, device class, pack sizes, UDI
 		),
+		# Module 1: what a variant is (its attribute values), its units and its barcodes.
+		tables={
+			"attributes": ("attribute", "attribute_value"),
+			"uoms": ("uom", "conversion_factor"),
+			"barcodes": ("barcode", "barcode_type"),
+		},
 		in_use=item_in_use,
 	),
 	# A submitted bill of materials keeps its lines; which one is in force changes under control.
@@ -267,6 +282,12 @@ def version_master(doc: Document, method: str | None = None) -> None:
 		doc.flags.dont_update_variants = True
 		doc.flags.variant_update_from = before
 	touched = changed_fields(doc, before)
+	if doc.doctype == "Item" and before.get(APPROVAL_STATUS) != APPROVED and not before.get("has_variants"):
+		# An item held before the item master (module 1) gets its type, storage and device data
+		# once, before QA approves it, as a specification made before control gets its first issue.
+		# Only what was never filled: 0 is a value (0 °C), and a template passes its data to
+		# variants that may be approved.
+		touched = [f for f in touched if not (f in ITEM_DEVICE_FIELDS and never_filled(before, f))]
 	# A request counts only when named with the change, not one left on the record before.
 	named = (
 		doc.get(CHANGE_REQUEST)
@@ -296,6 +317,11 @@ def version_master(doc: Document, method: str | None = None) -> None:
 	record_change(doc, request)
 
 
+def never_filled(doc: Document, field: str) -> bool:
+	"""Blank, or a count still 0 (a number column is never blank; 0 is never a count)."""
+	return doc.get(field) in (None, "") or (field in UNSET_WHEN_ZERO and not cint(doc.get(field)))
+
+
 def drop_unused_request(doc: Document) -> None:
 	"""A request named without a controlled change is not kept for a later one, which names its
 	own. On a bill of materials or an asset it stays: it is named there for the submit or cancel
@@ -309,7 +335,7 @@ def drop_unused_request(doc: Document) -> None:
 ROW_IDENTITY = frozenset((*default_fields, *child_table_fields))
 
 
-def value_of(doc: Document, df) -> object:
+def value_of(doc: Document, df: DocField) -> object:
 	if df.fieldtype in ("Table", "Table MultiSelect"):
 		return [
 			{key: value for key, value in row_content(row).items() if key not in ROW_IDENTITY}
@@ -318,7 +344,7 @@ def value_of(doc: Document, df) -> object:
 	return doc.get(df.fieldname)
 
 
-def unchanged(old: object, new: object, df) -> bool:
+def unchanged(old: object, new: object, df: DocField) -> bool:
 	if df.fieldtype in ("Table", "Table MultiSelect"):
 		return old == new
 	return same(old, new, df.fieldtype)
@@ -385,18 +411,28 @@ def update_variants_under_control(doc: Document, method: str | None = None) -> N
 def following_template(doc: Document, touched: list[str]) -> str | None:
 	"""A variant that only takes on its template's values while the template's controlled change
 	is passed to it follows that change, under the template's request."""
+	master = MASTERS["Item"]
+	# A variant's attribute values are what it is, never its template's (module 1).
+	followed_tables = {table: rows for table, rows in master.tables.items() if table != "attributes"}
 	if (
 		doc.doctype != "Item"
 		or not doc.get("variant_of")
 		or frappe.flags.variants_follow != doc.variant_of
-		or not set(touched) <= set(MASTERS["Item"].fields)
+		or not set(touched) <= set(master.fields) | set(followed_tables)
 	):
 		return None
-	template = frappe.db.get_value("Item", doc.variant_of, [*touched, CHANGED_UNDER], as_dict=True)
-	if not template or not template.get(CHANGED_UNDER):
+	template = frappe.get_doc("Item", doc.variant_of)
+	if not template.get(CHANGED_UNDER):
 		return None
-	if any(not same(doc.get(f), template.get(f), doc.meta.get_field(f).fieldtype) for f in touched):
-		return None
+	for f in touched:
+		if f in followed_tables:
+			row_fields = followed_tables[f]
+			ours = [[row.get(field) for field in row_fields] for row in doc.get(f) or []]
+			theirs = [[row.get(field) for field in row_fields] for row in template.get(f) or []]
+			if ours != theirs:
+				return None
+		elif not same(doc.get(f), template.get(f), doc.meta.get_field(f).fieldtype):
+			return None
 	return template.get(CHANGED_UNDER)
 
 

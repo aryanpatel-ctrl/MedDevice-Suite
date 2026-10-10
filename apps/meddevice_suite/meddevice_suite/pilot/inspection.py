@@ -6,8 +6,13 @@ them as data under document control (decided 2026-10-08: ISO 20696 for Foley cat
 ISO 8669-2 for urine bags, ISO 2859-1 sampling). Everything is created only if missing.
 """
 
+from collections.abc import Callable
+
 import frappe
+from frappe import _
 from frappe.utils import today
+
+from meddevice_suite.master_data import item_master
 
 INSTRUMENT_ITEM = "INST-CALIPER"
 INSTRUMENT_NAME = "Digital Caliper (Demo)"
@@ -26,14 +31,15 @@ METHODS = {APPEARANCE: "Visual, under daylight (demo)", DIMENSION: "Digital cali
 SAMPLE_SIZE = 5  # demo; the client's sampling plans (ISO 2859-1) replace it
 
 
-def ensure_inspection_masters(company: str) -> str:
-	"""The parameters and the instrument; returns the instrument's asset name."""
+def ensure_inspection_masters(company: str, approve: Callable[[str], None] | None = None) -> str:
+	"""The parameters and the instrument; returns the instrument's asset name. `approve` is QA's
+	signed approval of the instrument's item (module 1), needed the first time only."""
 	for specification, _acceptance in {p for params in PARAMETERS.values() for p in params}:
 		if not frappe.db.exists("Quality Inspection Parameter", specification):
 			frappe.get_doc({"doctype": "Quality Inspection Parameter", "parameter": specification}).insert(
 				ignore_permissions=True  # demo loader
 			)
-	return ensure_instrument(company)
+	return ensure_instrument(company, approve)
 
 
 def ensure_inspection_template(item: str, group: str) -> str:
@@ -77,10 +83,25 @@ def ensure_inspection_template(item: str, group: str) -> str:
 	return name
 
 
-def ensure_instrument(company: str) -> str:
-	"""One measuring instrument as an ERPNext asset, so a reading can name it."""
+def approve_instrument_item(approve: Callable[[str], None] | None) -> None:
+	"""QA's approval of the instrument's item (module 1), given by `approve` the first time."""
+	if item_master.approved(INSTRUMENT_ITEM):
+		return
+	item = frappe.get_doc("Item", INSTRUMENT_ITEM)
+	if not item.get(item_master.ITEM_TYPE):  # loaded before the item master
+		item.set(item_master.ITEM_TYPE, item_master.EQUIPMENT)
+		item.save(ignore_permissions=True)  # demo loader, while the item is in draft
+	if approve is None:
+		frappe.throw(_("QA approves {0} before an asset is made of it.").format(INSTRUMENT_ITEM))
+	approve(INSTRUMENT_ITEM)
+
+
+def ensure_instrument(company: str, approve: Callable[[str], None] | None = None) -> str:
+	"""One measuring instrument as an ERPNext asset, so a reading can name it. Its item is approved
+	by QA (module 1) before the asset is made of it."""
 	existing = frappe.db.get_value("Asset", {"asset_name": INSTRUMENT_NAME, "company": company})
-	if existing:
+	if existing:  # made before the item master: its item is approved now
+		approve_instrument_item(approve)
 		return existing
 	if not frappe.db.exists("Asset Category", ASSET_CATEGORY):
 		account = lambda account_type: frappe.db.get_value(  # noqa: E731
@@ -112,8 +133,10 @@ def ensure_instrument(company: str) -> str:
 				"is_stock_item": 0,
 				"is_fixed_asset": 1,
 				"asset_category": ASSET_CATEGORY,
+				item_master.ITEM_TYPE: item_master.EQUIPMENT,
 			}
 		).insert(ignore_permissions=True)  # demo loader
+	approve_instrument_item(approve)
 	if not frappe.db.exists("Location", LOCATION):
 		frappe.get_doc({"doctype": "Location", "location_name": LOCATION}).insert(ignore_permissions=True)
 	asset = frappe.get_doc(

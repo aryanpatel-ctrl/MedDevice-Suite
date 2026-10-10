@@ -27,6 +27,7 @@ from meddevice_suite.pilot.flow import lot_of
 from meddevice_suite.qa import verifies
 from meddevice_suite.qms.test_document_control import signer
 from meddevice_suite.setup.install import apply_configuration
+from meddevice_suite.setup.test_stock import approve_for_test
 
 SUPPLIER = "MDS Approval Test Supplier"
 OTHER_SUPPLIER = "MDS Approval Other Supplier"
@@ -122,6 +123,7 @@ class SupplierApprovalTestCase(IntegrationTestCase):
 			ensure_supplier(name)
 		lot_item(ITEM)
 		lot_item(OTHER_ITEM)
+		approve_for_test(ITEM, OTHER_ITEM)  # module 1: only approved items are bought
 		cls.qa = signer("QA Manager")
 		cls.purchase = signer("Purchase")
 		cls.qc = signer("QC Inspector")

@@ -47,6 +47,7 @@ class TestBrowserJourney(IntegrationTestCase):
 
 	def setUp(self):
 		self.enterContext(patch.dict(frappe.local.conf, {"allow_tests": 1}))
+		self.password = prepare_job_users()["password"]  # the run's, as the browser is given it
 
 	def tearDown(self):
 		frappe.set_user("Administrator")
@@ -54,7 +55,7 @@ class TestBrowserJourney(IntegrationTestCase):
 	def test_refuses_a_site_that_does_not_allow_tests(self):
 		with patch.dict(frappe.local.conf, {"allow_tests": 0}):
 			with self.assertRaises(frappe.PermissionError):
-				prepare_journey()
+				prepare_journey(self.password)
 			with self.assertRaises(frappe.PermissionError):
 				lots_of("Stock Entry", "anything")
 
@@ -62,10 +63,26 @@ class TestBrowserJourney(IntegrationTestCase):
 		frappe.set_user(prepare_job_users()["users"]["Stores"])
 
 		with self.assertRaises(frappe.PermissionError):
-			prepare_journey()
+			prepare_journey(self.password)
+
+	def test_preparing_keeps_the_callers_session(self):
+		"""The items are approved as the run's QA user inside the browser's request; the browser's own
+		session (its sid and data) must come out of it untouched, or the browser is signed out."""
+		for item in journey_items():  # approved afresh, so the QA user signs in this request
+			frappe.db.set_value("Item", item, "mds_approval_status", "Draft")
+		# The object Frappe saves for the browser's sid when the request ends is this one
+		# (session_obj.data): it must be the same object afterwards, unchanged.
+		live = frappe.local.session
+		live.sid = "a-browser-session-id"
+		live.data = frappe._dict(kept=1)
+		prepare_journey(self.password)
+		self.assertIs(frappe.local.session, live)
+		self.assertEqual(live.user, "Administrator")
+		self.assertEqual(live.sid, "a-browser-session-id")
+		self.assertEqual(live.data.get("kept"), 1)
 
 	def test_makes_the_masters_the_journey_needs(self):
-		journey = prepare_journey()
+		journey = prepare_journey(self.password)
 
 		self.assertEqual(
 			(journey["company"], journey["customer"], journey["supplier"], journey["product"]),
@@ -103,17 +120,17 @@ class TestBrowserJourney(IntegrationTestCase):
 		self.assertEqual(journey["product_shelf_life_days"], PRODUCT_DETAILS[3])
 
 		# Preparing again makes no second set of masters.
-		self.assertEqual(prepare_journey()["bom"], journey["bom"])
+		self.assertEqual(prepare_journey(self.password)["bom"], journey["bom"])
 
 	def test_starts_from_the_lots_put_in_store_whatever_an_earlier_run_left(self):
-		prepare_journey()
+		prepare_journey(self.password)
 		material = next(iter(RAW_MATERIALS))
 		post_stock_entry(
 			"Material Receipt",
 			[{"item_code": material, "t_warehouse": store("Quarantine"), "qty": 3, "basic_rate": 10}],
 		)
 
-		journey = prepare_journey()
+		journey = prepare_journey(self.password)
 
 		self.assertEqual(stock(material, store("Quarantine")), 0)
 		for item in journey_items():
@@ -135,7 +152,7 @@ class TestBrowserJourney(IntegrationTestCase):
 				self.assertGreater(expiry, getdate(add_days(today(), max(shelf_lives))))
 
 	def test_tells_the_lots_a_stock_transaction_moved_with_their_expiry(self):
-		journey = prepare_journey()
+		journey = prepare_journey(self.password)
 		receipt = latest_stock_entry()  # the lots put in store
 
 		lots = lots_of("Stock Entry", receipt)
@@ -156,7 +173,7 @@ class TestBrowserJourney(IntegrationTestCase):
 		)
 
 	def test_tells_the_lots_of_receipts_and_deliveries_by_their_store(self):
-		prepare_journey()
+		prepare_journey(self.password)
 		material = next(iter(RAW_MATERIALS))
 		approved_for(SUPPLIER, [material])  # goods come only from an approved supplier (module 4)
 		receipt = frappe.get_doc(
@@ -198,7 +215,7 @@ class TestBrowserJourney(IntegrationTestCase):
 		)
 
 	def test_refuses_other_record_types_and_users_who_may_not_read_the_record(self):
-		prepare_journey()
+		prepare_journey(self.password)
 		receipt = latest_stock_entry()
 
 		with self.assertRaises(frappe.ValidationError):

@@ -29,17 +29,24 @@ doc_events = {
 			"meddevice_suite.master_data.versioning.first_version",
 		],
 		"before_change": "meddevice_suite.compliance.audit.before_change",
+		# Item master (module 1): also before validate, which runs when ERPNext saves with
+		# ignore_validate (Production Plan, bulk transactions).
+		"before_validate": "meddevice_suite.master_data.item_master.refuse_unapproved",
 		"before_cancel": "meddevice_suite.compliance.audit.before_cancel",
 		# What an approval forbids is refused first; asking a reason for it would mislead.
 		"before_update_after_submit": [
 			"meddevice_suite.compliance.approvals.before_update_after_submit",
 			"meddevice_suite.master_data.versioning.version_master",
+			# Item master (module 1): an item a submitted record takes on is an approved one.
+			"meddevice_suite.master_data.item_master.refuse_unapproved",
 			"meddevice_suite.compliance.audit.before_update_after_submit",
 		],
 		# Approval workflows: returns at once for record types without one.
 		"validate": [
 			"meddevice_suite.compliance.approvals.validate",
 			"meddevice_suite.master_data.versioning.version_master",
+			# Item master (module 1): a draft item is used in no record; returns at once otherwise.
+			"meddevice_suite.master_data.item_master.refuse_unapproved",
 		],
 		"on_submit": "meddevice_suite.compliance.approvals.on_submit",
 		"onload": [
@@ -125,10 +132,19 @@ doc_events = {
 	"Purchase Invoice": {"validate": "meddevice_suite.master_data.supplier_approval.refuse_stock_on_invoice"},
 	"BOM Update Log": {"validate": "meddevice_suite.master_data.versioning.refuse_bom_replace"},
 	"Item": {
-		"validate": "meddevice_suite.setup.stock.refuse_negative_stock",
+		"validate": [
+			"meddevice_suite.setup.stock.refuse_negative_stock",
+			"meddevice_suite.master_data.item_master.guard_item",
+		],
+		"onload": "meddevice_suite.master_data.item_master.item_onload",
 		"on_update": "meddevice_suite.master_data.versioning.update_variants_under_control",
 	},
-	"Stock Settings": {"validate": "meddevice_suite.setup.stock.protect_stock_settings"},
+	"Stock Settings": {
+		"validate": [
+			"meddevice_suite.setup.stock.protect_stock_settings",
+			"meddevice_suite.master_data.item_master.guard_auto_reorder",
+		]
+	},
 	"Log Settings": {"validate": "meddevice_suite.compliance.retention.protect_login_history"},
 	"File": {"before_validate": "meddevice_suite.compliance.evidence_files.protect"},
 	"Role Profile": {"validate": "meddevice_suite.setup.roles.separate_administration_in_profile"},
@@ -175,4 +191,13 @@ scheduler_events = {
 
 # The desk's page loader, so that opening a record type one may not read says so plainly
 # instead of reporting a missing permission on "document Page" (setup/desk.py).
-override_whitelisted_methods = {"frappe.desk.desk_page.getpage": "meddevice_suite.setup.desk.getpage"}
+override_whitelisted_methods = {
+	"frappe.desk.desk_page.getpage": "meddevice_suite.setup.desk.getpage",
+	# Item master (module 1): lots and serial numbers made in bulk only for approved items.
+	"erpnext.stock.doctype.serial_and_batch_bundle.serial_and_batch_bundle.upload_csv_file": (
+		"meddevice_suite.master_data.item_master.upload_csv_file"
+	),
+	"erpnext.stock.doctype.serial_and_batch_bundle.serial_and_batch_bundle.create_serial_nos": (
+		"meddevice_suite.master_data.item_master.create_serial_nos"
+	),
+}

@@ -25,6 +25,7 @@ function setup() {
 			stock_uom: "Nos",
 			is_stock_item: 0,
 			gst_hsn_code: "90183910",
+			mds_item_type: "Consumable",
 		},
 		true
 	);
@@ -46,7 +47,36 @@ function setup() {
 			true
 		);
 	}
+	item_approved();
 	supplier_approved();
+}
+
+// QA approves the item with a signature: only an approved item is ordered (module 1, URS-MST-003).
+function item_approved() {
+	as_user(QA);
+	cy.call("frappe.client.get_value", {
+		doctype: "Item",
+		filters: { name: ITEM },
+		fieldname: "mds_approval_status",
+	}).then((r) => {
+		if (r.message.mds_approval_status === "Approved") return;
+		// An item made by an earlier run, before the item master, is given its type first.
+		as_user("Administrator");
+		cy.call("frappe.client.set_value", {
+			doctype: "Item",
+			name: ITEM,
+			fieldname: "mds_item_type",
+			value: "Consumable",
+		});
+		as_user(QA);
+		cy.call("meddevice_suite.compliance.signing.sign_action", {
+			doctype: "Item",
+			name: ITEM,
+			action: "Approve",
+			password: PASSWORD,
+			reason: "Approved for the browser test",
+		});
+	});
 }
 
 // QA approves the supplier for the item with a signature: purchase orders are placed only with

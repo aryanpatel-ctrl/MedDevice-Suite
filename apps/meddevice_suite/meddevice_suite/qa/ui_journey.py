@@ -6,8 +6,10 @@ The browser walks the standard flow through the real screens, signed in as each 
 qa/site_setup.py but none of the pilot's demo data, and the pilot's loader never runs
 there; these helpers make what the journey needs instead, every record named "UIJ": a
 product and its raw materials, batch-tracked with a shelf life, a supplier, a customer, the
-quarantine store, a short routing with its workstations and the product's default BOM. The
-site's defaults (company, price lists, stores) are left as they are.
+quarantine store, a short routing with its workstations and the product's default BOM. Each
+item is approved by the run's QA Manager user with a signature (module 1), with the password
+the browser was given for the run. The site's defaults (company, price lists, stores) are left
+as they are.
 
 Every run starts from the same stock. A run that was interrupted can leave lots of the
 journey's items in a store, and they would be picked before the run's own, so they are
@@ -20,15 +22,18 @@ Only the Administrator who runs the tests prepares the journey. Any signed-in us
 for the lots of a stock transaction they may read, which the browser checks after each step.
 """
 
+from collections.abc import Callable
+
 import frappe
 from frappe import _
 from frappe.utils import add_days, today
 
 from meddevice_suite.lot_control.lot_status import APPROVED, REJECTED, set_status, stock_by_lot
+from meddevice_suite.master_data import item_master
 from meddevice_suite.pilot.demo import BOM_QUANTITY, ensure, ensure_bom, ensure_item, ensure_price
 from meddevice_suite.pilot.inspection import ensure_inspection_masters, ensure_inspection_template
 from meddevice_suite.qa.site_setup import TEST_COMPANY
-from meddevice_suite.qa.ui_users import ensure_test_site
+from meddevice_suite.qa.ui_users import email_for, ensure_test_site
 
 COMPANY = TEST_COMPANY["company_name"]
 CUSTOMER = "UIJ City Hospital"
@@ -71,16 +76,18 @@ def store(name: str) -> str:
 
 
 @frappe.whitelist(methods=["POST"])
-def prepare_journey() -> dict:
-	"""Make the journey's masters, start it from known stock, and say what it works with."""
+def prepare_journey(password: str | None = None) -> dict:
+	"""Make the journey's masters, start it from known stock, and say what it works with.
+	`password` is the run's password of the job users (ui_users.prepare_job_users), with which
+	the QA Manager user approves the items."""
 	ensure_test_site()
 	if frappe.session.user != "Administrator":
 		frappe.throw(_("The browser journey is prepared only by the Administrator."), frappe.PermissionError)
 
-	ensure_masters()
+	ensure_masters(approve_as_qa(password))
 	write_off_leftover_stock()
 	return {
-		"instrument": ensure_inspection_masters(COMPANY),
+		"instrument": ensure_inspection_masters(COMPANY, approve_as_qa(password)),
 		"company": COMPANY,
 		"customer": CUSTOMER,
 		"supplier": SUPPLIER,
@@ -101,8 +108,33 @@ def prepare_journey() -> dict:
 	}
 
 
-def ensure_masters() -> None:
-	ensure_inspection_masters(COMPANY)  # the parameters the templates below name
+def approve_as_qa(password: str | None) -> Callable[[str], None]:
+	"""QA's signed approval of a journey item (module 1), as the run's QA Manager user."""
+
+	def approve(code: str) -> None:
+		if item_master.approved(code):
+			return
+		if not password:
+			frappe.throw(_("Give the run's password of the job users to approve {0}.").format(code))
+		# frappe.set_user rewrites the request's session in place (its sid becomes the user name, its
+		# data is emptied); that same object is what Frappe saves for the browser's sid when the
+		# request ends, so it is restored in place, not replaced.
+		saved, qa = dict(frappe.local.session), email_for("QA Manager")
+		frappe.set_user(qa)  # nosemgrep: frappe-setuser - test site, Administrator only
+		try:
+			item_master.approve(
+				frappe.get_doc("Item", code), password=password, reason="Set up for the browser journey"
+			)
+		finally:
+			frappe.set_user(saved["user"])  # nosemgrep: frappe-setuser - back to the Administrator
+			frappe.local.session.clear()
+			frappe.local.session.update(saved)
+
+	return approve
+
+
+def ensure_masters(approve: Callable[[str], None]) -> None:
+	ensure_inspection_masters(COMPANY, approve)  # the parameters the templates below name
 	ensure(
 		"Warehouse",
 		store(QUARANTINE),
@@ -122,6 +154,8 @@ def ensure_masters() -> None:
 	ensure_item(PRODUCT, name, "Products", "Nos", hsn, shelf_life, COMPANY, store("Finished Goods"))
 	ensure_price(PRODUCT, "Standard Selling", rate)
 	ensure_inspection_template(PRODUCT, "Products")
+	for code in journey_items():  # each with its specification, approved before it is used
+		approve(code)
 
 	for operation, workstation, _minutes in OPERATIONS:
 		ensure("Workstation", workstation, workstation_name=workstation, production_capacity=1)

@@ -12,16 +12,22 @@ Loads the masters the pilot walk-through needs, for the site's default company:
   product built on it;
 - demo suppliers, customers and price lists;
 - one demo user per job profile, whose password comes from the site_config key
-  "pilot_user_password", never from the code.
+  "pilot_user_password", never from the code;
+- every item approved by the QA Manager's demo user with a signature (module 1), with a
+  fictional GTIN in the GS1 range for restricted circulation (20…), never a real one.
 
 Everything is fictional and marked "(Demo)". Sterilization, QC release and batch
 release are not modelled here: they arrive as their own quality gates in Phases 3
 to 9. Running the loader again adds only what is missing.
 """
 
+import zlib
+from collections.abc import Callable
+
 import frappe
 from frappe import _
 
+from meddevice_suite.master_data import item_master
 from meddevice_suite.pilot import refuse_unless_pilot_site
 from meddevice_suite.pilot.inspection import ensure_inspection_masters, ensure_inspection_template
 from meddevice_suite.setup.roles import JOB_PROFILES
@@ -105,6 +111,16 @@ PRODUCTS: dict[str, tuple[str, str, float, str, dict[str, float]]] = {
 	),
 }
 PRODUCT_SHELF_LIFE_DAYS = 1825
+# The item master's data for the demo (module 1). Foley catheters and urine bags are class B
+# under the Medical Devices Rules 2017; the client's own values replace these.
+ITEM_TYPES = {"Raw Material": item_master.RAW_MATERIAL, "Products": item_master.FINISHED_GOOD}
+STORAGE_CONDITION = "Store below 30 °C in a dry place, away from direct sunlight (demo)"
+PRODUCT_DEVICE_DATA = {
+	item_master.STERILE: "Yes",
+	item_master.DEVICE_CLASS: "B",
+	item_master.UNITS_PER_BOX: 10,
+	item_master.BOXES_PER_CARTON: 20,
+}
 # Pouches and cartons are whole units, so BOMs are for a production batch of 100 pieces.
 BOM_QUANTITY = 100
 
@@ -164,7 +180,10 @@ def load_demo_data() -> None:
 	for name in CUSTOMERS:
 		ensure("Customer", name, customer_name=name, customer_group="Commercial", territory="India")
 
-	ensure_inspection_masters(company)
+	for profile in JOB_PROFILES:  # QA's demo user approves the items below
+		ensure_demo_user(profile, password)
+	approve = approve_as("QA Manager", password)
+	ensure_inspection_masters(company, approve)
 	for code, (name, unit, hsn, shelf_life, supplier, rate) in RAW_MATERIALS.items():
 		ensure_item(
 			code, name, "Raw Material", unit, hsn, shelf_life, company, store("Stores"), supplier=supplier
@@ -177,6 +196,9 @@ def load_demo_data() -> None:
 		)
 		ensure_price(code, "Standard Selling", rate)
 		ensure_inspection_template(code, "Products")
+	# Each item set up with its specification, QA approves it before any record uses it.
+	for code in (*RAW_MATERIALS, *PRODUCTS):
+		approve(code)
 
 	for line, steps in ROUTINGS.items():
 		for operation, workstation, _minutes in steps:
@@ -199,9 +221,6 @@ def load_demo_data() -> None:
 	for code, (_name, _hsn, _rate, line, materials) in PRODUCTS.items():
 		ensure_bom(code, line, materials, company)
 
-	for profile in JOB_PROFILES:
-		ensure_demo_user(profile, password)
-
 
 def ensure(doctype: str, existing: str, **values) -> None:
 	"""Create the record unless one named `existing` is already there."""
@@ -220,18 +239,28 @@ def ensure_item(
 	warehouse: str,
 	supplier: str | None = None,
 ) -> None:
+	master_data = item_master_data(code, group)
 	if frappe.db.exists("Item", code):
 		# An item loaded before lot control defaulted to the quarantine store; its default is the
-		# approved store a release moves the lot to, so the loader corrects it.
+		# approved store a release moves the lot to, so the loader corrects it. One loaded before
+		# the item master (module 1) is given its data, while still in draft.
 		item = frappe.get_doc("Item", code)
 		default = next((row for row in item.item_defaults if row.company == company), None)
-		if default and default.default_warehouse != warehouse:
+		changed = bool(default and default.default_warehouse != warehouse)
+		if changed:
 			default.default_warehouse = warehouse
+		if not item_master.approved(item):
+			for field, value in master_data.items():
+				if not item.get(field):
+					item.set(field, value)
+					changed = True
+		if changed:
 			item.save(ignore_permissions=True)  # demo loader
 		return
 	ensure(
 		"Item",
 		code,
+		**master_data,
 		item_code=code,
 		item_name=name,
 		item_group=group,
@@ -247,6 +276,42 @@ def ensure_item(
 		shelf_life_in_days=shelf_life,
 		item_defaults=[{"company": company, "default_warehouse": warehouse, "default_supplier": supplier}],
 	)
+
+
+def demo_gtin(code: str) -> str:
+	"""A fictional GTIN-13 for a demo item: GS1's prefix 20 is for restricted circulation, so it
+	can never be another company's product."""
+	body = "20" + f"{zlib.crc32(code.encode()):010d}"[-10:]
+	total = sum(int(digit) * (3 if index % 2 == 0 else 1) for index, digit in enumerate(reversed(body)))
+	return body + str((10 - total % 10) % 10)
+
+
+def item_master_data(code: str, group: str) -> dict:
+	"""The item master's fields of a demo item (module 1)."""
+	data = {item_master.ITEM_TYPE: ITEM_TYPES[group], item_master.STORAGE_CONDITION: STORAGE_CONDITION}
+	if group == "Products":
+		data.update(PRODUCT_DEVICE_DATA)
+		data[item_master.UDI_DI] = demo_gtin(code)
+	return data
+
+
+def approve_as(profile: str, password: str) -> Callable[[str], None]:
+	"""QA's signed approval of a demo item, by the demo user of the job; an approved item is left
+	as it is."""
+
+	def approve(code: str) -> None:
+		if item_master.approved(code):
+			return
+		from meddevice_suite.pilot.flow import as_job  # the flow builds on this module
+
+		with as_job(profile):
+			item_master.approve(
+				frappe.get_doc("Item", code),
+				password=password,
+				reason="Item master and specification checked (demo)",
+			)
+
+	return approve
 
 
 def ensure_price(code: str, price_list: str, rate: float) -> None:
