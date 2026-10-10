@@ -422,6 +422,32 @@ def guard_delivery_note(doc: Document, method: str | None = None) -> None:
 				refuse(lot, status, row.warehouse)
 
 
+def guard_packing_slip(doc: Document, method: str | None = None) -> None:
+	"""Packing Slip validate: only Approved lots are packed (URS-STK-005). The slip packs a draft
+	delivery note's lines (or the packed items of its product bundles), checked when the note was
+	saved; a lot held since then is caught here."""
+	lines = {}
+	for doctype, field in (("Delivery Note Item", "dn_detail"), ("Packed Item", "pi_detail")):
+		named = [row.get(field) for row in doc.items if row.get(field)]
+		for line in frappe.get_all(
+			doctype,
+			filters={"name": ["in", named or [""]]},
+			fields=["name", "batch_no", "serial_and_batch_bundle", "warehouse"],
+		):
+			lines[line.name] = line
+	lots_by_row = {}
+	for row in doc.items:
+		line = lines.get(row.get("dn_detail")) or lines.get(row.get("pi_detail"))
+		lots = [row.batch_no] if row.get("batch_no") else (lots_of_row(line) if line else [])
+		lots_by_row[row.name] = (lots, line.warehouse if line else None)
+	statuses = status_of(lot for lots, _store in lots_by_row.values() for lot in lots)
+	for lots, warehouse in lots_by_row.values():
+		for lot in lots:
+			status = statuses.get(lot, QUARANTINE)
+			if status != APPROVED:
+				refuse(lot, status, warehouse)
+
+
 def guard_pick_list(doc: Document, method: str | None = None) -> None:
 	"""Pick List validate: only Approved lots are picked (URS-STK-005)."""
 	lots_by_row = {row.name: lots_of_row(row) for row in doc.locations}

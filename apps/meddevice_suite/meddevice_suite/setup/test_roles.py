@@ -285,6 +285,12 @@ class TestAdministrationIsSeparate(ProfileTestCase):
 			}
 		)
 
+	def test_a_job_profile_cannot_combine_administration_with_business_roles(self):
+		profile = frappe.get_doc("Role Profile", "Stores")
+		profile.append("roles", {"role": "System Manager"})
+		with self.assertRaises(frappe.PermissionError):
+			profile.save()
+
 	def test_an_administrator_cannot_also_hold_a_business_role(self):
 		for fields in (
 			{"roles": [{"role": "System Manager"}, {"role": "Purchase Manager"}]},

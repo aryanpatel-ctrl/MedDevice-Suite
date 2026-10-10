@@ -110,7 +110,8 @@ Opening stock and stock found in a count are loaded as Stock Entries of purpose 
 ### 2.8 What is intended but not implemented
 
 - Final QC and batch release of finished lots (modules 25, 26): today the finished lot is released on QA's signature alone (section 2.6).
-- Sampling plans (ISO 2859-1) as data: the sample size is the specification's fixed minimum (module 6, demo value 5); the inspector types the Sample Size, it is not pre-filled.
+- Sampling plans (ISO 2859-1) as data: the sample size is the specification's fixed minimum (module 6, demo value 5); since 2026-10-10 it is pre-filled on a new inspection and the inspector may raise it, never lower it.
+- Printout: the default print format **Lot Release (Signed)** prints the decision with its signatures (2026-10-10).
 - The return to the supplier is drafted only; Purchase's return process (module 15) submits it.
 - Email delivery of anything here: the queue is a report, there is no alert for lots waiting.
 
@@ -141,10 +142,10 @@ Opening stock and stock found in a count are loaded as Stock Entries of purpose 
 | C16 | Browser: Stores fills the line, Stores is refused the move, QA refused before verification, QC verifies, QC inspects, QA releases, finished lot released | `lot_control.js`, `lot_release.js` | `cypress/integration/standard_flow.js` steps "[URS-QC-001] QC verifies the supplier certificates on the receipt; QA cannot release before that", "[URS-QC-002] QC inspects each received lot against its template and submits the inspection", "[URS-STK-004] [URS-QC-003] QA releases each inspected lot with a signature; it is Approved in the approved store", "[URS-STK-004] [URS-QC-004] QA releases the finished lot to the finished goods store with a signature" |
 
 **Partial / ambiguous (client to confirm):**
-- URS-QC-002 "the sample size … come[s] from the template": the sample size is enforced as a minimum on submit (module 6) and the inspector types it; it is not copied onto the inspection.
+- URS-QC-002 "the sample size … come[s] from the template": fixed 2026-10-10 — pre-filled from the specification (`choose_specification`) and enforced as the minimum on submit (module 6).
 - URS-QC-001 names the QC Inspector; the code also lets Quality Manager verify (`QC_ROLES`). Decide whether QA may stand in for QC.
 - URS-QC-003 "a held lot is released only after a new accepted inspection": enforced for lots that came in on a receipt or material receipt; a held **production** lot is released on the signature alone (consistent with the interim rule of URS-QC-004).
-- The queue's *Waiting For* for a held lot compares the inspection's *modified* time with the hold, while the release requires an inspection *created* after the hold; an old inspection edited after a hold shows *QA release* in the report but the release is refused (report-only inconsistency, section 7).
+- Fixed 2026-10-10: the queue's *Waiting For* for a held lot judges by the inspection's creation, as the release does (it compared the *modified* time, so an old inspection edited after a hold showed *QA release* while the release refused it).
 
 **Not covered by this feature:** sampling plans; the supplier return's own process (module 15); final QC and batch release (25, 26).
 
@@ -304,7 +305,7 @@ Cross-module data changes: Purchase Receipt Item (`mds_supplier_lot_no`, `mds_ce
 **Confirmed and fixed during review (all with tests; commits 492db989, 314f3e61, e0b839a8, 26ceb59e, 17fc4cce, 96090f29):** Stores could set a line verified through the API; a verified certificate or lot number could still be changed; an old inspection modified after a hold counted as a new one; QA saving a draft decision for a held lot from the desk was refused (datetime sent as text); a batch made beforehand hid where its stock came from, so a received lot could be released uninspected (origin now from the stock ledger); an inspection on another document released a received lot; a lot released "on documents only" (never came in) is now refused; a scanned or amended receipt's lot was refused as "existing" (now only a lot that already holds stock is); material-receipt lots were released uninspected (now inspected on their entry); a count of an existing lot was refused as new stock (now a loss or no change passes, a gain is refused).
 
 **Potential (not verified by a test, listed for the record):**
-- Queue *Waiting For* for a held lot uses the inspection's modified time (`latest_inspections` orders by `modified`), the release uses creation (`accepted_inspection` filters `creation >`). An old inspection edited after a hold shows *QA release* while the release is refused. Report-only; no wrong release possible.
+- Fixed 2026-10-10: the queue's *Waiting For* for a held lot now uses the inspection's creation (`latest_inspections` orders by `creation`), as `accepted_inspection` does; covered by the queue test's held lot.
 - `supplier_return_for` sets `use_serial_batch_fields` and the lot on the return; the return is a draft that Purchase submits; ERPNext's own return validation runs then, not at rejection.
 - Quality Manager may verify certificates (`QC_ROLES`), wider than the requirement's wording.
 - A Lot Release draft shows Quantity in Stock as the sum over all stores; a lot spread over two companies is refused at release (*… has stock in more than one company; move it by hand first.*), tested in module 17.
@@ -338,8 +339,8 @@ Untested: LR-07 (reject and return) and LR-08 (hold and retest) in the browser (
 | Hold: Hold, moved; release only after a new inspection made after the hold | Verified (automated) |
 | Decision never cancelled, deleted, edited or submitted unsigned, not even by the Administrator | Verified (automated) |
 | Lot origin from the stock ledger; new lot per delivery; material-receipt lots inspected; no release of a lot that came in any other way | Verified (automated) |
-| Queue with Waiting For and Days Waiting | Verified (automated); report-only hold inconsistency **Open** (section 7) |
+| Queue with Waiting For and Days Waiting | Verified (automated); report-only hold inconsistency fixed 2026-10-10 |
 | Finished lot released on the same signature | Verified (automated + journey) |
 | Browser: Verify Certificates dialog, Decide Lot, act buttons, signing dialog, banners | Verified for the journey path (automated); full manual LR-01…LR-14 **Not tested** |
 | CI green on a fresh site for the final commit | **Blocked** (in progress) |
-| Client decisions: QA verifying in place of QC; sample size pre-filled; held production lot without a new inspection | **Open** |
+| Client decisions: QA verifying in place of QC; held production lot without a new inspection | **Open** |

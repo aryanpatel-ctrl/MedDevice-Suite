@@ -237,6 +237,9 @@ def choose_specification(doc: Document, method: str | None = None) -> None:
 			),
 			title=_("No specification"),
 		)
+	if not flt(doc.sample_size):
+		# The sample size comes from the specification; the inspector may sample more.
+		doc.sample_size = cint(frappe.db.get_value(DOCTYPE, specification, "mds_sample_size"))
 	if doc.quality_inspection_template == specification:
 		return
 	if not doc.quality_inspection_template:

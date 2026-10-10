@@ -560,6 +560,18 @@ class TestTheSignedDecision(ReleaseTestCase):
 			stored.save()
 		self.assertIn("decided only by signing", str(refused.exception))
 
+	def test_the_printout_shows_the_decision_and_its_signature(self):
+		_receipt, lot = self.ready()
+		decision = self.decide(lot, "Release", "accepted; certificate and inspection in order")
+		html = frappe.get_print("Lot Release", decision.name, print_format="Lot Release (Signed)")
+		for text in (
+			"Electronic signatures",
+			"Released",
+			frappe.utils.get_fullname(self.qa),
+			"inspection in order",
+		):
+			self.assertIn(text, html)
+
 	def test_a_lot_that_never_came_in_is_not_released(self):
 		"""Released "on documents only", an empty lot would let stock arrive in it later with no
 		inspection (URS-QC-003: released only after an inspection on what brought it in)."""
@@ -607,6 +619,12 @@ class TestTheQueueAndTheFinishedLot(ReleaseTestCase):
 		_ready, ready_lot = self.ready()
 		released = self.ready()[1]
 		self.decide(released, "Release")
+		# Held after its inspection: an old inspection edited since is not a new one.
+		held = self.ready()[1]
+		self.decide(held, "Hold", "label unreadable")
+		frappe.db.set_value(
+			"Quality Inspection", accepted_inspection(held), "remarks", "edited after the hold"
+		)
 
 		_columns, rows = queue({"item_code": ITEM})
 		waiting = {row["batch_no"]: row["waiting_for"] for row in rows}
@@ -615,6 +633,7 @@ class TestTheQueueAndTheFinishedLot(ReleaseTestCase):
 		self.assertEqual(waiting.get(uninspected_lot), "Incoming inspection")
 		self.assertEqual(waiting.get(rejected_lot), "Decision on a rejected inspection")
 		self.assertEqual(waiting.get(ready_lot), "QA release")
+		self.assertEqual(waiting.get(held), "Incoming inspection")
 		self.assertNotIn(released, waiting)
 		self.assertTrue(all(row["days"] >= 0 for row in rows))
 

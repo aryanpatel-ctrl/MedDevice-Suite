@@ -389,6 +389,22 @@ def separate_administration(doc: Document, method: str | None = None) -> None:
 		)
 
 
+def separate_administration_in_profile(doc: Document, method: str | None = None) -> None:
+	"""Role Profile validate: a job profile never combines system administration with business
+	roles either; the user check alone would catch it only when a user holding it is saved."""
+	if frappe.flags.in_install or frappe.flags.in_migrate:
+		return
+	roles = {row.role for row in doc.roles}
+	if SYSTEM_ADMINISTRATION in roles and roles & BUSINESS_ROLES:
+		frappe.throw(
+			_(
+				"A job profile cannot hold both system administration and {0}; administration is a "
+				"separate job."
+			).format(", ".join(sorted(roles & BUSINESS_ROLES))),
+			frappe.PermissionError,
+		)
+
+
 def apply_roles() -> None:
 	for role in NEW_ROLES:
 		if not frappe.db.exists("Role", role):

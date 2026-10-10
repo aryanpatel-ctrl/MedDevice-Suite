@@ -104,7 +104,8 @@ The daily job `send_change_alerts` (scheduler `daily`) adds, each in its own sav
 
 ### 2.7 What is intended but not implemented
 
-- An action's **Record It Changes** is optional; the requirement reads as if each action names its record (section 3, C9 partial).
+- An action's **Record It Changes** is optional: an action such as training changes no record (the requirement's wording was clarified on 2026-10-10 to "where one exists, the record it changes").
+- Printout: the default print format **Change Request (Signed)** prints the request with its assessment and approval signatures (2026-10-10).
 - **Customer** is not among the affected record types on this branch (the master list of URS-MST-001 names it; added on branch `feature/mst-001-master-versions`, not yet merged).
 - Email delivery of the alerts depends on the site's mail set-up (module 51).
 - A change history report across requests (D2 "Change History") is the list with its filters; no separate report is specified.
@@ -127,7 +128,7 @@ The daily job `send_change_alerts` (scheduler `daily`) adds, each in its own sav
 | C12 | URS-QMS-015: alerts to QA (assess, approve), Management (Major), requester (decided), owners once when due within 7 days or overdue, QA once when the check is due; declared and daily | `alert`, `send_change_alerts`, the five Notifications | `TestAlerts.*` (QA to assess then approve; Management for Major; requester hears approve/return/reject; owner once with catch-up; done or unapproved raise none; effectiveness once; one failure does not hold back; declared and daily) |
 | C13 | URS-QMS-016: never deleted or cancelled; requester withdraws with a reason until approved; nobody else; visibility by role or involvement; kept 10 years and audited | `on_trash`, `before_cancel`, `withdraw`, `query_conditions`, `has_permission`, retention | `TestKeptAndSeen.*` (never deleted; never cancelled; withdraw until approved; nobody else; QA/Management/administrator see all; others only theirs; safe query conditions; ten years and audited); Cypress tests above (outsider count 0; withdraw) |
 
-**Partial:** C9 — *Record It Changes* on an action is optional; the requirement's "the record it changes" is met through Affected Records on the request and the Resulting Record on completion, not per action. Client to confirm or a follow-up change.
+**Resolved 2026-10-10:** C9 — the requirement now reads "and, where one exists, the record it changes"; `test_an_action_that_changes_no_record_is_approved_and_done` covers an action without a record.
 
 **Ambiguous / open (client to decide):** whether Management should also be alerted when a Major change is returned or rejected by QA (today: only the requester); whether a change found *Not effective* should open a CAPA automatically (module 34, not built); whether Customer belongs to the affected record types before module 1 ships.
 
@@ -263,7 +264,7 @@ Cross-module data: Change Request (+ Affected Records, Actions), Electronic Sign
 
 **Open / potential (not verified by a test; listed for the record):**
 - The plan's due dates are re-checked at every approval. A Major change assessed with an action due *today* and approved by Management on a later day is refused (*Action 1 is due in the past; set a new due date.*); the plan cannot be edited while awaiting approval. Recovery: Return for Changes → the requester re-sends → QA re-assesses with new dates. A follow-up could check the dates at assessment only, or let QA re-date the plan while a request awaits approval.
-- *Record It Changes* on an action is optional (section 3, C9).
+- *Record It Changes* on an action is optional by requirement (wording clarified 2026-10-10).
 - Customer is not an affected record type on this branch; a change to a customer master cannot yet be listed (module 1 branch adds it).
 - A person holding both Quality Manager and a Management role can give the first approval of a Major change as QA but not the second (verified by test); a second such person is still needed for Major changes if Management is one person.
 - Alerts reach the desk bell; email depends on mail set-up (module 51). The daily job catches up missed days; with the scheduler off, due alerts wait for the next run.

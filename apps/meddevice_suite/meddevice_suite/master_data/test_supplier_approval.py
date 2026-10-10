@@ -152,6 +152,21 @@ class TestDecision(SupplierApprovalTestCase):
 		approval = current_approval(SUPPLIER)
 		self.assertEqual((approval.name, approval.decision, approval.item_codes), (name, APPROVED, {ITEM}))
 
+	def test_the_printout_shows_the_decision_and_its_signature(self):
+		name = decide(SUPPLIER, [ITEM], reason="Audited on site; certificate checked")
+		html = frappe.get_print("Supplier Approval", name, print_format="Supplier Approval (Signed)")
+		for text in (
+			"Electronic signatures",
+			"Approved",
+			frappe.utils.get_fullname(self.qa),
+			"Audited on site",
+		):
+			self.assertIn(text, html)
+		self.assertEqual(
+			frappe.db.get_value("DocType", "Supplier Approval", "default_print_format"),
+			"Supplier Approval (Signed)",
+		)
+
 	def test_the_newest_decision_replaces_the_earlier_one(self):
 		decide(SUPPLIER, [ITEM])
 		latest = decide(SUPPLIER, [], act="Not Approve", reason="Failed the audit")

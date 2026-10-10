@@ -122,7 +122,9 @@ def waiting_for(lot: frappe._dict, line: frappe._dict | None, inspection: frappe
 		return "not_releasable"
 	if lot.origin in ("receipt", "material_receipt"):
 		if inspection is None or (
-			lot.get(STATUS_FIELD) == HOLD and inspection.modified <= lot.mds_status_set_at
+			# Made after the hold, as the release requires: an old inspection edited after the
+			# hold is not a new inspection.
+			lot.get(STATUS_FIELD) == HOLD and inspection.creation <= lot.mds_status_set_at
 		):
 			return "inspection"
 		if inspection.status == "Rejected":
@@ -135,8 +137,8 @@ def latest_inspections(lots: list[str]) -> dict[str, frappe._dict]:
 	for row in frappe.get_all(
 		"Quality Inspection",
 		filters={"batch_no": ["in", lots or [""]], "inspection_type": "Incoming", "docstatus": 1},
-		fields=["batch_no", "status", "modified"],
-		order_by="modified asc",
+		fields=["batch_no", "status", "creation"],
+		order_by="creation asc",
 	):
 		latest[row.batch_no] = row
 	return latest

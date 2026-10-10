@@ -223,7 +223,7 @@ Data touched: Role, Role Profile, Has Role, Custom DocPerm (configuration); User
 **Confirmed and fixed during development (from the git history, each with a test):** lookups the pilot found closed on 2026-10-07 (operator time logs, stock entry type, inspection parameters, maintenance tasks) now searchable (`9d7d097e`); sign-out redirect to the previous person's record (`f842cf51`); the record archive's create-only permission left a blank form (`TestOwnFormsAreUsable`); stores and production could not create lots or pick party accounts (`893e43eb`).
 
 **Potential / unverified:**
-- A Role Profile edited by hand to add System Manager beside business roles is refused only when a user holding it is saved; the profile save itself is not guarded (and `apply_roles` restores the declared profiles on the next migrate). No test.
+- A Role Profile edited by hand to add System Manager beside business roles is refused on the profile's own save since 2026-10-10 (`separate_administration_in_profile`; `test_a_job_profile_cannot_combine_administration_with_business_roles`), and still when a user holding it is saved.
 - `Role Profile` is not in the scoped Users sidebar; the administrator reaches it by address only. Not verified in the browser.
 - Frappe's `Administrator` account is exempt from the separation rule by design (it installs the system); its use for daily work is a procedural control, not a system one.
 - URS-CMP-035 is tested with the Administrator only; the second person's clean landing (RP-08 step 2) is manual.
@@ -257,5 +257,6 @@ Untested: RP-02 step 3 on a real `bench migrate` of a site changed by hand (the 
 | Clean sign-in page after sign-out | Verified (browser, Administrator); second person's landing **Not tested** |
 | Every lookup of each job's forms searchable except the reviewed list | Verified (automated + screen sweep) |
 | Manual browser cases RP-01…RP-10 | **Not tested** |
-| Role Profile reachable only by address; hand-edited profile not guarded on save | **Not tested** (section 7) |
+| Role Profile reachable only by address | **Not tested** (section 7) |
+| Hand-edited profile refused on save | Verified (automated, 2026-10-10) |
 | CI green on a fresh site for the final commit | **Pending** |

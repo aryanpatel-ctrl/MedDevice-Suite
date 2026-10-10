@@ -78,6 +78,7 @@ doc_events = {
 	},
 	"Delivery Note": {"validate": "meddevice_suite.lot_control.lot_status.guard_delivery_note"},
 	"Pick List": {"validate": "meddevice_suite.lot_control.lot_status.guard_pick_list"},
+	"Packing Slip": {"validate": "meddevice_suite.lot_control.lot_status.guard_packing_slip"},
 	"Work Order": {"validate": "meddevice_suite.lot_control.lot_status.guard_work_order"},
 	"Purchase Receipt": {
 		"validate": [
@@ -130,6 +131,7 @@ doc_events = {
 	"Stock Settings": {"validate": "meddevice_suite.setup.stock.protect_stock_settings"},
 	"Log Settings": {"validate": "meddevice_suite.compliance.retention.protect_login_history"},
 	"File": {"before_validate": "meddevice_suite.compliance.evidence_files.protect"},
+	"Role Profile": {"validate": "meddevice_suite.setup.roles.separate_administration_in_profile"},
 	"User": {
 		"validate": "meddevice_suite.setup.roles.separate_administration",
 		"before_rename": "meddevice_suite.compliance.audit.keep_user_id",

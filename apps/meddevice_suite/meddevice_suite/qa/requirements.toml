@@ -770,8 +770,8 @@ status = "implemented"
 [[requirement]]
 id = "URS-QMS-012"
 module = 36
-title = "A change is implemented through the actions approved with it, each with an owner, a due date and the record it changes; no action can be done before approval or changed after it, each is done by its owner or QA with a note, and the change is implemented once every action is done."
-source = "D2 Change Control: Implementation; ISO 13485 7.3.9, 4.2.5"
+title = "A change is implemented through the actions approved with it, each with an owner, a due date and, where one exists, the record it changes; no action can be done before approval or changed after it, each is done by its owner or QA with a note, and the change is implemented once every action is done."
+source = "D2 Change Control: Implementation; ISO 13485 7.3.9, 4.2.5; wording clarified 2026-10-10: an action such as training changes no record"
 status = "implemented"
 
 [[requirement]]

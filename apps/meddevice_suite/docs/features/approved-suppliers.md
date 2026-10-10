@@ -46,6 +46,8 @@ Record name: `SA-YYYY-NNNNN`.
 
 After signing, the form shows a coloured banner: *Approved: <reason>* (green), *Conditional until <date>: <reason>* (orange), *Not Approved: <reason>* (red), and the **Electronic signatures** table (meaning, signer, date and time, reason).
 
+**Printout.** The record's default print format, **Supplier Approval (Signed)**, prints the decision as stored with the **Electronic signatures** table (meaning, act, signer, date and time, reason); a draft prints with *DRAFT – not signed* (URS-CMP-003).
+
 **Permanence.** A decision is never cancelled or deleted (both refused, also for the Administrator). A newer decision replaces it: *the decision in force* is the newest submitted one for that supplier (by Decided At). The certificate file of a submitted decision is protected evidence (cannot be changed or deleted). Supplier approvals are in the 10-year "Purchasing and supplier records" retention class.
 
 ### 2.2 The supplier's form
@@ -123,6 +125,7 @@ URS-PUR-001 text (as updated with the client decisions of 2026-10-08/09):
 | C13 | Expired certificate / ended condition refuse buying; last day still valid | `approval_in_force` | `test_an_expired_certificate_refuses_the_order`, `test_an_ended_conditional_approval_refuses_the_order`, `test_a_conditional_approval_and_a_certificate_hold_through_their_last_day` |
 | C14 | Decision never cancelled or deleted; certificate protected evidence | controller, `evidence_files` | `test_a_decision_is_never_cancelled_or_deleted`, `test_the_decided_certificate_is_protected_evidence` |
 | C15 | Browser: QA decides on screen with a signature; PO shows the approval | `supplier_approval.js`, `master_data.js` | `cypress/integration/standard_flow.js` step "QA approves the supplier for the raw materials…" and the purchase step's `mds_supplier_approval` check |
+| C16 | The printout shows the signatures (URS-CMP-003) | print format `Supplier Approval (Signed)`, default for the record type | `test_the_printout_shows_the_decision_and_its_signature` |
 
 **Ambiguous / open (client to decide):** whether approving a template item covers its variants (today: no, each variant must be listed); who exactly receives the alert (today: the three roles); whether Purchase Invoices with Update Stock are used anywhere in the client's process (today: refused).
 

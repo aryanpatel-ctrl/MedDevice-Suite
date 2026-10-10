@@ -62,7 +62,7 @@ Opening a record type the job may not read as if it were a page is answered plai
 | Coverage ≥ 90 % (`pyproject.toml` `fail_under = 90`) | CI *server*; locally `env/bin/coverage report …` |
 | Traceability `--check` (+ `--junit`, `--output reports/traceability.md`) | pre-commit; CI *integrity* and *server* (matrix on the run summary; `server-test-evidence` artifact with junit, coverage and the matrix) |
 | UI tests (`bench --site test.localhost run-ui-tests meddevice_suite --headless --browser electron`) | CI *ui* (bench started by `scripts/ci/start_bench.sh`, scheduler and watcher off); locally, or in `scripts/ci-local.sh` (Docker, 2 CPUs at 0.7 CPU-time, 7 GB, Linux, same Electron; `up` / `test [cypress args]` / `run` / `shell` / `down`; screenshots and bench log in `ci-local-results/`) |
-| Migrates cleanly (`bench --site <test-site> migrate`) | locally; in `ci-local.sh test`; CI installs the app on a fresh site (section 7) |
+| Migrates cleanly (`bench --site <test-site> migrate`) | locally; in `ci-local.sh test`; CI step *Migrates cleanly* before the server tests (since 2026-10-10) |
 
 ### 2.10 Intended but not implemented / outside this feature
 
@@ -89,7 +89,7 @@ Opening a record type the job may not read as if it were a page is answered plai
 - URS-PLT-001 "every other standard area … hidden for all users": the Administrator account still reaches unused workspaces by address (`UNUSED_AREA = ("Administrator",)`), by design for installation.
 - URS-PLT-009 "every such form can be filled in": the sweep checks that at least one field is writable and that every lookup searches; it does not fill and save each form (the journey does for its 18 steps).
 - URS-PLT-007 "all recorded in the audit trail": the server test checks *Submitted* events for the receipt, work order and delivery; the browser journey checks the cancel reason and the submitting user of six records; not every record of the flow is asserted.
-- "Migrates cleanly" is a rule-book gate without a CI step of its own (section 2.10).
+- "Migrates cleanly" has its own CI step since 2026-10-10 (section 2.10).
 
 ## 4. Step-by-step browser testing guide
 

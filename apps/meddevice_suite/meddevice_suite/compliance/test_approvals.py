@@ -398,6 +398,31 @@ class TestApprovedPricesStand(ApprovalTestCase):
 
 		self.assertEqual(frappe.db.get_value("Purchase Order", order.name, "grand_total"), 400)
 
+	def test_an_approved_quotation_keeps_its_taxes_even_when_the_totals_stand(self):
+		quotation = self.quotation()
+		self.act(self.sales, quotation, "Send for Price Approval")
+		self.act(self.approver, quotation, "Approve")
+
+		self.as_user(self.approver)
+		account = frappe.db.get_value(
+			"Account",
+			{
+				"company": frappe.db.get_value("Quotation", quotation.name, "company"),
+				"account_type": "Tax",
+				"is_group": 0,
+			},
+		)
+		doc = frappe.get_doc("Quotation", quotation.name)
+		# A tax row at zero changes no total; the terms still changed.
+		doc.append(
+			"taxes", {"charge_type": "On Net Total", "account_head": account, "description": "GST", "rate": 0}
+		)
+		stage_reason("Quotation", quotation.name, "update_after_submit", "Tax line added")
+		frappe.db.savepoint("refused")
+		with self.assertRaisesRegex(frappe.ValidationError, "taxes and discounts cannot change"):
+			doc.save()
+		frappe.db.rollback(save_point="refused")
+
 	def test_an_approved_quotation_keeps_its_prices(self):
 		quotation = self.quotation()
 		self.act(self.sales, quotation, "Send for Price Approval")

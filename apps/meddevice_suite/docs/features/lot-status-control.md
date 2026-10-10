@@ -81,7 +81,7 @@ Patch `meddevice_suite.patches.v0_1.set_initial_lot_status` runs once at `bench 
 ### 2.8 What is intended but not implemented
 
 - A disposition record of its own (NCR / rework / use-as-is, module 33) — today the only dispositions are Release, Reject and Hold on the Lot Release.
-- Packing Slip carries no guard of its own; it packs lines of a Delivery Note, which is guarded on save and whose stock movement is guarded at the ledger (section 7).
+- Packing Slip is guarded on save as well (2026-10-10): a slip of a lot that is not Approved is refused, for the lines of a Delivery Note and for the packed items of a product bundle; the stock movement is guarded at the ledger too.
 - Returning a Quarantine or Hold lot to the supplier directly: only a Rejected lot goes back (section 3, open point).
 
 ## 3. Requirements and acceptance criteria
@@ -109,7 +109,7 @@ Patch `meddevice_suite.patches.v0_1.set_initial_lot_status` runs once at `bench 
 | C14 | Browser: Stores is refused the move plainly; QA's release approves and moves; Stores cannot move the lots again; the finished lot waits in Quarantine | `lot_status.py` messages, journey | `cypress/integration/standard_flow.js` steps "[URS-STK-005] Stores cannot move the quarantined lots to the approved store; the form refuses it plainly", "[URS-STK-004] [URS-QC-003] QA releases each inspected lot…", "[URS-STK-003] Stores cannot move the released lots out of quarantine again, for none is left", "[URS-STK-004] [URS-QC-004] QA releases the finished lot…" |
 
 **Partial / ambiguous (client to decide):**
-- URS-STK-005 "packed": no hook on Packing Slip; it packs a Delivery Note's lines, which are guarded on save and at the ledger. Decide whether a packing slip of a non-approved lot must itself be refused.
+- URS-STK-005 "packed": fixed 2026-10-10 — a packing slip of a lot that is not Approved is refused on save (`guard_packing_slip`; `test_a_lot_held_after_the_note_was_saved_cannot_be_packed`).
 - URS-STK-005 "or back to its supplier": only a **Rejected** lot may go back (purchase return from the Rejected store); a Quarantine or Hold lot is rejected first. Confirm this reading.
 - URS-STK-007 "lots in the approved and finished goods stores become Approved": implemented as "any store without a role" (Finished Goods, Stores, Work In Progress all count), the most cautious role store deciding when stock is split.
 - A stock count (Stock Reconciliation, Stock Manager) is allowed on any lot (a counted correction, audited); it is not an issue, but the client should confirm counts of quarantined stock are acceptable.
@@ -235,7 +235,7 @@ Cross-module data changes: Batch (`mds_lot_status`, `mds_status_set_by`, `mds_st
 **Confirmed and fixed during development and review (all with tests):** a new site's company had no Quarantine store until the next migrate (f4c12685: stores made on company creation; empty and null role read alike); stock could be added to an existing lot by a material receipt or a count gain and would take its status uninspected (26ceb59e: refused at the ledger); every stock count of an existing lot was then refused as new stock (17fc4cce: a loss or no change passes); the count check summed a ledger entry's batch field and its bundle (96090f29: counted one way); a lot's origin was read from the batch's own reference (314f3e61, module 16).
 
 **Potential (not verified by a test, listed for the record):**
-- Packing Slip has no guard of its own (section 3); the Delivery Note it packs is guarded.
+- Packing Slip guarded on save since 2026-10-10 (section 3).
 - `guard_pick_list` refuses any status other than Approved, without the `movement_allowed` exceptions; a pick list of a Rejected lot to the Returns store is refused — acceptable, a return is not picked.
 - Stores may transfer an **Approved** lot into the Hold or Rejected store (any movement of an Approved lot is allowed); the status stays Approved and the lot can still be issued from there. A hold is QA's signed act, not a physical move.
 - An expired Approved lot is not refused by this module (expiry is module 18 / the alerts of module 51); ERPNext excludes expired lots only from its automatic picking and from manufacture entries.
@@ -272,6 +272,7 @@ Untested: LS-07 step 6 on a real second company in the browser (server test only
 | Stock into a lot only on its own document; counts allowed (loss / no change), gains refused | Verified (automated) |
 | Stock by Lot Status with who/when/why; old-style and bundled lots | Verified (automated); browser **Not tested** beyond the screen sweep opening it |
 | Cutover patch: status by store, audited, idempotent | Verified (automated) |
-| Packing Slip guard; return of a Quarantine/Hold lot to the supplier; counts of quarantined stock | **Open** (client decision) |
+| Packing Slip guard | Verified (automated, 2026-10-10) |
+| Return of a Quarantine/Hold lot to the supplier; counts of quarantined stock | **Open** (client decision) |
 | Manual LS-01…LS-10 | **Not tested** |
 | CI green on a fresh site for the final commit | **Blocked** (in progress) |

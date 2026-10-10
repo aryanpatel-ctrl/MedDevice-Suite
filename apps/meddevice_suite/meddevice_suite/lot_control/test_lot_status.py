@@ -405,6 +405,38 @@ class TestOnlyAnApprovedLotLeaves(LotTestCase):
 		with self.assertRaises(LotNotApproved):
 			note.insert()
 
+	def test_a_lot_held_after_the_note_was_saved_cannot_be_packed(self):
+		lot = self.approved()
+		note = frappe.get_doc(
+			{
+				"doctype": "Delivery Note",
+				"customer": CUSTOMER,
+				"company": company(),
+				"items": [
+					{
+						"item_code": RAW,
+						"qty": 1,
+						"rate": 10,
+						"warehouse": store("Stores"),
+						"batch_no": lot,
+						"use_serial_batch_fields": 1,
+					}
+				],
+			}
+		).insert()
+		self.decide(lot, "Hold", "customer complaint under investigation")
+		slip = frappe.get_doc(
+			{
+				"doctype": "Packing Slip",
+				"delivery_note": note.name,
+				"from_case_no": 1,
+				"to_case_no": 1,
+				"items": [{"item_code": RAW, "qty": 1, "dn_detail": note.items[0].name}],
+			}
+		)
+		with self.assertRaises(LotNotApproved):
+			slip.insert()
+
 	def test_a_quarantined_lot_cannot_be_picked(self):
 		lot = self.quarantined()
 		pick = frappe.get_doc(

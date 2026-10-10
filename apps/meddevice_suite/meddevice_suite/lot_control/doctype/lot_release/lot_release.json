@@ -28,26 +28,156 @@
   "amended_from"
  ],
  "fields": [
-  {"fieldname": "batch", "fieldtype": "Link", "label": "Lot", "options": "Batch", "reqd": 1, "in_list_view": 1, "in_standard_filter": 1, "search_index": 1},
-  {"fieldname": "item", "fieldtype": "Link", "label": "Item", "options": "Item", "read_only": 1, "in_list_view": 1, "fetch_from": "batch.item"},
-  {"fieldname": "item_name", "fieldtype": "Data", "label": "Item Name", "read_only": 1, "fetch_from": "batch.item_name"},
-  {"fieldname": "lot_status_before", "fieldtype": "Data", "label": "Lot Status at Decision", "read_only": 1, "no_copy": 1},
-  {"fieldname": "quantity", "fieldtype": "Float", "label": "Quantity in Stock", "read_only": 1, "no_copy": 1},
-  {"fieldname": "column_break_source", "fieldtype": "Column Break"},
-  {"fieldname": "source_doctype", "fieldtype": "Link", "label": "Lot Came From", "options": "DocType", "read_only": 1, "no_copy": 1},
-  {"fieldname": "source_name", "fieldtype": "Dynamic Link", "label": "Source", "options": "source_doctype", "read_only": 1, "no_copy": 1},
-  {"fieldname": "supplier", "fieldtype": "Link", "label": "Supplier", "options": "Supplier", "read_only": 1, "no_copy": 1},
-  {"fieldname": "held_since", "fieldtype": "Datetime", "label": "On Hold Since", "read_only": 1, "no_copy": 1},
-  {"fieldname": "section_decision", "fieldtype": "Section Break", "label": "Decision"},
-  {"fieldname": "decision", "fieldtype": "Select", "label": "Decision", "options": "\nRelease\nReject\nHold", "read_only": 1, "no_copy": 1, "in_list_view": 1, "in_standard_filter": 1},
-  {"fieldname": "quality_inspection", "fieldtype": "Link", "label": "Incoming Inspection", "options": "Quality Inspection", "read_only": 1, "no_copy": 1},
-  {"fieldname": "reason", "fieldtype": "Small Text", "label": "Reason", "read_only": 1, "no_copy": 1},
-  {"fieldname": "column_break_decided", "fieldtype": "Column Break"},
-  {"fieldname": "decided_by", "fieldtype": "Link", "label": "Decided By", "options": "User", "read_only": 1, "no_copy": 1},
-  {"fieldname": "decided_at", "fieldtype": "Datetime", "label": "Decided At", "read_only": 1, "no_copy": 1},
-  {"fieldname": "stock_entry", "fieldtype": "Link", "label": "Stock Moved By", "options": "Stock Entry", "read_only": 1, "no_copy": 1},
-  {"fieldname": "supplier_return", "fieldtype": "Link", "label": "Return to Supplier", "options": "Purchase Receipt", "read_only": 1, "no_copy": 1},
-  {"fieldname": "amended_from", "fieldtype": "Link", "label": "Amended From", "options": "Lot Release", "read_only": 1, "no_copy": 1, "print_hide": 1, "search_index": 1}
+  {
+   "fieldname": "batch",
+   "fieldtype": "Link",
+   "label": "Lot",
+   "options": "Batch",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "item",
+   "fieldtype": "Link",
+   "label": "Item",
+   "options": "Item",
+   "read_only": 1,
+   "in_list_view": 1,
+   "fetch_from": "batch.item"
+  },
+  {
+   "fieldname": "item_name",
+   "fieldtype": "Data",
+   "label": "Item Name",
+   "read_only": 1,
+   "fetch_from": "batch.item_name"
+  },
+  {
+   "fieldname": "lot_status_before",
+   "fieldtype": "Data",
+   "label": "Lot Status at Decision",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "quantity",
+   "fieldtype": "Float",
+   "label": "Quantity in Stock",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "column_break_source",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "source_doctype",
+   "fieldtype": "Link",
+   "label": "Lot Came From",
+   "options": "DocType",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "source_name",
+   "fieldtype": "Dynamic Link",
+   "label": "Source",
+   "options": "source_doctype",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "supplier",
+   "fieldtype": "Link",
+   "label": "Supplier",
+   "options": "Supplier",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "held_since",
+   "fieldtype": "Datetime",
+   "label": "On Hold Since",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "section_decision",
+   "fieldtype": "Section Break",
+   "label": "Decision"
+  },
+  {
+   "fieldname": "decision",
+   "fieldtype": "Select",
+   "label": "Decision",
+   "options": "\nRelease\nReject\nHold",
+   "read_only": 1,
+   "no_copy": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "quality_inspection",
+   "fieldtype": "Link",
+   "label": "Incoming Inspection",
+   "options": "Quality Inspection",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "reason",
+   "fieldtype": "Small Text",
+   "label": "Reason",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "column_break_decided",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "decided_by",
+   "fieldtype": "Link",
+   "label": "Decided By",
+   "options": "User",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "decided_at",
+   "fieldtype": "Datetime",
+   "label": "Decided At",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "stock_entry",
+   "fieldtype": "Link",
+   "label": "Stock Moved By",
+   "options": "Stock Entry",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "supplier_return",
+   "fieldtype": "Link",
+   "label": "Return to Supplier",
+   "options": "Purchase Receipt",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "options": "Lot Release",
+   "read_only": 1,
+   "no_copy": 1,
+   "print_hide": 1,
+   "search_index": 1
+  }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
@@ -59,21 +189,172 @@
  "naming_rule": "Expression",
  "owner": "Administrator",
  "permissions": [
-  {"role": "Quality Manager", "read": 1, "write": 1, "create": 1, "report": 1, "print": 1, "export": 1, "submit": 0, "cancel": 0, "amend": 0, "delete": 0, "email": 0, "import": 0, "share": 0},
-  {"role": "QC Inspector", "read": 1, "report": 1, "print": 1, "write": 0, "create": 0, "submit": 0, "cancel": 0, "amend": 0, "delete": 0, "email": 0, "export": 0, "import": 0, "share": 0},
-  {"role": "Stock User", "read": 1, "report": 1, "print": 1, "write": 0, "create": 0, "submit": 0, "cancel": 0, "amend": 0, "delete": 0, "email": 0, "export": 0, "import": 0, "share": 0},
-  {"role": "Stock Manager", "read": 1, "report": 1, "print": 1, "export": 1, "write": 0, "create": 0, "submit": 0, "cancel": 0, "amend": 0, "delete": 0, "email": 0, "import": 0, "share": 0},
-  {"role": "Purchase User", "read": 1, "report": 1, "print": 1, "write": 0, "create": 0, "submit": 0, "cancel": 0, "amend": 0, "delete": 0, "email": 0, "export": 0, "import": 0, "share": 0},
-  {"role": "Purchase Manager", "read": 1, "report": 1, "print": 1, "export": 1, "write": 0, "create": 0, "submit": 0, "cancel": 0, "amend": 0, "delete": 0, "email": 0, "import": 0, "share": 0},
-  {"role": "Manufacturing User", "read": 1, "report": 1, "print": 1, "write": 0, "create": 0, "submit": 0, "cancel": 0, "amend": 0, "delete": 0, "email": 0, "export": 0, "import": 0, "share": 0},
-  {"role": "Manufacturing Manager", "read": 1, "report": 1, "print": 1, "export": 1, "write": 0, "create": 0, "submit": 0, "cancel": 0, "amend": 0, "delete": 0, "email": 0, "import": 0, "share": 0},
-  {"role": "Sales Manager", "read": 1, "report": 1, "print": 1, "export": 1, "write": 0, "create": 0, "submit": 0, "cancel": 0, "amend": 0, "delete": 0, "email": 0, "import": 0, "share": 0},
-  {"role": "System Manager", "read": 1, "report": 1, "print": 1, "write": 0, "create": 0, "submit": 0, "cancel": 0, "amend": 0, "delete": 0, "email": 0, "export": 0, "import": 0, "share": 0}
+  {
+   "role": "Quality Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "report": 1,
+   "print": 1,
+   "export": 1,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "delete": 0,
+   "email": 0,
+   "import": 0,
+   "share": 0
+  },
+  {
+   "role": "QC Inspector",
+   "read": 1,
+   "report": 1,
+   "print": 1,
+   "write": 0,
+   "create": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "delete": 0,
+   "email": 0,
+   "export": 0,
+   "import": 0,
+   "share": 0
+  },
+  {
+   "role": "Stock User",
+   "read": 1,
+   "report": 1,
+   "print": 1,
+   "write": 0,
+   "create": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "delete": 0,
+   "email": 0,
+   "export": 0,
+   "import": 0,
+   "share": 0
+  },
+  {
+   "role": "Stock Manager",
+   "read": 1,
+   "report": 1,
+   "print": 1,
+   "export": 1,
+   "write": 0,
+   "create": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "delete": 0,
+   "email": 0,
+   "import": 0,
+   "share": 0
+  },
+  {
+   "role": "Purchase User",
+   "read": 1,
+   "report": 1,
+   "print": 1,
+   "write": 0,
+   "create": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "delete": 0,
+   "email": 0,
+   "export": 0,
+   "import": 0,
+   "share": 0
+  },
+  {
+   "role": "Purchase Manager",
+   "read": 1,
+   "report": 1,
+   "print": 1,
+   "export": 1,
+   "write": 0,
+   "create": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "delete": 0,
+   "email": 0,
+   "import": 0,
+   "share": 0
+  },
+  {
+   "role": "Manufacturing User",
+   "read": 1,
+   "report": 1,
+   "print": 1,
+   "write": 0,
+   "create": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "delete": 0,
+   "email": 0,
+   "export": 0,
+   "import": 0,
+   "share": 0
+  },
+  {
+   "role": "Manufacturing Manager",
+   "read": 1,
+   "report": 1,
+   "print": 1,
+   "export": 1,
+   "write": 0,
+   "create": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "delete": 0,
+   "email": 0,
+   "import": 0,
+   "share": 0
+  },
+  {
+   "role": "Sales Manager",
+   "read": 1,
+   "report": 1,
+   "print": 1,
+   "export": 1,
+   "write": 0,
+   "create": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "delete": 0,
+   "email": 0,
+   "import": 0,
+   "share": 0
+  },
+  {
+   "role": "System Manager",
+   "read": 1,
+   "report": 1,
+   "print": 1,
+   "write": 0,
+   "create": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "delete": 0,
+   "email": 0,
+   "export": 0,
+   "import": 0,
+   "share": 0
+  }
  ],
  "row_format": "Dynamic",
  "sort_field": "creation",
  "sort_order": "DESC",
  "states": [],
  "title_field": "batch",
- "track_changes": 0
+ "track_changes": 0,
+ "default_print_format": "Lot Release (Signed)"
 }
