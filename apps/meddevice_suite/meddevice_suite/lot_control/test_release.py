@@ -2,6 +2,7 @@ import frappe
 from frappe.model.document import Document
 from frappe.tests import IntegrationTestCase
 
+from meddevice_suite.compliance.audit_reason import stage_reason
 from meddevice_suite.compliance.esign import verify_signatures
 from meddevice_suite.compliance.signing import sign_action
 from meddevice_suite.compliance.test_esign import PASSWORD
@@ -33,6 +34,7 @@ from meddevice_suite.lot_control.test_lot_status import (
 	purchase_receive,
 	qty_in,
 	receive,
+	stock_entry,
 	store,
 )
 from meddevice_suite.pilot.flow import lot_of
@@ -709,15 +711,84 @@ class TestWhereALotCameFrom(ReleaseTestCase):
 	"""Where a lot came from is read from the stock ledger, not the batch's own reference, which a
 	batch made beforehand would leave blank (found in the final review, 2026-10-09)."""
 
-	def test_a_delivery_does_not_come_in_on_a_lot_that_exists(self):
+	def test_a_delivery_does_not_come_in_on_a_lot_that_holds_stock(self):
 		frappe.set_user("Administrator")
-		existing = frappe.get_doc(
-			{"doctype": "Batch", "item": ITEM, "batch_id": f"PRE-{frappe.generate_hash(length=6)}"}
+		existing = receive(ITEM, 2, store(stores.QUARANTINE))  # a lot that came in already
+		receipt = purchase_receive(ITEM, 2, submit=False)
+		receipt.items[0].update({"batch_no": existing, "use_serial_batch_fields": 1})
+		with self.assertRaisesRegex(frappe.ValidationError, "a delivery comes in as a new lot"):
+			receipt.save()
+
+	def test_a_lot_scanned_on_the_receipt_is_a_new_lot_of_that_receipt(self):
+		"""ERPNext's batch selector and barcode scan make the batch before the receipt, without stock."""
+		frappe.set_user("Administrator")
+		scanned = frappe.get_doc(
+			{"doctype": "Batch", "item": ITEM, "batch_id": f"SCAN-{frappe.generate_hash(length=6)}"}
 		).insert()
 		receipt = purchase_receive(ITEM, 2, submit=False)
-		receipt.items[0].update({"batch_no": existing.name, "use_serial_batch_fields": 1})
-		with self.assertRaisesRegex(frappe.ValidationError, "exists already"):
-			receipt.save()
+		receipt.items[0].update({"batch_no": scanned.name, "use_serial_batch_fields": 1})
+		receipt.save()
+		receipt.submit()
+		self.assertEqual(receipt_line_of(scanned.name).receipt, receipt.name)
+		with self.assertRaisesRegex(frappe.ValidationError, "no accepted incoming inspection"):
+			self.decide(scanned.name, "Release", "accepted")
+
+	def test_an_amended_receipt_brings_its_lot_in_again(self):
+		"""A cancelled receipt's lot holds no stock; the receipt's amendment is its new origin."""
+		frappe.set_user("Administrator")
+		receipt = purchase_receive(ITEM, 2)
+		lot = lot_of(receipt.items[0])
+		stage_reason("Purchase Receipt", receipt.name, "cancel", "Wrong price entered")
+		frappe.get_doc("Purchase Receipt", receipt.name).cancel()
+		amended = frappe.copy_doc(frappe.get_doc("Purchase Receipt", receipt.name))
+		amended.amended_from = receipt.name
+		amended.docstatus = 0  # as the desk's Amend makes it: a new draft
+		amended.items[0].update(
+			{"rate": 11, "batch_no": lot, "use_serial_batch_fields": 1, "serial_and_batch_bundle": None}
+		)
+		stage_reason("Purchase Receipt", receipt.name, "amend", "Wrong price entered")
+		amended.insert()
+		amended.submit()
+		self.assertEqual(receipt_line_of(lot).receipt, amended.name)
+
+	def test_no_stock_is_added_to_a_lot_already_in_stock(self):
+		"""A material receipt or a count gain into an approved lot would take its status uninspected."""
+		_receipt, lot = self.ready()
+		self.decide(lot, "Release", "accepted")
+		frappe.set_user("Administrator")
+		with self.assertRaisesRegex(frappe.ValidationError, "new stock comes in as a new lot"):
+			stock_entry(
+				"Material Receipt",
+				[
+					{
+						"item_code": ITEM,
+						"qty": 5,
+						"t_warehouse": store("Stores"),
+						"basic_rate": 10,
+						"batch_no": lot,
+						"use_serial_batch_fields": 1,
+					}
+				],
+			)
+		count = frappe.get_doc(
+			{
+				"doctype": "Stock Reconciliation",
+				"company": company(),
+				"purpose": "Stock Reconciliation",
+				"items": [
+					{
+						"item_code": ITEM,
+						"warehouse": store("Stores"),
+						"qty": qty_in(lot, store("Stores")) + 2,
+						"valuation_rate": 10,
+						"batch_no": lot,
+						"use_serial_batch_fields": 1,
+					}
+				],
+			}
+		).insert()
+		with self.assertRaisesRegex(frappe.ValidationError, "new stock comes in as a new lot"):
+			count.submit()
 
 	def test_a_received_lot_is_known_by_its_receipt_even_without_the_batch_reference(self):
 		receipt, lot = self.received()
@@ -728,6 +799,8 @@ class TestWhereALotCameFrom(ReleaseTestCase):
 			self.decide(lot, "Release", "accepted")
 
 	def test_a_lot_that_came_in_any_other_way_is_not_released(self):
+		"""Opening stock loaded by a stock reconciliation, as ERPNext offers, is never released:
+		opening stock comes in on material receipts and is inspected (DFD 3.1-3.5)."""
 		frappe.set_user("Administrator")
 		lot = frappe.get_doc(
 			{"doctype": "Batch", "item": ITEM, "batch_id": f"REC-{frappe.generate_hash(length=6)}"}
@@ -736,7 +809,11 @@ class TestWhereALotCameFrom(ReleaseTestCase):
 			{
 				"doctype": "Stock Reconciliation",
 				"company": company(),
-				"purpose": "Stock Reconciliation",
+				"purpose": "Opening Stock",
+				# An opening entry's difference goes to the temporary opening account, as ERPNext requires.
+				"expense_account": frappe.db.get_value(
+					"Account", {"company": company(), "account_type": "Temporary", "is_group": 0}
+				),
 				"items": [
 					{
 						"item_code": ITEM,

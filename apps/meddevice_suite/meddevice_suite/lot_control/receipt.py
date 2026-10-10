@@ -265,20 +265,18 @@ def receipt_line_of(lot: str) -> frappe._dict | None:
 
 
 def refuse_existing_lots(doc: Document, method: str | None = None) -> None:
-	"""Purchase Receipt validate: a delivery comes in as a new lot. A line naming a lot that exists
-	already would mix a supplier's goods into stock of another origin and its checks."""
+	"""Purchase Receipt validate: a delivery comes in as a new lot (DFD 3.3 Internal Batch Creation).
+	A line naming a lot that already holds stock would mix a supplier's goods into stock of another
+	origin and its checks; a lot made beforehand without stock (scanned on the receipt, say) is new.
+	The stock ledger refuses it too (lot_status.guard_inward); this says so on the form."""
 	if doc.is_return:
 		return
 	named = {lot: row.idx for row in doc.items for lot in lots_of_row(row)}
-	if not named:
-		return
-	for lot, reference in frappe.get_all(
-		"Batch", filters={"name": ["in", list(named)]}, fields=["name", "reference_name"], as_list=True
-	):
-		if reference != doc.name:
+	for lot, origin in origins_of(list(named)).items():
+		if origin.voucher_no != doc.name:
 			frappe.throw(
-				_("Line {0}: lot {1} exists already; a delivery comes in as a new lot.").format(
-					named[lot], lot
+				_("Line {0}: lot {1} came in on {2} {3}; a delivery comes in as a new lot.").format(
+					named[lot], lot, _(origin.voucher_type), origin.voucher_no
 				),
 				title=_("New lot needed"),
 			)

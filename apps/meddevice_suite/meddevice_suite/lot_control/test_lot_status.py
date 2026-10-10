@@ -371,9 +371,17 @@ class TestOnlyAnApprovedLotLeaves(LotTestCase):
 		entry.is_cancelled = 1
 		lot_status.guard_stock_ledger_entry(entry)  # the reversal of a cancelled document
 		entry.is_cancelled, entry.actual_qty = 0, 1
-		lot_status.guard_stock_ledger_entry(entry)  # stock coming in
-		entry.actual_qty, entry.voucher_type = -1, "Stock Reconciliation"
-		lot_status.guard_stock_ledger_entry(entry)  # a counted correction
+		with self.assertRaisesRegex(frappe.ValidationError, "new stock comes in as a new lot"):
+			lot_status.guard_stock_ledger_entry(
+				entry
+			)  # more stock into a lot already in, on another document
+		entry.voucher_type, entry.voucher_no = (
+			"Stock Entry",
+			frappe.db.get_value("Batch", lot, "reference_name"),
+		)
+		lot_status.guard_stock_ledger_entry(entry)  # the stock its own receipt brings in
+		entry.actual_qty, entry.voucher_type, entry.voucher_no = -1, "Stock Reconciliation", "SR-TEST"
+		lot_status.guard_stock_ledger_entry(entry)  # a counted loss
 
 	def test_a_quarantined_lot_cannot_be_delivered(self):
 		lot = self.quarantined()
