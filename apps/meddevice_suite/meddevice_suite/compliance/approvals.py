@@ -28,10 +28,21 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.model.workflow import WorkflowPermissionError, get_workflow, get_workflow_name
+from frappe.utils import cint
 
 # What an approver approves on a record; none of it changes after approval.
-APPROVED_TOTALS = ("total_qty", "net_total", "grand_total")
+APPROVED_TOTALS = (
+	"total_qty",
+	"net_total",
+	"grand_total",
+	"taxes_and_charges",
+	"apply_discount_on",
+	"additional_discount_percentage",
+	"discount_amount",
+)
 APPROVED_ITEM_FIELDS = ("item_code", "qty", "uom", "conversion_factor", "rate", "discount_percentage")
+# A tax row changed in a way that leaves the totals as they were is still a change of the terms.
+APPROVED_TAX_FIELDS = ("charge_type", "account_head", "rate", "tax_amount", "included_in_print_rate")
 
 
 def on_submit(doc: Document, method: str | None = None) -> None:
@@ -104,7 +115,7 @@ def before_update_after_submit(doc: Document, method: str | None = None) -> None
 	if before and approved_terms(before) != approved_terms(doc):
 		frappe.throw(
 			_(
-				"{0} {1} has been approved; its items, quantities and prices cannot change. "
+				"{0} {1} has been approved; its items, quantities, prices, taxes and discounts cannot change. "
 				"Cancel and amend it, and the amendment is approved again."
 			).format(_(doc.doctype), doc.name),
 			WorkflowPermissionError,
@@ -117,7 +128,14 @@ def approved_terms(doc: Document) -> tuple:
 		(row.name, *(flt_or_value(row.get(field)) for field in APPROVED_ITEM_FIELDS))
 		for row in doc.get("items")
 	)
-	return (tuple(flt_or_value(doc.get(field)) for field in APPROVED_TOTALS), tuple(items))
+	taxes = [
+		tuple(
+			cint(row.get(field)) if field == "included_in_print_rate" else flt_or_value(row.get(field))
+			for field in APPROVED_TAX_FIELDS
+		)
+		for row in doc.get("taxes") or []
+	]
+	return (tuple(flt_or_value(doc.get(field)) for field in APPROVED_TOTALS), tuple(items), tuple(taxes))
 
 
 def flt_or_value(value: Any) -> Any:

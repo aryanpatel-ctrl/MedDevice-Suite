@@ -549,6 +549,26 @@ class TestApproval(ChangeControlTestCase):
 
 
 @verifies("URS-QMS-012")
+class TestActionsWithoutARecord(ChangeControlTestCase):
+	@verifies("URS-QMS-012")
+	def test_an_action_that_changes_no_record_is_approved_and_done(self):
+		"""Training the inspectors changes no record; the action needs none."""
+		name = approved_change(self.requester, self.qa, self.document)
+		actions = frappe.get_doc(DOCTYPE, name).actions
+		self.assertEqual(frappe.db.get_value(DOCTYPE, name, "status"), "Approved")
+		self.assertTrue(actions)
+		self.assertTrue(all(not action.target_doctype and not action.target_name for action in actions))
+
+
+class TestPrintout(ChangeControlTestCase):
+	@verifies("URS-CMP-003")
+	def test_the_printout_shows_the_assessment_and_approval_signatures(self):
+		name = approved_change(self.requester, self.qa, self.document)
+		html = frappe.get_print("Change Request", name, print_format="Change Request (Signed)")
+		for text in ("Electronic signatures", "Reviewed", "Approved", frappe.utils.get_fullname(self.qa)):
+			self.assertIn(text, html)
+
+
 class TestImplementation(ChangeControlTestCase):
 	def test_each_owner_records_their_action_and_the_change_is_implemented(self):
 		doc = self.approved(days=30)

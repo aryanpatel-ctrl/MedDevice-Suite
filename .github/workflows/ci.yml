@@ -58,6 +58,9 @@ jobs:
 
       - uses: ./.github/actions/setup-bench
 
+      - name: Migrates cleanly
+        run: bench --site $SITE migrate
+
       - name: Run tests with coverage
         run: |
           mkdir -p reports

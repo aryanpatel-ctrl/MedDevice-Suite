@@ -596,5 +596,6 @@
  "sort_order": "DESC",
  "states": [],
  "title_field": "title",
- "track_changes": 0
+ "track_changes": 0,
+ "default_print_format": "Change Request (Signed)"
 }

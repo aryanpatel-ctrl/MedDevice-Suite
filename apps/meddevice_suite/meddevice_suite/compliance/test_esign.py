@@ -5,7 +5,10 @@ from frappe.utils import add_to_date, now_datetime, time_diff_in_seconds
 from frappe.utils.user import UserPermissions
 
 from meddevice_suite.compliance.esign import (
+	LOCKOUT_ATTEMPTS,
+	LOCKOUT_SECONDS,
 	SigningRefused,
+	apply_lockout,
 	is_unchanged_since,
 	record_fingerprint,
 	sign,
@@ -149,6 +152,28 @@ class TestReauthentication(SigningTestCase):
 
 
 @verifies("URS-CMP-002")
+class TestLockoutConfiguration(SigningTestCase):
+	@verifies("URS-CMP-001")
+	def test_the_site_locks_an_account_after_wrong_passwords(self):
+		"""A site allowing unlimited attempts would never lock; the configuration gives it the
+		standard limit, and keeps a stricter one."""
+		frappe.db.set_single_value("System Settings", "allow_consecutive_login_attempts", 0)
+		frappe.db.set_single_value("System Settings", "allow_login_after_fail", 0)
+		frappe.clear_cache(doctype="System Settings")
+		apply_lockout()
+		self.assertEqual(
+			frappe.db.get_single_value("System Settings", "allow_consecutive_login_attempts"),
+			LOCKOUT_ATTEMPTS,
+		)
+		self.assertEqual(
+			frappe.db.get_single_value("System Settings", "allow_login_after_fail"), LOCKOUT_SECONDS
+		)
+		frappe.db.set_single_value("System Settings", "allow_consecutive_login_attempts", 3)
+		frappe.clear_cache(doctype="System Settings")
+		apply_lockout()
+		self.assertEqual(frappe.db.get_single_value("System Settings", "allow_consecutive_login_attempts"), 3)
+
+
 class TestSignatureContent(SigningTestCase):
 	def test_records_who_when_what_and_meaning(self):
 		signature = self.sign(meaning="Released", action="Batch Release", reason="All checks passed")

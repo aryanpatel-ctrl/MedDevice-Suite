@@ -613,9 +613,13 @@ context("The standard flow, through the screens of each job", { retries: 0 }, ()
 			.should((dialog) =>
 				expect(dialog.get_value("trans_items")[0].rate).to.equal(data.rate + 7)
 			);
-		expect_refusal(/has been approved; its items, quantities and prices cannot change/);
+		expect_refusal(
+			/has been approved; its items, quantities, prices, taxes and discounts cannot change/
+		);
 		cy.get(".modal.show .btn-primary").contains("Update").click();
-		refused_with(/has been approved; its items, quantities and prices cannot change/);
+		refused_with(
+			/has been approved; its items, quantities, prices, taxes and discounts cannot change/
+		);
 		stored("Quotation", made.quotation).then((quotation) => {
 			expect(quotation.items[0].rate).to.equal(data.rate);
 			expect(quotation.workflow_state).to.equal("Approved");

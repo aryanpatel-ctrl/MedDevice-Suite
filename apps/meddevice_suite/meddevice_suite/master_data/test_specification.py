@@ -127,6 +127,15 @@ class TestInspectionAgainstSpecification(SpecificationTestCase):
 		doc.get_item_specification_details()  # as ERPNext lays out the readings in its validate
 		self.assertEqual(sorted(r.specification for r in doc.readings), sorted([APPEARANCE, DIMENSION]))
 
+	def test_the_sample_size_comes_from_the_specification(self):
+		receipt, lot = self.verified_lot()
+		doc = self.inspection(receipt, lot, readings=[], quality_inspection_template=None, sample_size=None)
+		choose_specification(doc)
+		self.assertEqual(doc.sample_size, 5)
+		doc = self.inspection(receipt, lot, readings=[], quality_inspection_template=None, sample_size=8)
+		choose_specification(doc)
+		self.assertEqual(doc.sample_size, 8)  # the inspector may sample more
+
 	def test_readings_taken_against_another_template_are_refused(self):
 		frappe.set_user("Administrator")
 		other = template("MDS SPEC LOOSE", None).insert().name

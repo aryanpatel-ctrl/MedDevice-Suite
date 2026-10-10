@@ -7,6 +7,7 @@ Each step must be idempotent.
 
 from meddevice_suite.compliance.alerts import apply_alerts
 from meddevice_suite.compliance.archive import ensure_indexes as apply_archive_indexes
+from meddevice_suite.compliance.esign import apply_lockout
 from meddevice_suite.compliance.retention import apply_retention
 from meddevice_suite.lot_control.lot_status import apply_lot_status
 from meddevice_suite.lot_control.receipt import apply_receipt_fields
@@ -36,3 +37,4 @@ def apply_configuration() -> None:
 	apply_retention()
 	apply_archive_indexes()
 	apply_alerts()
+	apply_lockout()

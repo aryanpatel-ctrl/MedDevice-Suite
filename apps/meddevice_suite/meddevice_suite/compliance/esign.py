@@ -26,7 +26,7 @@ import frappe
 from frappe import _
 from frappe.auth import get_login_attempt_tracker
 from frappe.model.document import Document
-from frappe.utils import get_datetime, get_fullname, now_datetime
+from frappe.utils import cint, get_datetime, get_fullname, now_datetime
 from frappe.utils.password import check_password
 
 from meddevice_suite.compliance.fingerprint import chain_head, plain_text, record_content, sha256
@@ -35,6 +35,23 @@ MEANINGS = ("Authored", "Reviewed", "Approved", "Rejected", "Released", "Verifie
 
 # Accounts that do not identify one person (21 CFR 11.100(a)).
 SHARED_ACCOUNTS = ("Administrator", "Guest")
+# Frappe locks an account after this many wrong passwords, for this long; a site that allows
+# unlimited attempts never locks, so a locked account could never be kept from signing.
+LOCKOUT_ATTEMPTS = 5
+LOCKOUT_SECONDS = 15 * 60
+
+
+def apply_lockout() -> None:
+	"""Site configuration: an account locks after wrong passwords (URS-CMP-001). A site set to
+	unlimited attempts, or to no lockout time, is given the standard values; any limit already set
+	(Frappe's own default of 10 attempts and 60 seconds, or a site's choice) stands."""
+	settings = frappe.get_cached_doc("System Settings")
+	if cint(settings.allow_consecutive_login_attempts) < 1:
+		frappe.db.set_single_value("System Settings", "allow_consecutive_login_attempts", LOCKOUT_ATTEMPTS)
+	if cint(settings.allow_login_after_fail) < 1:
+		frappe.db.set_single_value("System Settings", "allow_login_after_fail", LOCKOUT_SECONDS)
+	frappe.clear_cache(doctype="System Settings")
+
 
 # record type -> fields the system maintains after signing, outside what a signature binds.
 SYSTEM_MAINTAINED: dict[str, tuple[str, ...]] = {
