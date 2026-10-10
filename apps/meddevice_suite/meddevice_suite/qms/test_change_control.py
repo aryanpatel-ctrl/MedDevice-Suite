@@ -872,6 +872,23 @@ class TestAlerts(ChangeControlTestCase):
 			],
 		)
 
+	@verifies("URS-PLT-012")
+	def test_the_action_alert_follows_quality_settings(self):
+		from meddevice_suite.compliance.test_quality_settings import use_setting
+
+		doc = self.approved()  # actions due today and in 10 days
+		with use_setting("change_action_warning_days", 12):
+			send_change_alerts()
+		self.assertEqual(len(self.subjects(self.stores, doc.name)), 1)  # due in 10 days: within 12
+
+	@verifies("URS-PLT-012")
+	def test_a_new_request_takes_its_effectiveness_check_from_quality_settings(self):
+		from meddevice_suite.compliance.test_quality_settings import use_setting
+
+		with use_setting("default_effectiveness_check_days", 120):
+			doc = self.raise_change()
+		self.assertEqual(frappe.db.get_value("Change Request", doc.name, "effectiveness_check_days"), 120)
+
 	def test_done_actions_and_unapproved_changes_raise_no_due_alert(self):
 		draft = self.raise_change()
 		doc = self.approved()

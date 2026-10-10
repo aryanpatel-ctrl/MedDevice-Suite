@@ -30,6 +30,7 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import add_days, add_years, getdate, nowdate, today
 
+from meddevice_suite.compliance import quality_settings
 from meddevice_suite.compliance.esign import sign
 
 QA_ROLE = "Quality Manager"
@@ -188,7 +189,6 @@ def make_due_revisions_effective() -> None:
 # --- Periodic review -------------------------------------------------------------------
 
 REVIEW_ALERT = "Document Review Due"
-REVIEW_WARNING_DAYS = 30
 
 
 def send_review_alerts() -> None:
@@ -200,7 +200,11 @@ def send_review_alerts() -> None:
 		filters=[
 			["status", "=", "Effective"],
 			["next_review_date", "is", "set"],
-			["next_review_date", "<=", add_days(today(), REVIEW_WARNING_DAYS)],
+			[
+				"next_review_date",
+				"<=",
+				add_days(today(), quality_settings.value("document_review_warning_days")),
+			],
 		],
 		fields=["name", "next_review_date"],
 		as_list=True,
