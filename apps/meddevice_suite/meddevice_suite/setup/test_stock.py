@@ -35,7 +35,9 @@ def stock_item(code: str, **values) -> str:
 def approve_for_test(*codes: str) -> None:
 	"""QA's approval of items that other modules' tests use (module 1), recorded as the signed act
 	records it, so that those tests need not set up everything an approval checks. The signed act
-	itself, with its checks and its signature, is tested in master_data/test_item_master.py."""
+	itself, with its checks and its signature, is tested in master_data/test_item_master.py. The
+	items it marks need not hold everything an approval checks, so the rule that an approved item
+	keeps what its approval needed is not exercised through them; it is in test_item_master.py."""
 	for code in codes:
 		if code and not item_master.approved(code):
 			frappe.db.set_value(  # test fixture only
