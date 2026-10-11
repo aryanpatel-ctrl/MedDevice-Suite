@@ -58,6 +58,11 @@ def submitted(doctype: str, **filters) -> bool:
 	return bool(frappe.db.exists(doctype, {**filters, "docstatus": 1}))
 
 
+def holds_stock(warehouse: str) -> bool:
+	"""Stock has moved through the store (a cancelled movement aside)."""
+	return bool(frappe.db.exists("Stock Ledger Entry", {"warehouse": warehouse, "is_cancelled": 0}))
+
+
 def item_in_use(doc: Document) -> bool:
 	"""QA has approved the item (module 1: from approval it is locked), or a submitted record
 	depends on it, or on one of its variants: a template's change reaches its variants (ERPNext's
@@ -163,9 +168,7 @@ MASTERS: dict[str, Master] = {
 	"Warehouse": Master(
 		# Module 7: its company and its role (quarantine, hold, rejected, returns or approved stock).
 		fields=("parent_warehouse", "is_group", "warehouse_type", "disabled", "company", "mds_store_role"),
-		in_use=lambda doc: bool(
-			frappe.db.exists("Stock Ledger Entry", {"warehouse": doc.name, "is_cancelled": 0})
-		)
+		in_use=lambda doc: holds_stock(doc.name)
 		or master_approved("Warehouse", doc.name),  # module 7: once QA has approved it
 	),
 	# Equipment (module 8): what QA approved changes under control once approved or submitted.

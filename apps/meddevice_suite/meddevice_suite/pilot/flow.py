@@ -23,6 +23,7 @@ tests, so what the client sees is what the tests prove.
 
 from collections.abc import Iterator
 from contextlib import contextmanager
+from datetime import datetime
 
 import frappe
 from erpnext.buying.doctype.purchase_order.purchase_order import make_purchase_receipt
@@ -33,7 +34,8 @@ from erpnext.selling.doctype.sales_order.sales_order import make_delivery_note
 from erpnext.stock.doctype.material_request.material_request import make_purchase_order
 from frappe.model.document import Document
 from frappe.model.workflow import apply_workflow
-from frappe.utils import add_days, add_to_date, now_datetime, today
+from frappe.query_builder.functions import Max
+from frappe.utils import add_days, add_to_date, get_datetime, now_datetime, today
 
 from meddevice_suite.lot_control import release as lot_release
 from meddevice_suite.lot_control.receipt import verify_certificate
@@ -349,7 +351,7 @@ def record_operations(work_order: Document) -> list[str]:
 		pluck="name",
 		order_by="sequence_id asc",
 	)
-	start = now_datetime()
+	start = max(now_datetime(), busy_until(cards))
 	for card_name in cards:
 		with as_job("Operator"):
 			card = frappe.get_doc("Job Card", card_name)
@@ -369,6 +371,25 @@ def record_operations(work_order: Document) -> list[str]:
 			card.status = "Completed"
 			card.submit()
 	return cards
+
+
+def busy_until(cards: list[str]) -> datetime:
+	"""When the workstations of these job cards are free: the end of the last time logged at any
+	of them. A workstation runs one job at a time, so a flow run again the same day logs its
+	operations after the earlier run's, as an operator would."""
+	if not cards:
+		return now_datetime()
+	job_card, time_log = frappe.qb.DocType("Job Card"), frappe.qb.DocType("Job Card Time Log")
+	workstations = frappe.qb.from_(job_card).select(job_card.workstation).where(job_card.name.isin(cards))
+	(last,) = (
+		frappe.qb.from_(time_log)
+		.join(job_card)
+		.on(time_log.parent == job_card.name)
+		.select(Max(time_log.to_time))
+		.where(job_card.workstation.isin(workstations) & (job_card.docstatus < 2))
+		.run()[0]
+	)
+	return get_datetime(last) if last else now_datetime()
 
 
 def finish_production(work_order: Document) -> Document:

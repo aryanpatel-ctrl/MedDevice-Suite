@@ -806,7 +806,7 @@ context("The standard flow, through the screens of each job", { retries: 0 }, ()
 		no_problems("Stores receives");
 	});
 
-	it("[URS-PLT-007] [URS-STK-005] Stores cannot move the quarantined lots to the approved store; the form refuses it plainly", () => {
+	it("[URS-PLT-007] [URS-PLT-010] [URS-STK-005] Stores cannot move the quarantined lots to the approved store; the form refuses it plainly", () => {
 		sign_in("Stores");
 		open_form("Purchase Receipt", made.receipt);
 		from_menu("Create", "Make Stock Entry");
@@ -827,7 +827,7 @@ context("The standard flow, through the screens of each job", { retries: 0 }, ()
 		no_problems("Stores is refused the move");
 	});
 
-	it("[URS-PLT-007] [URS-QC-001] QC verifies the supplier certificates on the receipt; QA cannot release before that", () => {
+	it("[URS-PLT-007] [URS-PLT-010] [URS-QC-001] QC verifies the supplier certificates on the receipt; QA cannot release before that", () => {
 		sign_in("QA Manager");
 		new_form("Lot Release");
 		cy.then(() => fill("batch", Object.values(made.received_lots)[0], "Link"));
@@ -859,7 +859,7 @@ context("The standard flow, through the screens of each job", { retries: 0 }, ()
 		no_problems("QC verifies the certificates");
 	});
 
-	it("[URS-PLT-007] [URS-QC-002] QC inspects each received lot against its template and submits the inspection", () => {
+	it("[URS-PLT-007] [URS-PLT-010] [URS-QC-002] QC inspects each received lot against its template and submits the inspection", () => {
 		sign_in("QC Inspector");
 		made.inspections = {};
 		cy.then(() => {
@@ -892,7 +892,7 @@ context("The standard flow, through the screens of each job", { retries: 0 }, ()
 		no_problems("QC inspects the lots");
 	});
 
-	it("[URS-PLT-007] [URS-STK-004] [URS-QC-003] QA releases each inspected lot with a signature; it is Approved in the approved store", () => {
+	it("[URS-PLT-007] [URS-PLT-010] [URS-STK-004] [URS-QC-003] QA releases each inspected lot with a signature; it is Approved in the approved store", () => {
 		sign_in("QA Manager");
 		made.decisions = {};
 		made.transfers = [];
@@ -1159,7 +1159,7 @@ context("The standard flow, through the screens of each job", { retries: 0 }, ()
 		no_problems("Production finishes");
 	});
 
-	it("[URS-PLT-007] [URS-STK-004] [URS-QC-004] QA releases the finished lot to the finished goods store with a signature", () => {
+	it("[URS-PLT-007] [URS-PLT-010] [URS-STK-004] [URS-QC-004] QA releases the finished lot to the finished goods store with a signature", () => {
 		sign_in("QA Manager");
 		cy.then(() => open_form("Batch", made.finished_lot));
 		button("Decide Lot").click();
