@@ -1239,7 +1239,7 @@ class TestFinishedGoodData(ItemMasterTestCase):
 		frappe.db.set_value("Item", twin.name, {UDI_DI: good.get(UDI_DI), item_master.GTIN_KEY: None})
 		item_master.apply_item_master_fields()  # no error, whatever is stored
 		keys = [frappe.db.get_value("Item", name, item_master.GTIN_KEY) for name in (good.name, twin.name)]
-		self.assertEqual(sorted(filter(None, keys)), [good.get(UDI_DI).zfill(14)])  # one of the two
+		self.assertEqual(sorted(key for key in keys if key), [good.get(UDI_DI).zfill(14)])  # one of the two
 		self.assertIsNone(frappe.db.get_value("Item", bad.name, item_master.GTIN_KEY))
 
 	def test_one_gtin_written_at_another_length_is_the_same_identifier(self):
