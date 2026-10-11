@@ -1,0 +1,89 @@
+{
+ "actions": [],
+ "creation": "2026-10-11 18:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "purchase_order",
+  "purchase_order_item",
+  "item",
+  "required_by",
+  "ordered_qty",
+  "received_by_required_date",
+  "on_time"
+ ],
+ "fields": [
+  {
+   "fieldname": "purchase_order",
+   "fieldtype": "Link",
+   "label": "Purchase Order",
+   "options": "Purchase Order",
+   "in_list_view": 1,
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "purchase_order_item",
+   "fieldtype": "Data",
+   "label": "Order Line",
+   "hidden": 1,
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "item",
+   "fieldtype": "Link",
+   "label": "Item",
+   "options": "Item",
+   "in_list_view": 1,
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "required_by",
+   "fieldtype": "Date",
+   "label": "Required By",
+   "in_list_view": 1,
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "ordered_qty",
+   "fieldtype": "Float",
+   "label": "Ordered (stock units)",
+   "in_list_view": 1,
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "received_by_required_date",
+   "fieldtype": "Float",
+   "label": "Received by Then",
+   "in_list_view": 1,
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "on_time",
+   "fieldtype": "Check",
+   "label": "In Full on Time",
+   "in_list_view": 1,
+   "read_only": 1,
+   "no_copy": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-10-11 18:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Master Data",
+ "name": "Supplier Rating Line",
+ "owner": "Administrator",
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0,
+ "istable": 1,
+ "permissions": []
+}

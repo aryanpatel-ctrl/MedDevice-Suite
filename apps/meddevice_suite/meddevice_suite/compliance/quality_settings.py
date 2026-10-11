@@ -49,6 +49,9 @@ SETTINGS: dict[str, Setting] = {
 	"password_strength": Setting(3, 3, 4),
 	"password_expiry_days": Setting(90, 30, 365),
 	"session_idle_minutes": Setting(30, 5, 480),
+	# Supplier rating (URS-PUR-002), decided 2026-10-11
+	"supplier_rating_quality_weight": Setting(70, 0, 100),
+	"supplier_rating_threshold": Setting(80, 50, 100),
 }
 
 

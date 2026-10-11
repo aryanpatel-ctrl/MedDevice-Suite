@@ -894,6 +894,13 @@ source = "D2 Vendor Master, Supplier; D3 Purchase Order to Vendor; D4 2.5 Vendor
 status = "implemented"
 
 [[requirement]]
+id = "URS-PUR-002"
+module = 4
+title = "Each supplier is rated by the system for every finished calendar month in which QA decided any of its received lots or any of its order lines fell due: quality is the share of those lots QA released rather than rejected, a hold not counting until the lot is decided; delivery is the share of those lines received in full by their required date on goods receipts; the score weighs them as QA sets in Quality Settings (quality 70 percent until changed), or is the one measure the month holds; each rating lists the lots and lines it counted and the settings it used, and is never changed, cancelled or deleted; it is shown on the supplier; a score below the threshold QA sets (80 until changed) makes the supplier due for re-evaluation and alerts QA and Purchase, and only QA's next signed decision on the supplier closes it; ERPNext's supplier scorecard is not used."
+source = "D2 Purchase Management (PO, GRN, Vendor Rating); master plan section 3 (vendor master: rating; used by vendor rating); DFD 2.6 Vendor Management; ISO 13485 7.4.1 (monitoring and re-evaluation of suppliers); decided 2026-10-11: monthly, quality by QA's lot decisions, delivery in full by the required date, weights and threshold QA's under change control, the rating informs QA's signed decision and does not itself stop orders, own record instead of ERPNext's Supplier Scorecard (its quality figures read receipt rejections this process never records, its on-time count treats late receipts as on time, its periods can be cancelled unaudited and its standings block orders outside QA's decision)"
+status = "implemented"
+
+[[requirement]]
 id = "URS-MST-001"
 module = 1
 title = "Each of the nine masters (item, bill of materials, routing, operation and work centre, supplier, customer, warehouse, equipment, inspection template) carries a version number and an effective date; a change to the controlled fields of a master in use is made only under an approved change request that lists it, raises the version, and is recorded with the previous values in the audit trail; ERPNext's BOM Update Tool does not replace a bill of materials inside approved ones, a changed bill of materials being a new one under change control."

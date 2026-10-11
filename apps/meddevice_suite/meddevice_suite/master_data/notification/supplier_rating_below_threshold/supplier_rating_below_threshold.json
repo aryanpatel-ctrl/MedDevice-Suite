@@ -1,0 +1,35 @@
+{
+ "attach_print": 0,
+ "channel": "System Notification",
+ "condition_type": "Python",
+ "creation": "2026-10-11 18:00:00.000000",
+ "docstatus": 0,
+ "doctype": "Notification",
+ "document_type": "Supplier Rating",
+ "enabled": 1,
+ "event": "Custom",
+ "idx": 0,
+ "is_standard": 1,
+ "message_type": "HTML",
+ "minutes_offset": 0,
+ "modified": "2026-10-11 18:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Master Data",
+ "name": "Supplier Rating Below Threshold",
+ "notification_message": "{{ _(\"Supplier {0} scored {1} for {2}, below the threshold of {3} (quality {4}, delivery {5}). QA re-evaluates the supplier: its next signed decision on the supplier closes this.\").format(doc.supplier_name or doc.supplier, doc.score, doc.period, doc.threshold, doc.get_formatted(\"quality_percent\") or \"-\", doc.get_formatted(\"delivery_percent\") or \"-\") }}",
+ "owner": "Administrator",
+ "recipients": [
+  {
+   "receiver_by_role": "Quality Manager"
+  },
+  {
+   "receiver_by_role": "Purchase User"
+  },
+  {
+   "receiver_by_role": "Purchase Manager"
+  }
+ ],
+ "send_system_notification": 0,
+ "send_to_all_assignees": 0,
+ "subject": "Supplier {{ doc.supplier_name or doc.supplier }} due for re-evaluation: rated {{ doc.score }} for {{ doc.period }}"
+}

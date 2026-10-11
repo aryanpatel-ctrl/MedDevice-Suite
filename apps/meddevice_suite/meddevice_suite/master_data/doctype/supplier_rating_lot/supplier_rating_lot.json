@@ -1,0 +1,72 @@
+{
+ "actions": [],
+ "creation": "2026-10-11 18:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "batch",
+  "item",
+  "lot_release",
+  "decision",
+  "decided_at"
+ ],
+ "fields": [
+  {
+   "fieldname": "batch",
+   "fieldtype": "Link",
+   "label": "Lot",
+   "options": "Batch",
+   "in_list_view": 1,
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "item",
+   "fieldtype": "Link",
+   "label": "Item",
+   "options": "Item",
+   "in_list_view": 1,
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "lot_release",
+   "fieldtype": "Link",
+   "label": "QA Decision",
+   "options": "Lot Release",
+   "in_list_view": 1,
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "decision",
+   "fieldtype": "Data",
+   "label": "Decision",
+   "in_list_view": 1,
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "decided_at",
+   "fieldtype": "Datetime",
+   "label": "Decided At",
+   "in_list_view": 1,
+   "read_only": 1,
+   "no_copy": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-10-11 18:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Master Data",
+ "name": "Supplier Rating Lot",
+ "owner": "Administrator",
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0,
+ "istable": 1,
+ "permissions": []
+}

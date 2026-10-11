@@ -1,0 +1,391 @@
+{
+ "actions": [],
+ "creation": "2026-10-11 18:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "supplier",
+  "supplier_name",
+  "period",
+  "period_start",
+  "period_end",
+  "column_break_score",
+  "score",
+  "standing",
+  "re_evaluation",
+  "section_quality",
+  "lots_released",
+  "lots_rejected",
+  "column_break_quality",
+  "quality_percent",
+  "section_delivery",
+  "lines_due",
+  "lines_on_time",
+  "column_break_delivery",
+  "delivery_percent",
+  "section_basis",
+  "quality_weight",
+  "threshold",
+  "column_break_basis",
+  "settings_version",
+  "rating_key",
+  "section_lots",
+  "lots",
+  "section_lines",
+  "lines"
+ ],
+ "fields": [
+  {
+   "fieldname": "supplier",
+   "fieldtype": "Link",
+   "label": "Supplier",
+   "options": "Supplier",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "search_index": 1,
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "supplier_name",
+   "fieldtype": "Data",
+   "label": "Supplier Name",
+   "fetch_from": "supplier.supplier_name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "period",
+   "fieldtype": "Data",
+   "label": "Month",
+   "description": "The calendar month rated (YYYY-MM).",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "period_start",
+   "fieldtype": "Date",
+   "label": "From",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "period_end",
+   "fieldtype": "Date",
+   "label": "To",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "column_break_score",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "score",
+   "fieldtype": "Float",
+   "label": "Score",
+   "precision": "1",
+   "in_list_view": 1,
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "standing",
+   "fieldtype": "Select",
+   "label": "Standing",
+   "options": "\nSatisfactory\nRe-evaluation Due\nRe-evaluated",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "allow_on_submit": 1,
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "re_evaluation",
+   "fieldtype": "Link",
+   "label": "Re-evaluated By",
+   "options": "Supplier Approval",
+   "description": "QA's signed decision on the supplier that closed the re-evaluation.",
+   "allow_on_submit": 1,
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "section_quality",
+   "fieldtype": "Section Break",
+   "label": "Quality: lots QA decided this month"
+  },
+  {
+   "fieldname": "lots_released",
+   "fieldtype": "Int",
+   "label": "Lots Released",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "lots_rejected",
+   "fieldtype": "Int",
+   "label": "Lots Rejected",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "column_break_quality",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "quality_percent",
+   "fieldtype": "Percent",
+   "label": "Quality",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "section_delivery",
+   "fieldtype": "Section Break",
+   "label": "Delivery: order lines due this month"
+  },
+  {
+   "fieldname": "lines_due",
+   "fieldtype": "Int",
+   "label": "Lines Due",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "lines_on_time",
+   "fieldtype": "Int",
+   "label": "Lines Received in Full on Time",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "column_break_delivery",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "delivery_percent",
+   "fieldtype": "Percent",
+   "label": "Delivery",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "section_basis",
+   "fieldtype": "Section Break",
+   "label": "Basis",
+   "collapsible": 1
+  },
+  {
+   "fieldname": "quality_weight",
+   "fieldtype": "Int",
+   "label": "Quality Weight (%)",
+   "description": "Quality Settings in force when the rating was made.",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "threshold",
+   "fieldtype": "Int",
+   "label": "Re-evaluation Threshold",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "column_break_basis",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "settings_version",
+   "fieldtype": "Int",
+   "label": "Quality Settings Version",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "rating_key",
+   "fieldtype": "Data",
+   "label": "Rating Key",
+   "unique": 1,
+   "hidden": 1,
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "section_lots",
+   "fieldtype": "Section Break",
+   "label": "Lots counted"
+  },
+  {
+   "fieldname": "lots",
+   "fieldtype": "Table",
+   "label": "Lots",
+   "options": "Supplier Rating Lot",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "section_lines",
+   "fieldtype": "Section Break",
+   "label": "Order lines counted"
+  },
+  {
+   "fieldname": "lines",
+   "fieldtype": "Table",
+   "label": "Order Lines",
+   "options": "Supplier Rating Line",
+   "read_only": 1,
+   "no_copy": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-10-11 18:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Master Data",
+ "name": "Supplier Rating",
+ "owner": "Administrator",
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0,
+ "autoname": "format:SR-{YYYY}-{#####}",
+ "naming_rule": "Expression",
+ "is_submittable": 1,
+ "title_field": "supplier_name",
+ "search_fields": "supplier_name,period,standing",
+ "description": "The system's monthly rating of a supplier (module 4): the share of its lots QA released and of its order lines received in full on time. Made only by the system, never changed, cancelled or deleted.",
+ "permissions": [
+  {
+   "role": "Quality Manager",
+   "read": 1,
+   "report": 1,
+   "print": 1,
+   "export": 1,
+   "write": 0,
+   "create": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "delete": 0,
+   "email": 0,
+   "import": 0,
+   "share": 0
+  },
+  {
+   "role": "Purchase User",
+   "read": 1,
+   "report": 1,
+   "print": 1,
+   "export": 0,
+   "write": 0,
+   "create": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "delete": 0,
+   "email": 0,
+   "import": 0,
+   "share": 0
+  },
+  {
+   "role": "Purchase Manager",
+   "read": 1,
+   "report": 1,
+   "print": 1,
+   "export": 1,
+   "write": 0,
+   "create": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "delete": 0,
+   "email": 0,
+   "import": 0,
+   "share": 0
+  },
+  {
+   "role": "QC Inspector",
+   "read": 1,
+   "report": 1,
+   "print": 1,
+   "export": 0,
+   "write": 0,
+   "create": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "delete": 0,
+   "email": 0,
+   "import": 0,
+   "share": 0
+  },
+  {
+   "role": "Stock Manager",
+   "read": 1,
+   "report": 1,
+   "print": 1,
+   "export": 0,
+   "write": 0,
+   "create": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "delete": 0,
+   "email": 0,
+   "import": 0,
+   "share": 0
+  },
+  {
+   "role": "Manufacturing Manager",
+   "read": 1,
+   "report": 1,
+   "print": 1,
+   "export": 0,
+   "write": 0,
+   "create": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "delete": 0,
+   "email": 0,
+   "import": 0,
+   "share": 0
+  },
+  {
+   "role": "Sales Manager",
+   "read": 1,
+   "report": 1,
+   "print": 1,
+   "export": 0,
+   "write": 0,
+   "create": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "delete": 0,
+   "email": 0,
+   "import": 0,
+   "share": 0
+  },
+  {
+   "role": "System Manager",
+   "read": 1,
+   "report": 1,
+   "print": 1,
+   "export": 0,
+   "write": 0,
+   "create": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "delete": 0,
+   "email": 0,
+   "import": 0,
+   "share": 0
+  }
+ ]
+}

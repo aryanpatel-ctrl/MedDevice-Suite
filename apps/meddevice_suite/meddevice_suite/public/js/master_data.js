@@ -6,6 +6,7 @@ frappe.ui.form.on("Supplier", {
 		if (frm.is_new()) return;
 		const approval = frm.doc.__onload?.supplier_approval;
 		frm.dashboard.set_headline_alert(approval_text(approval), approval_colour(approval));
+		show_rating(frm, frm.doc.__onload?.supplier_ratings || []);
 		if (frappe.user.has_role("Quality Manager")) {
 			frm.add_custom_button(__("Decide Supplier Approval"), () =>
 				frappe.new_doc("Supplier Approval", { supplier: frm.doc.name })
@@ -32,6 +33,27 @@ function approval_text(approval) {
 			: __("Approved conditionally until {0} ({1}) for: {2}", [until, approval.name, items]);
 	}
 	return __("Approved by QA ({0}) for: {1}", [approval.name, items]);
+}
+
+// Supplier rating (URS-PUR-002, master_data/supplier_rating.py): the latest month's score, and
+// any rating still waiting for QA's re-evaluation.
+function show_rating(frm, ratings) {
+	if (!ratings.length) return;
+	const latest = ratings[0];
+	const due = ratings.filter((rating) => rating.standing === "Re-evaluation Due");
+	const text = due.length
+		? __("Rated {0} for {1}, below {2}: due for QA's re-evaluation ({3}).", [
+				latest.score,
+				latest.period,
+				latest.threshold,
+				due.map((rating) => rating.name).join(", "),
+		  ])
+		: __("Rated {0} for {1} (re-evaluation below {2}).", [
+				latest.score,
+				latest.period,
+				latest.threshold,
+		  ]);
+	frm.dashboard.add_comment(frappe.utils.escape_html(text), due.length ? "red" : "blue", true);
 }
 
 function approval_colour(approval) {

@@ -213,6 +213,8 @@ doc_events = {
 		"before_update_after_submit": "meddevice_suite.master_data.supplier_approval.guard_order_update",
 	},
 	"Supplier": {"onload": "meddevice_suite.master_data.supplier_approval.supplier_onload"},
+	# Suppliers are rated by the Supplier Rating (URS-PUR-002), never by ERPNext's scorecard.
+	"Supplier Scorecard": {"before_validate": "meddevice_suite.master_data.supplier_rating.refuse_scorecard"},
 	"Purchase Invoice": {"validate": "meddevice_suite.master_data.supplier_approval.refuse_stock_on_invoice"},
 	"BOM Update Log": {"validate": "meddevice_suite.master_data.versioning.refuse_bom_replace"},
 	"Item": {
@@ -273,6 +275,7 @@ scheduler_events = {
 		"meddevice_suite.qms.change_control.send_change_alerts",
 		"meddevice_suite.master_data.supplier_approval.send_certificate_alerts",
 		"meddevice_suite.master_data.customer_licence.send_expiry_alerts",
+		"meddevice_suite.master_data.supplier_rating.rate_finished_months",
 	],
 }
 

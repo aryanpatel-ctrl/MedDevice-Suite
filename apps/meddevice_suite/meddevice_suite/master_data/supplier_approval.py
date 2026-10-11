@@ -150,6 +150,10 @@ def decide(doc: Document, act: str, password: str, reason: str | None) -> None:
 	# No role holds Frappe's submit permission on a supplier approval; the signed act is the submit.
 	doc.flags.ignore_permissions = True
 	doc.submit()
+	# QA's decision is the re-evaluation a low supplier rating asked for (URS-PUR-002).
+	from meddevice_suite.master_data.supplier_rating import close_re_evaluations  # it reads approvals
+
+	close_re_evaluations(doc)
 
 
 def locked(name: str) -> Document:
@@ -353,6 +357,9 @@ def supplier_onload(doc: Document, method: str | None = None) -> None:
 		approval.item_codes = sorted(approval.item_codes)
 		approval.ended = has_ended(approval)
 	doc.set_onload("supplier_approval", approval)
+	from meddevice_suite.master_data.supplier_rating import recent  # the ratings build on approvals
+
+	doc.set_onload("supplier_ratings", recent(doc.name))
 
 
 # --- Certificate alert -----------------------------------------------------------------------

@@ -155,10 +155,6 @@ SIDEBAR_SCOPE: dict[str, tuple[str, ...]] = {
 		"Price List",
 		"Address",
 		"Contacts",
-		"Supplier Scorecard",
-		"Supplier Scorecard Criteria",
-		"Supplier Scorecard Variable",
-		"Supplier Scorecard Standing",
 		"Supplier Quotation Comparison",
 		"Purchase Order Analysis",
 		"Requested Items to Order and Receive",
@@ -328,11 +324,15 @@ SIDEBAR_ADDITIONS: dict[str, tuple[tuple[str, str, str], ...]] = {
 		("Lot Release", "DocType", "Lot Release"),
 		("Lots Awaiting Release", "Report", "Lots Awaiting Release"),
 		("Supplier Approval", "DocType", "Supplier Approval"),  # approved suppliers (module 4)
+		("Supplier Rating", "DocType", "Supplier Rating"),  # supplier rating (module 4)
 		("Quality Settings", "DocType", "Quality Settings"),  # adjustable values (URS-PLT-012)
 		("Customer Licence", "DocType", "Customer Licence"),  # customer licences (module 5)
 		("Equipment History Card", "Report", "Equipment History Card"),  # module 62
 	),
-	"Buying": (("Supplier Approval", "DocType", "Supplier Approval"),),
+	"Buying": (
+		("Supplier Approval", "DocType", "Supplier Approval"),
+		("Supplier Rating", "DocType", "Supplier Rating"),
+	),
 	# customer licences (module 5)
 	"Selling": (
 		("Customer Licence", "DocType", "Customer Licence"),
