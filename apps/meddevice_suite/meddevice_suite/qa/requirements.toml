@@ -1039,3 +1039,18 @@ module = 60
 title = "QA plans recurring activities, each with what is to be done, the responsible job, its first due date, a frequency (weekly, monthly, quarterly, half-yearly or yearly) and how many days before it is raised; the system raises each occurrence within that time and tells the responsible job; an occurrence is overdue and escalated as any reminder; a person of the responsible job, or QA, completes it saying what was done, and the next occurrence follows the calendar from the due date; a plan is never deleted, only made inactive."
 source = "DFD 9C Reminders / Next Due (C1 define reminder category, C2 set due date or frequency); master plan section 8; decided 2026-10-11: the next occurrence follows the calendar, not the day the last was done"
 status = "implemented"
+
+[[requirement]]
+id = "URS-PLT-016"
+module = 59
+title = "Any business job raises a task, assigning it to a person with a due date and naming its approver, another person; the person assigned says what was done and submits it for approval; the approver approves it with an electronic signature, which closes it, or returns it with a signed reason to be done again; until it is approved, whoever raised it, or QA, may withdraw it saying why; who may change what it is, its result and its status is held to these steps, a task is never deleted or cancelled, an approved task is final, and its due date is tracked by the reminders."
+source = "DFD 9B Task and Approval (B1 create, B2 assign, B3 execute, B4 submit for approval, B5 approve or reject, B6 close), D11; master plan section 8; 21 CFR 11.50, 11.70; decided 2026-10-11: approval and return are signed acts and the approver is never the person assigned"
+status = "implemented"
+
+[[requirement]]
+id = "URS-PLT-017"
+module = 59
+title = "Each person has one list of everything waiting on them, each line opening its record: their open reminders, the tasks they are to do or approve, the revisions they are to complete, review or approve, the change requests they are to submit, assess or approve, the lots waiting on QC or QA, the masters, supplier decisions and customer licences waiting for QA, and the quotations and purchase orders waiting for their approval; it shows only records the person may open."
+source = "DFD 9B Task and Approval across the modules (used by PO approval, document approval, QA release, change control); master plan section 8; decided 2026-10-11: one list read from the records themselves, not a second copy of their state"
+status = "implemented"
+

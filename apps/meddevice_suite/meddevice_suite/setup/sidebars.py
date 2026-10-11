@@ -345,6 +345,20 @@ SIDEBAR_ADDITIONS: dict[str, tuple[tuple[str, str, str], ...]] = {
 	"Assets": (("Equipment History Card", "Report", "Equipment History Card"),),  # module 62
 }
 
+# Each job's own work list and its tasks (module 59), in every business area.
+WORK_ENTRIES = (("My Work", "Report", "My Work"), ("Work Task", "DocType", "Work Task"))
+BUSINESS_AREAS = (
+	"Selling",
+	"Buying",
+	"Stock",
+	"Manufacturing",
+	"Quality",
+	"Assets",
+	"Organization",
+	"Invoicing",
+)
+SIDEBAR_ADDITIONS.update({area: (*WORK_ENTRIES, *SIDEBAR_ADDITIONS.get(area, ())) for area in BUSINESS_AREAS})
+
 
 def apply_sidebar_scope() -> None:
 	changed = False

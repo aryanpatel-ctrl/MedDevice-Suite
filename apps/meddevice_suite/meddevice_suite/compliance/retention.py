@@ -64,6 +64,7 @@ RETENTION_SCHEDULE: dict[str, tuple[int, str, tuple[str, ...]]] = {
 			"Quality Settings",
 			"Reminder",
 			"Reminder Schedule",
+			"Work Task",
 		),
 	),
 	"Purchasing and supplier records": (
