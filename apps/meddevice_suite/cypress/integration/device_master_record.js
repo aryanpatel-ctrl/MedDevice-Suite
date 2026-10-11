@@ -97,7 +97,7 @@ context("Device master record", () => {
 			expect(stale[0].current_changed_under, "the change request it was made under").to.be
 				.ok;
 		});
-		cy.get(`${FORM} .form-dashboard`).should("contain", "Out of date since");
+		cy.get(`${FORM} .form-message`).should("contain", "Out of date since"); // the headline alert
 
 		// The Production Supervisor starts the next revision from the form; it is signed again.
 		as_user(supervisor);

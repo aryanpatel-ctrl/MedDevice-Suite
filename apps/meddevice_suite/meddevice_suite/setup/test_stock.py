@@ -124,12 +124,10 @@ def device_master_record_for_test(item: str) -> str:
 	current = dmr.current_record(item)
 	if current and not dmr.changes_since_approval(current):
 		return current
-	name = dmr.revision_in_progress(item)
-	doc = (
-		frappe.get_doc(dmr.DOCTYPE, name) if name else frappe.get_doc({"doctype": dmr.DOCTYPE, "item": item})
+	name = (
+		dmr.revision_in_progress(item) or frappe.get_doc({"doctype": dmr.DOCTYPE, "item": item}).insert().name
 	)
-	if doc.is_new():
-		doc.insert()
+	doc = frappe.get_doc(dmr.DOCTYPE, name)  # as the signed acts load it
 	dmr.assemble(doc)
 	doc.status, doc.approver, doc.approved_on = dmr.CURRENT, "Administrator", now_datetime()
 	dmr.act(doc)

@@ -668,8 +668,9 @@ class TestOutOfDate(DeviceMasterRecordTestCase):
 		self.assertEqual({self.status(name) for name in records}, {dmr.CURRENT})
 
 		pinned_records.sweep()
-		pinned_records.sweep()
+		# One sweep marks every record the change reaches, not one per run.
 		self.assertEqual([self.status(name) for name in records], [dmr.OUT_OF_DATE] * 2)
+		pinned_records.sweep()  # and a second run alerts nobody again
 		for name in records:
 			self.assertEqual(self.alerts_sent(name), 1)
 

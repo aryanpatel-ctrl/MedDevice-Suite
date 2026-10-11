@@ -588,7 +588,9 @@ def require_signable(doc: Document) -> None:
 		_("{0} is not approved by QA; its record is not signed.").format(doc.item),
 	)
 	require(not item_master_disabled(doc.item), _("{0} is disabled.").format(doc.item))
-	require(doc.revision == "01" or plain(doc.summary_of_change), _("Say what changed in this revision."))
+	# Only a revision that follows an approved one says what changed; withdrawn drafts do not count.
+	approved_before = frappe.db.exists(DOCTYPE, {"item": doc.item, "docstatus": 1, "name": ["!=", doc.name]})
+	require(not approved_before or plain(doc.summary_of_change), _("Say what changed in this revision."))
 	normalise_headings(doc)
 	lacking = what_is_lacking(doc)
 	require(not lacking, _("{0} cannot be signed yet; it lacks {1}.").format(doc.name, "; ".join(lacking)))
