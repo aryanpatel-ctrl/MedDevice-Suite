@@ -92,7 +92,9 @@ def prepare_journey(password: str | None = None) -> dict:
 	if frappe.session.user != "Administrator":
 		frappe.throw(_("The browser journey is prepared only by the Administrator."), frappe.PermissionError)
 
-	ensure_masters(approve_as_qa(password), approve_as_qa(password, "BOM"), approve_as_qa(password, "Asset"))
+	ensure_masters(
+		approve_as_qa(password), approve_as_qa(password, "BOM"), approve_as_qa(password, "Asset"), password
+	)
 	if not password:
 		frappe.throw(_("Give the run's password of the job users to verify the customer's licence."))
 	ensure_licence(  # module 5: sold to only under a licence QA has verified
@@ -166,6 +168,7 @@ def ensure_masters(
 	approve: Callable[[str], None],
 	approve_bom: Callable[[str], None],
 	approve_equipment: Callable[[str], None] | None = None,
+	password: str | None = None,
 ) -> None:
 	ensure_inspection_masters(COMPANY, approve, approve_equipment)  # the parameters the templates below name
 	ensure(
@@ -207,6 +210,16 @@ def ensure_masters(
 			for index, (operation, workstation, minutes) in enumerate(OPERATIONS, 1)
 		],
 	)
+	if password:  # module 3: QA approves the operations, with their work instructions, and the routing
+		from meddevice_suite.pilot.documents import approve_production_masters
+
+		approve_production_masters(
+			[(operation, workstation) for operation, workstation, _minutes in OPERATIONS],
+			[ROUTING],
+			lambda profile: acting_as(email_for(profile)),
+			email_for,
+			password,
+		)
 	ensure_bom(
 		PRODUCT, ROUTING, {code: details[5] for code, details in RAW_MATERIALS.items()}, COMPANY, approve_bom
 	)

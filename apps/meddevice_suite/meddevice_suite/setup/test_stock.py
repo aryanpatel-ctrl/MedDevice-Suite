@@ -70,6 +70,49 @@ def submit_bom_for_test(bom):
 	return bom
 
 
+def approve_masters_for_test(*masters: tuple[str, str]) -> None:
+	"""QA's approval of operations, workstations and routings other modules' tests use (module 3),
+	recorded as the signed act records it; the act itself is tested in master_data/test_routing.py."""
+	from meddevice_suite.master_data import master_approval, routing
+
+	for doctype, name in masters:
+		values = {
+			master_approval.APPROVAL_STATUS: master_approval.APPROVED,
+			master_approval.APPROVED_BY: "Administrator",
+			master_approval.APPROVED_AT: now_datetime(),
+		}
+		if doctype == "Operation":  # what its approval needs, as the signed act would have found it
+			values[routing.WORK_INSTRUCTION] = work_instruction_for_test()
+			values[routing.IN_PROCESS_CHECK] = (
+				frappe.db.get_value(doctype, name, routing.IN_PROCESS_CHECK) or "No"
+			)
+		frappe.db.set_value(doctype, name, values)
+
+
+def work_instruction_for_test() -> str:
+	"""A work instruction in effect for other modules' tests; issuing one through document control
+	is tested in qms/test_document_control.py."""
+	title = "Work instruction for tests"
+	existing = frappe.db.get_value("Controlled Document", {"title": title, "status": "Effective"})
+	if existing:
+		return existing
+	doc = frappe.get_doc(
+		{
+			"doctype": "Controlled Document",
+			"title": title,
+			"document_type": "Work Instruction",
+			"department": "PRD",
+			"process_owner": "Administrator",
+		}
+	)
+	doc.flags.ignore_permissions = True
+	doc.insert()
+	frappe.db.set_value(
+		"Controlled Document", doc.name, "status", "Effective"
+	)  # as an approved revision leaves it
+	return doc.name
+
+
 def approve_equipment_for_test(asset: str) -> None:
 	"""QA's approval of a piece of equipment other modules' tests use (module 8), recorded as the
 	signed act records it; the act itself is tested in master_data/test_equipment.py."""

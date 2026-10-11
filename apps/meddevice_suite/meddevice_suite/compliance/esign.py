@@ -64,6 +64,9 @@ SIGNED_CONTENT: dict[str, str] = {
 	"Customer": "meddevice_suite.master_data.customer_licence.customer_signed_content",
 	"BOM": "meddevice_suite.master_data.bom.signed_content",
 	"Asset": "meddevice_suite.master_data.equipment.signed_content",
+	"Operation": "meddevice_suite.master_data.master_approval.signed_content",
+	"Workstation": "meddevice_suite.master_data.master_approval.signed_content",
+	"Routing": "meddevice_suite.master_data.master_approval.signed_content",
 }
 
 SYSTEM_MAINTAINED: dict[str, tuple[str, ...]] = {

@@ -242,3 +242,46 @@ frappe.ui.form.on("Asset", {
 		}
 	},
 });
+
+// Routings, operations and workstations (module 3): the form says whether QA has approved it, or
+// what approval still needs, and QA approves it with a signature (master_data/routing.py).
+for (const doctype of ["Operation", "Workstation", "Routing"]) {
+	frappe.ui.form.on(doctype, {
+		refresh(frm) {
+			if (frm.is_new()) return;
+			const approval = frm.doc.__onload?.master_approval;
+			if (!approval) return;
+			if (approval.approved) {
+				frm.dashboard.set_headline_alert(
+					__("Approved by QA; what was approved changes under change control."),
+					"green"
+				);
+				return;
+			}
+			if (approval.missing.length) {
+				const missing = approval.missing
+					.map((what) => frappe.utils.escape_html(what))
+					.join("; ");
+				frm.dashboard.set_headline_alert(
+					__("Not yet approved by QA, so not used in production. Still needed: {0}.", [
+						missing,
+					]),
+					"orange"
+				);
+				return;
+			}
+			frm.dashboard.set_headline_alert(
+				__("Not yet approved by QA, so not used in production. Ready for QA's approval."),
+				"orange"
+			);
+			if (!frm.is_dirty() && !frm.doc.disabled && frappe.user.has_role("Quality Manager")) {
+				frm.add_custom_button(__("Approve"), () =>
+					// Closing the dialog signs nothing; there is nothing more to do then.
+					esign.sign(frm, "Approve", "Approved", { ask_reason: true }).catch(() => {})
+				)
+					.removeClass("btn-default")
+					.addClass("btn-primary");
+			}
+		},
+	});
+}

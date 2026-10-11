@@ -103,13 +103,35 @@ doc_events = {
 	"Pick List": {"validate": "meddevice_suite.lot_control.lot_status.guard_pick_list"},
 	"Packing Slip": {"validate": "meddevice_suite.lot_control.lot_status.guard_packing_slip"},
 	"Work Order": {
-		# Module 2: only from an approved, active bill of its own product; before_validate, which
-		# Production Plan's work orders (saved without validation) pass through too.
+		# Module 2: only from an approved, active bill of its own product; module 3: only on approved
+		# operations and workstations. Before validate, which Production Plan's work orders (saved
+		# without validation) pass through too, and module 3 again after ERPNext refetches operations.
 		"before_validate": [
 			"meddevice_suite.lot_control.lot_status.guard_unvalidated_work_order",
 			"meddevice_suite.master_data.bom.guard_work_order",
+			"meddevice_suite.master_data.routing.guard_work_order",
 		],
-		"validate": "meddevice_suite.lot_control.lot_status.guard_work_order",
+		"validate": [
+			"meddevice_suite.lot_control.lot_status.guard_work_order",
+			"meddevice_suite.master_data.routing.guard_work_order",  # after ERPNext refetches operations
+		],
+	},
+	# Routings, operations and workstations (module 3): approved by QA with a signature before use.
+	"Operation": {
+		"validate": "meddevice_suite.master_data.routing.guard",
+		"onload": "meddevice_suite.master_data.routing.onload",
+	},
+	"Workstation": {
+		"validate": "meddevice_suite.master_data.routing.guard",
+		"onload": "meddevice_suite.master_data.routing.onload",
+	},
+	"Routing": {
+		"validate": "meddevice_suite.master_data.routing.guard",
+		"onload": "meddevice_suite.master_data.routing.onload",
+	},
+	"Job Card": {
+		"before_validate": "meddevice_suite.master_data.routing.guard_job_card",
+		"validate": "meddevice_suite.master_data.routing.guard_job_card",  # after its sub-operations are set
 	},
 	"Purchase Receipt": {
 		"validate": [
@@ -144,7 +166,11 @@ doc_events = {
 		# Module 2: only QA's signed approval submits a bill of materials (before_validate, which
 		# runs even when a caller skips validation), and the signature is taken in that submit.
 		"before_validate": "meddevice_suite.master_data.bom.only_by_approval",
-		"before_submit": "meddevice_suite.master_data.versioning.guard_new_default_bom",
+		"before_submit": [
+			"meddevice_suite.master_data.versioning.guard_new_default_bom",
+			# Module 3: its routing, operations and workstations are approved.
+			"meddevice_suite.master_data.routing.guard_bom",
+		],
 		"onload": "meddevice_suite.master_data.bom.bom_onload",
 		"on_submit": [
 			"meddevice_suite.master_data.versioning.record_displaced_default",

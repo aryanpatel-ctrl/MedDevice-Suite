@@ -18,6 +18,7 @@ from meddevice_suite.setup.install import apply_configuration
 from meddevice_suite.setup.test_stock import (
 	approve_equipment_for_test,
 	approve_for_test,
+	approve_masters_for_test,
 	licensed_for_test,
 	submit_bom_for_test,
 )
@@ -373,6 +374,9 @@ class TestVersionedMasters(VersioningTestCase):
 			}
 		).insert()
 		self.assertFalse(MASTERS["Routing"].in_use(routing))
+		approve_masters_for_test(
+			("Workstation", workstation.name), ("Operation", operation.name), ("Routing", routing.name)
+		)
 		product, material = lot_item(new_item_code(), "Products"), lot_item(new_item_code())
 		submit_bom_for_test(self.bom(product, material, with_operations=1, routing=routing.name))
 		routing = frappe.get_doc("Routing", routing.name)
@@ -575,6 +579,9 @@ class TestRequirementMatrix(VersioningTestCase):
 				],
 			}
 		).insert()
+		approve_masters_for_test(
+			("Workstation", workstation.name), ("Operation", operation.name), ("Routing", routing.name)
+		)
 		product, material = lot_item(new_item_code(), "Products"), lot_item(new_item_code())
 		submit_bom_for_test(self.bom(product, material, with_operations=1, routing=routing.name))
 		supplier = frappe.get_doc(

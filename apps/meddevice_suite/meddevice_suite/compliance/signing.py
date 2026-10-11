@@ -34,6 +34,7 @@ ITEM_MASTER = "meddevice_suite.master_data.item_master"
 CUSTOMER_LICENCE = "meddevice_suite.master_data.customer_licence"
 BOM = "meddevice_suite.master_data.bom"
 EQUIPMENT = "meddevice_suite.master_data.equipment"
+ROUTING = "meddevice_suite.master_data.routing"
 
 # (record type, act) -> the signed act. Each module adds the acts it signs.
 SIGNING_ACTIONS: dict[tuple[str, str], SignedAct] = {
@@ -74,6 +75,10 @@ SIGNING_ACTIONS: dict[tuple[str, str], SignedAct] = {
 	("BOM", "Approve"): SignedAct("Approved", f"{BOM}.approve"),
 	# Module 8, the approval of equipment
 	("Asset", "Approve"): SignedAct("Approved", f"{EQUIPMENT}.approve"),
+	# Module 3, the approval of operations, workstations and routings
+	("Operation", "Approve"): SignedAct("Approved", f"{ROUTING}.approve"),
+	("Workstation", "Approve"): SignedAct("Approved", f"{ROUTING}.approve"),
+	("Routing", "Approve"): SignedAct("Approved", f"{ROUTING}.approve"),
 }
 
 
