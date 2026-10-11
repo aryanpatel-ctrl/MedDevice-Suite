@@ -132,7 +132,8 @@
    "role": "Quality Manager",
    "share": 0,
    "submit": 0,
-   "write": 1
+   "write": 1,
+   "select": 1
   },
   {
    "amend": 0,
@@ -148,7 +149,8 @@
    "role": "System Manager",
    "share": 0,
    "submit": 0,
-   "write": 0
+   "write": 0,
+   "select": 1
   },
   {
    "amend": 0,
@@ -164,7 +166,8 @@
    "role": "Desk User",
    "share": 0,
    "submit": 0,
-   "write": 0
+   "write": 0,
+   "select": 1
   }
  ],
  "row_format": "Dynamic",

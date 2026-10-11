@@ -1,0 +1,1 @@
+<p>{{ _("Licence {0} of customer {1} expires or expired on {2}. Ask the customer for the renewed licence; Sales records it and QA verifies it, or no further sales order or delivery is made for the customer.").format(doc.licence_number, doc.customer_name or doc.customer, frappe.format_value(doc.valid_until, {"fieldtype": "Date"})) }}</p>

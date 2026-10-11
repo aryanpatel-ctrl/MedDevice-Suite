@@ -15,6 +15,7 @@ from meddevice_suite.qms.test_change_control import signer
 from meddevice_suite.setup.test_stock import (
 	approve_equipment_for_test,
 	approve_for_test,
+	submit_bom_for_test,
 	work_instruction_for_test,
 )
 
@@ -354,9 +355,9 @@ class TestUse(RoutingTestCase):
 		op = self.operation(ws)
 		line = self.routing([(op, ws)])
 		with self.assertRaisesRegex(frappe.ValidationError, "made only on what QA has approved"):
-			self.bom(line).submit()
+			submit_bom_for_test(self.bom(line))  # as QA's signed approval submits it (module 2)
 		_ws, _op, approved_line = self.approved_line()
-		self.bom(approved_line).submit()
+		submit_bom_for_test(self.bom(approved_line))
 
 	def test_no_work_order_on_an_unapproved_operation_also_without_validation(self):
 		ws = self.workstation()
@@ -384,7 +385,7 @@ class TestUse(RoutingTestCase):
 		bom = self.bom(line)
 		frappe.db.set_value("BOM", bom.name, "with_operations", 0)
 		with self.assertRaisesRegex(frappe.ValidationError, f"routing {line} not approved"):
-			frappe.get_doc("BOM", bom.name).submit()
+			submit_bom_for_test(frappe.get_doc("BOM", bom.name))
 
 	def job_card(self, operation: str, workstation: str, **values):
 		return frappe.get_doc(
@@ -501,7 +502,7 @@ class TestUse(RoutingTestCase):
 
 		_ws, op, line = self.approved_line()
 		bom = self.bom(line)
-		bom.submit()
+		submit_bom_for_test(bom)
 		frappe.db.set_value("Operation", op, APPROVAL_STATUS, DRAFT)  # as a bill from before module 3
 		order = frappe.get_doc(make_work_order(bom.name, bom.item, 1))
 		order.update({"company": company()})

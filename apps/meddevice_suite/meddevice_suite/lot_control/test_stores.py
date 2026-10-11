@@ -146,6 +146,38 @@ class TestStoreRoles(IntegrationTestCase):
 			frappe.db.count("Warehouse", {"company": company(), ROLE_FIELD: stores.QUARANTINE}), 1
 		)
 
+	def test_an_existing_store_named_after_a_role_takes_it_even_with_stock_in_it(self):
+		"""Cutover onto a site that already holds stock (found on the pilot, 2026-10-11): its own
+		Quarantine store, with lots in it, becomes the Quarantine store; that is no change of what
+		the store is for, so its stock does not stop it."""
+		from meddevice_suite.lot_control.test_lot_status import RAW, lot_item, receive
+
+		lot_item(RAW)
+		store = store_for(stores.QUARANTINE, company())
+		receive(RAW, 1, store)
+		frappe.db.set_value("Warehouse", store, ROLE_FIELD, None)  # as before lot control
+		frappe.clear_document_cache("Warehouse", store)
+		abbr = frappe.db.get_value("Company", company(), "abbr")
+
+		stores.ensure_role_stores(company(), abbr)
+
+		self.assertEqual(frappe.db.get_value("Warehouse", store, ROLE_FIELD), stores.QUARANTINE)
+
+	def test_a_person_still_cannot_give_a_store_holding_stock_a_role(self):
+		"""Only the system's first assignment to the store named after the role is let through."""
+		from meddevice_suite.lot_control.test_lot_status import RAW, lot_item, receive
+
+		lot_item(RAW)
+		approved = frappe.db.get_value("Warehouse", {"company": company(), "warehouse_name": "Stores"})
+		receive(RAW, 1, approved)
+		quarantine = store_for(stores.QUARANTINE, company())
+		frappe.db.set_value("Warehouse", quarantine, ROLE_FIELD, None)  # the role is free
+		self.addCleanup(frappe.db.set_value, "Warehouse", quarantine, ROLE_FIELD, stores.QUARANTINE)
+		doc = frappe.get_doc("Warehouse", approved)
+		doc.set(ROLE_FIELD, stores.QUARANTINE)
+		with self.assertRaisesRegex(frappe.ValidationError, "holds stock"):
+			doc.save()
+
 	def test_a_store_holding_stock_keeps_its_role(self):
 		from meddevice_suite.lot_control.test_lot_status import RAW, lot_item, receive
 

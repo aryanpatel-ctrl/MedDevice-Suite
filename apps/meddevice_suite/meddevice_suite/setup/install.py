@@ -12,6 +12,7 @@ from meddevice_suite.compliance.retention import apply_retention
 from meddevice_suite.lot_control.lot_status import apply_lot_status
 from meddevice_suite.lot_control.receipt import apply_receipt_fields
 from meddevice_suite.lot_control.stores import apply_store_roles
+from meddevice_suite.master_data.customer_licence import apply_customer_licence_fields
 from meddevice_suite.master_data.equipment import apply_equipment_fields
 from meddevice_suite.master_data.item_master import apply_item_master_fields
 from meddevice_suite.master_data.routing import apply_routing_fields
@@ -34,6 +35,7 @@ def apply_configuration() -> None:
 	apply_lot_status()
 	apply_receipt_fields()
 	apply_supplier_approval_fields()
+	apply_customer_licence_fields()
 	apply_equipment_fields()
 	apply_routing_fields()
 	apply_warehouse_fields()

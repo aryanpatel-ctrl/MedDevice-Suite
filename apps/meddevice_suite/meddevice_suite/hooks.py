@@ -97,12 +97,34 @@ doc_events = {
 		"validate": "meddevice_suite.lot_control.lot_status.guard_stock_entry",
 		"before_cancel": "meddevice_suite.lot_control.lot_status.refuse_cancel_of_release_transfer",
 	},
-	"Delivery Note": {"validate": "meddevice_suite.lot_control.lot_status.guard_delivery_note"},
+	"Delivery Note": {
+		# Module 5: delivered only to a customer with a verified licence valid on its date.
+		"before_validate": "meddevice_suite.master_data.customer_licence.guard_delivery_note",
+		"validate": "meddevice_suite.lot_control.lot_status.guard_delivery_note",
+	},
+	# Customer licences (module 5): sold only to customers QA has verified a licence of.
+	"Sales Order": {
+		"before_validate": "meddevice_suite.master_data.customer_licence.guard_sales_order",
+		"before_update_after_submit": "meddevice_suite.master_data.customer_licence.guard_order_update",
+	},
+	"Sales Invoice": {"before_validate": "meddevice_suite.master_data.customer_licence.guard_sales_invoice"},
+	"POS Invoice": {"before_validate": "meddevice_suite.master_data.customer_licence.guard_sales_invoice"},
+	"Customer": {
+		"onload": "meddevice_suite.master_data.customer_licence.customer_onload",
+		"validate": "meddevice_suite.master_data.customer_licence.guard_customer",
+		"before_rename": "meddevice_suite.master_data.customer_licence.guard_customer_rename",
+	},
 	"Pick List": {"validate": "meddevice_suite.lot_control.lot_status.guard_pick_list"},
 	"Packing Slip": {"validate": "meddevice_suite.lot_control.lot_status.guard_packing_slip"},
 	"Work Order": {
-		# Module 3: made only on approved operations and workstations.
-		"before_validate": "meddevice_suite.master_data.routing.guard_work_order",
+		# Module 2: only from an approved, active bill of its own product; module 3: only on approved
+		# operations and workstations. Before validate, which Production Plan's work orders (saved
+		# without validation) pass through too, and module 3 again after ERPNext refetches operations.
+		"before_validate": [
+			"meddevice_suite.lot_control.lot_status.guard_unvalidated_work_order",
+			"meddevice_suite.master_data.bom.guard_work_order",
+			"meddevice_suite.master_data.routing.guard_work_order",
+		],
 		"validate": [
 			"meddevice_suite.lot_control.lot_status.guard_work_order",
 			"meddevice_suite.master_data.routing.guard_work_order",  # after ERPNext refetches operations
@@ -137,9 +159,15 @@ doc_events = {
 	# Controlled specifications (module 6): each inspection against the item's specification for
 	# its stage; a specification in use changes only under an approved change request.
 	"Quality Inspection": {
-		"before_validate": "meddevice_suite.master_data.specification.choose_specification",
+		"before_validate": [
+			"meddevice_suite.master_data.specification.choose_specification",
+			# Module 6: the sampling plan follows from the lot (URS-MST-009).
+			"meddevice_suite.master_data.sampling.apply_plan",
+		],
 		"validate": [
 			"meddevice_suite.master_data.specification.check_against_specification",
+			# After the readings are judged: under a plan, the lot by its nonconforming units.
+			"meddevice_suite.master_data.sampling.judge",
 			"meddevice_suite.lot_control.receipt.guard_incoming_inspection",
 			# Module 8: a reading's instrument is approved equipment in service.
 			"meddevice_suite.master_data.equipment.guard_inspection_instruments",
@@ -149,12 +177,19 @@ doc_events = {
 	# Version-controlled masters (URS-MST-001): the default bill of materials in force is replaced,
 	# and one is cancelled, only under an approved change request.
 	"BOM": {
+		# Module 2: only QA's signed approval submits a bill of materials (before_validate, which
+		# runs even when a caller skips validation), and the signature is taken in that submit.
+		"before_validate": "meddevice_suite.master_data.bom.only_by_approval",
 		"before_submit": [
 			"meddevice_suite.master_data.versioning.guard_new_default_bom",
 			# Module 3: its routing, operations and workstations are approved.
 			"meddevice_suite.master_data.routing.guard_bom",
 		],
-		"on_submit": "meddevice_suite.master_data.versioning.record_displaced_default",
+		"onload": "meddevice_suite.master_data.bom.bom_onload",
+		"on_submit": [
+			"meddevice_suite.master_data.versioning.record_displaced_default",
+			"meddevice_suite.master_data.bom.sign_approval",
+		],
 		"on_update_after_submit": "meddevice_suite.master_data.versioning.record_displaced_default",
 		"before_cancel": "meddevice_suite.master_data.versioning.guard_cancel",
 		"on_cancel": "meddevice_suite.master_data.versioning.let_change_requests_not_block_cancel",
@@ -188,6 +223,8 @@ doc_events = {
 		"onload": "meddevice_suite.master_data.item_master.item_onload",
 		"on_update": "meddevice_suite.master_data.versioning.update_variants_under_control",
 	},
+	# Quality Settings (URS-PLT-013): the lockout is changed there, under change control.
+	"System Settings": {"validate": "meddevice_suite.compliance.quality_settings.guard_system_lockout"},
 	"Stock Settings": {
 		"validate": [
 			"meddevice_suite.setup.stock.protect_stock_settings",
@@ -235,6 +272,7 @@ scheduler_events = {
 		"meddevice_suite.qms.document_control.send_review_alerts",
 		"meddevice_suite.qms.change_control.send_change_alerts",
 		"meddevice_suite.master_data.supplier_approval.send_certificate_alerts",
+		"meddevice_suite.master_data.customer_licence.send_expiry_alerts",
 	],
 }
 

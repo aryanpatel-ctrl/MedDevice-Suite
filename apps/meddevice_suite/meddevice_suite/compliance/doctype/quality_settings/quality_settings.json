@@ -1,0 +1,187 @@
+{
+ "actions": [],
+ "creation": "2026-10-11 02:30:00.000000",
+ "description": "The adjustable values of the validated system: alert lead times and the account lockout. Changed by QA only under an approved change request (URS-PLT-012, URS-PLT-013).",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_alerts",
+  "lot_expiry_warning_days",
+  "supplier_certificate_warning_days",
+  "customer_licence_warning_days",
+  "document_review_warning_days",
+  "column_break_alerts",
+  "change_action_warning_days",
+  "default_effectiveness_check_days",
+  "section_lockout",
+  "login_lockout_attempts",
+  "column_break_lockout",
+  "login_lockout_minutes",
+  "section_control",
+  "change_request",
+  "changed_under",
+  "column_break_control",
+  "version",
+  "effective_from"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_alerts",
+   "fieldtype": "Section Break",
+   "label": "Alert lead times (days)"
+  },
+  {
+   "fieldname": "lot_expiry_warning_days",
+   "fieldtype": "Int",
+   "label": "Lot Expiry Alert",
+   "default": "30",
+   "reqd": 1,
+   "non_negative": 1,
+   "description": "Days before a lot with stock expires that Stores and QA are alerted (1 to 365)."
+  },
+  {
+   "fieldname": "supplier_certificate_warning_days",
+   "fieldtype": "Int",
+   "label": "Supplier Certificate Alert",
+   "default": "30",
+   "reqd": 1,
+   "non_negative": 1,
+   "description": "Days before the certificate of a supplier's decision in force expires that QA and Purchase are alerted (1 to 365)."
+  },
+  {
+   "fieldname": "customer_licence_warning_days",
+   "fieldtype": "Int",
+   "label": "Customer Licence Alert",
+   "default": "30",
+   "reqd": 1,
+   "non_negative": 1,
+   "description": "Days before a customer's verified licence expires that Sales and QA are alerted, unless a renewed licence is verified (1 to 365)."
+  },
+  {
+   "fieldname": "document_review_warning_days",
+   "fieldtype": "Int",
+   "label": "Document Review Alert",
+   "default": "30",
+   "reqd": 1,
+   "non_negative": 1,
+   "description": "Days before a controlled document's review date that its owner and QA are alerted (1 to 365)."
+  },
+  {
+   "fieldname": "column_break_alerts",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "change_action_warning_days",
+   "fieldtype": "Int",
+   "label": "Change Action Due Alert",
+   "default": "7",
+   "reqd": 1,
+   "non_negative": 1,
+   "description": "Days before a change request action is due that its owner is alerted (1 to 90)."
+  },
+  {
+   "fieldname": "default_effectiveness_check_days",
+   "fieldtype": "Int",
+   "label": "Effectiveness Check After",
+   "default": "90",
+   "reqd": 1,
+   "non_negative": 1,
+   "description": "Days after implementation that a new change request's effectiveness is checked by default (0 to 730)."
+  },
+  {
+   "fieldname": "section_lockout",
+   "fieldtype": "Section Break",
+   "label": "Login and signature lockout"
+  },
+  {
+   "fieldname": "login_lockout_attempts",
+   "fieldtype": "Int",
+   "label": "Wrong Passwords Before Lockout",
+   "default": "5",
+   "reqd": 1,
+   "non_negative": 1,
+   "description": "Consecutive wrong passwords, at login or when signing, that lock the account (3 to 10)."
+  },
+  {
+   "fieldname": "column_break_lockout",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "login_lockout_minutes",
+   "fieldtype": "Int",
+   "label": "Locked For (minutes)",
+   "default": "15",
+   "reqd": 1,
+   "non_negative": 1,
+   "description": "How long a locked account stays locked (5 to 1440)."
+  },
+  {
+   "fieldname": "section_control",
+   "fieldtype": "Section Break",
+   "label": "Change control"
+  },
+  {
+   "fieldname": "change_request",
+   "fieldtype": "Link",
+   "label": "Change Request",
+   "options": "Change Request",
+   "description": "The approved change request that lists Quality Settings, named for this change."
+  },
+  {
+   "fieldname": "changed_under",
+   "fieldtype": "Link",
+   "label": "Last Changed Under",
+   "options": "Change Request",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_control",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "version",
+   "fieldtype": "Int",
+   "label": "Version",
+   "default": "1",
+   "read_only": 1
+  },
+  {
+   "fieldname": "effective_from",
+   "fieldtype": "Date",
+   "label": "Effective From",
+   "read_only": 1
+  }
+ ],
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-10-11 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Compliance",
+ "name": "Quality Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "select": 1,
+   "read": 1,
+   "write": 1,
+   "print": 1,
+   "role": "Quality Manager"
+  },
+  {
+   "select": 1,
+   "read": 1,
+   "print": 1,
+   "report": 1,
+   "role": "System Manager"
+  },
+  {
+   "select": 1,
+   "role": "Desk User"
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}
