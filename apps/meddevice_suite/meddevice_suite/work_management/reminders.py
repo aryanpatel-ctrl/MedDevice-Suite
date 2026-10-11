@@ -214,6 +214,29 @@ def effectiveness_checks_due() -> Iterator[Due]:
 		)
 
 
+def work_tasks_due() -> Iterator[Due]:
+	"""Each task not yet approved or withdrawn whose due date falls within the lead time: with the
+	person assigned, or with the approver once it is submitted."""
+	for task in frappe.get_all(
+		"Work Task",
+		filters={
+			"status": ["in", ["Open", "Submitted", "Returned"]],
+			"due_date": ["<=", within("change_action_warning_days")],
+		},
+		fields=["name", "subject", "status", "assigned_to", "approver", "due_date", "submitted_on"],
+	):
+		yield Due(
+			"Work Task",
+			task.name,
+			task.due_date,
+			_("Task {0} {1} is due on {2}").format(task.name, task.subject, date_text(task.due_date)),
+			(),
+			task.approver if task.status == "Submitted" else task.assigned_to,
+			# Each round of the task is its own reminder: assigned, submitted, returned, submitted again.
+			part=f"{task.status}|{task.submitted_on or ''}",
+		)
+
+
 # category -> what is due now (module that owns the record)
 CATEGORIES: dict[str, Callable[[], Iterator[Due]]] = {
 	"Lot Expiry": lots_expiring,  # module 18
@@ -222,6 +245,7 @@ CATEGORIES: dict[str, Callable[[], Iterator[Due]]] = {
 	"Document Review": document_reviews_due,  # module 30
 	"Change Action": change_actions_due,  # module 36
 	"Effectiveness Check": effectiveness_checks_due,  # module 36
+	"Work Task": work_tasks_due,  # module 59
 }
 
 
