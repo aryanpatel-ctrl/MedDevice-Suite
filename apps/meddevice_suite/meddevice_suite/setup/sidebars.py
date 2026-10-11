@@ -328,8 +328,15 @@ SIDEBAR_ADDITIONS: dict[str, tuple[tuple[str, str, str], ...]] = {
 		("Lot Release", "DocType", "Lot Release"),
 		("Lots Awaiting Release", "Report", "Lots Awaiting Release"),
 		("Supplier Approval", "DocType", "Supplier Approval"),  # approved suppliers (module 4)
+		("Quality Settings", "DocType", "Quality Settings"),  # adjustable values (URS-PLT-012)
+		("Customer Licence", "DocType", "Customer Licence"),  # customer licences (module 5)
 	),
 	"Buying": (("Supplier Approval", "DocType", "Supplier Approval"),),
+	# customer licences (module 5)
+	"Selling": (
+		("Customer Licence", "DocType", "Customer Licence"),
+		("Customer Licence Type", "DocType", "Customer Licence Type"),
+	),
 }
 
 

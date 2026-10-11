@@ -31,6 +31,8 @@ CHANGE_CONTROL = "meddevice_suite.qms.change_control"
 LOT_RELEASE = "meddevice_suite.lot_control.release"
 SUPPLIER_APPROVAL = "meddevice_suite.master_data.supplier_approval"
 ITEM_MASTER = "meddevice_suite.master_data.item_master"
+CUSTOMER_LICENCE = "meddevice_suite.master_data.customer_licence"
+BOM = "meddevice_suite.master_data.bom"
 
 # (record type, act) -> the signed act. Each module adds the acts it signs.
 SIGNING_ACTIONS: dict[tuple[str, str], SignedAct] = {
@@ -61,6 +63,14 @@ SIGNING_ACTIONS: dict[tuple[str, str], SignedAct] = {
 	("Supplier Approval", "Not Approve"): SignedAct("Rejected", f"{SUPPLIER_APPROVAL}.not_approve"),
 	# Module 1, the approval of an item
 	("Item", "Approve"): SignedAct("Approved", f"{ITEM_MASTER}.approve"),
+	# Module 5, a customer's licence
+	("Customer Licence", "Verify"): SignedAct("Verified", f"{CUSTOMER_LICENCE}.verify"),
+	("Customer Licence", "Reject"): SignedAct("Rejected", f"{CUSTOMER_LICENCE}.reject"),
+	("Customer Licence", "Withdraw"): SignedAct("Rejected", f"{CUSTOMER_LICENCE}.withdraw"),
+	("Customer", "Exempt From Licence"): SignedAct("Approved", f"{CUSTOMER_LICENCE}.exempt_from_licence"),
+	("Customer", "Require Licence"): SignedAct("Approved", f"{CUSTOMER_LICENCE}.require_licence_again"),
+	# Module 2, the approval of a bill of materials
+	("BOM", "Approve"): SignedAct("Approved", f"{BOM}.approve"),
 }
 
 

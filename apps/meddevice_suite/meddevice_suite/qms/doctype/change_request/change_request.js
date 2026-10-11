@@ -42,6 +42,27 @@ frappe.ui.form.on("Change Request", {
 	},
 });
 
+// A settings record (a single DocType) has no list to look it up in: it is named by its type.
+function name_single(cdt, cdn, type_field, name_field) {
+	const type = locals[cdt][cdn][type_field];
+	if (!type) return;
+	frappe.model.with_doctype(type, () => {
+		if (frappe.get_meta(type).issingle) frappe.model.set_value(cdt, cdn, name_field, type);
+	});
+}
+
+frappe.ui.form.on("Change Request Affected Record", {
+	reference_doctype(frm, cdt, cdn) {
+		name_single(cdt, cdn, "reference_doctype", "reference_name");
+	},
+});
+
+frappe.ui.form.on("Change Request Action", {
+	target_doctype(frm, cdt, cdn) {
+		name_single(cdt, cdn, "target_doctype", "target_name");
+	},
+});
+
 // The record types a field offers as declared (qms/change_control.py holds the same list),
 // among those the person may look up.
 function selectable(doctype, fieldname) {

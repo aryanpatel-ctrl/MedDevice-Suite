@@ -665,6 +665,20 @@ source = "Delivery plan Phase 2 (pilot), decided 2026-10-07; D2, D3"
 status = "implemented"
 
 [[requirement]]
+id = "URS-PLT-012"
+module = 0
+title = "The lead times of the alerts (lot expiry, supplier certificate expiry, customer licence expiry, document review, change-request action due) and the default effectiveness check of a change are settings QA changes on screen, each within fixed bounds, only under an approved change request that lists the settings; the change is recorded with its request and a new version and applies from the next alert run; until QA changes a value the decided one applies (30, 30, 30, 30, 7 and 90 days)."
+source = "User's instruction of 2026-10-11 to keep business parameters adjustable by users; review of hard-coded values (master plan section 21); ISO 13485 4.1.6, 21 CFR 11.10(a): a validated parameter changes under change control; values decided 2026-10-07/08; customer licence expiry added with module 5 (URS-MST-008), 30 days as for supplier certificates, decided 2026-10-11"
+status = "implemented"
+
+[[requirement]]
+id = "URS-PLT-013"
+module = 49
+title = "The number of consecutive wrong passwords that locks an account (3 to 10) and how long it stays locked (5 to 1440 minutes) are settings QA changes on screen under an approved change request; login and signing follow them at once and again on every migrate, so a hand edit of the site's settings does not last."
+source = "21 CFR 11.300(d); URS-CMP-001; user's instruction of 2026-10-11 (adjustable values); 5 attempts and 15 minutes decided 2026-10-10"
+status = "implemented"
+
+[[requirement]]
 id = "URS-PLT-007"
 module = 0
 title = "On the pilot's demo data, the standard flow runs end to end with each step done by its job: enquiry, quotation with price approval and sales order; purchase request, purchase order with approval and goods receipt by batch into quarantine; work order on the line's routing with material issue, operations and a finished lot with its expiry; and delivery of that lot, all recorded in the audit trail."
@@ -913,6 +927,20 @@ module = 1
 title = "A raw material or packaging item is approved only when incoming inspection is required for it and it has a specification for the incoming stage; a finished good only when it has a specification for the final stage; and an approved item cannot lose them."
 source = "DFD 3.4 IQC Inspection, 5.3 Final QC Inspection, D6; D2 Incoming QC (IQC), Final QC Testing; master plan section 3 (inspection required at receipt and at which stages, linked specification); ISO 13485 7.4.3, 8.2.6"
 status = "planned"
+
+[[requirement]]
+id = "URS-MST-007"
+module = 2
+title = "A bill of materials is drafted by Production and approved by QA with an electronic signature, which is its only submit, for the Administrator too; QA approves it only when its product is a QA-approved finished good or sub-assembly, it has at least one component, every component is a QA-approved item with a quantity above zero, and its process-loss allowance is between 0 and 100 percent; the signature binds what was approved (product, quantity, components, operations, process loss), not the costs ERPNext updates; a work order is made only from an approved, active bill of its own product."
+source = "DFD D3 Item / BOM / Routing Master, 2.2 MRP, 4.1 Create Production Order; master plan section 3 (BOM: components and quantities per unit, scrap allowance, version; masters approved before use) and tracker step 8 (versioned, e-signed, changed only through change control); ISO 13485 7.5.1, 4.2.3; 21 CFR 11.50, 11.70; decided 2026-10-11 under the client's instruction to follow the DFD"
+status = "implemented"
+
+[[requirement]]
+id = "URS-MST-008"
+module = 5
+title = "A customer is sold to only under a licence QA has verified: Sales records each licence of a customer with its type, number, issuing authority, validity dates and a copy; QA verifies or rejects it with an electronic signature and a reason, and withdraws a verified licence with a signature when the authority suspends or cancels it; a sales order, delivery note, or invoice that delivers stock is refused when submitted for a customer that holds no verified licence valid both on the document's date and on the day it is submitted, lines added to a submitted order likewise; a customer with a decided licence or exemption is not renamed or merged; unless QA has decided with an electronic signature and a reason that the customer buys without one (such as a hospital buying for its own use), a decision QA can reverse the same way; Sales and QA are alerted once before a verified licence expires, unless a renewed licence that continues it without a gap is already verified."
+source = "DFD D1 Customer Master and 1.x Sales Order (only approved customers); master plan tracker step 9 (customer licences and expiry alerts) and the regulatory table (customer licence check on the sales order, D1 holds the customer's licence); CDSCO MDR 2017 (sale of medical devices to licensed parties); ISO 13485 7.2, 7.5.8; 21 CFR 11.50, 11.70; QA verification, withdrawal, the signed per-customer exemption and the review's findings (stock invoices, backdating, merging, renewals) decided 2026-10-11 under the client's instruction to follow the DFD"
+status = "implemented"
 
 [[requirement]]
 id = "URS-MST-009"

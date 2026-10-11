@@ -90,6 +90,48 @@ function item_approval_text(frm, approval) {
 	return __("Not yet approved by QA, so used in no record. Ready for QA's approval.");
 }
 
+// Bill of materials (module 2): the form says whether QA has approved it, or what stands in the
+// way, and QA approves it with a signature, its only submit (master_data/bom.py).
+frappe.ui.form.on("BOM", {
+	refresh(frm) {
+		if (frm.is_new()) return;
+		const approval = frm.doc.__onload?.bom_approval;
+		if (!approval) return;
+		if (approval.approved) {
+			frm.dashboard.set_headline_alert(
+				approval.active
+					? __("Approved by QA; which bill is in force changes under change control.")
+					: __("Approved by QA but inactive: no work order is made from it."),
+				approval.active ? "green" : "orange"
+			);
+			return;
+		}
+		if (frm.doc.docstatus !== 0) return;
+		// The plain Submit is refused for everyone (master_data/bom.py): QA's signed approval is
+		// offered instead, and no one is offered a button that only refuses.
+		if (!frm.is_dirty()) frm.page.clear_primary_action();
+		if (approval.missing.length) {
+			const missing = approval.missing
+				.map((what) => frappe.utils.escape_html(what))
+				.join("; ");
+			frm.dashboard.set_headline_alert(
+				__("Awaiting QA's approval. Still needed: {0}.", [missing]),
+				"orange"
+			);
+			return;
+		}
+		frm.dashboard.set_headline_alert(__("Ready for QA's approval."), "orange");
+		if (!frm.is_dirty() && frappe.user.has_role("Quality Manager")) {
+			frm.add_custom_button(__("Approve BOM"), () =>
+				// Closing the dialog signs nothing; there is nothing more to do then.
+				esign.sign(frm, "Approve", "Approved", { ask_reason: true }).catch(() => {})
+			)
+				.removeClass("btn-default")
+				.addClass("btn-primary");
+		}
+	},
+});
+
 // Version-controlled masters (URS-MST-001): a change to a master in use names an approved change
 // request that lists it; the lookup offers only those (qms/change_control.py).
 for (const doctype of [
@@ -113,3 +155,49 @@ for (const doctype of [
 		},
 	});
 }
+
+// Customer licences (module 5): the customer's form says whether it may be sold to today, and
+// Sales records a licence from it. Orders and deliveries are checked on the server
+// (master_data/customer_licence.py).
+frappe.ui.form.on("Customer", {
+	refresh(frm) {
+		if (frm.is_new()) return;
+		const licence = frm.doc.__onload?.customer_licence;
+		if (!licence) return;
+		if (licence.exempt) {
+			frm.dashboard.set_headline_alert(
+				__("Buys without a licence, as QA decided with a signature."),
+				"blue"
+			);
+		} else if (licence.valid.length) {
+			const held = licence.valid
+				.map((row) =>
+					__("{0} until {1}", [
+						frappe.utils.escape_html(row.licence_number),
+						frappe.datetime.str_to_user(row.valid_until),
+					])
+				)
+				.join("; ");
+			frm.dashboard.set_headline_alert(__("Licence verified by QA: {0}.", [held]), "green");
+		} else {
+			frm.dashboard.set_headline_alert(
+				__(
+					"No licence verified by QA is valid today: no sales order or delivery is made for this customer."
+				),
+				"red"
+			);
+		}
+		if (frappe.model.can_create("Customer Licence")) {
+			frm.add_custom_button(__("Record Licence"), () =>
+				frappe.new_doc("Customer Licence", { customer: frm.doc.name })
+			);
+		}
+		if (frappe.user.has_role("Quality Manager") && !frm.is_dirty()) {
+			const act = licence.exempt ? "Require Licence" : "Exempt From Licence";
+			frm.add_custom_button(__(act), () =>
+				// Closing the dialog signs nothing; there is nothing more to do then.
+				esign.sign(frm, act, "Approved", { ask_reason: true }).catch(() => {})
+			);
+		}
+	},
+});

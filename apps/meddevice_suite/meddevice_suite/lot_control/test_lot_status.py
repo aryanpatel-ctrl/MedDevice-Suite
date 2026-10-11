@@ -28,7 +28,12 @@ from meddevice_suite.pilot.flow import lot_of
 from meddevice_suite.qa import verifies
 from meddevice_suite.qms.test_document_control import signer
 from meddevice_suite.setup.install import apply_configuration
-from meddevice_suite.setup.test_stock import approve_for_test, stock_item
+from meddevice_suite.setup.test_stock import (
+	approve_for_test,
+	licensed_for_test,
+	stock_item,
+	submit_bom_for_test,
+)
 
 RAW = "MDS-LOT-RAW"
 PRODUCT = "MDS-LOT-PRODUCT"
@@ -73,6 +78,7 @@ def ensure_parties() -> None:
 				"territory": "India",
 			}
 		).insert()
+	licensed_for_test(CUSTOMER)  # module 5: delivered to only under a verified licence
 
 
 def stock_entry(purpose: str, rows: list[dict], submit: bool = True, **values) -> Document:
@@ -549,11 +555,9 @@ class TestOnlyAnApprovedLotLeaves(LotTestCase):
 					"is_default": 1,
 					"items": [{"item_code": RAW, "qty": 1}],
 				}
-			)
-			.insert()
-			.submit()
-			.name
+			).insert()
 		)
+		bom = bom if isinstance(bom, str) else submit_bom_for_test(bom).name
 
 		def work_order(**warehouses) -> Document:
 			return frappe.get_doc(
@@ -577,6 +581,21 @@ class TestOnlyAnApprovedLotLeaves(LotTestCase):
 			work_order(fg_warehouse=store("Finished Goods")).insert()
 		self.assertIn("goes to the Quarantine store until QA releases it", str(refused.exception))
 		work_order().insert()
+
+		# Production Plan and Subcontracting Inward Order make their work orders with validation
+		# skipped; the stores are checked on those too, not only when the order is submitted.
+		def unvalidated(**warehouses) -> Document:
+			order = work_order(**warehouses)
+			order.flags.ignore_validate = order.flags.ignore_mandatory = True
+			return order
+
+		with self.assertRaisesRegex(frappe.ValidationError, "draws materials from an approved store"):
+			unvalidated(wip_warehouse=store(stores.QUARANTINE)).insert()
+		with self.assertRaisesRegex(
+			frappe.ValidationError, "goes to the Quarantine store until QA releases it"
+		):
+			unvalidated(fg_warehouse=store("Finished Goods")).insert()
+		unvalidated().insert()
 
 	def test_goods_are_received_into_the_quarantine_store_whatever_store_was_named(self):
 		receipt = purchase_receive(RAW, 1, warehouse=store("Stores"))

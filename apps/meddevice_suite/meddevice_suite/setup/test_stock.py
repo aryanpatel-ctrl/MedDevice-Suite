@@ -32,6 +32,44 @@ def stock_item(code: str, **values) -> str:
 	return code
 
 
+def licensed_for_test(customer: str) -> str:
+	"""A verified licence for a customer other modules' tests sell to (module 5), recorded as QA's
+	signed verification records it, so that those tests need not sign one; the signed acts are
+	tested in master_data/test_customer_licence.py."""
+	from meddevice_suite.master_data import customer_licence
+
+	held = customer_licence.licences_valid_on(customer, "2099-12-31")
+	if held:
+		return held[0].name
+	licence_type = "Licence for tests"
+	if not frappe.db.exists(customer_licence.TYPE_DOCTYPE, licence_type):
+		frappe.get_doc({"doctype": customer_licence.TYPE_DOCTYPE, "licence_type": licence_type}).insert()
+	doc = frappe.get_doc(
+		{
+			"doctype": customer_licence.DOCTYPE,
+			"customer": customer,
+			"licence_type": licence_type,
+			"licence_number": f"TEST-{customer}",
+			"issuing_authority": "Licensing authority for tests",
+			"valid_from": "2000-01-01",
+			"valid_until": "2099-12-31",
+			"licence_copy": "/private/files/licence-for-tests.pdf",
+		}
+	).insert()
+	customer_licence.record(doc, customer_licence.VERIFIED, "Licensed for tests")
+	doc.flags.customer_licence = True
+	doc.submit()
+	return doc.name
+
+
+def submit_bom_for_test(bom):
+	"""Submit a bill of materials as QA's signed approval would (module 2), for other modules'
+	tests; the signed act itself is tested in master_data/test_bom.py."""
+	bom.flags.bom_approval = True
+	bom.submit()
+	return bom
+
+
 def approve_for_test(*codes: str) -> None:
 	"""QA's approval of items that other modules' tests use (module 1), recorded as the signed act
 	records it, so that those tests need not set up everything an approval checks. The signed act
