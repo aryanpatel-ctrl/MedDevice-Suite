@@ -83,13 +83,32 @@ doc_events = {
 		"validate": "meddevice_suite.lot_control.lot_status.guard_stock_entry",
 		"before_cancel": "meddevice_suite.lot_control.lot_status.refuse_cancel_of_release_transfer",
 	},
-	"Delivery Note": {"validate": "meddevice_suite.lot_control.lot_status.guard_delivery_note"},
+	"Delivery Note": {
+		# Module 5: delivered only to a customer with a verified licence valid on its date.
+		"before_validate": "meddevice_suite.master_data.customer_licence.guard_delivery_note",
+		"validate": "meddevice_suite.lot_control.lot_status.guard_delivery_note",
+	},
+	# Customer licences (module 5): sold only to customers QA has verified a licence of.
+	"Sales Order": {
+		"before_validate": "meddevice_suite.master_data.customer_licence.guard_sales_order",
+		"before_update_after_submit": "meddevice_suite.master_data.customer_licence.guard_order_update",
+	},
+	"Sales Invoice": {"before_validate": "meddevice_suite.master_data.customer_licence.guard_sales_invoice"},
+	"POS Invoice": {"before_validate": "meddevice_suite.master_data.customer_licence.guard_sales_invoice"},
+	"Customer": {
+		"onload": "meddevice_suite.master_data.customer_licence.customer_onload",
+		"validate": "meddevice_suite.master_data.customer_licence.guard_customer",
+		"before_rename": "meddevice_suite.master_data.customer_licence.guard_customer_rename",
+	},
 	"Pick List": {"validate": "meddevice_suite.lot_control.lot_status.guard_pick_list"},
 	"Packing Slip": {"validate": "meddevice_suite.lot_control.lot_status.guard_packing_slip"},
 	"Work Order": {
 		# Module 2: only from an approved, active bill of its own product; before_validate, which
 		# Production Plan's work orders (saved without validation) pass through too.
-		"before_validate": "meddevice_suite.master_data.bom.guard_work_order",
+		"before_validate": [
+			"meddevice_suite.lot_control.lot_status.guard_unvalidated_work_order",
+			"meddevice_suite.master_data.bom.guard_work_order",
+		],
 		"validate": "meddevice_suite.lot_control.lot_status.guard_work_order",
 	},
 	"Purchase Receipt": {
@@ -151,6 +170,8 @@ doc_events = {
 		"onload": "meddevice_suite.master_data.item_master.item_onload",
 		"on_update": "meddevice_suite.master_data.versioning.update_variants_under_control",
 	},
+	# Quality Settings (URS-PLT-013): the lockout is changed there, under change control.
+	"System Settings": {"validate": "meddevice_suite.compliance.quality_settings.guard_system_lockout"},
 	"Stock Settings": {
 		"validate": [
 			"meddevice_suite.setup.stock.protect_stock_settings",
@@ -198,6 +219,7 @@ scheduler_events = {
 		"meddevice_suite.qms.document_control.send_review_alerts",
 		"meddevice_suite.qms.change_control.send_change_alerts",
 		"meddevice_suite.master_data.supplier_approval.send_certificate_alerts",
+		"meddevice_suite.master_data.customer_licence.send_expiry_alerts",
 	],
 }
 

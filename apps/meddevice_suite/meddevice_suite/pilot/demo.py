@@ -23,11 +23,13 @@ to 9. Running the loader again adds only what is missing.
 
 import zlib
 from collections.abc import Callable
+from contextlib import AbstractContextManager
 
 import frappe
 from frappe import _
+from frappe.utils import add_days, today
 
-from meddevice_suite.master_data import item_master
+from meddevice_suite.master_data import customer_licence, item_master
 from meddevice_suite.pilot import refuse_unless_pilot_site
 from meddevice_suite.pilot.inspection import ensure_inspection_masters, ensure_inspection_template
 from meddevice_suite.setup.roles import JOB_PROFILES
@@ -43,6 +45,10 @@ SUPPLIERS = (
 	"Packaging Supplies (Demo)",
 )
 CUSTOMERS = ("City Hospital (Demo)", "Regional Medical Distributor (Demo)")
+# Module 5: the hospital buys for its own use without a licence, as QA decides; the distributor
+# holds a licence QA has verified.
+HOSPITAL, DISTRIBUTOR = CUSTOMERS
+LICENCE_TYPE = "Registration for the sale of medical devices (demo)"
 
 # code -> (name, unit, HSN, shelf life in days, supplier, buying rate)
 RAW_MATERIALS: dict[str, tuple[str, str, str, int, str, float]] = {
@@ -182,6 +188,7 @@ def load_demo_data() -> None:
 
 	for profile in JOB_PROFILES:  # QA's demo user approves the items below
 		ensure_demo_user(profile, password)
+	ensure_customers_may_buy(password)
 	approve = approve_as("QA Manager", password)
 	ensure_inspection_masters(company, approve)
 	for code, (name, unit, hsn, shelf_life, supplier, rate) in RAW_MATERIALS.items():
@@ -313,6 +320,86 @@ def approve_as(profile: str, password: str, doctype: str = "Item") -> Callable[[
 			act(frappe.get_doc(doctype, name), password=password, reason="Checked for the pilot (demo)")
 
 	return approve
+
+
+def ensure_customers_may_buy(password: str) -> None:
+	"""Module 5, as the system records it: Sales records the distributor's licence and QA verifies
+	it with a signature; QA decides with a signature that the hospital buys without one."""
+	from meddevice_suite.pilot.flow import as_job  # the flow builds on this module
+
+	ensure_licence(
+		DISTRIBUTOR,
+		lambda: as_job("Sales"),
+		lambda: as_job("QA Manager"),
+		password,
+		"Licence copy checked (demo)",
+	)
+	if not customer_licence.buys_without_licence(HOSPITAL):
+		with as_job("QA Manager"):
+			customer_licence.exempt_from_licence(
+				frappe.get_doc("Customer", HOSPITAL),
+				password=password,
+				reason="Hospital buying for its own use (demo)",
+			)
+
+
+def ensure_licence(
+	customer: str,
+	as_sales: Callable[[], AbstractContextManager],
+	as_qa: Callable[[], AbstractContextManager],
+	password: str,
+	reason: str,
+) -> None:
+	"""A verified licence of a demo or journey customer, made as the system makes one: recorded by
+	Sales, verified by QA with a signature. A customer licensed today is left as it is."""
+	if customer_licence.licences_valid_on(customer, today()):
+		return
+	ensure(
+		customer_licence.TYPE_DOCTYPE,
+		LICENCE_TYPE,
+		licence_type=LICENCE_TYPE,
+		description="A registration to sell, stock or distribute medical devices (demo).",
+	)
+	with as_sales():
+		licence = frappe.get_doc(
+			{
+				"doctype": customer_licence.DOCTYPE,
+				"customer": customer,
+				"licence_type": LICENCE_TYPE,
+				"licence_number": f"DEMO-{zlib.crc32(customer.encode()):08X}",
+				"issuing_authority": "State Licensing Authority (demo)",
+				"valid_from": add_days(today(), -30),
+				"valid_until": add_days(today(), 730),
+				"licence_copy": licence_copy(customer),
+			}
+		).insert()
+	with as_qa():
+		customer_licence.verify(licence, password=password, reason=reason)
+
+
+def licence_copy(customer: str) -> str:
+	"""A placeholder copy of a demo customer's licence, as a private file."""
+	name = f"licence-{frappe.scrub(customer)}.pdf"
+	existing = frappe.db.get_value("File", {"file_name": name, "is_private": 1}, "file_url")
+	if existing:
+		return existing
+	return (
+		frappe.get_doc({"doctype": "File", "file_name": name, "is_private": 1, "content": blank_pdf()})
+		.insert(ignore_permissions=True)  # demo loader
+		.file_url
+	)
+
+
+def blank_pdf() -> bytes:
+	"""A one-page PDF standing in for a licence copy on the pilot and test sites."""
+	from io import BytesIO
+
+	from pypdf import PdfWriter  # Frappe's own PDF library
+
+	writer, out = PdfWriter(), BytesIO()
+	writer.add_blank_page(width=595, height=842)
+	writer.write(out)
+	return out.getvalue()
 
 
 def ensure_price(code: str, price_list: str, rate: float) -> None:

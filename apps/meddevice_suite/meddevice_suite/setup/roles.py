@@ -419,6 +419,21 @@ def apply_roles() -> None:
 		sync_permissions(doctype, declared_rows(doctype))
 	for doctype in SUPPORTING_PERMISSIONS:
 		sync_permissions(doctype, supporting_rows(doctype))
+	remove_hand_added_permissions()
+
+
+def remove_hand_added_permissions() -> None:
+	"""The app's own record types carry their permissions in their definition (URS-CMP-015). A
+	row added on a site, through Role Permissions Manager, replaces those in Frappe; it is removed
+	on every migrate, so a hand change does not last."""
+	from meddevice_suite.compliance.audit_scope import APP
+
+	modules = frappe.get_all("Module Def", filters={"app_name": APP}, pluck="name")
+	own = frappe.get_all("DocType", filters={"module": ["in", modules or [""]], "custom": 0}, pluck="name")
+	for name in frappe.get_all("Custom DocPerm", filters={"parent": ["in", own or [""]]}, pluck="name"):
+		frappe.delete_doc("Custom DocPerm", name, ignore_permissions=True)  # setup code
+	if own:
+		frappe.clear_cache()
 
 
 def sync_job_profile(profile: str, roles: tuple[str, ...]) -> None:

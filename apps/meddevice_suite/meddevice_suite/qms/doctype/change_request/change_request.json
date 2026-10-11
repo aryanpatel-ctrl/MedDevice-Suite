@@ -188,8 +188,8 @@
    "fieldname": "effectiveness_check_days",
    "fieldtype": "Int",
    "label": "Effectiveness Check After (Days)",
-   "default": "90",
-   "non_negative": 1
+   "non_negative": 1,
+   "description": "Set from Quality Settings when the request is raised; the assessor may change it."
   },
   {
    "fieldname": "impact_summary",

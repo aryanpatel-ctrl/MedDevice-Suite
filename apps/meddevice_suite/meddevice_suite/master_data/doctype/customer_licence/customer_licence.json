@@ -1,0 +1,270 @@
+{
+ "actions": [],
+ "autoname": "format:CL-{YYYY}-{#####}",
+ "creation": "2026-10-11 12:00:00.000000",
+ "description": "A licence of a customer to buy medical devices (module 5), recorded by Sales and verified, rejected or withdrawn by QA with a signature. Sales orders and deliveries are made only for customers with a verified licence valid on their date. Never cancelled or deleted; a renewed licence is a new record.",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "customer",
+  "customer_name",
+  "licence_type",
+  "licence_number",
+  "issuing_authority",
+  "column_break_validity",
+  "valid_from",
+  "valid_until",
+  "licence_copy",
+  "section_decision",
+  "status",
+  "reason",
+  "column_break_decided",
+  "decided_by",
+  "decided_at",
+  "expiry_alerted",
+  "amended_from"
+ ],
+ "fields": [
+  {
+   "fieldname": "customer",
+   "fieldtype": "Link",
+   "label": "Customer",
+   "options": "Customer",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "customer_name",
+   "fieldtype": "Data",
+   "label": "Customer Name",
+   "read_only": 1,
+   "fetch_from": "customer.customer_name"
+  },
+  {
+   "fieldname": "licence_type",
+   "fieldtype": "Link",
+   "label": "Licence Type",
+   "options": "Customer Licence Type",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "licence_number",
+   "fieldtype": "Data",
+   "label": "Licence No",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "issuing_authority",
+   "fieldtype": "Data",
+   "label": "Issuing Authority",
+   "reqd": 1,
+   "description": "The authority that issued the licence, such as the State Licensing Authority."
+  },
+  {
+   "fieldname": "column_break_validity",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "valid_from",
+   "fieldtype": "Date",
+   "label": "Valid From",
+   "reqd": 1
+  },
+  {
+   "fieldname": "valid_until",
+   "fieldtype": "Date",
+   "label": "Valid Until",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "licence_copy",
+   "fieldtype": "Attach",
+   "label": "Licence Copy",
+   "reqd": 1,
+   "description": "A copy of the licence as issued."
+  },
+  {
+   "fieldname": "section_decision",
+   "fieldtype": "Section Break",
+   "label": "Verification by QA"
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "\nVerified\nRejected\nWithdrawn",
+   "read_only": 1,
+   "no_copy": 1,
+   "allow_on_submit": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "reason",
+   "fieldtype": "Small Text",
+   "label": "Reason",
+   "read_only": 1,
+   "no_copy": 1,
+   "allow_on_submit": 1
+  },
+  {
+   "fieldname": "column_break_decided",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "decided_by",
+   "fieldtype": "Link",
+   "label": "Decided By",
+   "options": "User",
+   "read_only": 1,
+   "no_copy": 1,
+   "allow_on_submit": 1
+  },
+  {
+   "fieldname": "decided_at",
+   "fieldtype": "Datetime",
+   "label": "Decided At",
+   "read_only": 1,
+   "no_copy": 1,
+   "allow_on_submit": 1
+  },
+  {
+   "fieldname": "expiry_alerted",
+   "fieldtype": "Check",
+   "label": "Expiry Alerted",
+   "read_only": 1,
+   "no_copy": 1,
+   "description": "Set once Sales and QA are alerted that the licence expires soon (days set in Quality Settings)."
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "options": "Customer Licence",
+   "read_only": 1,
+   "no_copy": 1,
+   "print_hide": 1,
+   "search_index": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-10-11 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Master Data",
+ "name": "Customer Licence",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "role": "Sales User",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "delete": 0,
+   "email": 0,
+   "export": 0,
+   "import": 0,
+   "report": 1,
+   "print": 1,
+   "share": 0
+  },
+  {
+   "role": "Sales Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "delete": 0,
+   "email": 0,
+   "export": 1,
+   "import": 0,
+   "report": 1,
+   "print": 1,
+   "share": 0
+  },
+  {
+   "role": "Quality Manager",
+   "read": 1,
+   "write": 0,
+   "create": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "delete": 0,
+   "email": 0,
+   "export": 1,
+   "import": 0,
+   "report": 1,
+   "print": 1,
+   "share": 0
+  },
+  {
+   "role": "Stock User",
+   "read": 1,
+   "write": 0,
+   "create": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "delete": 0,
+   "email": 0,
+   "export": 0,
+   "import": 0,
+   "report": 1,
+   "print": 1,
+   "share": 0
+  },
+  {
+   "role": "Stock Manager",
+   "read": 1,
+   "write": 0,
+   "create": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "delete": 0,
+   "email": 0,
+   "export": 1,
+   "import": 0,
+   "report": 1,
+   "print": 1,
+   "share": 0
+  },
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 0,
+   "create": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "delete": 0,
+   "email": 0,
+   "export": 0,
+   "import": 0,
+   "report": 1,
+   "print": 1,
+   "share": 0
+  }
+ ],
+ "row_format": "Dynamic",
+ "search_fields": "customer_name,licence_number,status",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "customer_name",
+ "track_changes": 0
+}

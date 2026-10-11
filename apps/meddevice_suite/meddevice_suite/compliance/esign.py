@@ -37,19 +37,22 @@ MEANINGS = ("Authored", "Reviewed", "Approved", "Rejected", "Released", "Verifie
 SHARED_ACCOUNTS = ("Administrator", "Guest")
 # Frappe locks an account after this many wrong passwords, for this long; a site that allows
 # unlimited attempts never locks, so a locked account could never be kept from signing.
-LOCKOUT_ATTEMPTS = 5
-LOCKOUT_SECONDS = 15 * 60
 
 
 def apply_lockout() -> None:
-	"""Site configuration: an account locks after wrong passwords (URS-CMP-001). A site set to
-	unlimited attempts, or to no lockout time, is given the standard values; any limit already set
-	(Frappe's own default of 10 attempts and 60 seconds, or a site's choice) stands."""
-	settings = frappe.get_cached_doc("System Settings")
-	if cint(settings.allow_consecutive_login_attempts) < 1:
-		frappe.db.set_single_value("System Settings", "allow_consecutive_login_attempts", LOCKOUT_ATTEMPTS)
-	if cint(settings.allow_login_after_fail) < 1:
-		frappe.db.set_single_value("System Settings", "allow_login_after_fail", LOCKOUT_SECONDS)
+	"""Site configuration: an account locks after wrong passwords (URS-CMP-001), as many and for as
+	long as Quality Settings say (URS-PLT-013): applied when QA changes them and on every migrate,
+	so a hand edit of the site's System Settings does not last."""
+	from meddevice_suite.compliance.quality_settings import value  # it builds on change control
+
+	# Frappe locks an account once its failures exceed this number (auth.LoginAttemptTracker); the
+	# setting is the number of wrong passwords that locks it.
+	frappe.db.set_single_value(
+		"System Settings", "allow_consecutive_login_attempts", value("login_lockout_attempts") - 1
+	)
+	frappe.db.set_single_value(
+		"System Settings", "allow_login_after_fail", value("login_lockout_minutes") * 60
+	)
 	frappe.clear_cache(doctype="System Settings")
 
 
@@ -58,6 +61,7 @@ def apply_lockout() -> None:
 # content(doc) -> dict. An item's approval binds what QA approved (master_data.item_master).
 SIGNED_CONTENT: dict[str, str] = {
 	"Item": "meddevice_suite.master_data.item_master.signed_content",
+	"Customer": "meddevice_suite.master_data.customer_licence.customer_signed_content",
 	"BOM": "meddevice_suite.master_data.bom.signed_content",
 }
 
@@ -76,6 +80,8 @@ SYSTEM_MAINTAINED: dict[str, tuple[str, ...]] = {
 	"Lot Release": ("docstatus", "stock_entry", "supplier_return"),
 	# The certificate alert is bookkeeping of the alert, not part of the decision.
 	"Supplier Approval": ("docstatus", "certificate_alerted"),
+	# The expiry alert is bookkeeping of the alert, not part of the verified licence.
+	"Customer Licence": ("docstatus", "expiry_alerted"),
 	"Change Request Action": (
 		"done",
 		"done_on",

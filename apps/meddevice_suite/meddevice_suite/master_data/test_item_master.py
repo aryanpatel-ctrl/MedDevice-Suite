@@ -39,7 +39,7 @@ from meddevice_suite.qa import verifies
 from meddevice_suite.qms.test_change_control import approved_change
 from meddevice_suite.qms.test_document_control import signer
 from meddevice_suite.setup.install import apply_configuration
-from meddevice_suite.setup.test_stock import submit_bom_for_test
+from meddevice_suite.setup.test_stock import licensed_for_test, submit_bom_for_test
 
 REFUSED = (frappe.ValidationError, frappe.PermissionError)
 NOT_APPROVED = "Not yet approved by QA"
@@ -120,6 +120,7 @@ class ItemMasterTestCase(IntegrationTestCase):
 		):
 			if not frappe.db.exists(doctype, name):
 				frappe.get_doc({"doctype": doctype, **values}).insert()
+		licensed_for_test(CUSTOMER)  # module 5: sold to only under a verified licence
 
 	@classmethod
 	def approve_as_qa(cls, item: str, reason: str = "Item master checked") -> None:
@@ -407,6 +408,37 @@ class TestSignedApproval(ItemMasterTestCase):
 			new_item(**{item_master.MIN_TEMPERATURE: "cold"})
 		with self.assertRaisesRegex(frappe.ValidationError, "not above the maximum"):
 			new_item(**{item_master.MIN_TEMPERATURE: "8", item_master.MAX_TEMPERATURE: "2"})
+
+	def test_an_item_held_before_the_module_gets_its_inspection_before_approval(self):
+		"""Found on the pilot (2026-10-11): an item with stock from before the specifications, its
+		inspection off and no specification, is given them without a change request while QA has
+		not approved it; switching inspection off again is a controlled change."""
+		item = self.approved_item()
+		frappe.get_doc(
+			{
+				"doctype": "Stock Entry",
+				"stock_entry_type": "Material Receipt",
+				"company": company(),
+				"items": [{"item_code": item, "qty": 1, "t_warehouse": store("Stores"), "basic_rate": 1}],
+			}
+		).insert().submit()  # in use by its stock
+		specification = frappe.db.get_value("Item", item, "quality_inspection_template")
+		frappe.db.set_value(  # as an item held before the modules
+			"Item",
+			item,
+			{
+				APPROVAL_STATUS: DRAFT,
+				"quality_inspection_template": None,
+				"inspection_required_before_purchase": 0,
+			},
+		)
+		doc = frappe.get_doc("Item", item)
+		doc.update({"quality_inspection_template": specification, "inspection_required_before_purchase": 1})
+		doc.save()  # completed once, without a change request
+		doc = frappe.get_doc("Item", item)
+		doc.inspection_required_before_purchase = 0
+		with self.assertRaisesRegex(frappe.ValidationError, "is in use"):
+			doc.save()  # switching it off again is controlled
 
 	def test_pack_sizes_of_an_item_held_before_the_module_are_filled_once(self):
 		item = self.approved_item(FINISHED_GOOD)
