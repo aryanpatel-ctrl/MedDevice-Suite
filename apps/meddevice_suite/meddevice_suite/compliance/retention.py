@@ -62,7 +62,14 @@ RETENTION_SCHEDULE: dict[str, tuple[int, str, tuple[str, ...]]] = {
 	"Purchasing and supplier records": (
 		10,
 		QUALITY_BASIS,
-		("Supplier", "Supplier Approval", "Material Request", "Purchase Order", "Purchase Receipt"),
+		(
+			"Supplier",
+			"Supplier Approval",
+			"Supplier Rating",
+			"Material Request",
+			"Purchase Order",
+			"Purchase Receipt",
+		),
 	),
 	"Distribution records": (
 		10,

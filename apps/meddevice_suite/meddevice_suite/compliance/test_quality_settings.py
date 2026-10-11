@@ -74,6 +74,8 @@ class TestValues(QualitySettingsTestCase):
 				"password_strength": 3,
 				"password_expiry_days": 90,
 				"session_idle_minutes": 30,
+				"supplier_rating_quality_weight": 70,
+				"supplier_rating_threshold": 80,
 			},
 		)
 

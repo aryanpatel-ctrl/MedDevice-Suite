@@ -44,6 +44,7 @@ ALERTS: dict[str, str] = {
 	"Change Effectiveness Check Due": "QMS",
 	"Supplier Certificate Expiring": "Master Data",  # approved suppliers (module 4)
 	"Customer Licence Expiring": "Master Data",  # customer licences (module 5)
+	"Supplier Rating Below Threshold": "Master Data",  # supplier rating (module 4)
 }
 # On the lot: the last expiry alert it has had. Bookkeeping of this module only.
 ALERT_FIELD = "mds_expiry_alert"

@@ -1,0 +1,1 @@
+<p>{{ _("Supplier {0} scored {1} for {2}, below the threshold of {3} (quality {4}, delivery {5}). QA re-evaluates the supplier: its next signed decision on the supplier closes this.").format(doc.supplier_name or doc.supplier, doc.score, doc.period, doc.threshold, doc.get_formatted("quality_percent") or "-", doc.get_formatted("delivery_percent") or "-") }}</p>

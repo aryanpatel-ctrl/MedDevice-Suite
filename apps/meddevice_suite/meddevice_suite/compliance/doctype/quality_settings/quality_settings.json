@@ -22,6 +22,10 @@
   "password_expiry_days",
   "column_break_access",
   "session_idle_minutes",
+  "section_rating",
+  "supplier_rating_quality_weight",
+  "column_break_rating",
+  "supplier_rating_threshold",
   "section_control",
   "change_request",
   "changed_under",
@@ -157,6 +161,33 @@
    "description": "A session left unused this long ends; the person signs in again (5 to 480)."
   },
   {
+   "fieldname": "section_rating",
+   "fieldtype": "Section Break",
+   "label": "Supplier rating"
+  },
+  {
+   "fieldname": "supplier_rating_quality_weight",
+   "fieldtype": "Int",
+   "label": "Quality Weight (%)",
+   "default": "70",
+   "reqd": 1,
+   "non_negative": 1,
+   "description": "How much of a supplier's monthly score is quality (lots released); the rest is delivery (0 to 100)."
+  },
+  {
+   "fieldname": "column_break_rating",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "supplier_rating_threshold",
+   "fieldtype": "Int",
+   "label": "Re-evaluation Below Score",
+   "default": "80",
+   "reqd": 1,
+   "non_negative": 1,
+   "description": "A monthly score below this makes the supplier due for QA's re-evaluation (50 to 100)."
+  },
+  {
    "fieldname": "section_control",
    "fieldtype": "Section Break",
    "label": "Change control"
@@ -195,7 +226,7 @@
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-10-11 16:00:00.000000",
+ "modified": "2026-10-11 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "Compliance",
  "name": "Quality Settings",
