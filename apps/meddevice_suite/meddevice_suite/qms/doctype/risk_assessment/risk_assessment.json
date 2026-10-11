@@ -71,7 +71,7 @@
    "in_standard_filter": 1,
    "label": "Status",
    "no_copy": 1,
-   "options": "Draft\nIn Review\nAwaiting Approval\nApproved\nSuperseded",
+   "options": "Draft\nIn Review\nAwaiting Approval\nApproved\nSuperseded\nWithdrawn",
    "read_only": 1,
    "search_index": 1
   },
@@ -235,7 +235,7 @@
  "index_web_pages_for_search": 0,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-10-11 20:00:00.000000",
+ "modified": "2026-10-12 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "QMS",
  "name": "Risk Assessment",

@@ -64,6 +64,9 @@ frappe.ui.form.on("Risk Assessment", {
 		if (status === "Awaiting Approval" && qa && user !== author && user !== reviewer) {
 			offer(__("Approve"), "Approve", "Approved", { primary: true });
 		}
+		if (["Draft", "In Review", "Awaiting Approval"].includes(status) && qa) {
+			offer(__("Withdraw"), "Withdraw", "Rejected", { ask_reason: true });
+		}
 	},
 });
 

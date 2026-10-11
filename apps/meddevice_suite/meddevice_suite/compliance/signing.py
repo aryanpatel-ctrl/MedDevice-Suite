@@ -118,9 +118,11 @@ SIGNING_ACTIONS: dict[tuple[str, str], SignedAct] = {
 	("Risk Assessment", "Review"): SignedAct("Reviewed", f"{RISK}.review"),
 	("Risk Assessment", "Return"): SignedAct("Rejected", f"{RISK}.return_for_changes"),
 	("Risk Assessment", "Approve"): SignedAct("Approved", f"{RISK}.approve"),
+	("Risk Assessment", "Withdraw"): SignedAct("Rejected", f"{RISK}.withdraw"),
 	("Risk Management Report", "Author"): SignedAct("Authored", f"{RISK}.author_report"),
 	("Risk Management Report", "Return"): SignedAct("Rejected", f"{RISK}.return_report"),
 	("Risk Management Report", "Approve"): SignedAct("Approved", f"{RISK}.approve_report"),
+	("Risk Management Report", "Withdraw"): SignedAct("Rejected", f"{RISK}.withdraw"),
 	("Risk Review", "Close: No Change"): SignedAct("Reviewed", f"{RISK}.close_review"),
 	# Module 41, regulatory licences
 	("Regulatory Licence", "Verify"): SignedAct("Verified", f"{REGULATORY_LICENCE}.verify"),

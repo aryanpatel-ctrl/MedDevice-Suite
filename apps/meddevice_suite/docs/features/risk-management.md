@@ -122,6 +122,18 @@ Management approves the policy → QA opens the family's file → the assessment
 - **Failures in the hooks.** A failure while checking pins is logged and does not block the master's save; the daily sweep raises the review. Risk: until then, the file shows no review.
 - **Complaints and CAPA.** Complaint and CAPA triggers have no caller until modules 43 and 35 exist.
 
+**Independent review (2026-10-12).** An adversarial review of this module found the following, now fixed and tested:
+- An item or a bill of materials could not be an inherently safe design control. Only a document must be a Specification.
+- A revision was re-scored after its author signed. Scores are now fixed at the author's signature, and approval is refused if the policy changed since; the revision is returned and authored again.
+- An unfinished revision or report could not be ended, which left its file, review and change request stuck. QA now signs **Withdraw** with a reason.
+- A review could be closed "no change" while its control was out of force. That is refused, which also stops a recurring change slipping past its review.
+- A risk could be lowered with no control. A reduced risk now needs the control that reduces it (ISO 14971 7).
+- Two concurrent races were closed: approving two policies at once, and raising the same review twice. Both now use locking reads.
+
+Two findings were kept as designed:
+- **Approval pins the version in force at approval.** Approval refuses any control that is out of force, and every later change raises a review.
+- **The author's and reviewer's signatures do not cover the approver's own fields.** This is the convention of document control (module 30): `verify_signatures` checks the chain, and the approval signature binds the approved content.
+
 ## 8. Test results and verification summary
 See the pull request.
 

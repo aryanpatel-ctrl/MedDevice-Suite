@@ -182,6 +182,66 @@ class TestNeverChangedAndRenewal(LicenceTestCase):
 		self.act(self.qa, renewal, "Reject", "Number does not match the authority's letter")
 		self.assertEqual(frappe.db.get_value(DOCTYPE, old, "status"), "Verified")
 
+	def test_a_withdrawn_or_already_renewed_licence_is_not_superseded_by_a_renewal(self):
+		"""The licence renewed is checked when the renewal is verified, not only when it is drafted."""
+		withdrawn = self.verified()
+		late = self.draft(renews=withdrawn)  # drafted while it was verified
+		self.act(self.qa, withdrawn, "Withdraw", "Suspended by the authority")
+		with self.assertRaisesRegex(frappe.ValidationError, "only a verified licence is renewed"):
+			self.act(self.qa, late, "Verify")
+		self.assertEqual(frappe.db.get_value(DOCTYPE, withdrawn, "status"), "Withdrawn")
+		original = self.verified()
+		first, second = self.draft(renews=original), self.draft(renews=original)
+		self.act(self.qa, first, "Verify")
+		with self.assertRaisesRegex(frappe.ValidationError, "only a verified licence is renewed"):
+			self.act(self.qa, second, "Verify")
+		self.assertEqual(frappe.db.get_value(DOCTYPE, original, "superseded_by"), first)
+
+	def test_a_draft_never_carries_what_qas_later_acts_record(self):
+		frappe.set_user(self.qa)
+		try:
+			doc = frappe.get_doc(
+				{
+					"doctype": DOCTYPE,
+					"licence_type": self.type,
+					"licence_number": "MFG/TYPED",
+					"issuing_authority": "State Licensing Authority",
+					"valid_from": today(),
+					"valid_until": add_days(today(), 365),
+					"expiry_alerted": 1,
+					"decided_by": self.purchase,
+					"verified_file_sha256": "0" * 64,
+					"obligations": [
+						{
+							"obligation": "Retention fee",
+							"due_date": today(),
+							"done_on": today(),
+							"done_by": self.purchase,
+							"alerted": 1,
+						}
+					],
+				}
+			).insert()
+			self.assertEqual((doc.expiry_alerted, doc.decided_by, doc.verified_file_sha256), (0, None, None))
+			self.assertEqual(
+				(doc.obligations[0].done_on, doc.obligations[0].done_by, doc.obligations[0].alerted),
+				(None, None, 0),
+			)
+			doc.append(
+				"submissions",
+				{
+					"submission_type": "Other",
+					"submitted_on": today(),
+					"authority_reference": "X",
+					"important_file": self.copy(),
+				},
+			)
+			frappe.set_user(self.qa)
+			with self.assertRaisesRegex(frappe.ValidationError, "recorded on a verified licence"):
+				doc.save()
+		finally:
+			frappe.set_user("Administrator")
+
 	def test_only_a_verified_licence_of_the_same_type_is_renewed(self):
 		with self.assertRaisesRegex(frappe.ValidationError, "only a verified licence is renewed"):
 			self.draft(renews=self.draft())
@@ -242,6 +302,59 @@ class TestAlertsAndObligations(LicenceTestCase):
 				regulatory_licence.complete_obligation(name, row, evidence)
 		finally:
 			frappe.set_user("Administrator")
+
+
+@verifies("URS-REG-004")
+class TestObligationsAfterVerification(LicenceTestCase):
+	def test_qa_adds_the_next_obligation_and_the_verification_still_stands(self):
+		name = self.verified(
+			obligations=[{"obligation": "Retention fee 2026", "due_date": add_days(today(), 200)}]
+		)
+		verification = frappe.get_last_doc(
+			"Electronic Signature", filters={"reference_doctype": DOCTYPE, "reference_name": name}
+		)
+		frappe.set_user(self.purchase)
+		try:
+			with self.assertRaises(frappe.PermissionError):
+				regulatory_licence.add_obligation(name, "Surveillance audit", add_days(today(), 30))
+		finally:
+			frappe.set_user("Administrator")
+		frappe.set_user(self.qa)
+		try:
+			regulatory_licence.add_obligation(name, "Surveillance audit", add_days(today(), 30))
+		finally:
+			frappe.set_user("Administrator")
+		rows = {row.obligation: row for row in frappe.get_doc(DOCTYPE, name).obligations}
+		self.assertEqual(
+			(
+				rows["Surveillance audit"].added_after_verification,
+				rows["Retention fee 2026"].added_after_verification,
+			),
+			(1, 0),
+		)
+		self.assertIn(
+			rows["Surveillance audit"].name,
+			{d.part for d in reminders.regulatory_licences_due() if d.reference_name == name},
+		)
+		self.assertTrue(is_unchanged_since(verification))  # what QA verified is unchanged
+
+
+@verifies("URS-REG-001", "URS-REG-004")
+class TestRegister(LicenceTestCase):
+	def test_the_register_works_out_each_licences_standing_from_its_dates(self):
+		from meddevice_suite.qms.report.licence_register.licence_register import execute
+
+		valid = self.verified()
+		due = self.verified(valid_until=add_days(today(), 30))
+		expired = self.verified(valid_until=add_days(today(), 1))
+		frappe.db.set_value(DOCTYPE, expired, "valid_until", add_days(today(), -1))  # time has passed
+		frappe.set_user(self.qa)
+		try:
+			rows = {row.name: row.standing for row in execute()[1]}
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual((rows[valid], rows[due], rows[expired]), ("Valid", "Due for renewal", "Expired"))
+		self.assertEqual(frappe.db.get_value(DOCTYPE, expired, "status"), "Verified")  # derived, not stored
 
 
 @verifies("URS-REG-005")

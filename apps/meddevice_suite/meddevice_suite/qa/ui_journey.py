@@ -423,6 +423,7 @@ def prepare_risk_management(password: str) -> dict:
 				"item_group": "Products",
 				"stock_uom": "Nos",
 				"is_stock_item": 0,
+				"gst_hsn_code": PRODUCT_DETAILS[1],  # India Compliance requires it on every item
 				ITEM_TYPE: FINISHED_GOOD,
 			}
 		)

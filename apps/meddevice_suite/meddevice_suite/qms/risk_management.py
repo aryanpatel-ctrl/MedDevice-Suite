@@ -80,6 +80,7 @@ D13_PROBABILITY = ("Improbable", "Remote", "Occasional", "Probable", "Frequent")
 DRAFT, REVIEWED, IN_FORCE, SUPERSEDED = "Draft", "Reviewed", "In Force", "Superseded"
 IN_REVIEW, AWAITING_APPROVAL, APPROVED = "In Review", "Awaiting Approval", "Approved"
 IN_PROGRESS = (DRAFT, IN_REVIEW, AWAITING_APPROVAL)
+WITHDRAWN = "Withdrawn"
 OPEN, CLOSED = "Open", "Closed"
 NO_CHANGE, NEW_REVISION = "No change", "New revision"
 CHANGE_REQUEST_TRIGGER, CONTROL_CHANGED, PERIODIC, COMPLAINT, CAPA = (
@@ -352,16 +353,21 @@ def approve_policy(doc: Document, password: str, reason: str | None = None) -> N
 	policies = frappe.qb.DocType(POLICY)
 	# One approval at a time, so one policy is in force.
 	frappe.qb.from_(policies).select(policies.name).where(
-		(policies.status == IN_FORCE) | (policies.name == doc.name)
+		policies.status.isin((REVIEWED, IN_FORCE)) | (policies.name == doc.name)
 	).for_update().run()
 	check_scales(doc, complete=True)
 	doc.status, doc.approved_by, doc.approved_at = IN_FORCE, frappe.session.user, now_datetime()
 	doc.in_force_since = today()
 	sign(doc, "Approved", "Approve", password, reason, permission="read")
 	submit(doc)
-	for previous in frappe.get_all(
-		POLICY, filters={"status": IN_FORCE, "name": ["!=", doc.name]}, pluck="name"
-	):
+	in_force = (
+		frappe.qb.from_(policies)
+		.select(policies.name)
+		.where((policies.status == IN_FORCE) & (policies.name != doc.name))
+		.for_update()  # a locking read, so a policy approved meanwhile is superseded too
+		.run(pluck=True)
+	)
+	for previous in in_force:
 		frappe.get_doc(POLICY, previous).db_set({"status": SUPERSEDED, "superseded_by": doc.name})
 
 
@@ -540,8 +546,10 @@ def guard_assessment(doc: Document) -> None:
 def score(doc: Document) -> None:
 	"""validate: the risks are worked out from the policy in force, over whatever was typed for
 	them (URS-QMS-019); a draft's controls carry no pinned version until approval (URS-QMS-020)."""
-	if doc.docstatus != 0:
-		return  # an approved revision keeps its policy and its scores
+	if doc.docstatus != 0 or doc.status != DRAFT:
+		# Once its author has signed, a revision keeps the policy and the scores they signed for;
+		# a new policy is taken only by returning it to draft and authoring it again.
+		return
 	doc.policy = current_policy()
 	require(doc.policy, _("No risk acceptability policy is in force; Management approves one first."))
 	severities, probabilities, cells = policy_scales(doc.policy)
@@ -617,10 +625,11 @@ def check_controls(doc: Document, hazards: set[str]) -> None:
 				where, _(row.option), " / ".join(_(t) for t in CONTROL_TYPES[row.option])
 			),
 		)
-		if row.option in DOCUMENT_TYPES:
+		if row.option in DOCUMENT_TYPES and row.control_doctype == CONTROLLED_DOCUMENT:
+			# A document is of the type the kind of control names; an item or a bill of materials
+			# is a design element in itself (plan Q6).
 			require(
-				row.control_doctype == CONTROLLED_DOCUMENT
-				and document_type.get(row.control_name) in DOCUMENT_TYPES[row.option],
+				document_type.get(row.control_name) in DOCUMENT_TYPES[row.option],
 				_("{0}: {1} is a {2} document.").format(
 					where, _(row.option), " / ".join(_(t) for t in DOCUMENT_TYPES[row.option])
 				),
@@ -690,6 +699,16 @@ def check_content(doc: Document) -> None:
 		require(
 			row.initial_acceptability != UNACCEPTABLE or row.hazard_id in controlled,
 			_("Hazard {0} is unacceptable: add a risk control measure.").format(row.hazard_id),
+		)
+		reduced = (cint(row.residual_severity), cint(row.residual_probability)) != (
+			cint(row.severity),
+			cint(row.probability),
+		)
+		require(
+			not reduced or row.hazard_id in controlled,
+			_("Hazard {0}: a risk is reduced only by a risk control measure (ISO 14971 7); add it.").format(
+				row.hazard_id
+			),
 		)
 		require(
 			row.residual_acceptability == ACCEPTABLE or plain(row.justification),
@@ -778,6 +797,21 @@ def return_for_changes(doc: Document, password: str, reason: str | None = None) 
 	save(doc)
 
 
+def withdraw(doc: Document, password: str, reason: str | None = None) -> None:
+	"""Signed act: QA withdraws a revision or report that will not be finished (its author left, or
+	the analysis found nothing to change). Nothing is deleted; a withdrawn one no longer holds the
+	file, its review or the change request back."""
+	require(
+		doc.docstatus == 0 and doc.status in IN_PROGRESS,
+		_("Only an unfinished {0} is withdrawn.").format(_(doc.doctype)),
+	)
+	require(is_qa(), _("Only QA withdraws it."), frappe.PermissionError)
+	require(plain(reason), _("Say why it is withdrawn."))
+	doc.status = WITHDRAWN
+	sign(doc, "Rejected", "Withdraw", password, reason, permission="read")
+	save(doc)
+
+
 def approve(doc: Document, password: str, reason: str | None = None) -> None:
 	"""Signed act: QA, neither the author nor the reviewer, approves the revision. Everything is
 	checked again; each control's version and the policy are pinned; the revision is the file's
@@ -793,7 +827,13 @@ def approve(doc: Document, password: str, reason: str | None = None) -> None:
 	lock(FILE, doc.risk_management_file)
 	if doc.risk_review:
 		require_open_review(doc.risk_review, doc.risk_management_file)
-	score(doc)
+	require(
+		doc.policy == current_policy(),
+		_(
+			"The risk acceptability policy has changed since {0} was authored; return it to its author to "
+			"be scored and signed again."
+		).format(doc.name),
+	)
 	check_content(doc)
 	stale = out_of_force(doc)
 	require(
@@ -1039,11 +1079,19 @@ def raise_review(
 	require(frappe.db.exists(FILE, file), _("Risk management file {0} does not exist.").format(file))
 	lock(FILE, file)  # one review at a time per file, so none is raised twice
 	source = {"risk_management_file": file, "source_doctype": source_doctype, "source_name": source_name}
-	earlier = frappe.get_all(
-		REVIEW,
-		filters=source,
-		fields=["name", "status", "docstatus", "source_state"],
-		order_by="creation asc",
+	reviews = frappe.qb.DocType(REVIEW)
+	# A locking read: it sees a review another transaction has just raised for the same source.
+	earlier = (
+		frappe.qb.from_(reviews)
+		.select(reviews.name, reviews.status, reviews.docstatus, reviews.source_state)
+		.where(
+			(reviews.risk_management_file == file)
+			& (reviews.source_doctype == source_doctype)
+			& (reviews.source_name == source_name)
+		)
+		.orderby(reviews.creation)
+		.for_update()
+		.run(as_dict=True)
 	)
 	for row in earlier:
 		if (row.status == OPEN and row.docstatus == 0) or (row.source_state or "") == (state or ""):
@@ -1088,13 +1136,22 @@ def close_review(doc: Document, password: str, reason: str | None = None) -> Non
 	require(doc.docstatus == 0 and doc.status == OPEN, _("Risk review {0} is not open.").format(doc.name))
 	require(is_qa(), _("Only QA closes a risk review."), frappe.PermissionError)
 	require(plain(reason), _("Give the rationale for leaving the risk assessment unchanged."))
+	if doc.trigger == CONTROL_CHANGED:
+		control = frappe.db.get_value(REVIEW, doc.name, ["source_doctype", "source_name"], as_dict=True)
+		require(
+			pinned_records.in_force(control.source_doctype, control.source_name),
+			_(
+				"{0} {1} is no longer in force, so it is not a control: revise the assessment instead of "
+				"leaving it unchanged."
+			).format(_(control.source_doctype), control.source_name),
+		)
 	in_progress = frappe.db.get_value(
 		ASSESSMENT, {"risk_review": doc.name, "status": ["in", IN_PROGRESS], "docstatus": 0}
 	)
 	require(
 		not in_progress,
 		_(
-			"Revision {0} is in progress for this review; approve it or close the review once it is returned."
+			"Revision {0} is in progress for this review; approve it, or withdraw it before closing the review."
 		).format(in_progress),
 	)
 	doc.outcome, doc.rationale = NO_CHANGE, plain(reason)

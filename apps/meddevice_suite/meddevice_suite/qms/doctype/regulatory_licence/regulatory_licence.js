@@ -54,6 +54,24 @@ frappe.ui.form.on("Regulatory Licence", {
 					)
 				);
 			}
+			frm.add_custom_button(__("Add Obligation"), () =>
+				frappe.prompt(
+					[
+						{
+							fieldname: "obligation",
+							fieldtype: "Data",
+							label: __("Obligation"),
+							reqd: 1,
+						},
+						{ fieldname: "due_date", fieldtype: "Date", label: __("Due"), reqd: 1 },
+					],
+					(values) =>
+						frappe
+							.call(`${LICENCE}.add_obligation`, { name: frm.doc.name, ...values })
+							.then(() => frm.reload_doc()),
+					__("Add an obligation of the licence")
+				)
+			);
 			frm.add_custom_button(__("Record Submission"), () =>
 				frappe.prompt(
 					[
