@@ -63,7 +63,7 @@ def validate(doc: Document, method: str | None = None) -> None:
 	if doc.docstatus != 0:
 		return
 	if not doc.flags.regulatory_licence:
-		doc.status = DRAFT
+		keep_system_fields(doc)
 	if doc.valid_from and doc.valid_until:
 		require(
 			getdate(doc.valid_until) > getdate(doc.valid_from),
@@ -80,9 +80,35 @@ def validate(doc: Document, method: str | None = None) -> None:
 	require(len(items) == len(set(items)), _("A product is listed once."))
 
 
+# Set only by QA's acts; a draft saved through the API or the form never carries them.
+SYSTEM_FIELDS = (
+	"verified_file_version",
+	"verified_file_sha256",
+	"reason",
+	"decided_by",
+	"decided_at",
+	"superseded_by",
+)
+OBLIGATION_SYSTEM_FIELDS = ("done_on", "done_by", "evidence")
+
+
+def keep_system_fields(doc: Document) -> None:
+	"""A draft is QA's entry of the licence as granted; what QA's later acts record (the
+	verification, an obligation done, a submission, an alert) cannot be typed into it."""
+	doc.status = DRAFT
+	doc.expiry_alerted = 0
+	for field in SYSTEM_FIELDS:
+		doc.set(field, None)
+	for row in doc.get("obligations") or []:
+		for field in OBLIGATION_SYSTEM_FIELDS:
+			row.set(field, None)
+		row.alerted, row.added_after_verification = 0, 0
+	require(not doc.get("submissions"), _("Submissions are recorded on a verified licence."))
+
+
 def guard_after_verification(doc: Document, method: str | None = None) -> None:
 	"""before_update_after_submit: a verified licence changes only by QA's acts (withdrawal,
-	supersession, an obligation done, a submission recorded)."""
+	supersession, an obligation added or done, a submission recorded)."""
 	require(doc.flags.regulatory_licence, _("A verified licence does not change."), frappe.PermissionError)
 
 
@@ -135,6 +161,15 @@ def verify(doc: Document, password: str, reason: str | None = None) -> None:
 			getdate(doc.valid_until) >= getdate(today()),
 			_("The licence expired on {0}; it cannot be verified.").format(date_text(doc.valid_until)),
 		)
+	if doc.renews:
+		renewed = locked(doc.renews)
+		require(
+			renewed.docstatus == 1 and renewed.status == VERIFIED,
+			_("{0} is {1}; only a verified licence is renewed.").format(
+				doc.renews, _(renewed.status).lower()
+			),
+		)
+		require(renewed.licence_type == doc.licence_type, _("A renewal is of the same type of licence."))
 	require(doc.important_file, _("Attach the licence's copy as an important file."))
 	file = frappe.get_doc("Important File", doc.important_file)
 	file.check_permission("read")  # QA verifies only a copy they may read
@@ -214,6 +249,25 @@ def complete_obligation(name: str, row: str, evidence: str) -> None:
 	doc.flags.regulatory_licence = True
 	doc.flags.audit_reason = _("Obligation {0} done").format(line.obligation)
 	doc.flags.ignore_permissions = True  # QA's own record; the licence itself does not change
+	doc.save()
+
+
+@frappe.whitelist(methods=["POST"])
+def add_obligation(name: str, obligation: str, due_date: str) -> None:
+	"""QA records an obligation that arises after verification: the next retention fee, the next
+	surveillance audit (URS-REG-004)."""
+	doc = locked(name)
+	require(is_qa(), _("Only QA records a licence's obligations."), frappe.PermissionError)
+	require(doc.docstatus == 1 and doc.status == VERIFIED, _("Obligations are added to a verified licence."))
+	require((obligation or "").strip(), _("Say what the obligation is."))
+	require(due_date, _("Record when it is due."))
+	doc.append(
+		"obligations",
+		{"obligation": obligation.strip(), "due_date": due_date, "added_after_verification": 1},
+	)
+	doc.flags.regulatory_licence = True
+	doc.flags.audit_reason = _("Obligation {0} added").format(obligation.strip())
+	doc.flags.ignore_permissions = True  # QA's record of what the licence requires next
 	doc.save()
 
 
@@ -347,17 +401,33 @@ def signed_content(doc: Document) -> dict:
 		"verified_file_version": doc.verified_file_version,
 		"verified_file_sha256": doc.verified_file_sha256,
 		"products": sorted(row.item_code for row in doc.get("products") or []),
-		"obligations": sorted((row.obligation, str(row.due_date)) for row in doc.get("obligations") or []),
+		"obligations": sorted(
+			(row.obligation, str(row.due_date))
+			for row in doc.get("obligations") or []
+			if not row.added_after_verification
+		),
 	}
 
 
 # --- Change control (URS-REG-006) -----------------------------------------------------------------
 
 
+def verified_licences(rows) -> set[str]:
+	names = [row.reference_name for row in rows if row.reference_doctype == DOCTYPE and row.reference_name]
+	return set(
+		frappe.get_all(
+			DOCTYPE, filters={"name": ["in", names or [""]], "docstatus": 1, "status": VERIFIED}, pluck="name"
+		)
+	)
+
+
 def require_licence_for_regulatory_change(doc: Document) -> None:
 	"""A change that needs regulatory notification names the licence or registration it affects."""
 	require(
 		doc.impact_regulatory != "Yes"
-		or any(row.reference_doctype == DOCTYPE and row.reference_name for row in doc.affected_records),
-		_("A change with regulatory impact lists the licence or registration it affects."),
+		or any(
+			row.reference_doctype == DOCTYPE and row.reference_name in verified_licences(doc.affected_records)
+			for row in doc.affected_records
+		),
+		_("A change with regulatory impact lists the verified licence or registration it affects."),
 	)
