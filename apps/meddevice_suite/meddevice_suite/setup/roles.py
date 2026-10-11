@@ -174,6 +174,8 @@ PERMISSIONS: dict[str, dict[str, tuple[str, ...]]] = {
 	),
 	# An operator names themselves on the time they log against a job card.
 	"Employee": oversight({"HR User": EDIT, "Manufacturing User": VIEW, "Operator": PICK}),
+	# A job's training matrix names its designation (module 37).
+	"Designation": oversight({"HR User": EDIT, "Quality Manager": PICK, "Manufacturing User": PICK}),
 	# --- Purchasing and receiving
 	# --- Sales
 	"Quotation": oversight(

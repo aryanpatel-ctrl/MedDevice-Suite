@@ -94,9 +94,12 @@ RETENTION_SCHEDULE: dict[str, tuple[int, str, tuple[str, ...]]] = {
 			"Asset Maintenance Log",
 			"Asset Repair",
 			"Employee",
+			"Designation",
 			"Calibration Record",
 			"Maintenance Record",
 			"Equipment Qualification",
+			"Training Matrix",  # module 37
+			"Training Record",
 		),
 	),
 	"Access control and system settings records": (

@@ -378,6 +378,36 @@ def calibration_impacts_open() -> Iterator[Due]:
 		)
 
 
+def training_due() -> Iterator[Due]:
+	"""Each training opened and not yet completed: the trainee's until they sign, then the
+	assessor's; the Training Coordinator and QA see them all (module 37)."""
+	for row in frappe.get_all(
+		"Training Record",
+		filters={"docstatus": 0, "status": ["in", ("Open", "Trained")], "trigger": ["!=", "Historical"]},
+		fields=[
+			"name",
+			"employee_name",
+			"controlled_document",
+			"revision",
+			"due_date",
+			"status",
+			"trainee_user",
+			"assessor",
+		],
+	):
+		yield Due(
+			"Training Record",
+			row.name,
+			row.due_date,
+			_("{0}: training on {1} revision {2} ({3})").format(
+				row.employee_name, row.controlled_document, row.revision, _(row.status).lower()
+			),
+			("HR User", QA_ROLE),
+			user=row.trainee_user if row.status == "Open" else row.assessor,
+			part=row.status,
+		)
+
+
 # category -> what is due now (module that owns the record)
 CATEGORIES: dict[str, Callable[[], Iterator[Due]]] = {
 	"Lot Expiry": lots_expiring,  # module 18
@@ -392,6 +422,7 @@ CATEGORIES: dict[str, Callable[[], Iterator[Due]]] = {
 	"Maintenance Due": maintenance_due,  # module 38
 	"Requalification Due": requalifications_due,  # module 40
 	"Calibration Impact": calibration_impacts_open,  # module 38
+	"Training Due": training_due,  # module 37
 }
 
 

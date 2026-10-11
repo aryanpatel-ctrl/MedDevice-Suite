@@ -352,6 +352,9 @@ def record_operations(work_order: Document) -> list[str]:
 		order_by="sequence_id asc",
 	)
 	start = max(now_datetime(), busy_until(cards))
+	operator = frappe.db.get_value(
+		"Employee", {"user_id": demo_user_email("Operator")}
+	)  # trained (module 37)
 	for card_name in cards:
 		with as_job("Operator"):
 			card = frappe.get_doc("Job Card", card_name)
@@ -359,6 +362,7 @@ def record_operations(work_order: Document) -> list[str]:
 			card.append(
 				"time_logs",
 				{
+					"employee": operator,
 					"from_time": start,
 					"to_time": add_to_date(start, minutes=minutes),
 					"completed_qty": card.for_quantity,

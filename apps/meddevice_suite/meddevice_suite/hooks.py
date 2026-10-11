@@ -158,18 +158,25 @@ doc_events = {
 	"Job Card": {
 		# Module 3: approved operations and workstations; modules 38 and 40: the workstation's
 		# equipment fit (calibrated, maintained, qualified, not under repair), at every save and
-		# submit, and when time is logged after submit.
+		# submit, and when time is logged after submit. Module 37: every operator logging time is
+		# competent in the operation's work instruction (time logs change after submit too).
 		"before_validate": [
 			"meddevice_suite.master_data.routing.guard_job_card",
 			"meddevice_suite.qms.equipment_care.guard_job_card",
+			"meddevice_suite.qms.training.guard_job_card",
 		],
 		"validate": [
 			"meddevice_suite.master_data.routing.guard_job_card",  # after its sub-operations are set
 			"meddevice_suite.qms.equipment_care.guard_job_card",
 		],
 		"before_submit": "meddevice_suite.qms.equipment_care.guard_job_card",
-		"before_update_after_submit": "meddevice_suite.qms.equipment_care.guard_job_card",
+		"before_update_after_submit": [
+			"meddevice_suite.qms.equipment_care.guard_job_card",
+			"meddevice_suite.qms.training.guard_job_card",
+		],
 	},
+	# Module 37: joining, a new job, leaving or returning changes what training is needed.
+	"Employee": {"on_update": "meddevice_suite.qms.training.on_employee_update"},
 	"Purchase Receipt": {
 		"validate": [
 			"meddevice_suite.lot_control.lot_status.guard_purchase_receipt",
@@ -286,6 +293,8 @@ permission_query_conditions = {
 	"Important File": "meddevice_suite.files_repository.files.query_conditions",
 	"Document Revision": "meddevice_suite.qms.document_control.revision_query_conditions",
 	"Change Request": "meddevice_suite.qms.change_control.query_conditions",
+	# Training (module 37): outside QA, training, production and management, one's own records.
+	"Training Record": "meddevice_suite.qms.training.query_conditions",
 }
 has_permission = {
 	"Reminder": "meddevice_suite.work_management.reminders.has_permission",
@@ -294,6 +303,7 @@ has_permission = {
 	"Document Revision": "meddevice_suite.qms.document_control.revision_has_permission",
 	"Change Request": "meddevice_suite.qms.change_control.has_permission",
 	"File": "meddevice_suite.compliance.evidence_files.has_permission",
+	"Training Record": "meddevice_suite.qms.training.has_permission",
 }
 
 scheduler_events = {
@@ -301,6 +311,8 @@ scheduler_events = {
 		"meddevice_suite.compliance.alerts.send_expiry_alerts",
 		"meddevice_suite.compliance.archive.fail_stalled_archives",
 		"meddevice_suite.qms.document_control.make_due_revisions_effective",
+		# After revisions take effect: training needed and expiring (module 37).
+		"meddevice_suite.qms.training.daily",
 		"meddevice_suite.qms.document_control.send_review_alerts",
 		"meddevice_suite.qms.change_control.send_change_alerts",
 		"meddevice_suite.master_data.supplier_approval.send_certificate_alerts",
@@ -323,7 +335,8 @@ override_whitelisted_methods = {
 		"meddevice_suite.master_data.item_master.create_serial_nos"
 	),
 	# ERPNext adds a job card's time log by writing the row straight to the database, past every
-	# document hook and without a permission check; the job card's rules run before it is called.
+	# document hook and without a permission check; the job card's rules (routing, equipment and
+	# the operators' training) run before it is called.
 	"erpnext.manufacturing.doctype.job_card.job_card.make_time_log": (
 		"meddevice_suite.qms.equipment_care.make_time_log"
 	),

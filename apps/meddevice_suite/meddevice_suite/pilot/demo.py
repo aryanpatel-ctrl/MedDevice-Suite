@@ -243,6 +243,16 @@ def load_demo_data() -> None:
 		demo_user_email,
 		password,
 	)
+	from meddevice_suite.pilot.training import train_operator
+
+	# Module 37: the operator is competent on each operation's work instruction before working.
+	train_operator(
+		company,
+		sorted({operation for steps in ROUTINGS.values() for operation, _w, _m in steps}),
+		as_job,
+		demo_user_email,
+		password,
+	)
 	approve_bom = approve_as("QA Manager", password, "BOM")
 	for code, (_name, _hsn, _rate, line, materials) in PRODUCTS.items():
 		ensure_bom(code, line, materials, company, approve_bom)

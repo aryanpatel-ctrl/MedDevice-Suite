@@ -34,6 +34,10 @@
   "maintenance_warning_days",
   "column_break_equipment",
   "requalification_warning_days",
+  "section_training",
+  "training_due_days",
+  "column_break_training",
+  "training_expiry_warning_days",
   "section_control",
   "change_request",
   "changed_under",
@@ -255,6 +259,33 @@
    "description": "How many days before a requalification falls due it is raised (1 to 365)."
   },
   {
+   "fieldname": "section_training",
+   "fieldtype": "Section Break",
+   "label": "Training"
+  },
+  {
+   "fieldname": "training_due_days",
+   "fieldtype": "Int",
+   "label": "Training Due Within (days)",
+   "default": "14",
+   "reqd": 1,
+   "non_negative": 1,
+   "description": "How many days a new training need has before it is due (1 to 90); a revision approved to take effect later is due on its effective date."
+  },
+  {
+   "fieldname": "column_break_training",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "training_expiry_warning_days",
+   "fieldtype": "Int",
+   "label": "Training Refresher Opens (days before expiry)",
+   "default": "30",
+   "reqd": 1,
+   "non_negative": 1,
+   "description": "How many days before a training expires its refresher opens (1 to 365)."
+  },
+  {
    "fieldname": "section_control",
    "fieldtype": "Section Break",
    "label": "Change control"
@@ -293,7 +324,7 @@
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-10-11 12:00:00.000000",
+ "modified": "2026-10-11 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "Compliance",
  "name": "Quality Settings",

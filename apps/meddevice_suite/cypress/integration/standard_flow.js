@@ -1070,6 +1070,8 @@ context("The standard flow, through the screens of each job", { retries: 0 }, ()
 			fill_row("time_logs", 1, "to_time", planned.to_time.slice(0, 19), "Datetime");
 			fill_row("time_logs", 1, "completed_qty", card.for_quantity);
 		});
+		// The operator, competent on the operation's work instruction (module 37, URS-TRN-005).
+		cy.then(() => fill_row("time_logs", 1, "employee", data.operator, "Link"));
 		save();
 		cy.get(`${FORM} .page-actions`).should(($actions) =>
 			expect($actions.find(".primary-action:visible").text()).to.not.contain("Submit")
@@ -1096,6 +1098,7 @@ context("The standard flow, through the screens of each job", { retries: 0 }, ()
 					const planned = message.scheduled_time_logs[0];
 					message.time_logs = [
 						{
+							employee: data.operator,
 							from_time: planned.from_time,
 							to_time: planned.to_time,
 							completed_qty: message.for_quantity,

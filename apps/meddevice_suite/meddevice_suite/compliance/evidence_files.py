@@ -32,6 +32,8 @@ EVIDENCE: tuple[tuple[str, str, dict], ...] = (
 	("Important File Version", "file", {}),
 	# An external laboratory's calibration certificate, once the calibration is completed (module 38).
 	("Calibration Record", "certificate", {"docstatus": 1}),
+	# A training certificate (paper history, or one a trainer gave), once the record is completed (module 37).
+	("Training Record", "certificate", {"docstatus": 1}),
 )
 # What identifies a file and where it is kept.
 IDENTITY = ("file_url", "is_private", "file_name", "content_hash", "attached_to_doctype", "attached_to_name")

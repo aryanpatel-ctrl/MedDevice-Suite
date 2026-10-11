@@ -207,12 +207,14 @@ def make_time_log(kwargs: str | dict) -> None:
 	from erpnext.manufacturing.doctype.job_card.job_card import make_time_log as erpnext_make_time_log
 
 	from meddevice_suite.master_data import routing
+	from meddevice_suite.qms import training
 
 	values = frappe._dict(json.loads(kwargs) if isinstance(kwargs, str) else kwargs)
 	doc = frappe.get_doc("Job Card", values.job_card_id)
 	doc.check_permission("write")
 	routing.guard_job_card(doc)
 	guard_job_card(doc)
+	training.refuse_new_operators(doc, values)
 	erpnext_make_time_log(kwargs)
 
 

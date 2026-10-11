@@ -27,6 +27,7 @@ REGULATED_DOCTYPES: frozenset[str] = frozenset(
 		"Quality Inspection Template",
 		"Asset",
 		"Employee",
+		"Designation",  # what a job is trained on hangs on it (module 37)
 		# GMP transactions
 		"Quotation",
 		"Material Request",
