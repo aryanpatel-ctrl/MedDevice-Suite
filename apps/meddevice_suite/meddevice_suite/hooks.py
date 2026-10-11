@@ -317,6 +317,7 @@ scheduler_events = {
 		"meddevice_suite.qms.change_control.send_change_alerts",
 		"meddevice_suite.master_data.supplier_approval.send_certificate_alerts",
 		"meddevice_suite.master_data.customer_licence.send_expiry_alerts",
+		"meddevice_suite.qms.regulatory_licence.send_expiry_alerts",  # module 41
 		"meddevice_suite.master_data.supplier_rating.rate_finished_months",
 		# After the alerts above: reminders track what they told people (module 60).
 		"meddevice_suite.work_management.reminders.run",

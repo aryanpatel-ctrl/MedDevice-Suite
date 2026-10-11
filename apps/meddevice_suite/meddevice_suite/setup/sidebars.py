@@ -336,6 +336,9 @@ SIDEBAR_ADDITIONS: dict[str, tuple[tuple[str, str, str], ...]] = {
 		("Training Matrix", "DocType", "Training Matrix"),  # training (module 37)
 		("Training Record", "DocType", "Training Record"),
 		("Training Status", "Report", "Training Status"),
+		("Regulatory Licence", "DocType", "Regulatory Licence"),  # regulatory licences (module 41)
+		("Regulatory Licence Type", "DocType", "Regulatory Licence Type"),
+		("Licence Register", "Report", "Licence Register"),
 	),
 	"Buying": (
 		("Supplier Approval", "DocType", "Supplier Approval"),
