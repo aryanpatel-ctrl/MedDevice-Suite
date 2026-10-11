@@ -266,12 +266,14 @@ permission_query_conditions = {
 	# Reminders (module 60): each job sees its own; QA and management see all.
 	"Reminder": "meddevice_suite.work_management.reminders.query_conditions",
 	"Work Task": "meddevice_suite.work_management.work_task.query_conditions",
+	"Important File": "meddevice_suite.files_repository.files.query_conditions",
 	"Document Revision": "meddevice_suite.qms.document_control.revision_query_conditions",
 	"Change Request": "meddevice_suite.qms.change_control.query_conditions",
 }
 has_permission = {
 	"Reminder": "meddevice_suite.work_management.reminders.has_permission",
 	"Work Task": "meddevice_suite.work_management.work_task.has_permission",
+	"Important File": "meddevice_suite.files_repository.files.has_permission",
 	"Document Revision": "meddevice_suite.qms.document_control.revision_has_permission",
 	"Change Request": "meddevice_suite.qms.change_control.has_permission",
 	"File": "meddevice_suite.compliance.evidence_files.has_permission",

@@ -28,6 +28,8 @@ EVIDENCE: tuple[tuple[str, str, dict], ...] = (
 	("Supplier Approval", "certificate", {"docstatus": 1}),
 	# A customer's licence copy, once QA has decided on it (module 5).
 	("Customer Licence", "licence_copy", {"docstatus": 1}),
+	# Every version of a file in the important files repository, from the moment it is added (module 61).
+	("Important File Version", "file", {}),
 )
 # What identifies a file and where it is kept.
 IDENTITY = ("file_url", "is_private", "file_name", "content_hash", "attached_to_doctype", "attached_to_name")

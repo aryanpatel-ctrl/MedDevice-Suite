@@ -1054,3 +1054,17 @@ title = "Each person has one list of everything waiting on them, each line openi
 source = "DFD 9B Task and Approval across the modules (used by PO approval, document approval, QA release, change control); master plan section 8; decided 2026-10-11: one list read from the records themselves, not a second copy of their state"
 status = "implemented"
 
+[[requirement]]
+id = "URS-PLT-018"
+module = 61
+title = "QA keeps the important files repository's categories and sub-groups and, for each, the jobs that read its files and the jobs that upload them, a sub-group naming none taking its group's; files are kept in a category, not in a group, and a category holding files is neither made a group nor deleted; people see and open only the files of the categories their jobs read, QA and the system administrator all, and only the category's uploading jobs or QA add to or archive its files."
+source = "DFD 9E Important Files Repository (E1 create category, E2 create sub group, E5 access control, E6 search and retrieve), D9 Documents; master plan section 8 (licences, regulatory submissions, vendor and sterilization certificates, audit reports, any file that is not a controlled SOP); decided 2026-10-12: access by job per category, inherited by sub-groups"
+status = "implemented"
+
+[[requirement]]
+id = "URS-PLT-019"
+module = 61
+title = "A file in the repository is a record of its versions: each upload is the next version, a private file fingerprinted as it is added, with who added it, when, what changed (from the second version) and, where it has one, until when it is valid; earlier versions are never changed or removed and their files are evidence that cannot be changed or deleted; a file is never deleted, only archived with a reason, and an archived file does not change; a current version's validity is tracked as a reminder by the category's uploading jobs, the days before it ends set by QA in Quality Settings (60 until changed), until a new version renews it or it is archived."
+source = "DFD 9E (E3 upload document, E4 version control); D9; ISO 13485 4.2.4, 4.2.5; 21 CFR 11.10(c), (e); decided 2026-10-12: validity tracked by the reminders (module 60)"
+status = "implemented"
+
