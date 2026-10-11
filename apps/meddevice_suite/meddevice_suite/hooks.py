@@ -19,6 +19,8 @@ app_include_js = "meddevice_suite.bundle.js"
 before_migrate = "meddevice_suite.setup.modules.sync_module_defs"
 after_install = "meddevice_suite.setup.install.apply_configuration"
 after_migrate = "meddevice_suite.setup.install.apply_configuration"
+# Test sites only: the stores the tests move stock through, approved as QA's signed act records it.
+before_tests = "meddevice_suite.qa.site_setup.approve_test_stores"
 
 doc_events = {
 	"*": {
@@ -76,9 +78,21 @@ doc_events = {
 		]
 	},
 	# Lot status (module 17): only an Approved lot leaves a store; each status has its store.
-	"Warehouse": {"validate": "meddevice_suite.lot_control.stores.protect_store_role"},
+	"Warehouse": {
+		"validate": [
+			"meddevice_suite.lot_control.stores.protect_store_role",
+			# Module 7: approved by QA with a signature before stock moves in or out.
+			"meddevice_suite.master_data.warehouse.guard",
+		],
+		"onload": "meddevice_suite.master_data.warehouse.onload",
+	},
 	"Company": {"on_update": "meddevice_suite.lot_control.stores.stores_for_new_company"},
-	"Stock Ledger Entry": {"validate": "meddevice_suite.lot_control.lot_status.guard_stock_ledger_entry"},
+	"Stock Ledger Entry": {
+		"validate": [
+			"meddevice_suite.master_data.warehouse.guard_stock_ledger_entry",  # module 7: approved stores
+			"meddevice_suite.lot_control.lot_status.guard_stock_ledger_entry",
+		]
+	},
 	"Stock Entry": {
 		"validate": "meddevice_suite.lot_control.lot_status.guard_stock_entry",
 		"before_cancel": "meddevice_suite.lot_control.lot_status.refuse_cancel_of_release_transfer",

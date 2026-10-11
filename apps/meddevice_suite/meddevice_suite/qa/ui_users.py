@@ -37,6 +37,9 @@ def prepare_job_users() -> dict:
 	ensure_test_site()
 	if frappe.session.user != "Administrator":
 		frappe.throw(_("Browser-test users are made only by the Administrator."), frappe.PermissionError)
+	from meddevice_suite.qa.site_setup import approve_test_stores
+
+	approve_test_stores()  # module 7: the stores the browser tests move stock through
 	password = frappe.generate_hash(length=24)
 	users = {}
 	for profile in JOB_PROFILES:

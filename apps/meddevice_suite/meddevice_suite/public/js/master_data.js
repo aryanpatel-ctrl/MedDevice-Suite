@@ -245,7 +245,7 @@ frappe.ui.form.on("Asset", {
 
 // Routings, operations and workstations (module 3): the form says whether QA has approved it, or
 // what approval still needs, and QA approves it with a signature (master_data/routing.py).
-for (const doctype of ["Operation", "Workstation", "Routing"]) {
+for (const doctype of ["Operation", "Workstation", "Routing", "Warehouse"]) {
 	frappe.ui.form.on(doctype, {
 		refresh(frm) {
 			if (frm.is_new()) return;
@@ -263,7 +263,7 @@ for (const doctype of ["Operation", "Workstation", "Routing"]) {
 					.map((what) => frappe.utils.escape_html(what))
 					.join("; ");
 				frm.dashboard.set_headline_alert(
-					__("Not yet approved by QA, so not used in production. Still needed: {0}.", [
+					__("Not yet approved by QA, so it is not used yet. Still needed: {0}.", [
 						missing,
 					]),
 					"orange"
@@ -271,7 +271,7 @@ for (const doctype of ["Operation", "Workstation", "Routing"]) {
 				return;
 			}
 			frm.dashboard.set_headline_alert(
-				__("Not yet approved by QA, so not used in production. Ready for QA's approval."),
+				__("Not yet approved by QA, so it is not used yet. Ready for QA's approval."),
 				"orange"
 			);
 			if (!frm.is_dirty() && !frm.doc.disabled && frappe.user.has_role("Quality Manager")) {

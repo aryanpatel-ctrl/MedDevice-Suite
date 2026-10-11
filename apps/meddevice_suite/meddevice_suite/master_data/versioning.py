@@ -161,10 +161,12 @@ MASTERS: dict[str, Master] = {
 		or submitted("Delivery Note", customer=doc.name),
 	),
 	"Warehouse": Master(
-		fields=("parent_warehouse", "is_group", "warehouse_type", "disabled"),
+		# Module 7: its company and its role (quarantine, hold, rejected, returns or approved stock).
+		fields=("parent_warehouse", "is_group", "warehouse_type", "disabled", "company", "mds_store_role"),
 		in_use=lambda doc: bool(
 			frappe.db.exists("Stock Ledger Entry", {"warehouse": doc.name, "is_cancelled": 0})
-		),
+		)
+		or master_approved("Warehouse", doc.name),  # module 7: once QA has approved it
 	),
 	# Equipment (module 8): what QA approved changes under control once approved or submitted.
 	"Asset": Master(
