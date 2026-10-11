@@ -22,7 +22,8 @@ Only the Administrator who runs the tests prepares the journey. Any signed-in us
 for the lots of a stock transaction they may read, which the browser checks after each step.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 
 import frappe
 from frappe import _
@@ -30,7 +31,14 @@ from frappe.utils import add_days, today
 
 from meddevice_suite.lot_control.lot_status import APPROVED, REJECTED, set_status, stock_by_lot
 from meddevice_suite.master_data import item_master
-from meddevice_suite.pilot.demo import BOM_QUANTITY, ensure, ensure_bom, ensure_item, ensure_price
+from meddevice_suite.pilot.demo import (
+	BOM_QUANTITY,
+	ensure,
+	ensure_bom,
+	ensure_item,
+	ensure_licence,
+	ensure_price,
+)
 from meddevice_suite.pilot.inspection import ensure_inspection_masters, ensure_inspection_template
 from meddevice_suite.qa.site_setup import TEST_COMPANY
 from meddevice_suite.qa.ui_users import email_for, ensure_test_site
@@ -84,7 +92,16 @@ def prepare_journey(password: str | None = None) -> dict:
 	if frappe.session.user != "Administrator":
 		frappe.throw(_("The browser journey is prepared only by the Administrator."), frappe.PermissionError)
 
-	ensure_masters(approve_as_qa(password), approve_as_qa(password, "Asset"))
+	ensure_masters(approve_as_qa(password), approve_as_qa(password, "BOM"), approve_as_qa(password, "Asset"))
+	if not password:
+		frappe.throw(_("Give the run's password of the job users to verify the customer's licence."))
+	ensure_licence(  # module 5: sold to only under a licence QA has verified
+		CUSTOMER,
+		lambda: acting_as(email_for("Sales")),
+		lambda: acting_as(email_for("QA Manager")),
+		password,
+		"Set up for the browser journey",
+	)
 	write_off_leftover_stock()
 	return {
 		"instrument": ensure_inspection_masters(
@@ -111,38 +128,44 @@ def prepare_journey(password: str | None = None) -> dict:
 
 
 def approve_as_qa(password: str | None, doctype: str = "Item") -> Callable[[str], None]:
-	"""QA's signed approval of a journey item (module 1) or piece of equipment (module 8), as the
-	run's QA Manager user."""
-	from meddevice_suite.master_data import equipment
+	"""QA's signed approval of a journey item (module 1), bill of materials (module 2) or piece of
+	equipment (module 8), as the run's QA Manager user."""
+	from meddevice_suite.pilot.demo import signed_approval
 
-	approved, act = (
-		(item_master.approved, item_master.approve)
-		if doctype == "Item"
-		else (equipment.approved, equipment.approve)
-	)
+	approved, act, _reason = signed_approval(doctype)
 
 	def approve(code: str) -> None:
 		if approved(code):
 			return
 		if not password:
 			frappe.throw(_("Give the run's password of the job users to approve {0}.").format(code))
-		# frappe.set_user rewrites the request's session in place (its sid becomes the user name, its
-		# data is emptied); that same object is what Frappe saves for the browser's sid when the
-		# request ends, so it is restored in place, not replaced.
-		saved, qa = dict(frappe.local.session), email_for("QA Manager")
-		frappe.set_user(qa)  # nosemgrep: frappe-setuser - test site, Administrator only
-		try:
+		with acting_as(email_for("QA Manager")):
 			act(frappe.get_doc(doctype, code), password=password, reason="Set up for the browser journey")
-		finally:
-			frappe.set_user(saved["user"])  # nosemgrep: frappe-setuser - back to the Administrator
-			frappe.local.session.clear()
-			frappe.local.session.update(saved)
 
 	return approve
 
 
+@contextmanager
+def acting_as(user: str) -> Iterator[None]:
+	"""Act as a journey job user, then return to the Administrator who prepares the journey.
+
+	frappe.set_user rewrites the request's session in place (its sid becomes the user name, its
+	data is emptied); that same object is what Frappe saves for the browser's sid when the request
+	ends, so it is restored in place, not replaced."""
+	saved = dict(frappe.local.session)
+	frappe.set_user(user)  # nosemgrep: frappe-setuser - test site, Administrator only
+	try:
+		yield
+	finally:
+		frappe.set_user(saved["user"])  # nosemgrep: frappe-setuser - back to the Administrator
+		frappe.local.session.clear()
+		frappe.local.session.update(saved)
+
+
 def ensure_masters(
-	approve: Callable[[str], None], approve_equipment: Callable[[str], None] | None = None
+	approve: Callable[[str], None],
+	approve_bom: Callable[[str], None],
+	approve_equipment: Callable[[str], None] | None = None,
 ) -> None:
 	ensure_inspection_masters(COMPANY, approve, approve_equipment)  # the parameters the templates below name
 	ensure(
@@ -184,7 +207,9 @@ def ensure_masters(
 			for index, (operation, workstation, minutes) in enumerate(OPERATIONS, 1)
 		],
 	)
-	ensure_bom(PRODUCT, ROUTING, {code: details[5] for code, details in RAW_MATERIALS.items()}, COMPANY)
+	ensure_bom(
+		PRODUCT, ROUTING, {code: details[5] for code, details in RAW_MATERIALS.items()}, COMPANY, approve_bom
+	)
 
 
 def write_off_leftover_stock() -> None:

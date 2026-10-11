@@ -1,8 +1,9 @@
 """Controlled specifications (module 6; URS-MST-002; ISO 13485 7.1, 8.2.6).
 
 An item's inspection template is its specification for one inspection stage: ERPNext's
-Quality Inspection Template, with the item, the stage (Incoming, In Process, Final) and the
-sample size, and for each parameter the method and the limits (a minimum and/or maximum for
+Quality Inspection Template, with the item, the stage (Incoming, In Process, Final), how the
+stage is sampled (a fixed sample size, every unit, or ISO 2859-1 at an inspection level and an
+AQL: master_data/sampling.py), and for each parameter the method and the limits (a minimum and/or maximum for
 a measurement, the accepted value otherwise). One specification is in force per item and
 stage.
 
@@ -23,6 +24,7 @@ from frappe.model.document import Document
 from frappe.utils import cint, flt
 
 from meddevice_suite.compliance.audit import same
+from meddevice_suite.master_data import sampling
 from meddevice_suite.master_data.versioning import raise_version
 from meddevice_suite.qms.change_control import require_approved_change
 
@@ -33,7 +35,14 @@ INCOMING, IN_PROCESS, FINAL = "Incoming", "In Process", "Final"
 STAGE_OF_INSPECTION = {"Incoming": INCOMING, "In Process": IN_PROCESS, "Outgoing": FINAL}
 # What a specification states, with each field's type; a change to any of these is a change
 # of the specification.
-CONTROLLED_FIELDS = {"mds_item": "Link", "mds_stage": "Select", "mds_sample_size": "Int"}
+CONTROLLED_FIELDS = {
+	"mds_item": "Link",
+	"mds_stage": "Select",
+	"mds_sample_size": "Int",
+	sampling.METHOD: "Select",
+	sampling.LEVEL: "Select",
+	sampling.AQL: "Select",
+}
 # The acceptance criteria a reading carries from its specification.
 CRITERIA = {
 	"numeric": "Check",
@@ -67,18 +76,46 @@ CUSTOM_FIELDS = {
 			"in_standard_filter": 1,
 		},
 		{
+			"fieldname": sampling.METHOD,
+			"label": "Sampling",
+			"fieldtype": "Select",
+			"options": "\n".join(sampling.METHODS),
+			"default": sampling.FIXED,
+			"insert_after": "mds_stage",
+			"description": "A fixed sample size; every unit of the lot; or ISO 2859-1 single sampling for normal inspection, by the lot's size.",
+		},
+		{
 			"fieldname": "mds_sample_size",
 			"label": "Sample Size",
 			"fieldtype": "Int",
-			"insert_after": "mds_stage",
-			"description": "The fewest units an inspection examines.",
+			"insert_after": sampling.METHOD,
+			"depends_on": f"eval:!doc.{sampling.METHOD} || doc.{sampling.METHOD} == '{sampling.FIXED}'",
+			"description": "For a fixed sample size: the fewest units an inspection examines.",
+		},
+		{
+			"fieldname": sampling.LEVEL,
+			"label": "Inspection Level",
+			"fieldtype": "Select",
+			"options": "\n" + "\n".join(sampling.LEVELS),
+			"insert_after": "mds_sample_size",
+			"depends_on": f"eval:doc.{sampling.METHOD} == '{sampling.ISO_2859_1}'",
+			"description": "ISO 2859-1 inspection level; II unless the specification gives a reason for another.",
+		},
+		{
+			"fieldname": sampling.AQL,
+			"label": "AQL",
+			"fieldtype": "Select",
+			"options": "\n" + "\n".join(sampling.aqls()),
+			"insert_after": sampling.LEVEL,
+			"depends_on": f"eval:doc.{sampling.METHOD} == '{sampling.ISO_2859_1}'",
+			"description": "Acceptance quality limit, in percent nonconforming (above 10: nonconformities per 100 units).",
 		},
 		{
 			"fieldname": "mds_change_request",
 			"label": "Change Request for This Change",
 			"fieldtype": "Link",
 			"options": "Change Request",
-			"insert_after": "mds_sample_size",
+			"insert_after": sampling.AQL,
 			"no_copy": 1,
 			"description": "Once the specification is in use: the approved change request this change is made under. Named for each change.",
 		},
@@ -90,6 +127,59 @@ CUSTOM_FIELDS = {
 			"insert_after": "mds_change_request",
 			"read_only": 1,
 			"no_copy": 1,
+		},
+	],
+	"Quality Inspection": [
+		{
+			"fieldname": sampling.LOT_SIZE,
+			"label": "Lot Size",
+			"fieldtype": "Float",
+			"insert_after": "sample_size",
+			"read_only": 1,
+			"no_copy": 1,
+			"description": "Under a sampling plan: the lot's quantity in stock, or the job card's, as the system counts it.",
+		},
+		{
+			"fieldname": sampling.CODE_LETTER,
+			"label": "Sample Size Code Letter",
+			"fieldtype": "Data",
+			"insert_after": sampling.LOT_SIZE,
+			"read_only": 1,
+			"no_copy": 1,
+		},
+		{
+			"fieldname": sampling.ACCEPT,
+			"label": "Accept Number",
+			"fieldtype": "Int",
+			"insert_after": sampling.CODE_LETTER,
+			"read_only": 1,
+			"no_copy": 1,
+		},
+		{
+			"fieldname": sampling.REJECT,
+			"label": "Reject Number",
+			"fieldtype": "Int",
+			"insert_after": sampling.ACCEPT,
+			"read_only": 1,
+			"no_copy": 1,
+		},
+		{
+			"fieldname": sampling.EVERY,
+			"label": "Every Unit Inspected",
+			"fieldtype": "Check",
+			"insert_after": sampling.REJECT,
+			"read_only": 1,
+			"no_copy": 1,
+		},
+		{
+			"fieldname": sampling.NONCONFORMING,
+			"label": "Nonconforming Units Found",
+			"fieldtype": "Int",
+			"insert_after": sampling.EVERY,
+			"no_copy": 1,
+			"non_negative": 1,
+			"depends_on": f"eval:doc.{sampling.REJECT} !== null && doc.{sampling.REJECT} !== undefined && doc.{sampling.LOT_SIZE}",
+			"description": "Under a sampling plan: the units of the sample that do not conform. The lot is accepted only up to the accept number.",
 		},
 	],
 	"Item Quality Inspection Parameter": [
@@ -120,8 +210,14 @@ def missing_from(doc: Document) -> list[str]:
 		for field, label in (("mds_item", _("the item")), ("mds_stage", _("the inspection stage")))
 		if not doc.get(field)
 	]
-	if cint(doc.get("mds_sample_size")) < 1:
+	method = doc.get(sampling.METHOD) or sampling.FIXED
+	if method == sampling.FIXED and cint(doc.get("mds_sample_size")) < 1:
 		missing.append(_("the sample size"))
+	if method == sampling.ISO_2859_1:
+		if doc.get(sampling.LEVEL) not in sampling.LEVELS:
+			missing.append(_("the inspection level"))
+		if doc.get(sampling.AQL) not in sampling.aqls():
+			missing.append(_("the AQL"))
 	rows = doc.get(PARAMETERS) or []
 	if not rows:
 		missing.append(_("its parameters"))
@@ -171,7 +267,12 @@ def guard_template(doc: Document, method: str | None = None) -> None:
 	before = None if doc.is_new() else doc.get_doc_before_save()
 	was_specification = before is not None and not missing_from(before)
 	missing = missing_from(doc)
-	if missing and (was_specification or any(doc.get(field) for field in CONTROLLED_FIELDS)):
+	# A template begun as a specification states something of one; the sampling defaults to a
+	# fixed sample size on every template, so only another choice counts.
+	begun = any(doc.get(field) for field in CONTROLLED_FIELDS if field != sampling.METHOD) or (
+		doc.get(sampling.METHOD) not in (None, "", sampling.FIXED)
+	)
+	if missing and (was_specification or begun):
 		frappe.throw(
 			_("Specification {0} does not yet state {1}.").format(doc.name, ", ".join(missing)),
 			title=_("Specification incomplete"),
@@ -259,8 +360,12 @@ def choose_specification(doc: Document, method: str | None = None) -> None:
 			),
 			title=_("No specification"),
 		)
-	if not flt(doc.sample_size):
-		# The sample size comes from the specification; the inspector may sample more.
+	if (
+		not flt(doc.sample_size)
+		and (frappe.db.get_value(DOCTYPE, specification, sampling.METHOD) or sampling.FIXED) == sampling.FIXED
+	):
+		# The sample size comes from the specification; the inspector may sample more. Under a
+		# sampling plan it follows from the lot (sampling.apply_plan).
 		doc.sample_size = cint(frappe.db.get_value(DOCTYPE, specification, "mds_sample_size"))
 	if doc.quality_inspection_template == specification:
 		return
@@ -327,8 +432,11 @@ def check_against_specification(doc: Document, method: str | None = None) -> Non
 
 
 def check_sample_size(doc: Document, method: str | None = None) -> None:
-	"""Quality Inspection before_submit: at least the specification's sample size."""
+	"""Quality Inspection before_submit: at least the specification's sample size, or the plan's."""
 	if doc.inspection_type not in STAGE_OF_INSPECTION or not doc.quality_inspection_template:
+		return
+	if sampling.under_plan(doc):
+		sampling.check_plan_on_submit(doc)
 		return
 	required = cint(frappe.db.get_value(DOCTYPE, doc.quality_inspection_template, "mds_sample_size"))
 	if flt(doc.sample_size) < required:

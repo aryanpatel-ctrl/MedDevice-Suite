@@ -49,7 +49,7 @@
    "fieldname": "target_doctype",
    "fieldtype": "Select",
    "label": "Record Type",
-   "options": "\nControlled Document\nItem\nBOM\nRouting\nOperation\nWorkstation\nAsset\nSupplier\nCustomer\nQuality Inspection Template\nWarehouse"
+   "options": "\nControlled Document\nItem\nBOM\nRouting\nOperation\nWorkstation\nAsset\nSupplier\nCustomer\nQuality Inspection Template\nWarehouse\nQuality Settings"
   },
   {
    "fieldname": "target_name",
@@ -93,7 +93,7 @@
    "fieldname": "result_doctype",
    "fieldtype": "Select",
    "label": "Resulting Record Type",
-   "options": "\nControlled Document\nItem\nBOM\nRouting\nOperation\nWorkstation\nAsset\nSupplier\nCustomer\nQuality Inspection Template\nWarehouse\nDocument Revision",
+   "options": "\nControlled Document\nItem\nBOM\nRouting\nOperation\nWorkstation\nAsset\nSupplier\nCustomer\nQuality Inspection Template\nWarehouse\nQuality Settings\nDocument Revision",
    "read_only": 1,
    "allow_on_submit": 1
   },

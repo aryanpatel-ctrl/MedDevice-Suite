@@ -6,6 +6,7 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import today
 
+from meddevice_suite.compliance import quality_settings
 from meddevice_suite.compliance.audit import same
 from meddevice_suite.qms.change_control import IMPACT_AREAS, in_business_job, is_qa
 
@@ -67,10 +68,21 @@ class ChangeRequest(Document):
 		self.status = "Draft"
 		for field in SET_BY_CHANGE_CONTROL:
 			self.set(field, None)
-		self.effectiveness_check_days = self.meta.get_field("effectiveness_check_days").default
+		# Quality Settings (URS-PLT-012); the assessor may set another number of days.
+		self.effectiveness_check_days = quality_settings.value("default_effectiveness_check_days")
 		for row in self.actions:
 			for field in COMPLETION_FIELDS:
 				row.set(field, 0 if field == "done" else None)
+
+	def before_validate(self) -> None:
+		"""A settings record (a single DocType) is named by its type: it has no other name."""
+		for table, type_field, name_field in (
+			("affected_records", "reference_doctype", "reference_name"),
+			("actions", "target_doctype", "target_name"),
+		):
+			for row in self.get(table) or []:
+				if row.get(type_field) and frappe.get_meta(row.get(type_field)).issingle:
+					row.set(name_field, row.get(type_field))
 
 	def validate(self) -> None:
 		if self.is_new() or self.flags.change_control:

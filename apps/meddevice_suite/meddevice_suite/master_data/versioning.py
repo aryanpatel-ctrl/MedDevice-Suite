@@ -288,11 +288,12 @@ def version_master(doc: Document, method: str | None = None) -> None:
 		doc.flags.variant_update_from = before
 	touched = changed_fields(doc, before)
 	if doc.doctype == "Item" and before.get(APPROVAL_STATUS) != APPROVED and not before.get("has_variants"):
-		# An item held before the item master (module 1) gets its type, storage and device data
-		# once, before QA approves it, as a specification made before control gets its first issue.
-		# Only what was never filled: 0 is a value (0 °C), and a template passes its data to
-		# variants that may be approved.
-		touched = [f for f in touched if not (f in ITEM_DEVICE_FIELDS and never_filled(before, f))]
+		# An item held before the item master (module 1) is completed once, before QA approves it,
+		# as a specification made before control gets its first issue: its type, storage and
+		# device data and its specification where never filled (0 is a value, 0 °C), and its
+		# inspection switched on, never off. Not a template: it passes its data to variants that
+		# may be approved.
+		touched = [f for f in touched if not completed_before_approval(doc, before, f)]
 	# A request counts only when named with the change, not one left on the record before.
 	named = (
 		doc.get(CHANGE_REQUEST)
@@ -320,6 +321,19 @@ def version_master(doc: Document, method: str | None = None) -> None:
 			require_approved_change(request, "BOM", displaced)
 			doc.flags.displaces = (displaced, request)
 	record_change(doc, request)
+
+
+# What an item held before the item master may be given once, before QA approves it.
+FILLED_BEFORE_APPROVAL = (*ITEM_DEVICE_FIELDS, "quality_inspection_template")
+SWITCHED_ON_BEFORE_APPROVAL = ("inspection_required_before_purchase", "inspection_required_before_delivery")
+
+
+def completed_before_approval(doc: Document, before: Document, field: str) -> bool:
+	if field in FILLED_BEFORE_APPROVAL:
+		return never_filled(before, field)
+	if field in SWITCHED_ON_BEFORE_APPROVAL:
+		return not cint(before.get(field)) and bool(cint(doc.get(field)))
+	return False
 
 
 def never_filled(doc: Document, field: str) -> bool:

@@ -14,7 +14,7 @@
    "fieldname": "reference_doctype",
    "fieldtype": "Select",
    "label": "Record Type",
-   "options": "Controlled Document\nItem\nBOM\nRouting\nOperation\nWorkstation\nAsset\nSupplier\nCustomer\nQuality Inspection Template\nWarehouse",
+   "options": "Controlled Document\nItem\nBOM\nRouting\nOperation\nWorkstation\nAsset\nSupplier\nCustomer\nQuality Inspection Template\nWarehouse\nQuality Settings",
    "reqd": 1,
    "in_list_view": 1,
    "columns": 3
