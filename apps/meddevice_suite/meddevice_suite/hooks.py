@@ -22,6 +22,11 @@ after_migrate = "meddevice_suite.setup.install.apply_configuration"
 # Test sites only: the stores the tests move stock through, approved as QA's signed act records it.
 before_tests = "meddevice_suite.qa.site_setup.approve_test_stores"
 
+# The built-in Administrator account is not used on a working site (URS-CMP-039): refused at
+# sign-in, before a session is made, and on every request after the session or API key is read.
+on_login = "meddevice_suite.compliance.administrator.refuse_administrator_login"
+auth_hooks = ["meddevice_suite.compliance.administrator.refuse_administrator_requests"]
+
 doc_events = {
 	"*": {
 		# Audit trail: each handler returns at once for record types that are not regulated.
