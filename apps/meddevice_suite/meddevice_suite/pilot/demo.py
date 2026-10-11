@@ -218,6 +218,17 @@ def load_demo_data() -> None:
 				for index, (operation, workstation, minutes) in enumerate(steps, 1)
 			],
 		)
+	from meddevice_suite.pilot.documents import approve_production_masters
+	from meddevice_suite.pilot.flow import as_job  # the flow builds on this module
+
+	# Module 3: each operation with its work instruction; QA approves them and the routings.
+	approve_production_masters(
+		[(operation, workstation) for steps in ROUTINGS.values() for operation, workstation, _m in steps],
+		list(ROUTINGS),
+		as_job,
+		demo_user_email,
+		password,
+	)
 	for code, (_name, _hsn, _rate, line, materials) in PRODUCTS.items():
 		ensure_bom(code, line, materials, company)
 

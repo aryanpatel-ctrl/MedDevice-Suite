@@ -59,6 +59,9 @@ def apply_lockout() -> None:
 SIGNED_CONTENT: dict[str, str] = {
 	"Item": "meddevice_suite.master_data.item_master.signed_content",
 	"Asset": "meddevice_suite.master_data.equipment.signed_content",
+	"Operation": "meddevice_suite.master_data.master_approval.signed_content",
+	"Workstation": "meddevice_suite.master_data.master_approval.signed_content",
+	"Routing": "meddevice_suite.master_data.master_approval.signed_content",
 }
 
 SYSTEM_MAINTAINED: dict[str, tuple[str, ...]] = {

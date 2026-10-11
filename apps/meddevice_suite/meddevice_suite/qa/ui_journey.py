@@ -22,7 +22,8 @@ Only the Administrator who runs the tests prepares the journey. Any signed-in us
 for the lots of a stock transaction they may read, which the browser checks after each step.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 
 import frappe
 from frappe import _
@@ -84,7 +85,7 @@ def prepare_journey(password: str | None = None) -> dict:
 	if frappe.session.user != "Administrator":
 		frappe.throw(_("The browser journey is prepared only by the Administrator."), frappe.PermissionError)
 
-	ensure_masters(approve_as_qa(password), approve_as_qa(password, "Asset"))
+	ensure_masters(approve_as_qa(password), approve_as_qa(password, "Asset"), password)
 	write_off_leftover_stock()
 	return {
 		"instrument": ensure_inspection_masters(
@@ -142,7 +143,9 @@ def approve_as_qa(password: str | None, doctype: str = "Item") -> Callable[[str]
 
 
 def ensure_masters(
-	approve: Callable[[str], None], approve_equipment: Callable[[str], None] | None = None
+	approve: Callable[[str], None],
+	approve_equipment: Callable[[str], None] | None = None,
+	password: str | None = None,
 ) -> None:
 	ensure_inspection_masters(COMPANY, approve, approve_equipment)  # the parameters the templates below name
 	ensure(
@@ -184,7 +187,34 @@ def ensure_masters(
 			for index, (operation, workstation, minutes) in enumerate(OPERATIONS, 1)
 		],
 	)
+	if password:  # module 3: QA approves the operations, with their work instructions, and the routing
+		from meddevice_suite.pilot.documents import approve_production_masters
+
+		approve_production_masters(
+			[(operation, workstation) for operation, workstation, _minutes in OPERATIONS],
+			[ROUTING],
+			lambda profile: acting_as(email_for(profile)),
+			email_for,
+			password,
+		)
 	ensure_bom(PRODUCT, ROUTING, {code: details[5] for code, details in RAW_MATERIALS.items()}, COMPANY)
+
+
+@contextmanager
+def acting_as(user: str) -> Iterator[None]:
+	"""Act as a journey job user, then return to the Administrator who prepares the journey.
+
+	frappe.set_user rewrites the request's session in place (its sid becomes the user name, its
+	data is emptied); that same object is what Frappe saves for the browser's sid when the request
+	ends, so it is restored in place, not replaced."""
+	saved = dict(frappe.local.session)
+	frappe.set_user(user)  # nosemgrep: frappe-setuser - test site, Administrator only
+	try:
+		yield
+	finally:
+		frappe.set_user(saved["user"])  # nosemgrep: frappe-setuser - back to the Administrator
+		frappe.local.session.clear()
+		frappe.local.session.update(saved)
 
 
 def write_off_leftover_stock() -> None:

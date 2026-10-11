@@ -929,6 +929,13 @@ source = "DFD 9D Equipment Management (D2 history card, D5 performance tracking)
 status = "implemented"
 
 [[requirement]]
+id = "URS-MST-012"
+module = 3
+title = "Each operation, workstation and routing is approved by QA with an electronic signature before it is used, and that signature is the only way it becomes approved: an operation only when it names its work instruction, an effective controlled document of type Work Instruction, and states whether it carries an in-process check; a workstation only when every piece of equipment at it is approved; a routing only when each of its operations and their workstations is approved; a bill of materials with an unapproved routing, operation or workstation is not submitted, and no work order or job card is made on an unapproved operation or workstation; once approved, what QA approved changes only under an approved change request."
+source = "Master plan section 3 (masters are created in draft, reviewed and approved by the responsible role before they can be used in a transaction; Routing holds the operation sequence, the work center, machine and the in-process checks attached to each operation), section 6 (every operation carries its in-process checks), stage 3 (released only when BOM and routing are approved versions); DFD D2 (all masters are version controlled and linked with Document Control) and D3 Item / BOM / Routing Master; user's decision of 2026-10-11 to follow the requirement rather than use these masters as is; ISO 13485 4.2.4, 7.5.1; 21 CFR 820.70(a), 11.50, 11.70; the in-process check values stay on the item's in-process specification (module 6), enforcing the check at the job card is module 20"
+status = "implemented"
+
+[[requirement]]
 id = "URS-PLT-010"
 module = 0
 title = "The pilot's standard flow performs the certificate check, incoming inspection and signed release of every received lot, and the signed release of the finished lot, by the QC Inspector and QA Manager demo users, in place of the stand-in transfer to the approved store, in both the server and the browser journey."

@@ -42,6 +42,9 @@ from meddevice_suite.master_data.equipment import CONTROLLED_FIELDS as EQUIPMENT
 from meddevice_suite.master_data.equipment import approved as equipment_approved
 from meddevice_suite.master_data.item_master import APPROVAL_STATUS, APPROVED, UNSET_WHEN_ZERO
 from meddevice_suite.master_data.item_master import CONTROLLED_FIELDS as ITEM_DEVICE_FIELDS
+from meddevice_suite.master_data.master_approval import APPROVAL_STATUS as MASTER_APPROVAL
+from meddevice_suite.master_data.master_approval import APPROVED as MASTER_APPROVED
+from meddevice_suite.master_data.master_approval import approved as master_approved
 from meddevice_suite.qms.change_control import require_approved_change
 
 VERSION, EFFECTIVE_FROM = "mds_version", "mds_effective_from"
@@ -84,6 +87,11 @@ class Master:
 	in_use: Callable[[Document], bool] = lambda doc: False
 
 
+# Fields a later module added to a master, filled in once before QA approves it.
+FIRST_ISSUE_FIELDS: dict[str, tuple[str, ...]] = {
+	"Operation": ("mds_work_instruction", "mds_in_process_check"),
+}
+
 MASTERS: dict[str, Master] = {
 	"Item": Master(
 		fields=(
@@ -111,22 +119,33 @@ MASTERS: dict[str, Master] = {
 	),
 	# A submitted bill of materials keeps its lines; which one is in force changes under control.
 	"BOM": Master(fields=("is_active", "is_default"), in_use=lambda doc: doc.docstatus == 1),
+	# Module 3: also in use once QA has approved it (master_data/routing.py).
 	"Routing": Master(
 		fields=("disabled",),
 		tables={
 			"operations": ("operation", "workstation", "workstation_type", "time_in_mins", "sequence_id")
 		},
-		in_use=lambda doc: submitted("BOM", routing=doc.name),
+		in_use=lambda doc: submitted("BOM", routing=doc.name) or master_approved("Routing", doc.name),
 	),
 	"Operation": Master(
-		fields=("workstation", "is_corrective_operation", "quality_inspection_template", "batch_size"),
+		fields=(
+			"workstation",
+			"is_corrective_operation",
+			"quality_inspection_template",
+			"batch_size",
+			"mds_work_instruction",
+			"mds_in_process_check",
+		),
+		tables={"sub_operations": ("operation", "time_in_mins")},  # its steps (module 3)
 		in_use=lambda doc: submitted("BOM Operation", operation=doc.name)
-		or submitted("Job Card", operation=doc.name),
+		or submitted("Job Card", operation=doc.name)
+		or master_approved("Operation", doc.name),
 	),
 	"Workstation": Master(
 		fields=("workstation_type", "production_capacity", "warehouse", "disabled"),
 		in_use=lambda doc: submitted("BOM Operation", workstation=doc.name)
-		or submitted("Job Card", workstation=doc.name),
+		or submitted("Job Card", workstation=doc.name)
+		or master_approved("Workstation", doc.name),
 	),
 	"Supplier": Master(
 		# Not the GSTIN: India Compliance sets it from the party's address straight in the database
@@ -293,6 +312,13 @@ def version_master(doc: Document, method: str | None = None) -> None:
 		# Only what was never filled: 0 is a value (0 °C), and a template passes its data to
 		# variants that may be approved.
 		touched = [f for f in touched if not (f in ITEM_DEVICE_FIELDS and never_filled(before, f))]
+	elif doc.doctype in FIRST_ISSUE_FIELDS and before.get(MASTER_APPROVAL) != MASTER_APPROVED:
+		# The same for a master held before the module that added these fields: they are filled in
+		# once, before QA approves it, without a change request (module 3: an operation's work
+		# instruction and in-process check).
+		touched = [
+			f for f in touched if not (f in FIRST_ISSUE_FIELDS[doc.doctype] and never_filled(before, f))
+		]
 	# A request counts only when named with the change, not one left on the record before.
 	named = (
 		doc.get(CHANGE_REQUEST)
