@@ -35,5 +35,8 @@ frappe.ui.form.on("Risk Management Report", {
 		if (status === "Awaiting Approval" && qa) {
 			offer(__("Return for Changes"), "Return", "Rejected", { ask_reason: true });
 		}
+		if (["Draft", "Awaiting Approval"].includes(status) && qa) {
+			offer(__("Withdraw"), "Withdraw", "Rejected", { ask_reason: true });
+		}
 	},
 });

@@ -492,6 +492,23 @@ class TestControls(RiskTestCase):
 			)
 			self.draft_assessment(controls=[item])
 
+	def test_an_item_is_a_design_element_in_itself(self):
+		"""An item or a bill of materials is an inherently safe design control (plan Q6); only a
+		document must be a Specification."""
+		item = self.control(
+			self.finished_good(),
+			option=rm.INHERENT,
+			control_doctype="Item",
+			implementation_evidence=self.plan_document,
+		)
+		self.assertEqual(self.draft_assessment(controls=[item]).controls[0].control_doctype, "Item")
+
+	def test_a_risk_is_reduced_only_by_a_control(self):
+		lowered = self.hazard(severity=2, probability=2, residual_severity=1, residual_probability=1)
+		assessment = self.draft_assessment(hazards=[lowered], controls=[])
+		with self.assertRaisesRegex(frappe.ValidationError, "reduced only by a risk control measure"):
+			self.sign_as(self.qa, rm.ASSESSMENT, assessment.name, "Author")
+
 	def test_control_not_in_force_blocks(self):
 		draft_spec = self.registered("Specification")
 		control = self.control(draft_spec, implementation_evidence=self.plan_document)
@@ -581,6 +598,23 @@ class TestEvidenceAndResidualRisk(RiskTestCase):
 
 @verifies("URS-QMS-022")
 class TestSignatures(RiskTestCase):
+	def test_what_the_author_signed_is_what_is_approved(self):
+		"""A policy brought into force after the author signed is not taken silently: the scores the
+		author and reviewer signed for stay, and approval asks for the revision to be authored again."""
+		assessment = self.through(self.draft_assessment(), (self.qa, "Author"), (self.supervisor, "Review"))
+		signed_policy = assessment.policy
+		stricter = {cell: rm.UNACCEPTABLE if cell != (1, 1) else rm.ACCEPTABLE for cell in STANDARD}
+		self.approved_policy(stricter)
+		frappe.set_user(self.qa)
+		try:
+			frappe.get_doc(rm.ASSESSMENT, assessment.name).save()  # a save with nothing changed
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual(frappe.db.get_value(rm.ASSESSMENT, assessment.name, "policy"), signed_policy)
+		with self.assertRaisesRegex(frappe.ValidationError, "policy has changed"):
+			self.sign_as(self.qa2, rm.ASSESSMENT, assessment.name, "Approve")
+		self.approved_policy()  # the standard policy again, for the other tests
+
 	def test_three_distinct_signers(self):
 		assessment = self.draft_assessment(reviewer=None)
 		frappe.set_user(self.qa)
@@ -847,6 +881,38 @@ class TestReviews(RiskTestCase):
 			frappe.db.get_value(rm.FILE, file, "next_periodic_review"), getdate(add_months(today(), 6))
 		)
 
+	def test_no_change_is_refused_while_the_control_is_out_of_force(self):
+		spec = self.effective()
+		file = self.approved(controls=[self.control(spec)]).risk_management_file
+		self.sign_as(self.qa, "Controlled Document", spec, "Withdraw", "Replaced by the new balloon design")
+		(review,) = self.reviews(file)
+		with self.assertRaisesRegex(frappe.ValidationError, "no longer in force"):
+			self.sign_as(self.qa2, rm.REVIEW, review.name, "Close: No Change", "Nothing to change")
+
+	def test_a_withdrawn_draft_no_longer_holds_the_file_or_its_review(self):
+		file = self.approved().risk_management_file
+		review = rm.raise_review(file, rm.CAPA, "Item", self.finished_good())
+		frappe.set_user(self.qa)
+		try:
+			stuck = rm.start_revision(file, risk_review=review)
+		finally:
+			frappe.set_user("Administrator")
+		with self.assertRaisesRegex(frappe.ValidationError, "withdraw it before closing"):
+			self.sign_as(self.qa2, rm.REVIEW, review, "Close: No Change", "No change after all")
+		with self.assertRaises(frappe.PermissionError):
+			self.sign_as(self.supervisor, rm.ASSESSMENT, stuck, "Withdraw", "Author left")
+		with self.assertRaisesRegex(frappe.ValidationError, "Say why"):
+			self.sign_as(self.qa2, rm.ASSESSMENT, stuck, "Withdraw")
+		self.sign_as(self.qa2, rm.ASSESSMENT, stuck, "Withdraw", "The CAPA found nothing to change")
+		self.assertEqual(
+			frappe.db.get_value(rm.ASSESSMENT, stuck, ["status", "docstatus"]), (rm.WITHDRAWN, 0)
+		)
+		closed = self.sign_as(
+			self.qa2, rm.REVIEW, review, "Close: No Change", "The CAPA found nothing to change"
+		)
+		self.assertEqual(closed.status, rm.CLOSED)
+		self.assertIsNone(rm.revision_in_progress(file))
+
 	def test_no_change_needs_rationale(self):
 		file = self.approved().risk_management_file
 		review = rm.raise_review(file, rm.COMPLAINT, "Item", self.finished_good())
@@ -942,14 +1008,14 @@ class TestPermissionsAndRegistration(RiskTestCase):
 
 	def test_the_signed_acts_are_declared(self):
 		acts = {key: act for key, act in SIGNING_ACTIONS.items() if key[0].startswith("Risk ")}
-		self.assertEqual(len(acts), 11)
+		self.assertEqual(len(acts), 13)  # with Withdraw on an unfinished revision and report
 		for (doctype, action), act in acts.items():
 			with self.subTest(doctype=doctype, action=action):
 				self.assertIn(act.meaning, MEANINGS)
 				self.assertTrue(callable(frappe.get_attr(act.perform)))
 		self.assertIn("superseded_by", SYSTEM_MAINTAINED[rm.ASSESSMENT])
 
-	def test_kept_ten_years_and_audited(self):
+	def test_kept_ten_years(self):
 		for doctype in (rm.POLICY, rm.FILE, rm.ASSESSMENT, rm.REPORT, rm.REVIEW):
 			with self.subTest(doctype=doctype):
 				self.assertGreaterEqual(retention_years(doctype), 10)
