@@ -350,6 +350,23 @@ class TestUse(RoutingTestCase):
 			}
 		).insert()
 
+	def approved_bill(self, product: str) -> str:
+		"""An approved bill of the product without operations: a work order is made only from one
+		(module 2), so the operations a test gives the order are what is checked."""
+		material = lot_item(f"MDS-RT-M-{self.suffix()}")
+		approve_for_test(material)
+		bill = frappe.get_doc(
+			{
+				"doctype": "BOM",
+				"item": product,
+				"company": company(),
+				"quantity": 1,
+				"rm_cost_as_per": "Valuation Rate",
+				"items": [{"item_code": material, "qty": 1, "rate": 1}],
+			}
+		).insert()
+		return submit_bom_for_test(bill).name
+
 	def test_a_bill_of_materials_is_submitted_only_on_approved_masters(self):
 		ws = self.workstation()
 		op = self.operation(ws)
@@ -364,12 +381,14 @@ class TestUse(RoutingTestCase):
 		op = self.operation(ws)
 		product = lot_item(f"MDS-RT-WO-{self.suffix()}", "Products")
 		approve_for_test(product)
+		bill = self.approved_bill(product)
 		for skipped in (False, True):
 			with self.subTest(validation_skipped=skipped):
 				order = frappe.get_doc(
 					{
 						"doctype": "Work Order",
 						"production_item": product,
+						"bom_no": bill,
 						"company": company(),
 						"qty": 1,
 						"operations": [{"operation": op, "workstation": ws, "time_in_mins": 10}],
@@ -435,6 +454,7 @@ class TestUse(RoutingTestCase):
 		unapproved_op = self.operation()
 		product = lot_item(f"MDS-RT-WV-{self.suffix()}", "Products")
 		approve_for_test(product)
+		bill = self.approved_bill(product)
 
 		def refetch(order):
 			order.append("operations", {"operation": unapproved_op, "workstation": ws, "time_in_mins": 5})
@@ -446,6 +466,7 @@ class TestUse(RoutingTestCase):
 				{
 					"doctype": "Work Order",
 					"production_item": product,
+					"bom_no": bill,
 					"company": company(),
 					"qty": 1,
 					"wip_warehouse": store("Work In Progress"),
@@ -489,6 +510,7 @@ class TestUse(RoutingTestCase):
 			{
 				"doctype": "Work Order",
 				"production_item": product,
+				"bom_no": self.approved_bill(product),
 				"company": company(),
 				"qty": 1,
 				"operations": [{"operation": op, "workstation": ws, "time_in_mins": 10}],  # no step rows
