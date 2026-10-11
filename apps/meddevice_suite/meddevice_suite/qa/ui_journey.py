@@ -6,7 +6,8 @@ The browser walks the standard flow through the real screens, signed in as each 
 qa/site_setup.py but none of the pilot's demo data, and the pilot's loader never runs
 there; these helpers make what the journey needs instead, every record named "UIJ": a
 product and its raw materials, batch-tracked with a shelf life, a supplier, a customer, the
-quarantine store, a short routing with its workstations and the product's default BOM. Each
+quarantine store, a short routing with its workstations, the product's default BOM and its
+device master record (module 31), drafted by the Production Supervisor and approved by QA. Each
 item is approved by the run's QA Manager user with a signature (module 1), with the password
 the browser was given for the run. The site's defaults (company, price lists, stores) are left
 as they are.
@@ -63,6 +64,7 @@ RAW_MATERIALS: dict[str, tuple[str, str, str, int, float, float]] = {
 	"UIJ-RM-POUCH": ("Peel pouch, sterile barrier (browser test)", "Nos", "39232990", 1825, 1.8, 100),
 }
 ROUTING = "UIJ Catheter Line"
+LABELLING_TITLE = "UIJ labelling and instructions for use"
 # (operation, workstation, minutes per batch of 100), in process order
 OPERATIONS = (
 	("UIJ Moulding", "UIJ Moulding Station", 20),
@@ -129,6 +131,10 @@ def prepare_journey(password: str | None = None) -> dict:
 			"finished_goods": store("Finished Goods"),
 		},
 		"bom": frappe.db.get_value("BOM", {"item": PRODUCT, "is_default": 1, "docstatus": 1}),
+		# Module 31: the record the work order is submitted on.
+		"device_master_record": frappe.db.get_value(
+			"Device Master Record", {"item": PRODUCT, "status": "Current", "docstatus": 1}
+		),
 		"operations": [operation for operation, _workstation, _minutes in OPERATIONS],
 		"operator": frappe.db.get_value(
 			"Employee", {"user_id": email_for("Operator")}
@@ -245,6 +251,16 @@ def ensure_masters(
 	ensure_bom(
 		PRODUCT, ROUTING, {code: details[5] for code, details in RAW_MATERIALS.items()}, COMPANY, approve_bom
 	)
+	if password:  # module 31: the product's device master record, Current before production
+		from meddevice_suite.pilot.device_master import ensure_device_master_record
+
+		ensure_device_master_record(
+			PRODUCT,
+			lambda profile: acting_as(email_for(profile)),
+			email_for,
+			password,
+			LABELLING_TITLE,
+		)
 
 
 def write_off_leftover_stock() -> None:
@@ -487,6 +503,124 @@ def ensure_second_qa(password: str) -> str:
 		user.save(ignore_permissions=True)  # test-site set-up by the Administrator, checked by the caller
 	update_password(email, password)
 	return email
+
+
+# The browser's device master record (module 31): a product of its own on the journey's routing and
+# materials, so that revising its specification leaves the standard flow's product as it is.
+DMR_PRODUCT = "UIJ-DMR-FC-2W-SIL-14"
+DMR_PRODUCT_DETAILS = ("Foley catheter, 2-way, silicone, 14 Fr (browser test)", "90183910", 95, 1825)
+
+
+@frappe.whitelist(methods=["POST"])
+def prepare_device_master_record(password: str) -> dict:
+	"""A draft revision of the browser product's device master record, drafted and completed by the
+	Production Supervisor, for the browser to sign as its author and approve as QA (module 31): the
+	product approved with its specifications, its approved default bill of materials on the
+	journey's routing, and an effective Packaging and Labelling document. A revision left in progress
+	by an earlier run is withdrawn by QA first. Returns {"record", "item", "specification"}."""
+	from meddevice_suite.pilot.device_master import fill
+	from meddevice_suite.pilot.documents import ensure_work_instruction
+	from meddevice_suite.pilot.inspection import ensure_in_process_specification
+	from meddevice_suite.qms import device_master_record as dmr
+
+	ensure_test_site()
+	if frappe.session.user != "Administrator":
+		frappe.throw(_("The browser journey is prepared only by the Administrator."), frappe.PermissionError)
+	approve, approve_bom = approve_as_qa(password), approve_as_qa(password, "BOM")
+	ensure_masters(approve, approve_bom, approve_as_qa(password, "Asset"), password)
+	name, hsn, _rate, shelf_life = DMR_PRODUCT_DETAILS
+	ensure_item(DMR_PRODUCT, name, "Products", "Nos", hsn, shelf_life, COMPANY, store("Finished Goods"))
+	specification = ensure_inspection_template(DMR_PRODUCT, "Products")
+	approve(DMR_PRODUCT)
+	ensure_bom(
+		DMR_PRODUCT,
+		ROUTING,
+		{code: details[5] for code, details in RAW_MATERIALS.items()},
+		COMPANY,
+		approve_bom,
+	)
+	ensure_in_process_specification(DMR_PRODUCT)
+	act_as = lambda profile: acting_as(email_for(profile))  # noqa: E731
+	labelling = ensure_work_instruction(
+		LABELLING_TITLE, act_as, email_for, password, "Packaging and Labelling"
+	)
+	if in_progress := dmr.revision_in_progress(DMR_PRODUCT):
+		with acting_as(email_for("QA Manager")):
+			dmr.withdraw(
+				frappe.get_doc(dmr.DOCTYPE, in_progress),
+				password=password,
+				reason="Left in progress by an earlier browser run",
+			)
+	with acting_as(email_for("Production Supervisor")):
+		record = dmr.revise(DMR_PRODUCT)
+		fill(frappe.get_doc(dmr.DOCTYPE, record), labelling)
+	return {"record": record, "item": DMR_PRODUCT, "specification": specification}
+
+
+@frappe.whitelist(methods=["POST"])
+def revise_dmr_specification(password: str) -> dict:
+	"""The browser product's final specification changed under an approved change request, as the
+	jobs do it: the Production Supervisor raises the request, QA assesses and approves it with
+	signatures and changes the specification under it (module 6), which puts the product's device
+	master record out of date (module 31). Returns {"change_request", "specification"}."""
+	from meddevice_suite.master_data.specification import FINAL, specification_for
+
+	ensure_test_site()
+	if frappe.session.user != "Administrator":
+		frappe.throw(_("The browser journey is prepared only by the Administrator."), frappe.PermissionError)
+	specification = specification_for(DMR_PRODUCT, FINAL)
+	change = approved_change_request("Quality Inspection Template", specification, password)
+	with acting_as(email_for("QA Manager")):
+		doc = frappe.get_doc("Quality Inspection Template", specification)
+		row = doc.item_quality_inspection_parameter[-1]
+		row.max_value = 5.5 if row.max_value != 5.5 else 5.4  # wider, then back, run after run
+		doc.mds_change_request = change
+		doc.save()
+	return {"change_request": change, "specification": specification}
+
+
+def approved_change_request(record_type: str, record: str, password: str) -> str:
+	"""A minor change request listing the record, raised by the Production Supervisor and assessed
+	and approved by QA with signatures (module 36)."""
+	from meddevice_suite.qms import change_control
+
+	with acting_as(email_for("Production Supervisor")):
+		request = frappe.get_doc(
+			{
+				"doctype": "Change Request",
+				"title": f"Revise {record} (browser test)",
+				"change_type": "Product or BOM",
+				"description": "Acceptance limit widened (browser test).",
+				"reason": "Process capability study (browser test).",
+				"affected_records": [{"reference_doctype": record_type, "reference_name": record}],
+				"actions": [
+					{
+						"description": f"Revise {record}",
+						"action_owner": email_for("Production Supervisor"),
+						"due_date": today(),
+					}
+				],
+			}
+		).insert()
+		change_control.submit_for_assessment(request.name)
+	with acting_as(email_for("QA Manager")):
+		request = frappe.get_doc("Change Request", request.name)
+		request.update(
+			{
+				**dict.fromkeys(change_control.IMPACT_AREAS, "No"),
+				"impact_summary": "Limit widened within the validated range (browser test).",
+				"classification": "Minor",
+				"effectiveness_check_days": 90,
+			}
+		)
+		request.save()
+		change_control.assess(request, password=password, reason="Assessed (browser test)")
+		change_control.approve(
+			frappe.get_doc("Change Request", request.name),
+			password=password,
+			reason="Approved (browser test)",
+		)
+	return request.name
 
 
 @frappe.whitelist(methods=["POST"])

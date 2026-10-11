@@ -14,7 +14,9 @@ Loads the masters the pilot walk-through needs, for the site's default company:
 - one demo user per job profile, whose password comes from the site_config key
   "pilot_user_password", never from the code;
 - every item approved by the QA Manager's demo user with a signature (module 1), with a
-  fictional GTIN in the GS1 range for restricted circulation (20…), never a real one.
+  fictional GTIN in the GS1 range for restricted circulation (20…), never a real one;
+- each product's device master record, drafted and signed by the Production Supervisor and
+  approved by the QA Manager (module 31), so that it can be put into production.
 
 Everything is fictional and marked "(Demo)". Sterilization, QC release and batch
 release are not modelled here: they arrive as their own quality gates in Phases 3
@@ -256,6 +258,10 @@ def load_demo_data() -> None:
 	approve_bom = approve_as("QA Manager", password, "BOM")
 	for code, (_name, _hsn, _rate, line, materials) in PRODUCTS.items():
 		ensure_bom(code, line, materials, company, approve_bom)
+	from meddevice_suite.pilot.device_master import ensure_device_master_records
+
+	# Module 31: each product's device master record is Current before it is put into production.
+	ensure_device_master_records(list(PRODUCTS), as_job, demo_user_email, password)
 
 
 def ensure(doctype: str, existing: str, **values) -> None:

@@ -127,6 +127,9 @@ doc_events = {
 		# operations and workstations. Before validate, which Production Plan's work orders (saved
 		# without validation) pass through too, and module 3 again after ERPNext refetches operations.
 		"before_validate": [
+			# Module 31: a finished good is submitted only on its Current device master record, which
+			# pins the order's bill of materials (before_validate runs even when validation is skipped).
+			"meddevice_suite.qms.device_master_record.guard_work_order",
 			"meddevice_suite.lot_control.lot_status.guard_unvalidated_work_order",
 			"meddevice_suite.master_data.bom.guard_work_order",
 			"meddevice_suite.master_data.routing.guard_work_order",
@@ -135,7 +138,10 @@ doc_events = {
 			"meddevice_suite.lot_control.lot_status.guard_work_order",
 			"meddevice_suite.master_data.routing.guard_work_order",  # after ERPNext refetches operations
 		],
-		"before_submit": "meddevice_suite.qms.equipment_care.guard_work_order",  # modules 38 and 40
+		"before_submit": [
+			"meddevice_suite.qms.equipment_care.guard_work_order",  # modules 38 and 40
+			"meddevice_suite.qms.device_master_record.guard_work_order",  # module 31
+		],
 	},
 	# Calibration and maintenance are this app's signed records (module 38), not ERPNext's.
 	"Asset Maintenance": {"before_validate": "meddevice_suite.qms.calibration.refuse_erpnext_maintenance"},
@@ -248,7 +254,8 @@ doc_events = {
 		"on_trash": "meddevice_suite.master_data.specification.protect_template",
 		"on_update": "meddevice_suite.qms.pinned_records.on_pinned_change",  # module 39: pinned records
 	},
-	# Module 39: a controlled document revised or withdrawn, for the risk controls pinning it.
+	# Modules 39 and 31: a controlled document revised or withdrawn, for the risk controls and the
+	# device master records pinning it.
 	"Controlled Document": {"on_update": "meddevice_suite.qms.pinned_records.on_pinned_change"},
 	# Approved suppliers (module 4): orders only from approved suppliers, for approved items.
 	"Purchase Order": {

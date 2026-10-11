@@ -34,6 +34,7 @@ COUNTED = (
 	"Customer",
 	"User",
 	"Item Price",
+	"Device Master Record",
 )
 
 
@@ -120,6 +121,21 @@ class TestDemoData(PilotTestCase):
 				self.assertEqual(
 					[row.operation for row in bom.operations], [step[0] for step in ROUTINGS[line]]
 				)
+
+	@verifies("URS-QMS-031")
+	def test_every_product_can_be_put_into_production_on_its_current_device_master_record(self):
+		for code in PRODUCTS:
+			with self.subTest(product=code):
+				name = frappe.db.get_value(
+					"Device Master Record", {"item": code, "status": "Current", "docstatus": 1}
+				)
+				record = frappe.get_doc("Device Master Record", name)
+				bom = frappe.db.get_value("BOM", {"item": code, "is_default": 1, "docstatus": 1})
+				self.assertIn(
+					("BOM", bom), [(row.reference_doctype, row.reference_name) for row in record.elements]
+				)
+				self.assertEqual(record.author, demo_user_email("Production Supervisor"))
+				self.assertEqual(record.approver, demo_user_email("QA Manager"))
 
 	def test_each_job_has_a_demo_user_with_exactly_its_roles(self):
 		for profile, roles in JOB_PROFILES.items():

@@ -113,6 +113,31 @@ def work_instruction_for_test() -> str:
 	return doc.name
 
 
+def device_master_record_for_test(item: str) -> str:
+	"""A Current device master record of a finished good other modules' tests put into production
+	(module 31), recorded as QA's signed approval leaves it: its elements pinned from the live
+	records and the revision before it superseded, without the signatures or the completeness the
+	signed acts check. Drafting, signing and approving one is tested in
+	qms/test_device_master_record.py."""
+	from meddevice_suite.qms import device_master_record as dmr
+
+	current = dmr.current_record(item)
+	if current and not dmr.changes_since_approval(current):
+		return current
+	name = dmr.revision_in_progress(item)
+	doc = (
+		frappe.get_doc(dmr.DOCTYPE, name) if name else frappe.get_doc({"doctype": dmr.DOCTYPE, "item": item})
+	)
+	if doc.is_new():
+		doc.insert()
+	dmr.assemble(doc)
+	doc.status, doc.approver, doc.approved_on = dmr.CURRENT, "Administrator", now_datetime()
+	dmr.act(doc)
+	doc.submit()
+	dmr.supersede_previous(doc)
+	return doc.name
+
+
 def approve_equipment_for_test(asset: str) -> None:
 	"""QA's approval of a piece of equipment other modules' tests use (module 8), recorded as the
 	signed act records it; the act itself is tested in master_data/test_equipment.py."""

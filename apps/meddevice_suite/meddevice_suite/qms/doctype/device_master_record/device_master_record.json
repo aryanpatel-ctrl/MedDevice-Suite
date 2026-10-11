@@ -1,0 +1,387 @@
+{
+ "actions": [],
+ "creation": "2026-10-11 22:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "item",
+  "item_name",
+  "revision",
+  "status",
+  "column_break_device",
+  "device_class",
+  "sterile",
+  "udi_di",
+  "device_lifetime_years",
+  "section_revision",
+  "summary_of_change",
+  "supersedes",
+  "column_break_revision",
+  "superseded_by",
+  "out_of_date_since",
+  "section_headings",
+  "headings",
+  "section_documents",
+  "documents",
+  "section_elements",
+  "elements",
+  "section_signatures",
+  "author",
+  "column_break_people",
+  "approver",
+  "approved_on",
+  "amended_from"
+ ],
+ "fields": [
+  {
+   "fieldname": "item",
+   "fieldtype": "Link",
+   "label": "Finished Good",
+   "options": "Item",
+   "reqd": 1,
+   "set_only_once": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "item_name",
+   "fieldtype": "Data",
+   "label": "Item Name",
+   "fetch_from": "item.item_name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "revision",
+   "fieldtype": "Data",
+   "label": "Revision",
+   "read_only": 1,
+   "no_copy": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "Draft\nAwaiting Approval\nCurrent\nOut of Date\nSuperseded\nWithdrawn",
+   "default": "Draft",
+   "read_only": 1,
+   "no_copy": 1,
+   "allow_on_submit": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "column_break_device",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "device_class",
+   "fieldtype": "Data",
+   "label": "Device Class (MDR 2017)",
+   "fetch_from": "item.mds_device_class",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sterile",
+   "fieldtype": "Data",
+   "label": "Supplied Sterile",
+   "fetch_from": "item.mds_sterility",
+   "read_only": 1
+  },
+  {
+   "fieldname": "udi_di",
+   "fieldtype": "Data",
+   "label": "UDI Device Identifier (GTIN)",
+   "fetch_from": "item.mds_udi_di",
+   "read_only": 1
+  },
+  {
+   "fieldname": "device_lifetime_years",
+   "fieldtype": "Int",
+   "label": "Device lifetime (years)",
+   "fetch_from": "item.mds_device_lifetime_years",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_revision",
+   "fieldtype": "Section Break",
+   "label": "Revision"
+  },
+  {
+   "fieldname": "summary_of_change",
+   "fieldtype": "Small Text",
+   "label": "What Changed in This Revision",
+   "description": "Needed from the second revision on."
+  },
+  {
+   "fieldname": "supersedes",
+   "fieldtype": "Link",
+   "label": "Supersedes",
+   "options": "Device Master Record",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "column_break_revision",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "superseded_by",
+   "fieldtype": "Link",
+   "label": "Superseded By",
+   "options": "Device Master Record",
+   "read_only": 1,
+   "no_copy": 1,
+   "allow_on_submit": 1
+  },
+  {
+   "fieldname": "out_of_date_since",
+   "fieldtype": "Datetime",
+   "label": "Out of Date Since",
+   "read_only": 1,
+   "no_copy": 1,
+   "allow_on_submit": 1
+  },
+  {
+   "fieldname": "section_headings",
+   "fieldtype": "Section Break",
+   "label": "Medical device file (ISO 13485 4.2.3)"
+  },
+  {
+   "fieldname": "headings",
+   "fieldtype": "Table",
+   "label": "Headings",
+   "options": "Device Master Record Heading",
+   "cannot_add_rows": 1,
+   "cannot_delete_rows": 1
+  },
+  {
+   "fieldname": "section_documents",
+   "fieldtype": "Section Break",
+   "label": "Documents the author chooses",
+   "description": "Effective controlled documents: at least one Packaging and Labelling document, and the SOPs and other documents the device is made, checked or released by."
+  },
+  {
+   "fieldname": "documents",
+   "fieldtype": "Table",
+   "label": "Documents",
+   "options": "Device Master Record Document"
+  },
+  {
+   "fieldname": "section_elements",
+   "fieldtype": "Section Break",
+   "label": "Elements, pinned at their versions",
+   "description": "Filled by the system from the live records each time the draft is saved; nobody types a version."
+  },
+  {
+   "fieldname": "elements",
+   "fieldtype": "Table",
+   "label": "Elements",
+   "options": "Device Master Record Element",
+   "read_only": 1,
+   "cannot_add_rows": 1,
+   "cannot_delete_rows": 1
+  },
+  {
+   "fieldname": "section_signatures",
+   "fieldtype": "Section Break",
+   "label": "Signatures"
+  },
+  {
+   "fieldname": "author",
+   "fieldtype": "Link",
+   "label": "Author",
+   "options": "User",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "column_break_people",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "approver",
+   "fieldtype": "Link",
+   "label": "Approved By",
+   "options": "User",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "approved_on",
+   "fieldtype": "Datetime",
+   "label": "Approved On",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "options": "Device Master Record",
+   "hidden": 1,
+   "read_only": 1,
+   "no_copy": 1,
+   "print_hide": 1,
+   "search_index": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-10-11 22:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "QMS",
+ "name": "Device Master Record",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "role": "Quality Manager",
+   "select": 1,
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "delete": 0,
+   "email": 0,
+   "import": 0,
+   "share": 0,
+   "report": 1,
+   "print": 1,
+   "export": 1
+  },
+  {
+   "role": "Manufacturing User",
+   "select": 1,
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "delete": 0,
+   "email": 0,
+   "import": 0,
+   "share": 0,
+   "report": 1,
+   "print": 1,
+   "export": 0
+  },
+  {
+   "role": "QC Inspector",
+   "select": 1,
+   "read": 1,
+   "write": 0,
+   "create": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "delete": 0,
+   "email": 0,
+   "import": 0,
+   "share": 0,
+   "report": 1,
+   "print": 1,
+   "export": 0
+  },
+  {
+   "role": "Manufacturing Manager",
+   "select": 1,
+   "read": 1,
+   "write": 0,
+   "create": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "delete": 0,
+   "email": 0,
+   "import": 0,
+   "share": 0,
+   "report": 1,
+   "print": 1,
+   "export": 0
+  },
+  {
+   "role": "Sales Manager",
+   "select": 1,
+   "read": 1,
+   "write": 0,
+   "create": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "delete": 0,
+   "email": 0,
+   "import": 0,
+   "share": 0,
+   "report": 1,
+   "print": 1,
+   "export": 0
+  },
+  {
+   "role": "Purchase Manager",
+   "select": 1,
+   "read": 1,
+   "write": 0,
+   "create": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "delete": 0,
+   "email": 0,
+   "import": 0,
+   "share": 0,
+   "report": 1,
+   "print": 1,
+   "export": 0
+  },
+  {
+   "role": "Stock Manager",
+   "select": 1,
+   "read": 1,
+   "write": 0,
+   "create": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "delete": 0,
+   "email": 0,
+   "import": 0,
+   "share": 0,
+   "report": 1,
+   "print": 1,
+   "export": 0
+  },
+  {
+   "role": "System Manager",
+   "select": 1,
+   "read": 1,
+   "write": 0,
+   "create": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "delete": 0,
+   "email": 0,
+   "import": 0,
+   "share": 0,
+   "report": 1,
+   "print": 1,
+   "export": 0
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0,
+ "is_submittable": 1,
+ "naming_rule": "By script",
+ "title_field": "item_name",
+ "search_fields": "item,revision,status",
+ "default_print_format": "Device Master Record",
+ "description": "The medical device file of a finished good (module 31; ISO 13485 4.2.3, 21 CFR 820.181): its headings and every record it is made, checked and labelled by, pinned at the versions QA approved."
+}

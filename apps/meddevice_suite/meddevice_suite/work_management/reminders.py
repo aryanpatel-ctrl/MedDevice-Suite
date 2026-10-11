@@ -455,6 +455,23 @@ def regulatory_licences_due() -> Iterator[Due]:
 		)
 
 
+def dmr_reapprovals_due() -> Iterator[Due]:
+	"""Each device master record out of date, from the day it went out of date until QA approves the
+	revision that supersedes it, or withdraws it; due within the days QA sets (module 31)."""
+	from meddevice_suite.qms import device_master_record
+
+	for row in device_master_record.reapprovals_due(quality_settings.value("dmr_reapproval_days")):
+		yield Due(
+			device_master_record.DOCTYPE,
+			row.name,
+			row.due_date,
+			_("Device master record {0} of {1} is out of date: approve a new revision").format(
+				row.name, row.item_name or row.item
+			),
+			(QA_ROLE,),
+		)
+
+
 # category -> what is due now (module that owns the record)
 CATEGORIES: dict[str, Callable[[], Iterator[Due]]] = {
 	"Lot Expiry": lots_expiring,  # module 18
@@ -472,6 +489,7 @@ CATEGORIES: dict[str, Callable[[], Iterator[Due]]] = {
 	"Training Due": training_due,  # module 37
 	"Risk Review": risk_reviews_open,  # module 39
 	"Regulatory Licence": regulatory_licences_due,  # module 41
+	"DMR Re-approval": dmr_reapprovals_due,  # module 31
 }
 
 

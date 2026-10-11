@@ -1,0 +1,29 @@
+{
+ "attach_print": 0,
+ "channel": "System Notification",
+ "condition_type": "Python",
+ "creation": "2026-10-11 22:00:00.000000",
+ "docstatus": 0,
+ "doctype": "Notification",
+ "document_type": "Device Master Record",
+ "enabled": 1,
+ "event": "Custom",
+ "idx": 0,
+ "is_standard": 1,
+ "message_type": "HTML",
+ "minutes_offset": 0,
+ "modified": "2026-10-11 22:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "QMS",
+ "name": "Device Master Record Out of Date",
+ "notification_message": "{{ _(\"Device master record {0} of {1} is out of date since {2}: a record it pins has a new version or is no longer in force. It is not used for production until QA approves a new revision; the changed elements are marked on the record.\").format(doc.name, doc.item, frappe.format_value(doc.out_of_date_since, {\"fieldtype\": \"Datetime\"})) }}",
+ "owner": "Administrator",
+ "recipients": [
+  {
+   "receiver_by_role": "Quality Manager"
+  }
+ ],
+ "send_system_notification": 0,
+ "send_to_all_assignees": 0,
+ "subject": "Device master record {{ doc.name }} of {{ doc.item }} is out of date"
+}

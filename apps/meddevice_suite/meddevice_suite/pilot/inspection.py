@@ -1,5 +1,5 @@
-"""Demo masters for incoming inspection (modules 6 and 16): an inspection template per
-item and one measuring instrument, for the pilot site and the test sites.
+"""Demo masters for inspection (modules 6 and 16): an inspection template per item, a product's
+in-process specification, and one measuring instrument, for the pilot site and the test sites.
 
 Parameter values are demo values marked as such; the client's specifications replace
 them as data under document control (decided 2026-10-08: ISO 20696 for Foley catheters,
@@ -28,6 +28,7 @@ PARAMETERS: dict[str, tuple[tuple[str, object], ...]] = {
 }
 # item group -> the stage its demo specification is for (module 6)
 STAGES = {"Raw Material": "Incoming", "Products": "Final"}
+IN_PROCESS_STAGE = "In Process"
 METHODS = {APPEARANCE: "Visual, under daylight (demo)", DIMENSION: "Digital caliper (demo)"}
 SAMPLE_SIZE = 5  # demo; the client's sampling plans (ISO 2859-1) replace it
 # The instrument's equipment master (module 8), demo values.
@@ -59,10 +60,8 @@ def ensure_inspection_masters(
 	return ensure_instrument(company, approve, approve_equipment)
 
 
-def ensure_inspection_template(item: str, group: str) -> str:
-	"""The item's demo specification (module 6), set on the item; returns its name. A template
-	made before specifications were controlled is completed once, as its first issue."""
-	name = f"{item} IQC (Demo)"
+def parameter_rows(group: str) -> list[dict]:
+	"""The demo parameters of an item group's specification, with their method and limits."""
 	rows = []
 	for specification, acceptance in PARAMETERS[group]:
 		row = {"specification": specification, "mds_method": METHODS[specification]}
@@ -71,6 +70,38 @@ def ensure_inspection_template(item: str, group: str) -> str:
 		else:
 			row.update(numeric=0, value=acceptance)
 		rows.append(row)
+	return rows
+
+
+def ensure_in_process_specification(item: str) -> str:
+	"""The product's demo in-process specification (module 6): the checks the operations of its
+	routing carry, which its device master record names (module 31); returns its name. A product
+	that has one keeps it."""
+	if existing := frappe.db.get_value(
+		"Quality Inspection Template", {"mds_item": item, "mds_stage": IN_PROCESS_STAGE}
+	):
+		return existing
+	return (
+		frappe.get_doc(
+			{
+				"doctype": "Quality Inspection Template",
+				"quality_inspection_template_name": f"{item} IPQC (Demo)",
+				"item_quality_inspection_parameter": parameter_rows("Products"),
+				"mds_item": item,
+				"mds_stage": IN_PROCESS_STAGE,
+				"mds_sample_size": SAMPLE_SIZE,
+			}
+		)
+		.insert(ignore_permissions=True)  # demo loader: a new specification, its first issue
+		.name
+	)
+
+
+def ensure_inspection_template(item: str, group: str) -> str:
+	"""The item's demo specification (module 6), set on the item; returns its name. A template
+	made before specifications were controlled is completed once, as its first issue."""
+	name = f"{item} IQC (Demo)"
+	rows = parameter_rows(group)
 	stated = {"mds_item": item, "mds_stage": STAGES[group], "mds_sample_size": SAMPLE_SIZE}
 	if not frappe.db.exists("Quality Inspection Template", name):
 		frappe.get_doc(

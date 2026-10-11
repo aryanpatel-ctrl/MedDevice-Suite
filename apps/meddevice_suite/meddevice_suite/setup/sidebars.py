@@ -344,7 +344,10 @@ SIDEBAR_ADDITIONS: dict[str, tuple[tuple[str, str, str], ...]] = {
 		("Risk Register", "Report", "Risk Register"),
 		("Regulatory Licence", "DocType", "Regulatory Licence"),  # regulatory licences (module 41)
 		("Regulatory Licence Type", "DocType", "Regulatory Licence Type"),
+		("Device Master Record", "DocType", "Device Master Record"),  # device master record (module 31)
 	),
+	# The device master record production works to (module 31)
+	"Manufacturing": (("Device Master Record", "DocType", "Device Master Record"),),
 	"Buying": (
 		("Supplier Approval", "DocType", "Supplier Approval"),
 		("Supplier Rating", "DocType", "Supplier Rating"),

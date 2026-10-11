@@ -822,8 +822,9 @@ def take_effect(doc: Document) -> None:
 		frappe.get_doc(ASSESSMENT, file.current_revision).db_set(
 			{"status": SUPERSEDED, "superseded_by": doc.name}
 		)
-	if file.current_report:
-		frappe.get_doc(REPORT, file.current_report).db_set("status", SUPERSEDED)
+	previous_report = file.current_report
+	if previous_report:
+		frappe.get_doc(REPORT, previous_report).db_set("status", SUPERSEDED)
 	file.update(
 		{
 			"intended_use": doc.intended_use,
@@ -839,6 +840,9 @@ def take_effect(doc: Document) -> None:
 	)
 	file.set("items", [{"item": row.item} for row in doc.items])
 	save(file)
+	# The report no longer reports on the analysis in force: what pins it (a device master record,
+	# module 31) is told in this transaction.
+	pinned_records.records_changed(REPORT, [previous_report])
 	if doc.risk_review:
 		review_doc = frappe.get_doc(REVIEW, doc.risk_review)
 		review_doc.update(
@@ -1008,10 +1012,13 @@ def approve_report(doc: Document, password: str, reason: str | None = None) -> N
 	sign(doc, "Approved", "Approve", password, reason)
 	submit(doc)
 	file = frappe.get_doc(FILE, doc.risk_management_file)
-	if file.current_report and file.current_report != doc.name:
-		frappe.get_doc(REPORT, file.current_report).db_set("status", SUPERSEDED)
+	previous = file.current_report if file.current_report != doc.name else None
+	if previous:
+		frappe.get_doc(REPORT, previous).db_set("status", SUPERSEDED)
 	file.current_report = doc.name
 	save(file)
+	# What pins the superseded report (a device master record, module 31) is told in this transaction.
+	pinned_records.records_changed(REPORT, [previous])
 
 
 # --- Risk reviews (URS-QMS-024, URS-QMS-025) --------------------------------------------------
