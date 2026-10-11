@@ -15,7 +15,12 @@ from meddevice_suite.qa import verifies
 from meddevice_suite.qms.change_control import approved_changes_for
 from meddevice_suite.qms.test_change_control import approved_change, signer
 from meddevice_suite.setup.install import apply_configuration
-from meddevice_suite.setup.test_stock import approve_for_test, licensed_for_test, submit_bom_for_test
+from meddevice_suite.setup.test_stock import (
+	approve_equipment_for_test,
+	approve_for_test,
+	licensed_for_test,
+	submit_bom_for_test,
+)
 
 NINE_MASTERS = {
 	"Item",
@@ -330,9 +335,12 @@ class TestVersionedMasters(VersioningTestCase):
 	def test_an_equipment_record_in_use_is_cancelled_only_under_control(self):
 		from meddevice_suite.pilot.inspection import ensure_instrument
 
-		asset = frappe.get_doc("Asset", ensure_instrument(company(), approve_for_test))
+		asset = frappe.get_doc(
+			"Asset", ensure_instrument(company(), approve_for_test, approve_equipment_for_test)
+		)
 		copy = frappe.copy_doc(asset)
 		copy.asset_name = f"Caliper {new_item_code()}"
+		copy.mds_equipment_tag = f"QC-CAL-{new_item_code()}"  # another piece of equipment, its own tag
 		copy.insert()
 		copy.submit()
 		stage_reason("Asset", copy.name, "cancel", "Entered twice")
@@ -696,8 +704,13 @@ class TestWiredIn(VersioningTestCase):
 	def test_a_submitted_assets_name_changes_only_under_a_request(self):
 		from meddevice_suite.pilot.inspection import ensure_instrument
 
-		copy = frappe.copy_doc(frappe.get_doc("Asset", ensure_instrument(company(), approve_for_test)))
+		copy = frappe.copy_doc(
+			frappe.get_doc(
+				"Asset", ensure_instrument(company(), approve_for_test, approve_equipment_for_test)
+			)
+		)
 		copy.asset_name = f"Caliper {new_item_code()}"
+		copy.mds_equipment_tag = f"QC-CAL-{new_item_code()}"  # another piece of equipment, its own tag
 		copy.insert()
 		copy.submit()
 		asset = frappe.get_doc("Asset", copy.name)

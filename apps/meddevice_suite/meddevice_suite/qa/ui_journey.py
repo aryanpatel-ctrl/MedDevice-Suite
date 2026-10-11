@@ -92,7 +92,7 @@ def prepare_journey(password: str | None = None) -> dict:
 	if frappe.session.user != "Administrator":
 		frappe.throw(_("The browser journey is prepared only by the Administrator."), frappe.PermissionError)
 
-	ensure_masters(approve_as_qa(password), approve_as_qa(password, "BOM"))
+	ensure_masters(approve_as_qa(password), approve_as_qa(password, "BOM"), approve_as_qa(password, "Asset"))
 	if not password:
 		frappe.throw(_("Give the run's password of the job users to verify the customer's licence."))
 	ensure_licence(  # module 5: sold to only under a licence QA has verified
@@ -104,7 +104,9 @@ def prepare_journey(password: str | None = None) -> dict:
 	)
 	write_off_leftover_stock()
 	return {
-		"instrument": ensure_inspection_masters(COMPANY, approve_as_qa(password)),
+		"instrument": ensure_inspection_masters(
+			COMPANY, approve_as_qa(password), approve_as_qa(password, "Asset")
+		),
 		"company": COMPANY,
 		"customer": CUSTOMER,
 		"supplier": SUPPLIER,
@@ -126,19 +128,18 @@ def prepare_journey(password: str | None = None) -> dict:
 
 
 def approve_as_qa(password: str | None, doctype: str = "Item") -> Callable[[str], None]:
-	"""QA's signed approval of a journey item (module 1) or bill of materials (module 2), as the
-	run's QA Manager user."""
-	from meddevice_suite.master_data import bom as bill_of_materials
+	"""QA's signed approval of a journey item (module 1), bill of materials (module 2) or piece of
+	equipment (module 8), as the run's QA Manager user."""
+	from meddevice_suite.pilot.demo import signed_approval
+
+	approved, act, _reason = signed_approval(doctype)
 
 	def approve(code: str) -> None:
-		if doctype == "Item" and item_master.approved(code):
-			return
-		if doctype == "BOM" and frappe.db.get_value("BOM", code, "docstatus") == 1:
+		if approved(code):
 			return
 		if not password:
 			frappe.throw(_("Give the run's password of the job users to approve {0}.").format(code))
 		with acting_as(email_for("QA Manager")):
-			act = item_master.approve if doctype == "Item" else bill_of_materials.approve
 			act(frappe.get_doc(doctype, code), password=password, reason="Set up for the browser journey")
 
 	return approve
@@ -161,8 +162,12 @@ def acting_as(user: str) -> Iterator[None]:
 		frappe.local.session.update(saved)
 
 
-def ensure_masters(approve: Callable[[str], None], approve_bom: Callable[[str], None]) -> None:
-	ensure_inspection_masters(COMPANY, approve)  # the parameters the templates below name
+def ensure_masters(
+	approve: Callable[[str], None],
+	approve_bom: Callable[[str], None],
+	approve_equipment: Callable[[str], None] | None = None,
+) -> None:
+	ensure_inspection_masters(COMPANY, approve, approve_equipment)  # the parameters the templates below name
 	ensure(
 		"Warehouse",
 		store(QUARANTINE),

@@ -190,7 +190,7 @@ def load_demo_data() -> None:
 		ensure_demo_user(profile, password)
 	ensure_customers_may_buy(password)
 	approve = approve_as("QA Manager", password)
-	ensure_inspection_masters(company, approve)
+	ensure_inspection_masters(company, approve, approve_as("QA Manager", password, "Asset"))
 	for code, (name, unit, hsn, shelf_life, supplier, rate) in RAW_MATERIALS.items():
 		ensure_item(
 			code, name, "Raw Material", unit, hsn, shelf_life, company, store("Stores"), supplier=supplier
@@ -304,22 +304,36 @@ def item_master_data(code: str, group: str) -> dict:
 
 
 def approve_as(profile: str, password: str, doctype: str = "Item") -> Callable[[str], None]:
-	"""QA's signed approval of a demo item (module 1) or bill of materials (module 2), by the demo
-	user of the job; one approved already is left as it is."""
-	from meddevice_suite.master_data import bom as bill_of_materials
+	"""QA's signed approval of a demo item (module 1), bill of materials (module 2) or piece of
+	equipment (module 8), by the demo user of the job; one approved already is left as it is."""
+	approved, act, reason = signed_approval(doctype)
 
 	def approve(name: str) -> None:
-		if doctype == "Item" and item_master.approved(name):
-			return
-		if doctype == "BOM" and frappe.db.get_value("BOM", name, "docstatus") == 1:
+		if approved(name):
 			return
 		from meddevice_suite.pilot.flow import as_job  # the flow builds on this module
 
-		act = item_master.approve if doctype == "Item" else bill_of_materials.approve
 		with as_job(profile):
-			act(frappe.get_doc(doctype, name), password=password, reason="Checked for the pilot (demo)")
+			act(frappe.get_doc(doctype, name), password=password, reason=reason)
 
 	return approve
+
+
+def signed_approval(doctype: str) -> tuple[Callable[[str], bool], Callable, str]:
+	"""Whether a record of the type is approved, QA's signed act that approves it, and the reason
+	the demo gives."""
+	from meddevice_suite.master_data import bom as bill_of_materials
+	from meddevice_suite.master_data import equipment
+
+	return {
+		"Item": (item_master.approved, item_master.approve, "Item master and specification checked (demo)"),
+		"BOM": (
+			lambda name: frappe.db.get_value("BOM", name, "docstatus") == 1,
+			bill_of_materials.approve,
+			"Components and quantities checked (demo)",
+		),
+		"Asset": (equipment.approved, equipment.approve, "Equipment details checked (demo)"),
+	}[doctype]
 
 
 def ensure_customers_may_buy(password: str) -> None:

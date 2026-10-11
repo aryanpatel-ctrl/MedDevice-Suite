@@ -38,6 +38,8 @@ from frappe.query_builder.functions import Date
 from frappe.utils import cint, today
 
 from meddevice_suite.compliance.audit import record, row_content, same
+from meddevice_suite.master_data.equipment import CONTROLLED_FIELDS as EQUIPMENT_CONTROLLED
+from meddevice_suite.master_data.equipment import approved as equipment_approved
 from meddevice_suite.master_data.item_master import APPROVAL_STATUS, APPROVED, UNSET_WHEN_ZERO
 from meddevice_suite.master_data.item_master import CONTROLLED_FIELDS as ITEM_DEVICE_FIELDS
 from meddevice_suite.qms.change_control import require_approved_change
@@ -145,8 +147,11 @@ MASTERS: dict[str, Master] = {
 			frappe.db.exists("Stock Ledger Entry", {"warehouse": doc.name, "is_cancelled": 0})
 		),
 	),
-	# Equipment (module 8): a submitted asset keeps its details; its name changes under control.
-	"Asset": Master(fields=("asset_name",), in_use=lambda doc: doc.docstatus == 1),
+	# Equipment (module 8): what QA approved changes under control once approved or submitted.
+	"Asset": Master(
+		fields=("asset_name", *EQUIPMENT_CONTROLLED),
+		in_use=lambda doc: doc.docstatus == 1 or equipment_approved(doc.name),
+	),
 	# The specification's content and use are module 6's.
 	SPECIFICATION: Master(fields=()),
 }

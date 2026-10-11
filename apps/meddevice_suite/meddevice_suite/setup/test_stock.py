@@ -70,6 +70,23 @@ def submit_bom_for_test(bom):
 	return bom
 
 
+def approve_equipment_for_test(asset: str) -> None:
+	"""QA's approval of a piece of equipment other modules' tests use (module 8), recorded as the
+	signed act records it; the act itself is tested in master_data/test_equipment.py."""
+	from meddevice_suite.master_data import equipment
+
+	frappe.db.set_value(
+		"Asset",
+		asset,
+		{
+			equipment.APPROVAL_STATUS: equipment.APPROVED,
+			equipment.APPROVED_BY: "Administrator",
+			equipment.APPROVED_AT: now_datetime(),
+			equipment.STATUS: equipment.IN_SERVICE,
+		},
+	)
+
+
 def approve_for_test(*codes: str) -> None:
 	"""QA's approval of items that other modules' tests use (module 1), recorded as the signed act
 	records it, so that those tests need not set up everything an approval checks. The signed act
