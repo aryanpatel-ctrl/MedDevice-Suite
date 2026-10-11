@@ -56,7 +56,10 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      # Built assets: the print-view tests render a printout, which needs the desk's bundles.
       - uses: ./.github/actions/setup-bench
+        with:
+          build-assets: 'true'
 
       - name: Migrates cleanly
         run: bench --site $SITE migrate
