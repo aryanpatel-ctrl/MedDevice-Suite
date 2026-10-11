@@ -344,6 +344,7 @@ SIDEBAR_ADDITIONS: dict[str, tuple[tuple[str, str, str], ...]] = {
 		("Risk Register", "Report", "Risk Register"),
 		("Regulatory Licence", "DocType", "Regulatory Licence"),  # regulatory licences (module 41)
 		("Regulatory Licence Type", "DocType", "Regulatory Licence Type"),
+		("Licence Register", "Report", "Licence Register"),
 	),
 	"Buying": (
 		("Supplier Approval", "DocType", "Supplier Approval"),
