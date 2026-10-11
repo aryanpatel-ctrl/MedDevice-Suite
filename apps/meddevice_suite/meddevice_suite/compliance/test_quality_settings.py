@@ -71,6 +71,9 @@ class TestValues(QualitySettingsTestCase):
 				"default_effectiveness_check_days": 90,
 				"login_lockout_attempts": 5,
 				"login_lockout_minutes": 15,
+				"password_strength": 3,
+				"password_expiry_days": 90,
+				"session_idle_minutes": 30,
 			},
 		)
 
@@ -309,7 +312,7 @@ class TestLockout(QualitySettingsTestCase):
 		frappe.set_user("Administrator")  # who may open System Settings
 		settings = frappe.get_doc("System Settings")
 		settings.allow_consecutive_login_attempts = 0  # unlimited, by hand
-		with self.assertRaisesRegex(frappe.PermissionError, "set in Quality Settings"):
+		with self.assertRaisesRegex(frappe.PermissionError, "in Quality Settings, under change control"):
 			settings.save()
 		settings = frappe.get_doc("System Settings")
 		settings.save()  # other system settings still save
