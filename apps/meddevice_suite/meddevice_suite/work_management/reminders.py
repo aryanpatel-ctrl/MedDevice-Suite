@@ -408,6 +408,25 @@ def training_due() -> Iterator[Due]:
 		)
 
 
+def risk_reviews_open() -> Iterator[Due]:
+	"""Each open risk review, from the day it is raised until QA closes it, by a new revision of the
+	risk assessment or with a signed rationale (module 39)."""
+	for row in frappe.get_all(
+		"Risk Review",
+		filters={"docstatus": 0, "status": "Open"},
+		fields=["name", "risk_management_file", "family_name", "trigger", "due_date"],
+	):
+		yield Due(
+			"Risk Review",
+			row.name,
+			row.due_date,
+			_("Risk review {0} of {1}: {2}").format(
+				row.name, row.family_name or row.risk_management_file, _(row.trigger)
+			),
+			(QA_ROLE,),
+		)
+
+
 def regulatory_licences_due() -> Iterator[Due]:
 	"""Each verified licence ending within the lead time or ended, until its renewal is verified;
 	each obligation due within it or overdue, until QA records it done (module 41)."""
@@ -451,6 +470,7 @@ CATEGORIES: dict[str, Callable[[], Iterator[Due]]] = {
 	"Requalification Due": requalifications_due,  # module 40
 	"Calibration Impact": calibration_impacts_open,  # module 38
 	"Training Due": training_due,  # module 37
+	"Risk Review": risk_reviews_open,  # module 39
 	"Regulatory Licence": regulatory_licences_due,  # module 41
 }
 

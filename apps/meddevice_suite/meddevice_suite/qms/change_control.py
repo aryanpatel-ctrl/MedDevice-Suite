@@ -19,11 +19,16 @@ through the acts below; those marked ✍ are electronic signatures (21 CFR Part 
 - QA closes the change with a signed effectiveness check, on or after its check date;
 - nothing is deleted or cancelled; until it is approved, the person who raised it may withdraw it;
 - a new revision of an effective controlled document needs an approved change request that
-  lists the document (`require_change_for_revision`).
+  lists the document (`require_change_for_revision`);
+- a change with an impact on risk lists the risk management file it affects; its approval raises
+  a risk review of each file it lists, and it is not closed while one is open (module 39,
+  URS-QMS-024).
 
 The signed acts are registered in `compliance.signing.SIGNING_ACTIONS`. Who may change which
 fields in each status is the controller's (`Change Request.validate`).
 """
+
+from types import ModuleType
 
 import frappe
 from frappe import _
@@ -53,6 +58,7 @@ AFFECTED_TYPES = (
 	"Quality Inspection Template",
 	"Warehouse",
 	"Quality Settings",  # the adjustable values of the system (URS-PLT-012)
+	"Risk Management File",  # module 39 (URS-QMS-024)
 	"Regulatory Licence",  # a licence or registration the change must be notified under (URS-REG-006)
 )
 RESULT_TYPES = (*AFFECTED_TYPES, "Document Revision")
@@ -151,6 +157,7 @@ def assess(doc: Document, password: str, reason: str | None = None) -> None:
 		doc.impact_regulatory != "Yes" or doc.classification == "Major",
 		_("A change that needs regulatory notification is a Major change."),
 	)
+	risk_management().require_file_for_risk_impact(doc)  # URS-QMS-024
 	from meddevice_suite.qms.regulatory_licence import require_licence_for_regulatory_change
 
 	require_licence_for_regulatory_change(doc)  # URS-REG-006
@@ -200,6 +207,7 @@ def approve(doc: Document, password: str, reason: str | None = None) -> None:
 	# offers a way round the signatures; the last approval is the only submit.
 	doc.flags.ignore_permissions = True
 	doc.submit()
+	risk_management().raise_change_reviews(doc)  # URS-QMS-024: a review of each risk file it lists
 	alert(DECIDED, doc)
 
 
@@ -246,6 +254,11 @@ def verify(doc: Document, outcome: str, act: str, password: str, reason: str | N
 			doc.name, frappe.format_value(doc.effectiveness_due_on, {"fieldtype": "Date"})
 		),
 	)
+	reviews = risk_management().open_reviews_of(DOCTYPE, doc.name)
+	require(
+		not reviews,
+		_("Risk review {0} raised by this change is open; QA closes it first.").format(", ".join(reviews)),
+	)  # URS-QMS-024
 	doc.effectiveness_outcome = outcome
 	doc.effectiveness_note = note(reason, _("Say how the effectiveness was checked."))
 	doc.closed_on = today()
@@ -473,6 +486,13 @@ def has_permission(doc: Document, ptype: str | None = None, user: str | None = N
 
 
 # --- Helpers ---------------------------------------------------------------------------------
+
+
+def risk_management() -> ModuleType:
+	"""Module 39, which builds on this one (a revision of a risk file names an approved change)."""
+	from meddevice_suite.qms import risk_management
+
+	return risk_management
 
 
 def require_decider(doc: Document) -> None:

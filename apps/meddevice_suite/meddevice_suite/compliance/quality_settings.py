@@ -63,6 +63,10 @@ SETTINGS: dict[str, Setting] = {
 	# Training (URS-TRN-003), decided 2026-10-11 (plan D-07, D-12)
 	"training_due_days": Setting(14, 1, 90),
 	"training_expiry_warning_days": Setting(30, 1, 365),
+	# Risk management (URS-QMS-025), decided 2026-10-11: the periodic review of a risk file, and
+	# the days QA has to answer a risk review
+	"risk_periodic_review_months": Setting(12, 1, 36),
+	"risk_review_due_days": Setting(30, 1, 180),
 	# Regulatory licences (URS-REG-004), decided 2026-10-11 (plan D-12, D-14)
 	"regulatory_licence_warning_days": Setting(90, 1, 730),
 }

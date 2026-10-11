@@ -35,16 +35,18 @@ def ensure_work_instruction(
 	act_as: Callable[[str], AbstractContextManager],
 	user_of: Callable[[str], str],
 	password: str,
+	document_type: str = routing.WORK_INSTRUCTION_TYPE,
 ) -> str:
-	"""An effective work instruction of `title`, issued through document control (module 30). A
-	revision left part-way by an earlier run is taken on from where it stopped."""
+	"""An effective work instruction of `title` (or a document of another type), issued through
+	document control (module 30). A revision left part-way by an earlier run is taken on from where
+	it stopped."""
 	from meddevice_suite.qms import document_control
 
 	existing = frappe.get_all(
 		"Controlled Document",
 		filters={
 			"title": title,
-			"document_type": routing.WORK_INSTRUCTION_TYPE,
+			"document_type": document_type,
 			"status": ["!=", "Obsolete"],
 		},
 		fields=["name", "status"],
@@ -62,7 +64,7 @@ def ensure_work_instruction(
 					{
 						"doctype": "Controlled Document",
 						"title": title,
-						"document_type": routing.WORK_INSTRUCTION_TYPE,
+						"document_type": document_type,
 						"department": DEPARTMENT,
 						"process_owner": user_of(AUTHOR),
 					}

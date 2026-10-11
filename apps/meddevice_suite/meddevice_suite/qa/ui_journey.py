@@ -28,6 +28,7 @@ from contextlib import contextmanager
 import frappe
 from frappe import _
 from frappe.utils import add_days, today
+from frappe.utils.password import update_password
 
 from meddevice_suite.lot_control.lot_status import APPROVED, REJECTED, set_status, stock_by_lot
 from meddevice_suite.master_data import item_master
@@ -343,6 +344,150 @@ def prepare_training(password: str) -> dict:
 		)
 		record.save()
 	return {"record": name}
+
+
+# The browser's policy (module 39): severity counts double, so the matrix is not symmetric and a
+# swapped axis shows; D-13's scales, with the regions a test site needs.
+def browser_acceptability(severity: int, probability: int) -> str:
+	from meddevice_suite.qms import risk_management
+
+	weight = 2 * severity + probability
+	if weight >= 12:
+		return risk_management.UNACCEPTABLE
+	return risk_management.ALARP if weight >= 8 else risk_management.ACCEPTABLE
+
+
+@frappe.whitelist(methods=["POST"])
+def prepare_risk_management(password: str) -> dict:
+	"""A risk management file with a draft risk assessment, for the browser to sign on the forms
+	(module 39): a policy in force (QA reviews it, Management approves it), an effective plan, a
+	specification that controls the hazard and an SOP that collects post-production information.
+	The draft is authored by a second QA user, so that the QA Manager approves as a third person.
+	Returns {"file", "assessment", "author", "sop"}."""
+	from meddevice_suite.master_data.item_master import FINISHED_GOOD, ITEM_TYPE
+	from meddevice_suite.pilot.documents import ensure_work_instruction
+	from meddevice_suite.qms import risk_management
+
+	ensure_test_site()
+	if frappe.session.user != "Administrator":
+		frappe.throw(_("The browser journey is prepared only by the Administrator."), frappe.PermissionError)
+	act_as = lambda profile: acting_as(email_for(profile))  # noqa: E731
+	author = ensure_second_qa(password)
+	if not risk_management.current_policy():
+		with acting_as(email_for("QA Manager")):
+			policy = frappe.get_doc(
+				{
+					"doctype": risk_management.POLICY,
+					"title": "Risk acceptability policy (browser test)",
+					"policy_statement": "ISO 14971 Annex C and the state of the art (browser test).",
+				}
+			).insert()
+			for cell in policy.matrix:
+				cell.acceptability = browser_acceptability(cell.severity, cell.probability)
+			policy.save()
+			risk_management.review_policy(policy, password=password, reason="Scales and matrix checked")
+		with acting_as(email_for("Management")):
+			risk_management.approve_policy(
+				frappe.get_doc(risk_management.POLICY, policy.name), password=password, reason="Approved"
+			)
+	suffix = frappe.generate_hash(length=6)
+	plan = ensure_work_instruction("Risk management plan (browser test)", act_as, email_for, password, "SOP")
+	sop = ensure_work_instruction(
+		"Post-market surveillance and complaints (browser test)", act_as, email_for, password, "SOP"
+	)
+	specification = ensure_work_instruction(
+		"Balloon burst specification (browser test)", act_as, email_for, password, "Specification"
+	)
+	item = (
+		frappe.get_doc(
+			{
+				"doctype": "Item",
+				"item_code": f"UIJ-RISK-{suffix}",
+				"item_name": f"Foley catheter, risk test {suffix}",
+				"item_group": "Products",
+				"stock_uom": "Nos",
+				"is_stock_item": 0,
+				"gst_hsn_code": PRODUCT_DETAILS[1],  # India Compliance requires it on every item
+				ITEM_TYPE: FINISHED_GOOD,
+			}
+		)
+		.insert(ignore_permissions=True)  # test-site set-up by the Administrator, checked above
+		.name
+	)
+	with acting_as(author):
+		file = frappe.get_doc(
+			{
+				"doctype": risk_management.FILE,
+				"family_name": f"Foley catheter (browser test {suffix})",
+				"intended_use": "Bladder drainage through the urethra (browser test).",
+				"foreseeable_misuse": "Inflating the balloon in the urethra (browser test).",
+				"risk_management_plan": plan,
+				"items": [{"item": item}],
+			}
+		).insert()
+		assessment = frappe.get_doc(
+			{
+				"doctype": risk_management.ASSESSMENT,
+				"risk_management_file": file.name,
+				"reviewer": email_for("Production Supervisor"),
+				"hazards": [
+					{
+						"hazard_id": "H-01",
+						"hazard_category": "Energy",
+						"hazard": "Balloon bursts",
+						"sequence_of_events": "Balloon over-inflated; wall thinner than specified",
+						"hazardous_situation": "Fragments left in the bladder",
+						"harm": "Infection, surgery to retrieve them",
+						"severity": 4,
+						"probability": 4,
+						"residual_severity": 4,
+						"residual_probability": 1,
+						"justification": "Burst test of every lot; as low as reasonably practicable.",
+					}
+				],
+				"controls": [
+					{
+						"hazard_id": "H-01",
+						"option": risk_management.INHERENT,
+						"description": "Balloon wall thickness and burst volume specified",
+						"control_doctype": "Controlled Document",
+						"control_name": specification,
+						"implementation_evidence_type": "Controlled Document",
+						"implementation_evidence": specification,
+						"effectiveness_evidence_type": "Controlled Document",
+						"effectiveness_evidence": specification,
+					}
+				],
+			}
+		).insert()
+	return {"file": file.name, "assessment": assessment.name, "author": author, "sop": sop}
+
+
+def ensure_second_qa(password: str) -> str:
+	"""A second QA user with the run's password: a risk assessment is authored, reviewed and approved
+	by three people, and only QA authors one (module 39)."""
+	email = f"second.qa@{email_for('QA Manager').split('@', 1)[1]}"
+	user = (
+		frappe.get_doc("User", email)
+		if frappe.db.exists("User", email)
+		else frappe.new_doc("User", email=email, send_welcome_email=0)
+	)
+	if (
+		user.is_new()
+		or not user.enabled
+		or [row.role_profile for row in user.role_profiles] != ["QA Manager"]
+	):
+		user.update(
+			{
+				"first_name": "Second QA",
+				"last_name": "(browser test)",
+				"enabled": 1,
+				"role_profiles": [{"role_profile": "QA Manager"}],
+			}
+		)
+		user.save(ignore_permissions=True)  # test-site set-up by the Administrator, checked by the caller
+	update_password(email, password)
+	return email
 
 
 @frappe.whitelist(methods=["POST"])

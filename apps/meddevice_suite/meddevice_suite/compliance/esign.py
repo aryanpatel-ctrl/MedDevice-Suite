@@ -102,6 +102,20 @@ SYSTEM_MAINTAINED: dict[str, tuple[str, ...]] = {
 		"is_historical",
 	),
 	"Training Matrix": ("docstatus",),
+	# Module 39: Management's approval comes after QA's review signature and binds what QA
+	# reviewed; a later policy supersedes it.
+	"Risk Acceptability Policy": (
+		"docstatus",
+		"status",
+		"approved_by",
+		"approved_at",
+		"in_force_since",
+		"superseded_by",
+	),
+	# The next approved revision supersedes it, as a document revision (module 30).
+	"Risk Assessment": ("status", "docstatus", "superseded_by"),
+	"Risk Management Report": ("status", "docstatus"),
+	"Risk Review": ("docstatus",),
 	"Change Request Action": (
 		"done",
 		"done_on",

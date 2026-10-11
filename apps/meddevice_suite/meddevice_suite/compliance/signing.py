@@ -41,6 +41,7 @@ CALIBRATION = "meddevice_suite.qms.calibration"
 MAINTENANCE = "meddevice_suite.qms.preventive_maintenance"
 QUALIFICATION = "meddevice_suite.qms.qualification"
 TRAINING = "meddevice_suite.qms.training"
+RISK = "meddevice_suite.qms.risk_management"
 REGULATORY_LICENCE = "meddevice_suite.qms.regulatory_licence"
 
 # (record type, act) -> the signed act. Each module adds the acts it signs.
@@ -108,6 +109,20 @@ SIGNING_ACTIONS: dict[tuple[str, str], SignedAct] = {
 	("Training Record", "Not Competent"): SignedAct("Rejected", f"{TRAINING}.sign_not_competent"),
 	("Training Record", "Record History"): SignedAct("Verified", f"{TRAINING}.record_history"),
 	("Training Record", "Revoke"): SignedAct("Rejected", f"{TRAINING}.revoke"),
+	# Module 39, risk management: QA reviews the policy and Management approves it (plan D-21)
+	("Risk Acceptability Policy", "Review"): SignedAct("Reviewed", f"{RISK}.review_policy"),
+	("Risk Acceptability Policy", "Approve"): SignedAct("Approved", f"{RISK}.approve_policy"),
+	("Risk Acceptability Policy", "Return"): SignedAct("Rejected", f"{RISK}.return_policy"),
+	("Risk Assessment", "Author"): SignedAct("Authored", f"{RISK}.author"),
+	("Risk Assessment", "Review"): SignedAct("Reviewed", f"{RISK}.review"),
+	("Risk Assessment", "Return"): SignedAct("Rejected", f"{RISK}.return_for_changes"),
+	("Risk Assessment", "Approve"): SignedAct("Approved", f"{RISK}.approve"),
+	("Risk Assessment", "Withdraw"): SignedAct("Rejected", f"{RISK}.withdraw"),
+	("Risk Management Report", "Author"): SignedAct("Authored", f"{RISK}.author_report"),
+	("Risk Management Report", "Return"): SignedAct("Rejected", f"{RISK}.return_report"),
+	("Risk Management Report", "Approve"): SignedAct("Approved", f"{RISK}.approve_report"),
+	("Risk Management Report", "Withdraw"): SignedAct("Rejected", f"{RISK}.withdraw"),
+	("Risk Review", "Close: No Change"): SignedAct("Reviewed", f"{RISK}.close_review"),
 	# Module 41, regulatory licences
 	("Regulatory Licence", "Verify"): SignedAct("Verified", f"{REGULATORY_LICENCE}.verify"),
 	("Regulatory Licence", "Reject"): SignedAct("Rejected", f"{REGULATORY_LICENCE}.reject"),

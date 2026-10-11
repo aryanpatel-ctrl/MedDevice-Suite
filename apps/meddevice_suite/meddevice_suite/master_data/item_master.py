@@ -72,8 +72,8 @@ CONTROLLED_FIELDS = (
 
 # Record types that name an item without putting it to use: the item's own setup, its prices
 # and tax rules, stock summaries, and this app's records made before approval (a specification,
-# a supplier's approval for the item, a change request about it). Every other record type that
-# names an item, in this ERPNext release or a later one, is refused a draft item.
+# a supplier's approval for the item, a change request about it, its risk analysis). Every other
+# record type that names an item, in this ERPNext release or a later one, is refused a draft item.
 SETUP_TYPES = frozenset(
 	{
 		"Item",
@@ -91,6 +91,9 @@ SETUP_TYPES = frozenset(
 		"Quality Inspection Template",
 		"Supplier Approval",
 		"Change Request",
+		# Module 39: a product's risks are analysed before QA approves it.
+		"Risk Management File",
+		"Risk Assessment",
 	}
 )
 
