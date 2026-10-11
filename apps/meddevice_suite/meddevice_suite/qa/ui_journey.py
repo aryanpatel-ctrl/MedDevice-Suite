@@ -295,6 +295,17 @@ def post_stock_entry(purpose: str, rows: list[dict]) -> None:
 
 
 # Any signed-in user may ask: the answer describes only a record the user may read.
+@frappe.whitelist(methods=["POST"])
+def draft_calibration(asset: str) -> str:
+	"""A calibration of `asset` drafted by the signed-in user, for the browser to complete on its
+	form with their signature (module 38)."""
+	from meddevice_suite.pilot.inspection import draft_calibration as draft
+
+	ensure_test_site()
+	frappe.has_permission("Calibration Record", "create", throw=True)
+	return draft(asset).name
+
+
 @frappe.whitelist()
 def lots_of(doctype: str, name: str) -> list[dict]:
 	"""The lots each line of a stock transaction moved, with their expiry dates, in line order:
