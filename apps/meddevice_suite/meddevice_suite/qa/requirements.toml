@@ -541,6 +541,13 @@ title = "Every lookup in a form a job fills in can be searched by that job, apar
 source = "21 CFR 11.10(d); least privilege; found in the live pilot test of 2026-10-07 (operator time logs)"
 status = "implemented"
 
+[[requirement]]
+id = "URS-CMP-037"
+module = 47
+title = "A person signs in only with their own user ID (their email address) and password, never by a link mailed to them; a password meets the strength QA sets (strong or very strong) and must be replaced after the number of days QA sets (30 to 365, 90 until QA changes it); a session ends after the minutes of inactivity QA sets (5 to 480, 30 until QA changes it); these values change only in Quality Settings under an approved change request, and a change to them, or to the account lockout, made in the site's System Settings is refused."
+source = "Master plan section 10 (validation and system security: password policy, session timeout, account lockout); D1 System Foundation; 21 CFR 11.10(d), 11.100, 11.300; values decided 2026-10-11; no password history (11.300 met by unique IDs, strength, aging and lockout; decided 2026-10-11)"
+status = "implemented"
+
 # --- Module 48: approval workflows (D1 approval points "A") ----------------
 [[requirement]]
 id = "URS-CMP-019"

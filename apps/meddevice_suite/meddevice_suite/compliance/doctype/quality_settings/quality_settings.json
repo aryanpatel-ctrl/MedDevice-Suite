@@ -17,6 +17,11 @@
   "login_lockout_attempts",
   "column_break_lockout",
   "login_lockout_minutes",
+  "section_access",
+  "password_strength",
+  "password_expiry_days",
+  "column_break_access",
+  "session_idle_minutes",
   "section_control",
   "change_request",
   "changed_under",
@@ -116,6 +121,42 @@
    "description": "How long a locked account stays locked (5 to 1440)."
   },
   {
+   "fieldname": "section_access",
+   "fieldtype": "Section Break",
+   "label": "Passwords and sessions"
+  },
+  {
+   "fieldname": "password_strength",
+   "fieldtype": "Int",
+   "label": "Minimum Password Strength",
+   "default": "3",
+   "reqd": 1,
+   "non_negative": 1,
+   "description": "How hard a password must be to guess: 3 strong, 4 very strong."
+  },
+  {
+   "fieldname": "password_expiry_days",
+   "fieldtype": "Int",
+   "label": "Password Valid For (days)",
+   "default": "90",
+   "reqd": 1,
+   "non_negative": 1,
+   "description": "After this many days a person must set a new password at sign-in (30 to 365)."
+  },
+  {
+   "fieldname": "column_break_access",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "session_idle_minutes",
+   "fieldtype": "Int",
+   "label": "Sign Out After Inactivity (minutes)",
+   "default": "30",
+   "reqd": 1,
+   "non_negative": 1,
+   "description": "A session left unused this long ends; the person signs in again (5 to 480)."
+  },
+  {
    "fieldname": "section_control",
    "fieldtype": "Section Break",
    "label": "Change control"
@@ -154,7 +195,7 @@
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-10-11 12:00:00.000000",
+ "modified": "2026-10-11 16:00:00.000000",
  "modified_by": "Administrator",
  "module": "Compliance",
  "name": "Quality Settings",

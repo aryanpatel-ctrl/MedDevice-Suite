@@ -1,6 +1,6 @@
-"""Quality Settings: the adjustable values of the validated system (URS-PLT-012, URS-PLT-013).
+"""Quality Settings: the adjustable values of the validated system (URS-PLT-012, URS-PLT-013, URS-CMP-037).
 
-The alert lead times and the account lockout are values the client's QA sets on screen, each
+The alert lead times, the account lockout and the password and session rules are values the client's QA sets on screen, each
 within fixed bounds. Everything else that decides how the system behaves — the rules, the
 signature meanings, the lot statuses, the roles and their permissions, the workflows, who
 receives an alert (people are chosen by the roles they hold) — stays in code, where it changes
@@ -45,6 +45,10 @@ SETTINGS: dict[str, Setting] = {
 	"default_effectiveness_check_days": Setting(90, 0, 730),
 	"login_lockout_attempts": Setting(5, 3, 10),
 	"login_lockout_minutes": Setting(15, 5, 1440),
+	# Access policy (URS-CMP-037), decided 2026-10-11: 3 is zxcvbn's "safely unguessable"
+	"password_strength": Setting(3, 3, 4),
+	"password_expiry_days": Setting(90, 30, 365),
+	"session_idle_minutes": Setting(30, 5, 480),
 }
 
 
@@ -136,25 +140,8 @@ def as_text(value: object, field: str) -> str:
 	return str(value or "")
 
 
-def guard_system_lockout(doc: Document, method: str | None = None) -> None:
-	"""System Settings validate: the login lockout is set in Quality Settings (URS-PLT-013); a
-	change made in System Settings by hand is refused at once rather than undone at the next
-	migrate."""
-	before = doc.get_doc_before_save()
-	for field, wanted in (
-		("allow_consecutive_login_attempts", value("login_lockout_attempts") - 1),  # see apply_lockout
-		("allow_login_after_fail", value("login_lockout_minutes") * 60),
-	):
-		changed = before is None or cint(before.get(field)) != cint(doc.get(field))
-		if changed and cint(doc.get(field)) != wanted:
-			frappe.throw(
-				_("The login lockout is set in Quality Settings, under change control."),
-				frappe.PermissionError,
-			)
-
-
 def on_update(doc: Document) -> None:
-	"""The site's login and signature lockout follow the settings at once."""
-	from meddevice_suite.compliance.esign import apply_lockout  # esign builds on this module
+	"""The site's sign-in rules (lockout, passwords, sessions) follow the settings at once."""
+	from meddevice_suite.compliance.access_policy import apply_access_policy  # it builds on this module
 
-	apply_lockout()
+	apply_access_policy()

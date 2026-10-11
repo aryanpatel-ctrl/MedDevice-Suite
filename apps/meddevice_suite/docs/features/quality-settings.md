@@ -1,6 +1,6 @@
 # Quality Settings — feature document and browser test guide
 
-Requirements: **URS-PLT-012** (alert lead times, default effectiveness check), **URS-PLT-013** (login and signature lockout). Also touched: URS-CMP-001 (lockout), URS-CMP-027 (lot expiry alert), URS-PUR-001 (supplier certificate alert), the document review and change-control alerts (module 30, 36).
+Requirements: **URS-PLT-012** (alert lead times, default effectiveness check), **URS-PLT-013** (login and signature lockout), the password and session values of **URS-CMP-037** (see `access-policy.md`). Also touched: URS-CMP-001 (lockout), URS-CMP-027 (lot expiry alert), URS-PUR-001 (supplier certificate alert), the document review and change-control alerts (module 30, 36).
 Code: `meddevice_suite/compliance/quality_settings.py`, `compliance/doctype/quality_settings/`, readers in `compliance/alerts.py`, `compliance/esign.py`, `master_data/supplier_approval.py`, `qms/document_control.py`, `qms/change_control.py`, `qms/doctype/change_request/change_request.py`.
 State on 2026-10-11: built; tests written from the requirement matrix before the code; results in section 8.
 
@@ -29,11 +29,14 @@ State on 2026-10-11: built; tests written from the requirement matrix before the
 | Effectiveness Check After (days) | 90 | 0–730 | the default given to a new change request; the assessor may set another |
 | Wrong Passwords Before Lockout | 5 | 3–10 | login and electronic signature (21 CFR 11.300(d)) |
 | Locked For (minutes) | 15 | 5–1440 | how long a locked account stays locked |
+| Minimum Password Strength | 3 | 3–4 | how hard a new password must be to guess (URS-CMP-037) |
+| Password Valid For (days) | 90 | 30–365 | after this, a new password is required at sign-in (URS-CMP-037) |
+| Sign Out After Inactivity (minutes) | 30 | 5–480 | a session left unused this long ends (URS-CMP-037) |
 
 - Until QA saves a value, its default applies (the values decided with the client on 2026-10-07/08 and 2026-10-10).
 - **Change control:** saving a changed value needs **Change Request** = an approved request listing *Quality Settings* (the lookup offers only those). The request is recorded in **Last Changed Under**, **Version** goes up by one, **Effective From** becomes today, and the Change Request field is cleared for the next change. These three are set by the rule only.
 - **One change, one request:** a request that already changed the settings (the one recorded now, or an earlier one) is refused; each change is raised and approved on its own.
-- **Lockout:** on save, and on every migrate, the site's System Settings are set to the two lockout values; changing them in System Settings by hand is refused at once (*The login lockout is set in Quality Settings, under change control*).
+- **Lockout, passwords and sessions:** on save, and on every migrate, the site's System Settings are set to the lockout values and to the password strength, password validity and inactivity sign-out (URS-CMP-037, `access-policy.md`); changing any of them in System Settings by hand is refused at once (*… is set by the access policy: in Quality Settings, under change control*).
 - **Naming the settings on a change request:** every job that raises change requests may pick *Quality Settings* (and *Controlled Document*) as a record type without being able to read it; the record is filled in by itself, because a settings record has no list to look it up in. Before 2026-10-11 nobody could pick either type on screen.
 - **Alerts** read the setting each time they run: a change applies from the next daily run.
 
@@ -84,7 +87,7 @@ Change request (System) listing Quality Settings → assessed and approved → Q
 | --- | --- |
 | DocType | `Quality Settings` (single, module Compliance); permissions declared in `setup/roles.py` `PERMISSIONS` and reset on every migrate: Quality Manager select/read/write, System Manager read, every desk user select only |
 | Service | `compliance/quality_settings.py`: `SETTINGS` (default, bounds), `raw`, `stored`, `value`, `validate`, `as_text`, `on_update` |
-| Readers | `alerts.send_expiry_alerts`, `supplier_approval.send_certificate_alerts`, `document_control.send_review_alerts`, `change_control.send_change_alerts`, `ChangeRequest.before_insert`, `esign.apply_lockout` |
+| Readers | `alerts.send_expiry_alerts`, `supplier_approval.send_certificate_alerts`, `document_control.send_review_alerts`, `change_control.send_change_alerts`, `ChangeRequest.before_insert`, `access_policy.apply_access_policy` (through `esign.apply_lockout` too) |
 | Change control | `change_control.AFFECTED_TYPES` and the action's target and result lists include *Quality Settings* |
 | Desk | `quality_settings.js` (change request lookup), Quality workspace sidebar |
 
