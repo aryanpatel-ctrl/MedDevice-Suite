@@ -1,0 +1,1 @@
+<p>{{ _("{0} was due on {1} and is still not done. Responsible: {2}.").format(doc.subject, frappe.format_value(doc.due_date, {"fieldtype": "Date"}), (doc.responsible_user or "") + " " + (doc.responsible_roles or "").replace("\n", ", ")) }}</p>

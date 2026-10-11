@@ -76,6 +76,7 @@ class TestValues(QualitySettingsTestCase):
 				"session_idle_minutes": 30,
 				"supplier_rating_quality_weight": 70,
 				"supplier_rating_threshold": 80,
+				"reminder_escalation_days": 7,
 			},
 		)
 

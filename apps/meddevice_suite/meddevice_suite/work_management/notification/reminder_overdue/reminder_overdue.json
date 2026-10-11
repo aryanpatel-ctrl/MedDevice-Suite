@@ -1,0 +1,44 @@
+{
+ "attach_print": 0,
+ "channel": "System Notification",
+ "condition_type": "Python",
+ "creation": "2026-10-11 22:00:00.000000",
+ "docstatus": 0,
+ "doctype": "Notification",
+ "document_type": "Reminder",
+ "enabled": 1,
+ "event": "Custom",
+ "idx": 0,
+ "is_standard": 1,
+ "message_type": "HTML",
+ "minutes_offset": 0,
+ "modified": "2026-10-11 22:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Work Management",
+ "name": "Reminder Overdue",
+ "notification_message": "{{ _(\"{0} was due on {1} and is still not done. Responsible: {2}.\").format(doc.subject, frappe.format_value(doc.due_date, {\"fieldtype\": \"Date\"}), (doc.responsible_user or \"\") + \" \" + (doc.responsible_roles or \"\").replace(\"\\n\", \", \")) }}",
+ "owner": "Administrator",
+ "recipients": [
+  {
+   "receiver_by_role": "Quality Manager"
+  },
+  {
+   "receiver_by_role": "Sales Manager"
+  },
+  {
+   "receiver_by_role": "Purchase Manager"
+  },
+  {
+   "receiver_by_role": "Stock Manager"
+  },
+  {
+   "receiver_by_role": "Manufacturing Manager"
+  },
+  {
+   "receiver_by_document_field": "responsible_user"
+  }
+ ],
+ "send_system_notification": 0,
+ "send_to_all_assignees": 0,
+ "subject": "Overdue: {{ doc.subject }}"
+}

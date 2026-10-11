@@ -263,10 +263,13 @@ jinja = {"methods": ["meddevice_suite.compliance.signing.signatures_for_print"]}
 # Change control (module 36): outside QA and Management, people see the requests they raised
 # or have an action on.
 permission_query_conditions = {
+	# Reminders (module 60): each job sees its own; QA and management see all.
+	"Reminder": "meddevice_suite.work_management.reminders.query_conditions",
 	"Document Revision": "meddevice_suite.qms.document_control.revision_query_conditions",
 	"Change Request": "meddevice_suite.qms.change_control.query_conditions",
 }
 has_permission = {
+	"Reminder": "meddevice_suite.work_management.reminders.has_permission",
 	"Document Revision": "meddevice_suite.qms.document_control.revision_has_permission",
 	"Change Request": "meddevice_suite.qms.change_control.has_permission",
 	"File": "meddevice_suite.compliance.evidence_files.has_permission",
@@ -282,6 +285,8 @@ scheduler_events = {
 		"meddevice_suite.master_data.supplier_approval.send_certificate_alerts",
 		"meddevice_suite.master_data.customer_licence.send_expiry_alerts",
 		"meddevice_suite.master_data.supplier_rating.rate_finished_months",
+		# After the alerts above: reminders track what they told people (module 60).
+		"meddevice_suite.work_management.reminders.run",
 	],
 }
 
