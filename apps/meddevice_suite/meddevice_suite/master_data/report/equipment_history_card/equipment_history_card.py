@@ -17,27 +17,30 @@ from frappe.utils import flt, get_datetime, getdate, today
 
 from meddevice_suite.master_data.equipment import APPROVAL_FIELDS
 
-COLUMNS = [
-	{"fieldname": "date", "label": "Date", "fieldtype": "Date", "width": 110},
-	{"fieldname": "event", "label": "Event", "fieldtype": "Data", "width": 170},
-	{
-		"fieldname": "record_type",
-		"label": "Record Type",
-		"fieldtype": "Link",
-		"options": "DocType",
-		"width": 150,
-	},
-	{
-		"fieldname": "record",
-		"label": "Record",
-		"fieldtype": "Dynamic Link",
-		"options": "record_type",
-		"width": 180,
-	},
-	{"fieldname": "details", "label": "Details", "fieldtype": "Data", "width": 360},
-	{"fieldname": "by", "label": "By", "fieldtype": "Link", "options": "User", "width": 180},
-	{"fieldname": "downtime", "label": "Downtime (hours)", "fieldtype": "Float", "width": 120},
-]
+
+def columns() -> list[dict]:
+	"""The report's columns, labelled in the reader's language."""
+	return [
+		{"fieldname": "date", "label": _("Date"), "fieldtype": "Date", "width": 110},
+		{"fieldname": "event", "label": _("Event"), "fieldtype": "Data", "width": 170},
+		{
+			"fieldname": "record_type",
+			"label": _("Record Type"),
+			"fieldtype": "Link",
+			"options": "DocType",
+			"width": 150,
+		},
+		{
+			"fieldname": "record",
+			"label": _("Record"),
+			"fieldtype": "Dynamic Link",
+			"options": "record_type",
+			"width": 180,
+		},
+		{"fieldname": "details", "label": _("Details"), "fieldtype": "Data", "width": 360},
+		{"fieldname": "by", "label": _("By"), "fieldtype": "Link", "options": "User", "width": 180},
+		{"fieldname": "downtime", "label": _("Downtime (hours)"), "fieldtype": "Float", "width": 120},
+	]
 
 
 def execute(filters: dict | None = None) -> tuple:
@@ -52,7 +55,6 @@ def execute(filters: dict | None = None) -> tuple:
 	rows.sort(key=lambda row: (get_datetime(row["date"]), row.get("order", 0)), reverse=True)
 	for row in rows:
 		row.pop("order", None)
-	columns = [{**column, "label": _(column["label"])} for column in COLUMNS]
 	repairs = [row for row in rows if row["record_type"] == "Asset Repair"]
 	summary = [
 		{"label": _("Repairs"), "value": len(repairs), "datatype": "Int"},
@@ -67,7 +69,7 @@ def execute(filters: dict | None = None) -> tuple:
 			"datatype": "Int",
 		},
 	]
-	return columns, rows, None, None, summary
+	return columns(), rows, None, None, summary
 
 
 def events(asset: str) -> list[dict]:
