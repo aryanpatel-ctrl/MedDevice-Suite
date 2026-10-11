@@ -84,7 +84,7 @@ def prepare_journey(password: str | None = None) -> dict:
 	if frappe.session.user != "Administrator":
 		frappe.throw(_("The browser journey is prepared only by the Administrator."), frappe.PermissionError)
 
-	ensure_masters(approve_as_qa(password))
+	ensure_masters(approve_as_qa(password), approve_as_qa(password, "BOM"))
 	write_off_leftover_stock()
 	return {
 		"instrument": ensure_inspection_masters(COMPANY, approve_as_qa(password)),
@@ -108,11 +108,15 @@ def prepare_journey(password: str | None = None) -> dict:
 	}
 
 
-def approve_as_qa(password: str | None) -> Callable[[str], None]:
-	"""QA's signed approval of a journey item (module 1), as the run's QA Manager user."""
+def approve_as_qa(password: str | None, doctype: str = "Item") -> Callable[[str], None]:
+	"""QA's signed approval of a journey item (module 1) or bill of materials (module 2), as the
+	run's QA Manager user."""
+	from meddevice_suite.master_data import bom as bill_of_materials
 
 	def approve(code: str) -> None:
-		if item_master.approved(code):
+		if doctype == "Item" and item_master.approved(code):
+			return
+		if doctype == "BOM" and frappe.db.get_value("BOM", code, "docstatus") == 1:
 			return
 		if not password:
 			frappe.throw(_("Give the run's password of the job users to approve {0}.").format(code))
@@ -122,9 +126,8 @@ def approve_as_qa(password: str | None) -> Callable[[str], None]:
 		saved, qa = dict(frappe.local.session), email_for("QA Manager")
 		frappe.set_user(qa)  # nosemgrep: frappe-setuser - test site, Administrator only
 		try:
-			item_master.approve(
-				frappe.get_doc("Item", code), password=password, reason="Set up for the browser journey"
-			)
+			act = item_master.approve if doctype == "Item" else bill_of_materials.approve
+			act(frappe.get_doc(doctype, code), password=password, reason="Set up for the browser journey")
 		finally:
 			frappe.set_user(saved["user"])  # nosemgrep: frappe-setuser - back to the Administrator
 			frappe.local.session.clear()
@@ -133,7 +136,7 @@ def approve_as_qa(password: str | None) -> Callable[[str], None]:
 	return approve
 
 
-def ensure_masters(approve: Callable[[str], None]) -> None:
+def ensure_masters(approve: Callable[[str], None], approve_bom: Callable[[str], None]) -> None:
 	ensure_inspection_masters(COMPANY, approve)  # the parameters the templates below name
 	ensure(
 		"Warehouse",
@@ -174,7 +177,9 @@ def ensure_masters(approve: Callable[[str], None]) -> None:
 			for index, (operation, workstation, minutes) in enumerate(OPERATIONS, 1)
 		],
 	)
-	ensure_bom(PRODUCT, ROUTING, {code: details[5] for code, details in RAW_MATERIALS.items()}, COMPANY)
+	ensure_bom(
+		PRODUCT, ROUTING, {code: details[5] for code, details in RAW_MATERIALS.items()}, COMPANY, approve_bom
+	)
 
 
 def write_off_leftover_stock() -> None:

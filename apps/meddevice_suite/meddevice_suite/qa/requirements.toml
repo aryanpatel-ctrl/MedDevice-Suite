@@ -915,6 +915,13 @@ source = "DFD 3.4 IQC Inspection, 5.3 Final QC Inspection, D6; D2 Incoming QC (I
 status = "planned"
 
 [[requirement]]
+id = "URS-MST-007"
+module = 2
+title = "A bill of materials is drafted by Production and approved by QA with an electronic signature, which is its only submit, for the Administrator too; QA approves it only when its product is a QA-approved finished good or sub-assembly, it has at least one component, every component is a QA-approved item with a quantity above zero, and its process-loss allowance is between 0 and 100 percent; the signature binds what was approved (product, quantity, components, operations, process loss), not the costs ERPNext updates; a work order is made only from an approved, active bill of its own product."
+source = "DFD D3 Item / BOM / Routing Master, 2.2 MRP, 4.1 Create Production Order; master plan section 3 (BOM: components and quantities per unit, scrap allowance, version; masters approved before use) and tracker step 8 (versioned, e-signed, changed only through change control); ISO 13485 7.5.1, 4.2.3; 21 CFR 11.50, 11.70; decided 2026-10-11 under the client's instruction to follow the DFD"
+status = "implemented"
+
+[[requirement]]
 id = "URS-PLT-010"
 module = 0
 title = "The pilot's standard flow performs the certificate check, incoming inspection and signed release of every received lot, and the signed release of the finished lot, by the QC Inspector and QA Manager demo users, in place of the stand-in transfer to the approved store, in both the server and the browser journey."

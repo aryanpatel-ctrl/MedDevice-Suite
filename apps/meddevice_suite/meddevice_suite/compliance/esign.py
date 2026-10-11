@@ -56,7 +56,10 @@ def apply_lockout() -> None:
 # record type -> fields the system maintains after signing, outside what a signature binds.
 # Record types whose signature binds part of the record, not all of it: dotted path of
 # content(doc) -> dict. An item's approval binds what QA approved (master_data.item_master).
-SIGNED_CONTENT: dict[str, str] = {"Item": "meddevice_suite.master_data.item_master.signed_content"}
+SIGNED_CONTENT: dict[str, str] = {
+	"Item": "meddevice_suite.master_data.item_master.signed_content",
+	"BOM": "meddevice_suite.master_data.bom.signed_content",
+}
 
 SYSTEM_MAINTAINED: dict[str, tuple[str, ...]] = {
 	"Document Revision": ("status", "docstatus", "superseded_by"),

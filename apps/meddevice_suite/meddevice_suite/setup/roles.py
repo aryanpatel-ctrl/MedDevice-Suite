@@ -102,7 +102,9 @@ PERMISSIONS: dict[str, dict[str, tuple[str, ...]]] = {
 	),
 	"BOM": oversight(
 		{
-			# Production drafts a BOM; QA approves it by submitting.
+			# Production drafts a BOM; QA approves it with a signature, its only submit (module 2,
+			# master_data/bom.py refuses any other). QA keeps Frappe's submit permission: naming a
+			# change request on an approved bill, to replace or cancel it, is an update after submit.
 			"Manufacturing User": EDIT,
 			"Quality Manager": APPROVE,
 			"Stock User": VIEW,

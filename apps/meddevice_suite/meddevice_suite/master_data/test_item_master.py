@@ -39,6 +39,7 @@ from meddevice_suite.qa import verifies
 from meddevice_suite.qms.test_change_control import approved_change
 from meddevice_suite.qms.test_document_control import signer
 from meddevice_suite.setup.install import apply_configuration
+from meddevice_suite.setup.test_stock import submit_bom_for_test
 
 REFUSED = (frappe.ValidationError, frappe.PermissionError)
 NOT_APPROVED = "Not yet approved by QA"
@@ -657,7 +658,7 @@ class TestNotUsedBeforeApproval(ItemMasterTestCase):
 				"items": [{"item_code": material, "qty": 1, "rate": 1}],
 			}
 		).insert()
-		bom.submit()
+		submit_bom_for_test(bom)
 		frappe.db.set_value("Item", product, APPROVAL_STATUS, DRAFT)  # held as a draft
 		order = frappe.get_doc(
 			{

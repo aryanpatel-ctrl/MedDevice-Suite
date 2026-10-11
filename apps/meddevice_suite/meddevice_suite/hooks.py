@@ -86,7 +86,12 @@ doc_events = {
 	"Delivery Note": {"validate": "meddevice_suite.lot_control.lot_status.guard_delivery_note"},
 	"Pick List": {"validate": "meddevice_suite.lot_control.lot_status.guard_pick_list"},
 	"Packing Slip": {"validate": "meddevice_suite.lot_control.lot_status.guard_packing_slip"},
-	"Work Order": {"validate": "meddevice_suite.lot_control.lot_status.guard_work_order"},
+	"Work Order": {
+		# Module 2: only from an approved, active bill of its own product; before_validate, which
+		# Production Plan's work orders (saved without validation) pass through too.
+		"before_validate": "meddevice_suite.master_data.bom.guard_work_order",
+		"validate": "meddevice_suite.lot_control.lot_status.guard_work_order",
+	},
 	"Purchase Receipt": {
 		"validate": [
 			"meddevice_suite.lot_control.lot_status.guard_purchase_receipt",
@@ -109,8 +114,15 @@ doc_events = {
 	# Version-controlled masters (URS-MST-001): the default bill of materials in force is replaced,
 	# and one is cancelled, only under an approved change request.
 	"BOM": {
+		# Module 2: only QA's signed approval submits a bill of materials (before_validate, which
+		# runs even when a caller skips validation), and the signature is taken in that submit.
+		"before_validate": "meddevice_suite.master_data.bom.only_by_approval",
 		"before_submit": "meddevice_suite.master_data.versioning.guard_new_default_bom",
-		"on_submit": "meddevice_suite.master_data.versioning.record_displaced_default",
+		"onload": "meddevice_suite.master_data.bom.bom_onload",
+		"on_submit": [
+			"meddevice_suite.master_data.versioning.record_displaced_default",
+			"meddevice_suite.master_data.bom.sign_approval",
+		],
 		"on_update_after_submit": "meddevice_suite.master_data.versioning.record_displaced_default",
 		"before_cancel": "meddevice_suite.master_data.versioning.guard_cancel",
 		"on_cancel": "meddevice_suite.master_data.versioning.let_change_requests_not_block_cancel",
