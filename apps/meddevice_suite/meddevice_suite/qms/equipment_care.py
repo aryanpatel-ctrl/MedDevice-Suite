@@ -160,10 +160,15 @@ def unfit(assets: Iterable[str], on=None) -> dict[str, list[str]]:
 
 
 def equipment_at(workstations: Iterable[str]) -> list[str]:
+	"""The equipment in use at these workstations. None when no workstation is named: Frappe reads
+	`in [""]` as "no workstation set", which would take in every portable instrument on the site."""
+	stations = sorted(set(workstations) - {None, ""})
+	if not stations:
+		return []
 	return frappe.get_all(
 		"Asset",
 		filters={
-			equipment.WORKSTATION: ["in", sorted(set(workstations) - {None, ""}) or [""]],
+			equipment.WORKSTATION: ["in", stations],
 			equipment.STATUS: ["!=", equipment.RETIRED],
 			"docstatus": ["<", 2],
 		},
