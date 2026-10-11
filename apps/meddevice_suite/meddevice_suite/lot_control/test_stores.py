@@ -135,7 +135,11 @@ class TestStoreRoles(IntegrationTestCase):
 		abbr = frappe.db.get_value("Company", company(), "abbr")
 		self.assertEqual(store, f"{stores.QUARANTINE} - {abbr}")
 
-		stores.ensure_role_stores(company(), abbr)
+		frappe.flags.in_migrate = True  # the configuration gives the role as the site migrates
+		try:
+			stores.ensure_role_stores(company(), abbr)
+		finally:
+			frappe.flags.in_migrate = False
 
 		self.assertEqual(store_for(stores.QUARANTINE, company()), store)
 		self.assertEqual(

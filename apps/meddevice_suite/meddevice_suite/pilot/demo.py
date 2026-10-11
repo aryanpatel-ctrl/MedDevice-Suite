@@ -183,6 +183,7 @@ def load_demo_data() -> None:
 	for profile in JOB_PROFILES:  # QA's demo user approves the items below
 		ensure_demo_user(profile, password)
 	approve = approve_as("QA Manager", password)
+	approve_stores(company, password)  # module 7: before any stock moves
 	ensure_inspection_masters(company, approve, approve_as("QA Manager", password, "Asset"))
 	for code, (name, unit, hsn, shelf_life, supplier, rate) in RAW_MATERIALS.items():
 		ensure_item(
@@ -304,6 +305,27 @@ def item_master_data(code: str, group: str) -> dict:
 		data.update(PRODUCT_DEVICE_DATA)
 		data[item_master.UDI_DI] = demo_gtin(code)
 	return data
+
+
+def approve_stores(company: str, password: str) -> None:
+	"""QA's signed approval of each store of the demo company that holds stock (module 7)."""
+	from meddevice_suite.master_data import master_approval, warehouse
+	from meddevice_suite.pilot.flow import as_job  # the flow builds on this module
+
+	for store in frappe.get_all(
+		"Warehouse",
+		filters={
+			"company": company,
+			"is_group": 0,
+			"disabled": 0,
+			master_approval.APPROVAL_STATUS: ["!=", master_approval.APPROVED],
+		},
+		pluck="name",
+	):
+		with as_job("QA Manager"):
+			warehouse.approve(
+				frappe.get_doc("Warehouse", store), password=password, reason="Store checked (demo)"
+			)
 
 
 def approve_as(profile: str, password: str, doctype: str = "Item") -> Callable[[str], None]:
