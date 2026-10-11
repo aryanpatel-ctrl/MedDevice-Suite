@@ -489,8 +489,11 @@ def assess(doc: Document, status: str, meaning: str, action: str, password: str,
 	require(
 		frappe.session.user == doc.assessor, _("Only the named assessor assesses."), frappe.PermissionError
 	)
+	# Judged as things stand now: the employee's account and the assessor's roles may have changed
+	# since the training was planned.
 	require(
-		doc.assessor != doc.trainee_user,
+		frappe.session.user
+		not in (doc.trainee_user, frappe.db.get_value("Employee", doc.employee, "user_id")),
 		_("The trainee does not assess their own training."),
 		frappe.PermissionError,
 	)
