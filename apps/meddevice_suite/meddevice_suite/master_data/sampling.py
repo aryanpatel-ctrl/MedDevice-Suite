@@ -26,8 +26,6 @@ in scope (decided 2026-10-11). An inspection level and an AQL are a specificatio
 by QA under change control; the tables are the standard's, not settings.
 """
 
-import json
-import os
 from dataclasses import dataclass
 from functools import cache
 
@@ -66,8 +64,7 @@ class Plan:
 
 @cache
 def tables() -> dict:
-	with open(os.path.join(os.path.dirname(__file__), "iso2859_1.json")) as f:
-		return json.load(f)
+	return frappe.get_file_json(frappe.get_app_path("meddevice_suite", "master_data", "iso2859_1.json"))
 
 
 def aqls() -> tuple[str, ...]:
