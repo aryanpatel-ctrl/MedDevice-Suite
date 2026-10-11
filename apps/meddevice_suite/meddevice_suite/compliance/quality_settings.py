@@ -39,6 +39,7 @@ class Setting:
 SETTINGS: dict[str, Setting] = {
 	"lot_expiry_warning_days": Setting(30, 1, 365),
 	"supplier_certificate_warning_days": Setting(30, 1, 365),
+	"customer_licence_warning_days": Setting(30, 1, 365),  # module 5, decided 2026-10-11
 	"document_review_warning_days": Setting(30, 1, 365),
 	"change_action_warning_days": Setting(7, 1, 90),
 	"default_effectiveness_check_days": Setting(90, 0, 730),

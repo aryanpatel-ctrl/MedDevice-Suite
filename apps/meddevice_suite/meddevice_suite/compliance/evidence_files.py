@@ -26,6 +26,8 @@ EVIDENCE: tuple[tuple[str, str, dict], ...] = (
 	("Purchase Receipt Item", "mds_certificate", {"mds_certificate_verified": 1}),
 	# A supplier's quality system certificate, once QA has decided on it (module 4).
 	("Supplier Approval", "certificate", {"docstatus": 1}),
+	# A customer's licence copy, once QA has decided on it (module 5).
+	("Customer Licence", "licence_copy", {"docstatus": 1}),
 )
 # What identifies a file and where it is kept.
 IDENTITY = ("file_url", "is_private", "file_name", "content_hash", "attached_to_doctype", "attached_to_name")

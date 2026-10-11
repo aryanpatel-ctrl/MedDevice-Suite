@@ -28,7 +28,7 @@ from meddevice_suite.pilot.flow import lot_of
 from meddevice_suite.qa import verifies
 from meddevice_suite.qms.test_document_control import signer
 from meddevice_suite.setup.install import apply_configuration
-from meddevice_suite.setup.test_stock import approve_for_test, stock_item
+from meddevice_suite.setup.test_stock import approve_for_test, licensed_for_test, stock_item
 
 RAW = "MDS-LOT-RAW"
 PRODUCT = "MDS-LOT-PRODUCT"
@@ -73,6 +73,7 @@ def ensure_parties() -> None:
 				"territory": "India",
 			}
 		).insert()
+	licensed_for_test(CUSTOMER)  # module 5: delivered to only under a verified licence
 
 
 def stock_entry(purpose: str, rows: list[dict], submit: bool = True, **values) -> Document:
