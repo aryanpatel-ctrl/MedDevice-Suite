@@ -55,7 +55,6 @@ REVIEWED_CLOSED: dict[str, set[tuple[str, str]]] = {
 	"Production Supervisor": {
 		("Customer", "Production Plan.customer"),
 		("Supplier", "Production Plan Sub Assembly Item.supplier"),
-		("Asset", "Material Request Item.wip_composite_asset"),
 		("Customer", "Material Request.customer"),
 		("Customer", "Pick List.customer"),
 		("Item Tax Template", "Stock Entry Detail.item_tax_template"),
