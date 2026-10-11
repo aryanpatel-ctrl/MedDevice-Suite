@@ -665,6 +665,20 @@ source = "Delivery plan Phase 2 (pilot), decided 2026-10-07; D2, D3"
 status = "implemented"
 
 [[requirement]]
+id = "URS-PLT-012"
+module = 0
+title = "The lead times of the alerts (lot expiry, supplier certificate expiry, document review, change-request action due) and the default effectiveness check of a change are settings QA changes on screen, each within fixed bounds, only under an approved change request that lists the settings; the change is recorded with its request and a new version and applies from the next alert run; until QA changes a value the decided one applies (30, 30, 30, 7 and 90 days)."
+source = "User's instruction of 2026-10-11 to keep business parameters adjustable by users; review of hard-coded values (master plan section 21); ISO 13485 4.1.6, 21 CFR 11.10(a): a validated parameter changes under change control; values decided 2026-10-07/08"
+status = "implemented"
+
+[[requirement]]
+id = "URS-PLT-013"
+module = 49
+title = "The number of consecutive wrong passwords that locks an account (3 to 10) and how long it stays locked (5 to 1440 minutes) are settings QA changes on screen under an approved change request; login and signing follow them at once and again on every migrate, so a hand edit of the site's settings does not last."
+source = "21 CFR 11.300(d); URS-CMP-001; user's instruction of 2026-10-11 (adjustable values); 5 attempts and 15 minutes decided 2026-10-10"
+status = "implemented"
+
+[[requirement]]
 id = "URS-PLT-007"
 module = 0
 title = "On the pilot's demo data, the standard flow runs end to end with each step done by its job: enquiry, quotation with price approval and sales order; purchase request, purchase order with approval and goods receipt by batch into quarantine; work order on the line's routing with material issue, operations and a finished lot with its expiry; and delivery of that lot, all recorded in the audit trail."

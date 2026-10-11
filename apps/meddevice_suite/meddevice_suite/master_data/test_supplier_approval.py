@@ -529,6 +529,18 @@ class TestCertificateAlert(SupplierApprovalTestCase):
 		self.assertEqual(self.alerts_for(later), 0)
 		self.assertTrue(verify_signatures("Supplier Approval", name))
 
+	@verifies("URS-PLT-012")
+	def test_the_certificate_alert_follows_quality_settings(self):
+		from meddevice_suite.compliance.test_quality_settings import use_setting
+
+		inside = decide(SUPPLIER, [ITEM], certificate_expiry=add_days(today(), 50))
+		outside = decide(OTHER_SUPPLIER, [ITEM], certificate_expiry=add_days(today(), 70))
+		frappe.set_user("Administrator")
+		with use_setting("supplier_certificate_warning_days", 60):
+			send_certificate_alerts()
+		self.assertGreater(self.alerts_for(inside), 0)
+		self.assertEqual(self.alerts_for(outside), 0)
+
 	def test_a_decision_replaced_by_a_newer_one_is_not_alerted(self):
 		old = decide(SUPPLIER, [ITEM], certificate_expiry=add_days(today(), 10))
 		decide(SUPPLIER, [ITEM], certificate_expiry=add_days(today(), 400))

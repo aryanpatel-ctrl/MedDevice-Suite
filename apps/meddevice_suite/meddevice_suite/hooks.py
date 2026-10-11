@@ -86,7 +86,10 @@ doc_events = {
 	"Delivery Note": {"validate": "meddevice_suite.lot_control.lot_status.guard_delivery_note"},
 	"Pick List": {"validate": "meddevice_suite.lot_control.lot_status.guard_pick_list"},
 	"Packing Slip": {"validate": "meddevice_suite.lot_control.lot_status.guard_packing_slip"},
-	"Work Order": {"validate": "meddevice_suite.lot_control.lot_status.guard_work_order"},
+	"Work Order": {
+		"before_validate": "meddevice_suite.lot_control.lot_status.guard_unvalidated_work_order",
+		"validate": "meddevice_suite.lot_control.lot_status.guard_work_order",
+	},
 	"Purchase Receipt": {
 		"validate": [
 			"meddevice_suite.lot_control.lot_status.guard_purchase_receipt",
@@ -139,6 +142,8 @@ doc_events = {
 		"onload": "meddevice_suite.master_data.item_master.item_onload",
 		"on_update": "meddevice_suite.master_data.versioning.update_variants_under_control",
 	},
+	# Quality Settings (URS-PLT-013): the lockout is changed there, under change control.
+	"System Settings": {"validate": "meddevice_suite.compliance.quality_settings.guard_system_lockout"},
 	"Stock Settings": {
 		"validate": [
 			"meddevice_suite.setup.stock.protect_stock_settings",

@@ -5,8 +5,6 @@ from frappe.utils import add_to_date, now_datetime, time_diff_in_seconds
 from frappe.utils.user import UserPermissions
 
 from meddevice_suite.compliance.esign import (
-	LOCKOUT_ATTEMPTS,
-	LOCKOUT_SECONDS,
 	SigningRefused,
 	apply_lockout,
 	is_unchanged_since,
@@ -155,23 +153,24 @@ class TestReauthentication(SigningTestCase):
 class TestLockoutConfiguration(SigningTestCase):
 	@verifies("URS-CMP-001")
 	def test_the_site_locks_an_account_after_wrong_passwords(self):
-		"""A site allowing unlimited attempts would never lock; the configuration gives it the
-		standard limit, and keeps a stricter one."""
-		frappe.db.set_single_value("System Settings", "allow_consecutive_login_attempts", 0)
-		frappe.db.set_single_value("System Settings", "allow_login_after_fail", 0)
-		frappe.clear_cache(doctype="System Settings")
-		apply_lockout()
-		self.assertEqual(
-			frappe.db.get_single_value("System Settings", "allow_consecutive_login_attempts"),
-			LOCKOUT_ATTEMPTS,
-		)
-		self.assertEqual(
-			frappe.db.get_single_value("System Settings", "allow_login_after_fail"), LOCKOUT_SECONDS
-		)
-		frappe.db.set_single_value("System Settings", "allow_consecutive_login_attempts", 3)
-		frappe.clear_cache(doctype="System Settings")
-		apply_lockout()
-		self.assertEqual(frappe.db.get_single_value("System Settings", "allow_consecutive_login_attempts"), 3)
+		"""The site's lockout is the one Quality Settings state (5 wrong passwords, 15 minutes until QA
+		changes them), whatever the site's own System Settings were set to by hand."""
+		from meddevice_suite.compliance.quality_settings import value
+
+		for attempts, seconds in ((0, 0), (3, 30), (10, 3600)):  # unlimited, a stricter, a laxer hand edit
+			with self.subTest(attempts=attempts, seconds=seconds):
+				frappe.db.set_single_value("System Settings", "allow_consecutive_login_attempts", attempts)
+				frappe.db.set_single_value("System Settings", "allow_login_after_fail", seconds)
+				frappe.clear_cache(doctype="System Settings")
+				apply_lockout()
+				self.assertEqual(
+					frappe.db.get_single_value("System Settings", "allow_consecutive_login_attempts"),
+					value("login_lockout_attempts") - 1,  # Frappe locks once failures exceed it
+				)
+				self.assertEqual(
+					frappe.db.get_single_value("System Settings", "allow_login_after_fail"),
+					value("login_lockout_minutes") * 60,
+				)
 
 
 class TestSignatureContent(SigningTestCase):
