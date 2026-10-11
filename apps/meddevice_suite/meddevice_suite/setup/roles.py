@@ -123,6 +123,7 @@ PERMISSIONS: dict[str, dict[str, tuple[str, ...]]] = {
 			"Stock User": VIEW,
 			"QC Inspector": VIEW,
 			"Accounts User": VIEW,
+			"Maintenance User": PICK,  # the laboratory of an external calibration (module 38)
 		}
 	),
 	"Customer": oversight(
