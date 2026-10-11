@@ -27,6 +27,7 @@ from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 from frappe.model.document import Document
 from frappe.utils import add_days, cint, flt, getdate, now_datetime, today
 
+from meddevice_suite.compliance import quality_settings
 from meddevice_suite.compliance.esign import sign
 
 DOCTYPE = "Supplier Approval"
@@ -39,7 +40,6 @@ ACTS = {
 	"Not Approve": (NOT_APPROVED, "Rejected"),
 }
 CERTIFICATE_ALERT = "Supplier Certificate Expiring"
-WARNING_DAYS = 30
 SAVEPOINT = "certificate_alert"  # a savepoint name has no spaces
 # On a purchase order: the decision it was placed under, and why a conditional supplier.
 APPROVAL_FIELD = "mds_supplier_approval"
@@ -362,7 +362,7 @@ def send_certificate_alerts() -> None:
 	"""Daily: alert QA and Purchase once when the certificate of a supplier's decision in force
 	expires within 30 days, including a day the alerts did not run."""
 	notification = frappe.get_doc("Notification", CERTIFICATE_ALERT)
-	soon = add_days(today(), WARNING_DAYS)
+	soon = add_days(today(), quality_settings.value("supplier_certificate_warning_days"))
 	for row in frappe.get_all(
 		DOCTYPE,
 		filters={

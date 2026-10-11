@@ -100,6 +100,16 @@ class TestLotExpiryAlerts(AlertTestCase):
 				self.assertIn(lot, self.expiry_alerts(user, lot)[0])
 		self.assertEqual(self.expiry_alerts(self.sales, lot), [])
 
+	@verifies("URS-PLT-012")
+	def test_the_warning_follows_quality_settings(self):
+		from meddevice_suite.compliance.test_quality_settings import use_setting
+
+		with use_setting("lot_expiry_warning_days", 10):
+			outside, inside = self.lot(12), self.lot(9)
+			self.run_alerts()
+		self.assertEqual(self.expiry_alerts(self.stores, outside), [])
+		self.assertEqual(len(self.expiry_alerts(self.stores, inside)), 1)
+
 	def test_the_alert_says_what_to_do(self):
 		lot = self.lot(30)
 

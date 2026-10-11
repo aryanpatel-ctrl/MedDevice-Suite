@@ -31,6 +31,7 @@ from frappe.desk.doctype.notification_log.notification_log import enqueue_create
 from frappe.model.document import Document
 from frappe.utils import add_days, cint, getdate, now_datetime, today
 
+from meddevice_suite.compliance import quality_settings
 from meddevice_suite.compliance.esign import sign
 from meddevice_suite.compliance.fingerprint import plain_text
 from meddevice_suite.setup.roles import BUSINESS_ROLES, MANAGEMENT, SYSTEM_ADMINISTRATION
@@ -51,6 +52,7 @@ AFFECTED_TYPES = (
 	"Customer",  # the ninth master (URS-MST-001)
 	"Quality Inspection Template",
 	"Warehouse",
+	"Quality Settings",  # the adjustable values of the system (URS-PLT-012)
 )
 RESULT_TYPES = (*AFFECTED_TYPES, "Document Revision")
 
@@ -67,11 +69,9 @@ BEFORE_APPROVAL = ("Draft", "Under Assessment", "Awaiting Approval", "Awaiting M
 AWAITING_DECISION = ("Under Assessment", "Awaiting Approval", "Awaiting Management Approval")
 CLOSED = ("Closed", "Rejected", "Withdrawn")
 
-DEFAULT_CHECK_DAYS = 90  # decided under the client's instruction of 2026-10-07
 MAX_CHECK_DAYS = 730
 MAX_NOTE = 1000
 
-ACTION_WARNING_DAYS = 7
 AWAITING_ASSESSMENT = "Change Request Awaiting Assessment"
 AWAITING_APPROVAL = "Change Request Awaiting Approval"
 AWAITING_MANAGEMENT = "Change Request Awaiting Management Approval"
@@ -383,7 +383,7 @@ def send_change_alerts() -> None:
 	overdue, and QA once when a change's effectiveness check falls due, including a day the
 	alerts did not run. Each alert is sent on its own, so one that fails is logged and the
 	others still go; it is retried the next day."""
-	soon = add_days(today(), ACTION_WARNING_DAYS)
+	soon = add_days(today(), quality_settings.value("change_action_warning_days"))
 	for row in frappe.get_all(
 		"Change Request Action",
 		filters={"parenttype": DOCTYPE, "done": 0, "due_date": ["<=", soon]},
