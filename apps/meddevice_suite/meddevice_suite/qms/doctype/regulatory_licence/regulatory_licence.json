@@ -1,0 +1,339 @@
+{
+ "actions": [],
+ "creation": "2026-10-11 21:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "licence_type",
+  "licence_number",
+  "issuing_authority",
+  "site",
+  "column_break_validity",
+  "valid_from",
+  "valid_until",
+  "renews",
+  "status",
+  "superseded_by",
+  "section_copy",
+  "important_file",
+  "verified_file_version",
+  "verified_file_sha256",
+  "section_products",
+  "products",
+  "section_obligations",
+  "obligations",
+  "section_submissions",
+  "submissions",
+  "section_decision",
+  "reason",
+  "decided_by",
+  "decided_at",
+  "expiry_alerted",
+  "amended_from"
+ ],
+ "fields": [
+  {
+   "fieldname": "licence_type",
+   "fieldtype": "Link",
+   "label": "Licence Type",
+   "options": "Regulatory Licence Type",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "licence_number",
+   "fieldtype": "Data",
+   "label": "Number",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "issuing_authority",
+   "fieldtype": "Data",
+   "label": "Issuing Authority",
+   "reqd": 1
+  },
+  {
+   "fieldname": "site",
+   "fieldtype": "Data",
+   "label": "Site"
+  },
+  {
+   "fieldname": "column_break_validity",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "valid_from",
+   "fieldtype": "Date",
+   "label": "Valid From",
+   "reqd": 1
+  },
+  {
+   "fieldname": "valid_until",
+   "fieldtype": "Date",
+   "label": "Valid Until",
+   "in_list_view": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "renews",
+   "fieldtype": "Link",
+   "label": "Renews",
+   "options": "Regulatory Licence"
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "Draft\nVerified\nRejected\nWithdrawn\nSuperseded",
+   "default": "Draft",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "search_index": 1,
+   "read_only": 1,
+   "no_copy": 1,
+   "allow_on_submit": 1
+  },
+  {
+   "fieldname": "superseded_by",
+   "fieldtype": "Link",
+   "label": "Superseded By",
+   "options": "Regulatory Licence",
+   "read_only": 1,
+   "no_copy": 1,
+   "allow_on_submit": 1
+  },
+  {
+   "fieldname": "section_copy",
+   "fieldtype": "Section Break",
+   "label": "Copy"
+  },
+  {
+   "fieldname": "important_file",
+   "fieldtype": "Link",
+   "label": "Copy (Important File)",
+   "options": "Important File"
+  },
+  {
+   "fieldname": "verified_file_version",
+   "fieldtype": "Int",
+   "label": "Version Verified",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "verified_file_sha256",
+   "fieldtype": "Data",
+   "label": "Fingerprint Verified (SHA-256)",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "section_products",
+   "fieldtype": "Section Break",
+   "label": "Products Covered"
+  },
+  {
+   "fieldname": "products",
+   "fieldtype": "Table",
+   "label": "Products",
+   "options": "Regulatory Licence Product"
+  },
+  {
+   "fieldname": "section_obligations",
+   "fieldtype": "Section Break",
+   "label": "Obligations"
+  },
+  {
+   "fieldname": "obligations",
+   "fieldtype": "Table",
+   "label": "Obligations",
+   "options": "Regulatory Licence Obligation",
+   "allow_on_submit": 1
+  },
+  {
+   "fieldname": "section_submissions",
+   "fieldtype": "Section Break",
+   "label": "Submissions to the Authority"
+  },
+  {
+   "fieldname": "submissions",
+   "fieldtype": "Table",
+   "label": "Submissions",
+   "options": "Regulatory Submission",
+   "allow_on_submit": 1
+  },
+  {
+   "fieldname": "section_decision",
+   "fieldtype": "Section Break",
+   "label": "QA's Decision"
+  },
+  {
+   "fieldname": "reason",
+   "fieldtype": "Small Text",
+   "label": "Reason",
+   "read_only": 1,
+   "no_copy": 1,
+   "allow_on_submit": 1
+  },
+  {
+   "fieldname": "decided_by",
+   "fieldtype": "Link",
+   "label": "Decided By",
+   "options": "User",
+   "read_only": 1,
+   "no_copy": 1,
+   "allow_on_submit": 1
+  },
+  {
+   "fieldname": "decided_at",
+   "fieldtype": "Datetime",
+   "label": "Decided At",
+   "read_only": 1,
+   "no_copy": 1,
+   "allow_on_submit": 1
+  },
+  {
+   "fieldname": "expiry_alerted",
+   "fieldtype": "Check",
+   "label": "Expiry Alerted",
+   "hidden": 1,
+   "read_only": 1,
+   "no_copy": 1,
+   "allow_on_submit": 1
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "options": "Regulatory Licence",
+   "read_only": 1,
+   "no_copy": 1,
+   "print_hide": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-10-11 21:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "QMS",
+ "name": "Regulatory Licence",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "role": "Quality Manager",
+   "select": 1,
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "delete": 0,
+   "email": 0,
+   "import": 0,
+   "share": 0,
+   "report": 1,
+   "print": 1,
+   "export": 1
+  },
+  {
+   "role": "Sales Manager",
+   "select": 1,
+   "read": 1,
+   "write": 0,
+   "create": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "delete": 0,
+   "email": 0,
+   "import": 0,
+   "share": 0,
+   "report": 1,
+   "print": 1,
+   "export": 0
+  },
+  {
+   "role": "Purchase Manager",
+   "select": 1,
+   "read": 1,
+   "write": 0,
+   "create": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "delete": 0,
+   "email": 0,
+   "import": 0,
+   "share": 0,
+   "report": 1,
+   "print": 1,
+   "export": 0
+  },
+  {
+   "role": "Stock Manager",
+   "select": 1,
+   "read": 1,
+   "write": 0,
+   "create": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "delete": 0,
+   "email": 0,
+   "import": 0,
+   "share": 0,
+   "report": 1,
+   "print": 1,
+   "export": 0
+  },
+  {
+   "role": "Manufacturing Manager",
+   "select": 1,
+   "read": 1,
+   "write": 0,
+   "create": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "delete": 0,
+   "email": 0,
+   "import": 0,
+   "share": 0,
+   "report": 1,
+   "print": 1,
+   "export": 0
+  },
+  {
+   "role": "System Manager",
+   "select": 1,
+   "read": 1,
+   "write": 0,
+   "create": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "delete": 0,
+   "email": 0,
+   "import": 0,
+   "share": 0,
+   "report": 1,
+   "print": 1,
+   "export": 0
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0,
+ "is_submittable": 1,
+ "autoname": "format:RL-{YYYY}-{#####}",
+ "naming_rule": "Expression",
+ "title_field": "licence_number",
+ "search_fields": "licence_type,licence_number,status",
+ "description": "A licence, registration or certificate the plant holds (module 41): counts once QA verifies it with a signature; never edited, cancelled or deleted."
+}

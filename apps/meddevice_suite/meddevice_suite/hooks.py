@@ -333,6 +333,7 @@ scheduler_events = {
 		"meddevice_suite.qms.change_control.send_change_alerts",
 		"meddevice_suite.master_data.supplier_approval.send_certificate_alerts",
 		"meddevice_suite.master_data.customer_licence.send_expiry_alerts",
+		"meddevice_suite.qms.regulatory_licence.send_expiry_alerts",  # module 41
 		"meddevice_suite.master_data.supplier_rating.rate_finished_months",
 		# Module 39: risk reviews due, and the pinned controls changed past the document hooks.
 		"meddevice_suite.qms.risk_management.raise_periodic_reviews",

@@ -67,6 +67,8 @@ SETTINGS: dict[str, Setting] = {
 	# the days QA has to answer a risk review
 	"risk_periodic_review_months": Setting(12, 1, 36),
 	"risk_review_due_days": Setting(30, 1, 180),
+	# Regulatory licences (URS-REG-004), decided 2026-10-11 (plan D-12, D-14)
+	"regulatory_licence_warning_days": Setting(90, 1, 730),
 }
 
 

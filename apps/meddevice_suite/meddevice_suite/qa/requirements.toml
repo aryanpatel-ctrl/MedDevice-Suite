@@ -1265,3 +1265,45 @@ module = 37
 title = "QA may revoke an employee's competence with an electronic signature and a reason; the employee is then refused for that work and a retraining record opens; a Not Competent assessment opens a retraining record likewise."
 source = "ISO 13485 6.2, 8.3; decided 2026-10-11 (plan D-18)"
 status = "implemented"
+
+[[requirement]]
+id = "URS-REG-001"
+module = 41
+title = "QA records each licence, registration or certificate of the plant with its type from QA's list, number, issuing authority, site, products covered, validity and its copy as an important file; it counts only once QA verifies it with an electronic signature."
+source = "DFD 9E Regulatory Compliance; CDSCO MDR 2017 Chapter IV; ISO 13485 4.1.1; decided 2026-10-11 (plan D-14): QA owns licences"
+status = "implemented"
+
+[[requirement]]
+id = "URS-REG-002"
+module = 41
+title = "A verified licence is never edited, cancelled or deleted; a renewal is a new licence that supersedes the one it renews when verified, a rejected renewal leaves it unchanged, and QA rejects a draft or withdraws a verified licence with a signed reason."
+source = "ISO 13485 4.2.5; 21 CFR 11.50"
+status = "implemented"
+
+[[requirement]]
+id = "URS-REG-003"
+module = 41
+title = "Verification pins the version and SHA-256 fingerprint of the licence's copy; a newer version of the copy is shown as not verified."
+source = "21 CFR 11.70; ISO 13485 4.2.5"
+status = "implemented"
+
+[[requirement]]
+id = "URS-REG-004"
+module = 41
+title = "QA is alerted once when a verified licence ends, or an obligation of it (retention fee, surveillance audit) falls due, within the lead time set in Quality Settings or is overdue; it stays a reminder until the renewal is verified or QA records the obligation done with its evidence."
+source = "Module 41; DFD 9C alerts; decided 2026-10-11 (plan D-12): 90 days"
+status = "implemented"
+
+[[requirement]]
+id = "URS-REG-005"
+module = 41
+title = "QA records each submission to the authority (device or plant master file, change notification, renewal application) on its licence with its date, the authority's reference and its copy as an important file."
+source = "DFD 9E; CDSCO MDR 2017 Fourth Schedule"
+status = "implemented"
+
+[[requirement]]
+id = "URS-REG-006"
+module = 41
+title = "A change request with regulatory impact is assessed only when it lists the licence or registration it affects."
+source = "Master plan: real links between change control and regulatory records"
+status = "implemented"

@@ -216,6 +216,7 @@ class TestNeedsOpen(TrainingTestCase):
 		staff.relieving_date = today()
 		staff.save(ignore_permissions=True)
 		self.assertEqual([r.status for r in records(emp)], ["Withdrawn"])
+		self.assertIn("no longer active", frappe.db.get_value(RECORD, records(emp)[0].name, "outcome_reason"))
 
 	def test_never_opened_twice_and_not_by_hand(self):
 		document, _r = self.sop()
@@ -311,6 +312,25 @@ class TestSignedCompletion(TrainingTestCase):
 		self.sign(user, RECORD, name, "Trained")
 		with self.assertRaisesRegex(frappe.PermissionError, "named assessor"):
 			self.sign(self.qa, RECORD, name, "Competent")
+
+	def test_judged_at_the_assessment_as_things_stand_then(self):
+		"""The employee's account or the assessor's roles may change after the training is planned."""
+		document, _r = self.sop()
+		emp, user = self.operator(self.job_with(document))
+		name = self.open_record(emp)
+		assessor = person("Manufacturing User", "Operator")  # an operator too: still reads the record
+		self.plan(name, assessor=assessor)
+		self.sign(user, RECORD, name, "Trained")
+		frappe.db.set_value(
+			"Employee", emp, "user_id", assessor
+		)  # the assessor's account is now the trainee's
+		with self.assertRaisesRegex(frappe.PermissionError, "does not assess their own"):
+			self.sign(assessor, RECORD, name, "Competent")
+		frappe.db.set_value("Employee", emp, "user_id", user)
+		frappe.db.delete("Has Role", {"parent": assessor, "role": "Manufacturing User"})
+		frappe.clear_cache(user=assessor)
+		with self.assertRaisesRegex(frappe.PermissionError, "Production Supervisor or QA assesses"):
+			self.sign(assessor, RECORD, name, "Competent")
 
 	def test_the_assessor_and_assessment_are_named_before_the_trainee_signs(self):
 		document, _r = self.sop()
@@ -533,6 +553,9 @@ class TestMatrixApproval(TrainingTestCase):
 			frappe.set_user("Administrator")
 		with self.assertRaises(frappe.PermissionError):
 			self.sign(self.author, "Training Matrix", name, "Approve", "Checked")
+		coordinator = person("HR User")  # may edit a matrix, never approve it
+		with self.assertRaisesRegex(frappe.PermissionError, "Only QA approves"):
+			self.sign(coordinator, "Training Matrix", name, "Approve", "Checked")
 		matrix = frappe.get_doc("Training Matrix", name)
 		matrix.flags.ignore_permissions = True
 		with self.assertRaises(frappe.PermissionError):

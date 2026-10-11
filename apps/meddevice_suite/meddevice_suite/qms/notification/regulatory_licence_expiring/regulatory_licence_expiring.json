@@ -1,0 +1,29 @@
+{
+ "attach_print": 0,
+ "channel": "System Notification",
+ "condition_type": "Python",
+ "creation": "2026-10-11 21:00:00.000000",
+ "docstatus": 0,
+ "doctype": "Notification",
+ "document_type": "Regulatory Licence",
+ "enabled": 1,
+ "event": "Custom",
+ "idx": 0,
+ "is_standard": 1,
+ "message_type": "HTML",
+ "minutes_offset": 0,
+ "modified": "2026-10-11 21:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "QMS",
+ "name": "Regulatory Licence Expiring",
+ "notification_message": "{{ _(\"Licence {0} ({1}) expires or has an obligation due on or before {2}, or overdue. Apply for the renewal or do the obligation; QA records the renewal and verifies it, or records the obligation with its evidence.\").format(doc.licence_number, doc.licence_type, frappe.format_value(doc.valid_until, {\"fieldtype\": \"Date\"}) if doc.valid_until else _(\"its due date\")) }}",
+ "owner": "Administrator",
+ "recipients": [
+  {
+   "receiver_by_role": "Quality Manager"
+  }
+ ],
+ "send_system_notification": 0,
+ "send_to_all_assignees": 0,
+ "subject": "Licence {{ doc.licence_number }} ({{ doc.licence_type }}) needs renewal or an obligation"
+}

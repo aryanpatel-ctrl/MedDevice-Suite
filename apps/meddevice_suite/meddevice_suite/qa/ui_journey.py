@@ -490,6 +490,53 @@ def ensure_second_qa(password: str) -> str:
 
 
 @frappe.whitelist(methods=["POST"])
+def draft_licence() -> str:
+	"""A licence of the plant drafted by the signed-in QA user, with its copy in the important files
+	repository, for the browser to verify on its form with a signature (module 41)."""
+	ensure_test_site()
+	frappe.has_permission("Regulatory Licence", "create", throw=True)
+	tag = frappe.generate_hash(length=5)
+	licence_type = f"Manufacturing licence (browser test) {tag}"
+	frappe.get_doc(
+		{"doctype": "Regulatory Licence Type", "licence_type_name": licence_type, "has_expiry": 1}
+	).insert()
+	category = frappe.get_doc(
+		{"doctype": "File Category", "category_name": f"Licences (browser test) {tag}"}
+	).insert()
+	copy = frappe.get_doc(
+		{
+			"doctype": "File",
+			"file_name": f"licence-{tag}.txt",
+			"content": f"Manufacturing licence {tag} (browser test)",
+			"is_private": 1,
+		}
+	).insert()
+	important_file = frappe.get_doc(
+		{
+			"doctype": "Important File",
+			"title": f"Licence {tag}",
+			"category": category.name,
+			"new_file": copy.file_url,
+		}
+	).insert()
+	return (
+		frappe.get_doc(
+			{
+				"doctype": "Regulatory Licence",
+				"licence_type": licence_type,
+				"licence_number": f"MFG/MD-5/{tag}",
+				"issuing_authority": "State Licensing Authority",
+				"valid_from": add_days(today(), -30),
+				"valid_until": add_days(today(), 1825),
+				"important_file": important_file.name,
+			}
+		)
+		.insert()
+		.name
+	)
+
+
+@frappe.whitelist(methods=["POST"])
 def draft_calibration(asset: str) -> str:
 	"""A calibration of `asset` drafted by the signed-in user, for the browser to complete on its
 	form with their signature (module 38)."""

@@ -85,6 +85,7 @@ class TestValues(QualitySettingsTestCase):
 				"training_expiry_warning_days": 30,
 				"risk_periodic_review_months": 12,
 				"risk_review_due_days": 30,
+				"regulatory_licence_warning_days": 90,
 			},
 		)
 

@@ -427,6 +427,34 @@ def risk_reviews_open() -> Iterator[Due]:
 		)
 
 
+def regulatory_licences_due() -> Iterator[Due]:
+	"""Each verified licence ending within the lead time or ended, until its renewal is verified;
+	each obligation due within it or overdue, until QA records it done (module 41)."""
+	from meddevice_suite.qms import regulatory_licence
+
+	for row in regulatory_licence.expiring():
+		yield Due(
+			"Regulatory Licence",
+			row.name,
+			row.valid_until,
+			_("Licence {0} ({1}) ends on {2}").format(
+				row.licence_number, row.licence_type, date_text(row.valid_until)
+			),
+			(QA_ROLE,),
+		)
+	for row in regulatory_licence.obligations_due():
+		yield Due(
+			"Regulatory Licence",
+			row.name,
+			row.due_date,
+			_("{0} of licence {1} is due on {2}").format(
+				row.obligation, row.licence_number, date_text(row.due_date)
+			),
+			(QA_ROLE,),
+			part=row.row,
+		)
+
+
 # category -> what is due now (module that owns the record)
 CATEGORIES: dict[str, Callable[[], Iterator[Due]]] = {
 	"Lot Expiry": lots_expiring,  # module 18
@@ -443,6 +471,7 @@ CATEGORIES: dict[str, Callable[[], Iterator[Due]]] = {
 	"Calibration Impact": calibration_impacts_open,  # module 38
 	"Training Due": training_due,  # module 37
 	"Risk Review": risk_reviews_open,  # module 39
+	"Regulatory Licence": regulatory_licences_due,  # module 41
 }
 
 

@@ -66,6 +66,8 @@ RETENTION_SCHEDULE: dict[str, tuple[int, str, tuple[str, ...]]] = {
 			"Reminder Schedule",
 			"Work Task",
 			"Important File",
+			"Regulatory Licence",  # module 41
+			"Regulatory Licence Type",
 			"File Category",
 			"Risk Acceptability Policy",  # module 39
 			"Risk Management File",

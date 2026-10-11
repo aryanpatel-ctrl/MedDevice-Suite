@@ -59,6 +59,7 @@ AFFECTED_TYPES = (
 	"Warehouse",
 	"Quality Settings",  # the adjustable values of the system (URS-PLT-012)
 	"Risk Management File",  # module 39 (URS-QMS-024)
+	"Regulatory Licence",  # a licence or registration the change must be notified under (URS-REG-006)
 )
 RESULT_TYPES = (*AFFECTED_TYPES, "Document Revision")
 
@@ -157,6 +158,9 @@ def assess(doc: Document, password: str, reason: str | None = None) -> None:
 		_("A change that needs regulatory notification is a Major change."),
 	)
 	risk_management().require_file_for_risk_impact(doc)  # URS-QMS-024
+	from meddevice_suite.qms.regulatory_licence import require_licence_for_regulatory_change
+
+	require_licence_for_regulatory_change(doc)  # URS-REG-006
 	require(
 		0 <= cint(doc.effectiveness_check_days) <= MAX_CHECK_DAYS,
 		_("Check the effectiveness within {0} days of implementation.").format(MAX_CHECK_DAYS),
