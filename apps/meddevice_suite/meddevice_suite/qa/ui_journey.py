@@ -39,7 +39,11 @@ from meddevice_suite.pilot.demo import (
 	ensure_licence,
 	ensure_price,
 )
-from meddevice_suite.pilot.inspection import ensure_inspection_masters, ensure_inspection_template
+from meddevice_suite.pilot.inspection import (
+	calibrate_instrument,
+	ensure_inspection_masters,
+	ensure_inspection_template,
+)
 from meddevice_suite.qa.site_setup import TEST_COMPANY
 from meddevice_suite.qa.ui_users import email_for, ensure_test_site
 
@@ -105,10 +109,10 @@ def prepare_journey(password: str | None = None) -> dict:
 		"Set up for the browser journey",
 	)
 	write_off_leftover_stock()
+	instrument = ensure_inspection_masters(COMPANY, approve_as_qa(password), approve_as_qa(password, "Asset"))
+	calibrate_instrument(instrument, password, lambda: acting_as(email_for("Maintenance")))  # module 38
 	return {
-		"instrument": ensure_inspection_masters(
-			COMPANY, approve_as_qa(password), approve_as_qa(password, "Asset")
-		),
+		"instrument": instrument,
 		"company": COMPANY,
 		"customer": CUSTOMER,
 		"supplier": SUPPLIER,
@@ -170,7 +174,11 @@ def ensure_masters(
 	approve_equipment: Callable[[str], None] | None = None,
 	password: str | None = None,
 ) -> None:
-	ensure_inspection_masters(COMPANY, approve, approve_equipment)  # the parameters the templates below name
+	instrument = ensure_inspection_masters(
+		COMPANY, approve, approve_equipment
+	)  # the parameters the templates below name
+	if password:  # module 38: the instrument calibrated before it measures (tests: by approve_equipment)
+		calibrate_instrument(instrument, password, lambda: acting_as(email_for("Maintenance")))
 	ensure(
 		"Warehouse",
 		store(QUARANTINE),

@@ -1,7 +1,7 @@
 {
  "actions": [],
  "autoname": "format:TASK-{YYYY}-{#####}",
- "creation": "2026-10-12 08:00:00.000000",
+ "creation": "2026-10-11 08:00:00.000000",
  "description": "A task assigned to a person, done, submitted for approval and approved with a signature by another person (module 59, DFD 9B). Never deleted.",
  "doctype": "DocType",
  "engine": "InnoDB",
@@ -163,7 +163,7 @@
  "index_web_pages_for_search": 0,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-10-12 08:00:00.000000",
+ "modified": "2026-10-11 08:00:00.000000",
  "modified_by": "Administrator",
  "module": "Work Management",
  "name": "Work Task",

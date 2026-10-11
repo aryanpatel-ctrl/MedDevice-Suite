@@ -1,0 +1,95 @@
+{
+ "actions": [],
+ "creation": "2026-10-11 12:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "parameter",
+  "unit",
+  "nominal",
+  "lower_limit",
+  "upper_limit",
+  "as_found",
+  "as_left",
+  "found_in_tolerance",
+  "left_in_tolerance"
+ ],
+ "fields": [
+  {
+   "fieldname": "parameter",
+   "fieldtype": "Data",
+   "label": "Parameter",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "unit",
+   "fieldtype": "Data",
+   "label": "Unit",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "nominal",
+   "fieldtype": "Float",
+   "label": "Nominal",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "lower_limit",
+   "fieldtype": "Float",
+   "label": "Lower Limit",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "upper_limit",
+   "fieldtype": "Float",
+   "label": "Upper Limit",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "as_found",
+   "fieldtype": "Float",
+   "label": "As Found",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "as_left",
+   "fieldtype": "Float",
+   "label": "As Left",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "found_in_tolerance",
+   "fieldtype": "Check",
+   "label": "Found in Tolerance",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "left_in_tolerance",
+   "fieldtype": "Check",
+   "label": "Left in Tolerance",
+   "read_only": 1,
+   "no_copy": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-10-11 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "QMS",
+ "name": "Calibration Point",
+ "owner": "Administrator",
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0,
+ "istable": 1,
+ "permissions": []
+}

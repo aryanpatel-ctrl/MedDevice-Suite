@@ -14,6 +14,7 @@ from meddevice_suite.master_data.report.equipment_history_card import equipment_
 from meddevice_suite.pilot.inspection import INSTRUMENT_EQUIPMENT, INSTRUMENT_ITEM, LOCATION
 from meddevice_suite.qa import verifies
 from meddevice_suite.qms.test_change_control import signer
+from meddevice_suite.setup.test_stock import care_in_date_for_test
 
 REFUSED = (frappe.ValidationError, frappe.PermissionError)
 
@@ -327,6 +328,7 @@ class TestUseOnInspections(EquipmentTestCase):
 		with self.assertRaisesRegex(frappe.ValidationError, "QA has not approved it"):
 			self.inspect_with(draft.name).insert()
 		self.approve(draft.name)
+		care_in_date_for_test(draft.name)  # module 38: calibrated, so only the status is tested here
 		for status in (equipment.OUT_OF_SERVICE, equipment.RETIRED):
 			with self.subTest(status=status):
 				frappe.db.set_value("Asset", draft.name, equipment.STATUS, status)

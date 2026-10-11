@@ -1,0 +1,42 @@
+{
+ "actions": [],
+ "creation": "2026-10-11 12:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "standard",
+  "standard_due_on"
+ ],
+ "fields": [
+  {
+   "fieldname": "standard",
+   "fieldtype": "Link",
+   "label": "Reference Standard",
+   "options": "Asset",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "standard_due_on",
+   "fieldtype": "Date",
+   "label": "Its Calibration Due",
+   "in_list_view": 1,
+   "read_only": 1,
+   "no_copy": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-10-11 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "QMS",
+ "name": "Calibration Standard",
+ "owner": "Administrator",
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0,
+ "istable": 1,
+ "permissions": []
+}

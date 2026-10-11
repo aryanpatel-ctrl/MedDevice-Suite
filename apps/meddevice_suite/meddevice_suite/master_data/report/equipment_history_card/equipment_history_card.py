@@ -59,9 +59,15 @@ def execute(filters: dict | None = None) -> tuple:
 	summary = [
 		{"label": _("Repairs"), "value": len(repairs), "datatype": "Int"},
 		{
+			# Repairs and preventive maintenance (module 38) together.
 			"label": _("Downtime (hours)"),
-			"value": sum(flt(r["downtime"]) for r in repairs),
+			"value": sum(flt(r["downtime"]) for r in rows if r["downtime"]),
 			"datatype": "Float",
+		},
+		{
+			"label": _("Found out of tolerance"),
+			"value": sum(1 for r in rows if r.get("out_of_tolerance")),
+			"datatype": "Int",
 		},
 		{
 			"label": _("Inspections using it"),
@@ -79,6 +85,7 @@ def events(asset: str) -> list[dict]:
 		*changes(asset),
 		*movements(asset),
 		*maintenance(asset),
+		*care_records(asset),
 		*repairs(asset),
 		*inspections(asset),
 	]
@@ -217,6 +224,62 @@ def maintenance(asset: str) -> list[dict]:
 			],
 		)
 	]
+
+
+def care_records(asset: str) -> list[dict]:
+	"""Its calibrations, preventive maintenance and qualifications (modules 38 and 40), as signed."""
+	events = []
+	for c in frappe.get_all(
+		"Calibration Record",
+		filters={"asset": asset, "docstatus": 1},
+		fields=["name", "performed_on", "result", "out_of_tolerance", "next_due_date", "completed_by"],
+	):
+		due = frappe.format_value(c.next_due_date, {"fieldtype": "Date"}) if c.next_due_date else _("none")
+		events.append(
+			row(
+				c.performed_on,
+				_("Calibration: {0}").format(_(c.result)),
+				"Calibration Record",
+				c.name,
+				_("found out of tolerance; next due {0}").format(due)
+				if c.out_of_tolerance
+				else _("next due {0}").format(due),
+				c.completed_by,
+				out_of_tolerance=c.out_of_tolerance,
+			)
+		)
+	for m in frappe.get_all(
+		"Maintenance Record",
+		filters={"asset": asset, "docstatus": 1},
+		fields=["name", "performed_on", "result", "actions_performed", "downtime_hours", "completed_by"],
+	):
+		events.append(
+			row(
+				m.performed_on,
+				_("Preventive maintenance: {0}").format(_(m.result)),
+				"Maintenance Record",
+				m.name,
+				m.actions_performed or "",
+				m.completed_by,
+				downtime=flt(m.downtime_hours),
+			)
+		)
+	for q in frappe.get_all(
+		"Equipment Qualification",
+		filters={"asset": asset, "docstatus": 1},
+		fields=["name", "performed_on", "stage", "outcome", "approved_by"],
+	):
+		events.append(
+			row(
+				q.performed_on,
+				_("{0}: {1}").format(q.stage, _(q.outcome)),
+				"Equipment Qualification",
+				q.name,
+				"",
+				q.approved_by,
+			)
+		)
+	return events
 
 
 def repairs(asset: str) -> list[dict]:

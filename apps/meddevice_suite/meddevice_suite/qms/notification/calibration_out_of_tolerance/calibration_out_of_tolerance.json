@@ -1,0 +1,29 @@
+{
+ "attach_print": 0,
+ "channel": "System Notification",
+ "condition_type": "Python",
+ "creation": "2026-10-11 12:00:00.000000",
+ "docstatus": 0,
+ "doctype": "Notification",
+ "document_type": "Calibration Record",
+ "enabled": 1,
+ "event": "Custom",
+ "idx": 0,
+ "is_standard": 1,
+ "message_type": "HTML",
+ "minutes_offset": 0,
+ "modified": "2026-10-11 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "QMS",
+ "name": "Calibration Out of Tolerance",
+ "notification_message": "{{ _(\"Equipment {0} was found out of tolerance on {1}. {2} records since its last good calibration on {3} may be affected; QA assesses the impact on the record.\").format(doc.asset, frappe.format_value(doc.performed_on, {\"fieldtype\": \"Date\"}), (doc.impact or [])|length, frappe.format_value(doc.last_good_calibration, {\"fieldtype\": \"Date\"})) }}",
+ "owner": "Administrator",
+ "recipients": [
+  {
+   "receiver_by_role": "Quality Manager"
+  }
+ ],
+ "send_system_notification": 0,
+ "send_to_all_assignees": 0,
+ "subject": "Out of tolerance: {{ doc.asset }} on {{ doc.get_formatted('performed_on') }}"
+}

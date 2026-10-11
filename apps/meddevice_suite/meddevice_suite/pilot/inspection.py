@@ -183,6 +183,8 @@ def ensure_instrument(
 def approved_instrument(asset: str, approve_equipment: Callable[[str], None] | None) -> str:
 	"""The instrument with its equipment details, approved as equipment by QA (module 8)."""
 	if equipment.approved(asset):
+		if approve_equipment:
+			approve_equipment(asset)  # each is idempotent; a test fixture also brings its care in date
 		return asset
 	doc = frappe.get_doc("Asset", asset)
 	missing = {field: value for field, value in INSTRUMENT_EQUIPMENT.items() if not doc.get(field)}
@@ -225,3 +227,61 @@ def readings_for(template: str, instrument: str, within_limits: bool = True) -> 
 			reading["reading_value"] = parameter.value if within_limits else "Does not conform"
 		readings.append(reading)
 	return readings
+
+
+# --- The instrument's calibration (module 38) -------------------------------------------------------
+
+LABORATORY = "Demo Calibration Laboratory"
+
+
+def calibrate_instrument(asset: str, password: str, as_maintenance: Callable) -> None:
+	"""The instrument calibrated by an external laboratory, completed with the Maintenance job's
+	signature (module 38), unless it is fit already. `as_maintenance()` is a context in which the
+	Maintenance job's user acts."""
+	from meddevice_suite.qms import calibration
+	from meddevice_suite.qms.equipment_care import unfit
+
+	if not unfit([asset]).get(asset):
+		return
+	if not frappe.db.exists("Supplier", LABORATORY):
+		frappe.get_doc(
+			{
+				"doctype": "Supplier",
+				"supplier_name": LABORATORY,
+				"supplier_group": "Services"
+				if frappe.db.exists("Supplier Group", "Services")
+				else "All Supplier Groups",
+			}
+		).insert(ignore_permissions=True)  # demo loader
+	with as_maintenance():
+		certificate = frappe.get_doc(
+			{
+				"doctype": "File",
+				"file_name": f"calibration-certificate-{asset}.txt",
+				"content": f"Calibration certificate (demo) for {asset}: all points within tolerance.",
+				"is_private": 1,
+			}
+		).insert()
+		record = frappe.get_doc(
+			{
+				"doctype": "Calibration Record",
+				"asset": asset,
+				"performed_on": today(),
+				"calibrated_by": calibration.EXTERNAL,
+				"laboratory": LABORATORY,
+				"certificate_number": f"DEMO-{asset}-{today()}",
+				"certificate": certificate.file_url,
+				"points": [
+					{
+						"parameter": "Length, gauge block 100 mm",
+						"unit": "mm",
+						"nominal": 100,
+						"lower_limit": 99.98,
+						"upper_limit": 100.02,
+						"as_found": 100.01,
+						"as_left": 100.0,
+					}
+				],
+			}
+		).insert()
+		calibration.complete(record, password=password, reason="Calibrated by the laboratory (demo)")

@@ -135,6 +135,12 @@ doc_events = {
 			"meddevice_suite.lot_control.lot_status.guard_work_order",
 			"meddevice_suite.master_data.routing.guard_work_order",  # after ERPNext refetches operations
 		],
+		"before_submit": "meddevice_suite.qms.equipment_care.guard_work_order",  # modules 38 and 40
+	},
+	# Calibration and maintenance are this app's signed records (module 38), not ERPNext's.
+	"Asset Maintenance": {"before_validate": "meddevice_suite.qms.calibration.refuse_erpnext_maintenance"},
+	"Asset Maintenance Log": {
+		"before_validate": "meddevice_suite.qms.calibration.refuse_erpnext_maintenance"
 	},
 	# Routings, operations and workstations (module 3): approved by QA with a signature before use.
 	"Operation": {
@@ -150,8 +156,19 @@ doc_events = {
 		"onload": "meddevice_suite.master_data.routing.onload",
 	},
 	"Job Card": {
-		"before_validate": "meddevice_suite.master_data.routing.guard_job_card",
-		"validate": "meddevice_suite.master_data.routing.guard_job_card",  # after its sub-operations are set
+		# Module 3: approved operations and workstations; modules 38 and 40: the workstation's
+		# equipment fit (calibrated, maintained, qualified, not under repair), at every save and
+		# submit, and when time is logged after submit.
+		"before_validate": [
+			"meddevice_suite.master_data.routing.guard_job_card",
+			"meddevice_suite.qms.equipment_care.guard_job_card",
+		],
+		"validate": [
+			"meddevice_suite.master_data.routing.guard_job_card",  # after its sub-operations are set
+			"meddevice_suite.qms.equipment_care.guard_job_card",
+		],
+		"before_submit": "meddevice_suite.qms.equipment_care.guard_job_card",
+		"before_update_after_submit": "meddevice_suite.qms.equipment_care.guard_job_card",
 	},
 	"Purchase Receipt": {
 		"validate": [
@@ -304,5 +321,10 @@ override_whitelisted_methods = {
 	),
 	"erpnext.stock.doctype.serial_and_batch_bundle.serial_and_batch_bundle.create_serial_nos": (
 		"meddevice_suite.master_data.item_master.create_serial_nos"
+	),
+	# ERPNext adds a job card's time log by writing the row straight to the database, past every
+	# document hook and without a permission check; the job card's rules run before it is called.
+	"erpnext.manufacturing.doctype.job_card.job_card.make_time_log": (
+		"meddevice_suite.qms.equipment_care.make_time_log"
 	),
 }

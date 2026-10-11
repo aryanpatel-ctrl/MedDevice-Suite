@@ -29,6 +29,11 @@
   "section_reminders",
   "reminder_escalation_days",
   "file_validity_warning_days",
+  "section_equipment",
+  "calibration_warning_days",
+  "maintenance_warning_days",
+  "column_break_equipment",
+  "requalification_warning_days",
   "section_control",
   "change_request",
   "changed_under",
@@ -214,6 +219,42 @@
    "description": "How many days before a repository file's validity ends (a licence, a certificate) its renewal is raised (1 to 365)."
   },
   {
+   "fieldname": "section_equipment",
+   "fieldtype": "Section Break",
+   "label": "Equipment care"
+  },
+  {
+   "fieldname": "calibration_warning_days",
+   "fieldtype": "Int",
+   "label": "Calibration Due Alert (days)",
+   "default": "15",
+   "reqd": 1,
+   "non_negative": 1,
+   "description": "How many days before a calibration falls due it is raised (1 to 120)."
+  },
+  {
+   "fieldname": "maintenance_warning_days",
+   "fieldtype": "Int",
+   "label": "Maintenance Due Alert (days)",
+   "default": "7",
+   "reqd": 1,
+   "non_negative": 1,
+   "description": "How many days before preventive maintenance falls due it is raised (1 to 120)."
+  },
+  {
+   "fieldname": "column_break_equipment",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "requalification_warning_days",
+   "fieldtype": "Int",
+   "label": "Requalification Due Alert (days)",
+   "default": "30",
+   "reqd": 1,
+   "non_negative": 1,
+   "description": "How many days before a requalification falls due it is raised (1 to 365)."
+  },
+  {
    "fieldname": "section_control",
    "fieldtype": "Section Break",
    "label": "Change control"
@@ -252,7 +293,7 @@
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-10-12 10:00:00.000000",
+ "modified": "2026-10-11 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Compliance",
  "name": "Quality Settings",
