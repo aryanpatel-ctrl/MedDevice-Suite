@@ -40,6 +40,7 @@ WORK_TASK = "meddevice_suite.work_management.work_task"
 CALIBRATION = "meddevice_suite.qms.calibration"
 MAINTENANCE = "meddevice_suite.qms.preventive_maintenance"
 QUALIFICATION = "meddevice_suite.qms.qualification"
+TRAINING = "meddevice_suite.qms.training"
 
 # (record type, act) -> the signed act. Each module adds the acts it signs.
 SIGNING_ACTIONS: dict[tuple[str, str], SignedAct] = {
@@ -99,6 +100,13 @@ SIGNING_ACTIONS: dict[tuple[str, str], SignedAct] = {
 	("Equipment Qualification", "Execute"): SignedAct("Verified", f"{QUALIFICATION}.execute"),
 	("Equipment Qualification", "Approve"): SignedAct("Approved", f"{QUALIFICATION}.approve"),
 	("Equipment Qualification", "Return"): SignedAct("Rejected", f"{QUALIFICATION}.return_for_rework"),
+	# Module 37, training
+	("Training Matrix", "Approve"): SignedAct("Approved", f"{TRAINING}.approve_matrix"),
+	("Training Record", "Trained"): SignedAct("Trained", f"{TRAINING}.sign_trained"),
+	("Training Record", "Competent"): SignedAct("Competent", f"{TRAINING}.sign_competent"),
+	("Training Record", "Not Competent"): SignedAct("Rejected", f"{TRAINING}.sign_not_competent"),
+	("Training Record", "Record History"): SignedAct("Verified", f"{TRAINING}.record_history"),
+	("Training Record", "Revoke"): SignedAct("Rejected", f"{TRAINING}.revoke"),
 }
 
 

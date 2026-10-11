@@ -1158,3 +1158,45 @@ module = 38
 title = "After a completed repair, equipment that needs calibration is not fit until calibrated again and equipment that needs qualification until a PQ is done again; after a move to another place, equipment that needs qualification is not fit until qualified again from the IQ."
 source = "ISO 13485 7.6 (safeguarded from adjustments that would invalidate the measurement), 7.5.6 (revalidation after changes); decided 2026-10-11 by the implementer on the client's instruction to decide the open questions (plan, decisions D-11)"
 status = "implemented"
+
+[[requirement]]
+id = "URS-TRN-001"
+module = 37
+title = "For each active employee, the system keeps one training record open on each document their job's approved training matrix names, on the revision in effect and on any revision approved to take effect later, opening it when a revision is approved or takes effect, the employee joins or changes job, or the matrix is approved, and closing open records that are no longer needed."
+source = "D2 Training (training records, QMS linkage); ISO 13485 6.2; decided 2026-10-11 (plan D-07): records open at approval, due by the effective date"
+status = "implemented"
+
+[[requirement]]
+id = "URS-TRN-002"
+module = 37
+title = "A training record is completed only by signatures: the trainee, on their own account, signs Trained, then a named assessor holding the Production Supervisor or QA role, never the trainee, signs Competent or Not Competent; the trainee's signature alone completes it only where the matrix allows reading; QA alone enters paper history, with a private certificate; a record is never cancelled or deleted."
+source = "D2 Training; ISO 13485 6.2; 21 CFR 11.10(i), 11.50, 11.100; decided 2026-10-11 (plan D-08, D-09, D-10)"
+status = "implemented"
+
+[[requirement]]
+id = "URS-TRN-003"
+module = 37
+title = "A training is valid until the end of the validity its matrix row sets, or indefinitely where it sets none; a refresher record opens when the validity ends within the warning days set in Quality Settings, and open training is a reminder to the trainee, then the assessor, until completed."
+source = "D2 Training (expiry alerts); ISO 13485 6.2(e); decided 2026-10-11 (plan D-07, D-12)"
+status = "implemented"
+
+[[requirement]]
+id = "URS-TRN-004"
+module = 37
+title = "A job's training matrix takes effect only when QA approves it with an electronic signature, and is changed only by cancelling and amending it, approved again."
+source = "ISO 13485 6.2; decided 2026-10-11 (plan D-17)"
+status = "implemented"
+
+[[requirement]]
+id = "URS-TRN-005"
+module = 37
+title = "Time is logged on a job card only by an active operator who holds a completed, unexpired Competent training on the revision in effect of the work instruction of the operation they do, on every path that logs time, including saves that skip validation and ERPNext's time-log method."
+source = "D2 Production stage 3 (trained operator); ISO 13485 6.2, 7.5.1"
+status = "implemented"
+
+[[requirement]]
+id = "URS-TRN-006"
+module = 37
+title = "QA may revoke an employee's competence with an electronic signature and a reason; the employee is then refused for that work and a retraining record opens; a Not Competent assessment opens a retraining record likewise."
+source = "ISO 13485 6.2, 8.3; decided 2026-10-11 (plan D-18)"
+status = "implemented"

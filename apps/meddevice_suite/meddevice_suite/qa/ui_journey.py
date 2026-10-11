@@ -129,6 +129,9 @@ def prepare_journey(password: str | None = None) -> dict:
 		},
 		"bom": frappe.db.get_value("BOM", {"item": PRODUCT, "is_default": 1, "docstatus": 1}),
 		"operations": [operation for operation, _workstation, _minutes in OPERATIONS],
+		"operator": frappe.db.get_value(
+			"Employee", {"user_id": email_for("Operator")}
+		),  # trained (module 37)
 		"lots_in_store": put_later_expiring_lots(),
 	}
 
@@ -228,6 +231,16 @@ def ensure_masters(
 			email_for,
 			password,
 		)
+		from meddevice_suite.pilot.training import train_operator
+
+		# Module 37: the operator logging time is competent on each operation's work instruction.
+		train_operator(
+			COMPANY,
+			[operation for operation, _workstation, _minutes in OPERATIONS],
+			lambda profile: acting_as(email_for(profile)),
+			email_for,
+			password,
+		)
 	ensure_bom(
 		PRODUCT, ROUTING, {code: details[5] for code, details in RAW_MATERIALS.items()}, COMPANY, approve_bom
 	)
@@ -295,6 +308,43 @@ def post_stock_entry(purpose: str, rows: list[dict]) -> None:
 
 
 # Any signed-in user may ask: the answer describes only a record the user may read.
+@frappe.whitelist(methods=["POST"])
+def prepare_training(password: str) -> dict:
+	"""A work instruction new to the Operator's job, so the browser trains the operator on it: QA
+	adds it to the job's matrix with a signature, the system opens the operator's record, and the
+	Training Coordinator plans it, with the Production Supervisor to assess (module 37)."""
+	from meddevice_suite.pilot.documents import ensure_work_instruction
+	from meddevice_suite.pilot.training import ensure_matrix, ensure_operator
+	from meddevice_suite.qms import training
+
+	ensure_test_site()
+	if frappe.session.user != "Administrator":
+		frappe.throw(_("The browser journey is prepared only by the Administrator."), frappe.PermissionError)
+	act_as = lambda profile: acting_as(email_for(profile))  # noqa: E731
+	instruction = ensure_work_instruction(
+		f"Work instruction: browser training {frappe.generate_hash(length=6)}", act_as, email_for, password
+	)
+	employee = ensure_operator(COMPANY, email_for("Operator"))
+	ensure_matrix({instruction}, act_as, password)
+	training.reconcile([employee])
+	name = frappe.db.get_value(
+		training.RECORD, {"employee": employee, "controlled_document": instruction, "status": training.OPEN}
+	)
+	with acting_as(email_for("Training Coordinator")):
+		record = frappe.get_doc(training.RECORD, name)
+		record.update(
+			{
+				"training_method": "Instructor-led",
+				"training_date": today(),
+				"trainer": "QA trainer (browser test)",
+				"assessor": email_for("Production Supervisor"),
+				"assessment_method": "Practical Demonstration",
+			}
+		)
+		record.save()
+	return {"record": name}
+
+
 @frappe.whitelist(methods=["POST"])
 def draft_calibration(asset: str) -> str:
 	"""A calibration of `asset` drafted by the signed-in user, for the browser to complete on its

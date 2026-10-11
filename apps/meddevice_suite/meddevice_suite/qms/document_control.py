@@ -32,6 +32,7 @@ from frappe.utils import add_days, add_years, getdate, nowdate, today
 
 from meddevice_suite.compliance import quality_settings
 from meddevice_suite.compliance.esign import sign
+from meddevice_suite.qms import training
 
 QA_ROLE = "Quality Manager"
 IN_PROGRESS = ("Draft", "In Review", "Awaiting Approval", "Approved")
@@ -113,6 +114,9 @@ def approve(doc: Document, password: str, reason: str | None = None) -> None:
 	doc.submit()
 	if getdate(doc.effective_date) <= getdate(today()):
 		make_effective(doc.name)
+	else:
+		# Trained before it takes effect (module 37, plan D-07).
+		training.on_document_change(doc.controlled_document)
 
 
 def withdraw(document: Document, password: str, reason: str | None = None) -> None:
@@ -134,6 +138,7 @@ def withdraw(document: Document, password: str, reason: str | None = None) -> No
 	if document.current_revision:
 		frappe.get_doc("Document Revision", document.current_revision).db_set("status", "Obsolete")
 	save(document)
+	training.on_document_change(document.name)  # nobody is trained on it any more (module 37)
 
 
 # --- Taking effect ----------------------------------------------------------------------
@@ -163,6 +168,7 @@ def make_effective(revision_name: str) -> None:
 	document.effective_since = revision.effective_date
 	document.next_review_date = add_years(revision.effective_date, document.review_period_years)
 	save(document)
+	training.on_document_change(document.name)  # module 37: training on the revision now in effect
 
 
 def make_due_revisions_effective() -> None:

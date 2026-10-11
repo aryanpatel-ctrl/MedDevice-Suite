@@ -60,6 +60,9 @@ SETTINGS: dict[str, Setting] = {
 	"calibration_warning_days": Setting(15, 1, 120),
 	"maintenance_warning_days": Setting(7, 1, 120),
 	"requalification_warning_days": Setting(30, 1, 365),
+	# Training (URS-TRN-003), decided 2026-10-11 (plan D-07, D-12)
+	"training_due_days": Setting(14, 1, 90),
+	"training_expiry_warning_days": Setting(30, 1, 365),
 }
 
 

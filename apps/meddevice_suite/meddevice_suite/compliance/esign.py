@@ -31,7 +31,7 @@ from frappe.utils.password import check_password
 
 from meddevice_suite.compliance.fingerprint import chain_head, plain_text, record_content, sha256
 
-MEANINGS = ("Authored", "Reviewed", "Approved", "Rejected", "Released", "Verified")
+MEANINGS = ("Authored", "Reviewed", "Approved", "Rejected", "Released", "Verified", "Trained", "Competent")
 
 # Accounts that do not identify one person (21 CFR 11.100(a)).
 SHARED_ACCOUNTS = ("Administrator", "Guest")
@@ -85,6 +85,22 @@ SYSTEM_MAINTAINED: dict[str, tuple[str, ...]] = {
 	"Maintenance Record": ("docstatus",),
 	# QA's approval and a return come after the performer's execution signature (module 40).
 	"Equipment Qualification": ("docstatus", "approved_by", "approved_at", "executed_by", "executed_at"),
+	# The assessor's and QA's signatures come after the trainee's; what was planned and signed
+	# for stays fixed (module 37).
+	"Training Record": (
+		"docstatus",
+		"status",
+		"trained_by",
+		"trained_on",
+		"assessed_by",
+		"assessed_on",
+		"valid_until",
+		"outcome_reason",
+		"revoked_by",
+		"revoked_on",
+		"is_historical",
+	),
+	"Training Matrix": ("docstatus",),
 	"Change Request Action": (
 		"done",
 		"done_on",

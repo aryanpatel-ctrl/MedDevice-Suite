@@ -9,6 +9,8 @@ const MEANING_TEXT = {
 	Rejected: __("I reject this."),
 	Released: __("I release this for use."),
 	Verified: __("I have verified this."),
+	Trained: __("I was trained in this, and I understand it."),
+	Competent: __("I have assessed this person and found them competent."),
 };
 
 const esign = frappe.provide("meddevice_suite.esign");

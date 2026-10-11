@@ -81,6 +81,8 @@ class TestValues(QualitySettingsTestCase):
 				"calibration_warning_days": 15,
 				"maintenance_warning_days": 7,
 				"requalification_warning_days": 30,
+				"training_due_days": 14,
+				"training_expiry_warning_days": 30,
 			},
 		)
 
