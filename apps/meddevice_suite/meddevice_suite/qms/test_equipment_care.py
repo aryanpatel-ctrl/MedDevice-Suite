@@ -534,6 +534,19 @@ class TestRefusedAtTheWorkstation(RoutingTestCase):
 		for event in ("before_validate", "validate", "before_submit", "before_update_after_submit"):
 			self.assertIn("meddevice_suite.qms.equipment_care.guard_job_card", events[event], event)
 
+	def test_equipment_kept_at_no_workstation_never_holds_up_production(self):
+		"""A portable instrument not yet calibrated, assigned to no workstation, is not the
+		equipment of an operation that names no workstation."""
+		from meddevice_suite.master_data.test_equipment import EquipmentTestCase as Fixture
+
+		loose = Fixture.new_equipment(self).name  # needs calibration, never calibrated, no workstation
+		frappe.set_user(self.qa)
+		sign_action("Asset", loose, "Approve", PASSWORD, "Caliper checked")
+		frappe.set_user("Administrator")
+		self.assertIn(loose, equipment_care.unfit([loose]))
+		self.assertEqual(equipment_care.equipment_at([None, ""]), [])
+		equipment_care.refuse_unusable([None], "A work order")  # nothing at no workstation
+
 	def test_no_time_is_logged_past_the_job_cards_rules(self):
 		ws, op, _line = self.approved_line()
 		asset = self.machine_at(ws)
