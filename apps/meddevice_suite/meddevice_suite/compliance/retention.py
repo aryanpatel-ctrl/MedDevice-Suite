@@ -67,6 +67,11 @@ RETENTION_SCHEDULE: dict[str, tuple[int, str, tuple[str, ...]]] = {
 			"Work Task",
 			"Important File",
 			"File Category",
+			"Risk Acceptability Policy",  # module 39
+			"Risk Management File",
+			"Risk Assessment",
+			"Risk Management Report",
+			"Risk Review",
 		),
 	),
 	"Purchasing and supplier records": (

@@ -1,0 +1,147 @@
+{
+ "actions": [],
+ "creation": "2026-10-11 20:00:00.000000",
+ "description": "A hazard, its sequence of events, hazardous situation and harm, and its risk before and after control (module 39; ISO 14971 5, 6, 7.3).",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "hazard_id",
+  "hazard_category",
+  "hazard",
+  "sequence_of_events",
+  "hazardous_situation",
+  "harm",
+  "section_initial",
+  "severity",
+  "probability",
+  "initial_acceptability",
+  "column_break_residual",
+  "residual_severity",
+  "residual_probability",
+  "residual_acceptability",
+  "justification"
+ ],
+ "fields": [
+  {
+   "columns": 1,
+   "fieldname": "hazard_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Hazard ID",
+   "reqd": 1
+  },
+  {
+   "fieldname": "hazard_category",
+   "fieldtype": "Select",
+   "label": "Hazard Category (ISO 14971 Annex C)",
+   "options": "\nEnergy\nBiological and chemical\nPerformance related",
+   "reqd": 1
+  },
+  {
+   "columns": 2,
+   "fieldname": "hazard",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Hazard",
+   "reqd": 1
+  },
+  {
+   "fieldname": "sequence_of_events",
+   "fieldtype": "Small Text",
+   "label": "Sequence of Events",
+   "reqd": 1
+  },
+  {
+   "fieldname": "hazardous_situation",
+   "fieldtype": "Small Text",
+   "label": "Hazardous Situation",
+   "reqd": 1
+  },
+  {
+   "fieldname": "harm",
+   "fieldtype": "Small Text",
+   "label": "Harm",
+   "reqd": 1
+  },
+  {
+   "fieldname": "section_initial",
+   "fieldtype": "Section Break",
+   "label": "Risk before control"
+  },
+  {
+   "columns": 1,
+   "fieldname": "severity",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Severity",
+   "non_negative": 1,
+   "reqd": 1
+  },
+  {
+   "columns": 1,
+   "fieldname": "probability",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Probability",
+   "non_negative": 1,
+   "reqd": 1
+  },
+  {
+   "columns": 2,
+   "description": "Worked out from the policy in force; not typed.",
+   "fieldname": "initial_acceptability",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Risk Before Control",
+   "options": "\nAcceptable\nReview (ALARP)\nUnacceptable",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_residual",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "residual_severity",
+   "fieldtype": "Int",
+   "label": "Residual Severity",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "residual_probability",
+   "fieldtype": "Int",
+   "label": "Residual Probability",
+   "non_negative": 1
+  },
+  {
+   "columns": 2,
+   "description": "Worked out from the policy in force; not typed.",
+   "fieldname": "residual_acceptability",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Residual Risk",
+   "options": "\nAcceptable\nReview (ALARP)\nUnacceptable",
+   "read_only": 1
+  },
+  {
+   "description": "Needed when the residual risk is not acceptable: why it is as low as reasonably practicable, or why the benefits outweigh it (ISO 14971 7.4).",
+   "fieldname": "justification",
+   "fieldtype": "Small Text",
+   "label": "Justification of the Residual Risk"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-10-11 20:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "QMS",
+ "name": "Risk Hazard",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}

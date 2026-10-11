@@ -1,0 +1,52 @@
+{
+ "actions": [],
+ "creation": "2026-10-11 20:00:00.000000",
+ "description": "Whether a risk of this severity and probability is acceptable (module 39, plan D-13).",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "severity",
+  "probability",
+  "acceptability"
+ ],
+ "fields": [
+  {
+   "fieldname": "severity",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Severity",
+   "non_negative": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "probability",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Probability",
+   "non_negative": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "acceptability",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Acceptability",
+   "options": "\nAcceptable\nReview (ALARP)\nUnacceptable"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-10-11 20:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "QMS",
+ "name": "Risk Matrix Cell",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}

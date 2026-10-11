@@ -83,6 +83,8 @@ class TestValues(QualitySettingsTestCase):
 				"requalification_warning_days": 30,
 				"training_due_days": 14,
 				"training_expiry_warning_days": 30,
+				"risk_periodic_review_months": 12,
+				"risk_review_due_days": 30,
 			},
 		)
 

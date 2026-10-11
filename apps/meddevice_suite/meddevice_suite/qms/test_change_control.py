@@ -1032,3 +1032,78 @@ class TestKeptAndSeen(ChangeControlTestCase):
 				"Audit Event", {"reference_doctype": DOCTYPE, "reference_name": doc.name, "action": "Created"}
 			)
 		)
+
+
+@verifies("URS-QMS-024")
+class TestRiskReviews(ChangeControlTestCase):
+	"""Module 39: a change that affects risk names the risk management file, its approval raises a
+	review of each file it lists, and it is not closed while one is open."""
+
+	def risk_file(self) -> str:
+		from meddevice_suite.qms.test_risk_management import risk_file_for
+
+		return risk_file_for(self.qa, self.document)
+
+	def listing(self, file: str) -> list[dict]:
+		return [
+			{"reference_doctype": "Controlled Document", "reference_name": self.document},
+			{"reference_doctype": "Risk Management File", "reference_name": file},
+		]
+
+	def reviews(self, name: str) -> list[frappe._dict]:
+		return frappe.get_all(
+			"Risk Review",
+			filters={"source_doctype": DOCTYPE, "source_name": name},
+			fields=["name", "risk_management_file", "trigger", "status"],
+		)
+
+	def test_risk_impact_requires_file(self):
+		doc = self.submitted()
+		self.as_user(self.qa)
+		doc.update({**assessment(), "impact_risk": "Yes"})
+		doc.save()
+		with self.assertRaisesRegex(frappe.ValidationError, "Risk Management File"):
+			self.act(self.qa, doc.name, "Assess")
+
+		file = self.risk_file()
+		self.as_user(self.qa)
+		doc.reload()
+		doc.set("affected_records", self.listing(file))
+		doc.save()  # QA completes the records while assessing
+		self.assertEqual(self.act(self.qa, doc.name, "Assess").status, "Awaiting Approval")
+
+	def test_approval_raises_review(self):
+		file = self.risk_file()
+		doc = self.approved(affected_records=self.listing(file))
+
+		self.assertEqual(
+			[(r.risk_management_file, r.trigger, r.status) for r in self.reviews(doc.name)],
+			[(file, "Change Request", "Open")],
+		)
+		self.assertIn("Risk Management File", AFFECTED_TYPES)
+
+	def test_a_major_change_raises_its_review_once_fully_approved(self):
+		file = self.risk_file()
+		doc = self.assessed("Major", affected_records=self.listing(file))
+		doc = self.act(self.qa, doc.name, "Approve")
+		self.assertEqual(self.reviews(doc.name), [])
+		self.act(self.manager, doc.name, "Approve")
+		self.assertEqual(len(self.reviews(doc.name)), 1)
+
+	def test_open_review_blocks_close(self):
+		file = self.risk_file()
+		doc = self.approved(days=0, affected_records=self.listing(file))
+		for row in doc.actions:
+			self.as_user(row.action_owner)
+			complete_action(doc.name, row.name, f"{row.description}: done")
+		review = self.reviews(doc.name)[0].name
+
+		with self.assertRaisesRegex(frappe.ValidationError, review):
+			self.act(self.qa, doc.name, "Verify Effective", "Hardness checked on three lots")
+		self.as_user(self.qa)
+		sign_action(
+			"Risk Review", review, "Close: No Change", PASSWORD, "The change adds a check; no new hazard"
+		)
+		self.assertEqual(
+			self.act(self.qa, doc.name, "Verify Effective", "Hardness checked on three lots").status, "Closed"
+		)

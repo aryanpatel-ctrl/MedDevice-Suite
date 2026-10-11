@@ -38,6 +38,10 @@
   "training_due_days",
   "column_break_training",
   "training_expiry_warning_days",
+  "section_risk",
+  "risk_periodic_review_months",
+  "column_break_risk",
+  "risk_review_due_days",
   "section_control",
   "change_request",
   "changed_under",
@@ -286,6 +290,33 @@
    "description": "How many days before a training expires its refresher opens (1 to 365)."
   },
   {
+   "fieldname": "section_risk",
+   "fieldtype": "Section Break",
+   "label": "Risk management"
+  },
+  {
+   "fieldname": "risk_periodic_review_months",
+   "fieldtype": "Int",
+   "label": "Risk File Reviewed Every (months)",
+   "default": "12",
+   "reqd": 1,
+   "non_negative": 1,
+   "description": "How many months after its risk assessment is approved, or its last review closed, a risk management file is reviewed again (1 to 36)."
+  },
+  {
+   "fieldname": "column_break_risk",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "risk_review_due_days",
+   "fieldtype": "Int",
+   "label": "Risk Review Due Within (days)",
+   "default": "30",
+   "reqd": 1,
+   "non_negative": 1,
+   "description": "How many days QA has to answer a risk review once it is raised (1 to 180)."
+  },
+  {
    "fieldname": "section_control",
    "fieldtype": "Section Break",
    "label": "Change control"
@@ -324,7 +355,7 @@
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-10-11 18:00:00.000000",
+ "modified": "2026-10-11 20:00:00.000000",
  "modified_by": "Administrator",
  "module": "Compliance",
  "name": "Quality Settings",

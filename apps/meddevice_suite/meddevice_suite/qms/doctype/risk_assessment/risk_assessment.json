@@ -1,0 +1,372 @@
+{
+ "actions": [],
+ "autoname": "",
+ "creation": "2026-10-11 20:00:00.000000",
+ "description": "One revision of a risk management file's analysis: hazards, risks, controls and residual risks, authored, reviewed and approved with signatures (module 39; ISO 14971 5 to 7).",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "risk_management_file",
+  "family_name",
+  "revision",
+  "status",
+  "policy",
+  "column_break_reason",
+  "change_request",
+  "risk_review",
+  "summary_of_change",
+  "section_people",
+  "author",
+  "reviewer",
+  "column_break_people",
+  "approver",
+  "approved_on",
+  "superseded_by",
+  "section_scope",
+  "intended_use",
+  "foreseeable_misuse",
+  "risk_management_plan",
+  "items",
+  "section_hazards",
+  "hazards",
+  "section_controls",
+  "controls",
+  "section_result",
+  "highest_residual_risk",
+  "amended_from"
+ ],
+ "fields": [
+  {
+   "fieldname": "risk_management_file",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Risk Management File",
+   "options": "Risk Management File",
+   "reqd": 1,
+   "search_index": 1,
+   "set_only_once": 1
+  },
+  {
+   "fetch_from": "risk_management_file.family_name",
+   "fieldname": "family_name",
+   "fieldtype": "Data",
+   "label": "Product Family",
+   "read_only": 1
+  },
+  {
+   "fieldname": "revision",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Revision",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "default": "Draft",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "no_copy": 1,
+   "options": "Draft\nIn Review\nAwaiting Approval\nApproved\nSuperseded",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "description": "The policy the risks are scored with; kept once approved.",
+   "fieldname": "policy",
+   "fieldtype": "Link",
+   "label": "Acceptability Policy",
+   "no_copy": 1,
+   "options": "Risk Acceptability Policy",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_reason",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "The approved change request listing the file; needed for a new revision of an approved file unless it answers an open risk review.",
+   "fieldname": "change_request",
+   "fieldtype": "Link",
+   "label": "Change Request",
+   "no_copy": 1,
+   "options": "Change Request",
+   "set_only_once": 1
+  },
+  {
+   "fieldname": "risk_review",
+   "fieldtype": "Link",
+   "label": "Risk Review",
+   "no_copy": 1,
+   "options": "Risk Review",
+   "search_index": 1,
+   "set_only_once": 1
+  },
+  {
+   "fieldname": "summary_of_change",
+   "fieldtype": "Small Text",
+   "label": "Summary of Change"
+  },
+  {
+   "fieldname": "section_people",
+   "fieldtype": "Section Break",
+   "label": "Signatures"
+  },
+  {
+   "fieldname": "author",
+   "fieldtype": "Link",
+   "label": "Author",
+   "no_copy": 1,
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "reviewer",
+   "fieldtype": "Link",
+   "label": "Reviewer",
+   "options": "User"
+  },
+  {
+   "fieldname": "column_break_people",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "approver",
+   "fieldtype": "Link",
+   "label": "Approved By",
+   "no_copy": 1,
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "approved_on",
+   "fieldtype": "Datetime",
+   "label": "Approved On",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "superseded_by",
+   "fieldtype": "Link",
+   "label": "Superseded By",
+   "no_copy": 1,
+   "options": "Risk Assessment",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_scope",
+   "fieldtype": "Section Break",
+   "label": "Scope (ISO 14971 5.2)"
+  },
+  {
+   "fieldname": "intended_use",
+   "fieldtype": "Text",
+   "label": "Intended Use"
+  },
+  {
+   "fieldname": "foreseeable_misuse",
+   "fieldtype": "Text",
+   "label": "Reasonably Foreseeable Misuse"
+  },
+  {
+   "fieldname": "risk_management_plan",
+   "fieldtype": "Link",
+   "label": "Risk Management Plan",
+   "options": "Controlled Document"
+  },
+  {
+   "fieldname": "items",
+   "fieldtype": "Table",
+   "label": "Finished Goods",
+   "options": "Risk Management File Item"
+  },
+  {
+   "fieldname": "section_hazards",
+   "fieldtype": "Section Break",
+   "label": "Hazards and risks (ISO 14971 5.4, 5.5, 6)"
+  },
+  {
+   "fieldname": "hazards",
+   "fieldtype": "Table",
+   "label": "Hazards",
+   "options": "Risk Hazard"
+  },
+  {
+   "fieldname": "section_controls",
+   "fieldtype": "Section Break",
+   "label": "Risk control measures (ISO 14971 7)"
+  },
+  {
+   "fieldname": "controls",
+   "fieldtype": "Table",
+   "label": "Controls",
+   "options": "Risk Control Measure"
+  },
+  {
+   "fieldname": "section_result",
+   "fieldtype": "Section Break",
+   "label": "Result"
+  },
+  {
+   "fieldname": "highest_residual_risk",
+   "fieldtype": "Select",
+   "label": "Highest Residual Risk",
+   "no_copy": 1,
+   "options": "\nAcceptable\nReview (ALARP)\nUnacceptable",
+   "read_only": 1
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Risk Assessment",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-10-11 20:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "QMS",
+ "name": "Risk Assessment",
+ "naming_rule": "By script",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "amend": 0,
+   "cancel": 0,
+   "create": 1,
+   "delete": 0,
+   "email": 0,
+   "export": 1,
+   "import": 0,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Quality Manager",
+   "select": 1,
+   "share": 0,
+   "submit": 0,
+   "write": 1
+  },
+  {
+   "amend": 0,
+   "cancel": 0,
+   "create": 0,
+   "delete": 0,
+   "email": 0,
+   "export": 0,
+   "import": 0,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Manufacturing User",
+   "select": 1,
+   "share": 0,
+   "submit": 0,
+   "write": 0
+  },
+  {
+   "amend": 0,
+   "cancel": 0,
+   "create": 0,
+   "delete": 0,
+   "email": 0,
+   "export": 0,
+   "import": 0,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Manufacturing Manager",
+   "select": 1,
+   "share": 0,
+   "submit": 0,
+   "write": 0
+  },
+  {
+   "amend": 0,
+   "cancel": 0,
+   "create": 0,
+   "delete": 0,
+   "email": 0,
+   "export": 0,
+   "import": 0,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Sales Manager",
+   "select": 1,
+   "share": 0,
+   "submit": 0,
+   "write": 0
+  },
+  {
+   "amend": 0,
+   "cancel": 0,
+   "create": 0,
+   "delete": 0,
+   "email": 0,
+   "export": 0,
+   "import": 0,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Purchase Manager",
+   "select": 1,
+   "share": 0,
+   "submit": 0,
+   "write": 0
+  },
+  {
+   "amend": 0,
+   "cancel": 0,
+   "create": 0,
+   "delete": 0,
+   "email": 0,
+   "export": 0,
+   "import": 0,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Stock Manager",
+   "select": 1,
+   "share": 0,
+   "submit": 0,
+   "write": 0
+  },
+  {
+   "amend": 0,
+   "cancel": 0,
+   "create": 0,
+   "delete": 0,
+   "email": 0,
+   "export": 0,
+   "import": 0,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "select": 1,
+   "share": 0,
+   "submit": 0,
+   "write": 0
+  }
+ ],
+ "row_format": "Dynamic",
+ "search_fields": "risk_management_file,status",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "family_name",
+ "track_changes": 0
+}

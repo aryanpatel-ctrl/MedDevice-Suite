@@ -1,0 +1,121 @@
+{
+ "actions": [],
+ "creation": "2026-10-11 20:00:00.000000",
+ "description": "A risk control measure, the record that implements it and the records that verify it (module 39; ISO 14971 7.1 to 7.5).",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "hazard_id",
+  "option",
+  "description",
+  "control_doctype",
+  "control_name",
+  "pinned_version",
+  "column_break_evidence",
+  "implementation_evidence_type",
+  "implementation_evidence",
+  "effectiveness_evidence_type",
+  "effectiveness_evidence",
+  "introduces_hazard_id"
+ ],
+ "fields": [
+  {
+   "columns": 1,
+   "fieldname": "hazard_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Hazard ID",
+   "reqd": 1
+  },
+  {
+   "columns": 2,
+   "fieldname": "option",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Kind of Control (ISO 14971 7.1)",
+   "options": "\nInherently safe design and manufacture\nProtective measures\nInformation for safety",
+   "reqd": 1
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "label": "Description",
+   "reqd": 1
+  },
+  {
+   "columns": 2,
+   "fieldname": "control_doctype",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Implemented By (Record Type)",
+   "options": "\nControlled Document\nQuality Inspection Template\nItem\nBOM\nOperation",
+   "reqd": 1
+  },
+  {
+   "columns": 2,
+   "fieldname": "control_name",
+   "fieldtype": "Dynamic Link",
+   "in_list_view": 1,
+   "label": "Implemented By",
+   "options": "control_doctype",
+   "reqd": 1
+  },
+  {
+   "description": "The version of the record in force when QA approved the assessment.",
+   "fieldname": "pinned_version",
+   "fieldtype": "Data",
+   "label": "Pinned Version",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_evidence",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "implementation_evidence_type",
+   "fieldtype": "Select",
+   "label": "Implementation Verified By (Record Type)",
+   "options": "\nControlled Document\nDocument Revision\nQuality Inspection\nChange Request\nEquipment Qualification\nImportant File"
+  },
+  {
+   "fieldname": "implementation_evidence",
+   "fieldtype": "Dynamic Link",
+   "label": "Implementation Verified By",
+   "options": "implementation_evidence_type"
+  },
+  {
+   "fieldname": "effectiveness_evidence_type",
+   "fieldtype": "Select",
+   "label": "Effectiveness Verified By (Record Type)",
+   "options": "\nControlled Document\nDocument Revision\nQuality Inspection\nChange Request\nEquipment Qualification\nImportant File"
+  },
+  {
+   "fieldname": "effectiveness_evidence",
+   "fieldtype": "Dynamic Link",
+   "label": "Effectiveness Verified By",
+   "options": "effectiveness_evidence_type"
+  },
+  {
+   "description": "A hazard this control introduces, analysed as a hazard of its own (ISO 14971 7.5).",
+   "fieldname": "introduces_hazard_id",
+   "fieldtype": "Data",
+   "label": "Introduces Hazard ID"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-10-11 20:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "QMS",
+ "name": "Risk Control Measure",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}

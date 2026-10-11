@@ -851,6 +851,71 @@ title = "A change request is never deleted or cancelled: the person who raised i
 source = "ISO 13485 4.2.5; 21 CFR 11.10(c), (d); withdrawal by the requester decided under the client's instruction of 2026-10-07"
 status = "implemented"
 
+# --- Module 39: risk management (ISO 14971:2019) ---------------------------------
+
+[[requirement]]
+id = "URS-QMS-017"
+module = 39
+title = "The risk acceptability policy holds the severity and probability scales and the acceptability of every pair: QA writes it and signs it Reviewed, and Management, another person, signs it Approved; one policy is in force, the next approved one supersedes it, and an approved risk assessment keeps the policy it was scored with."
+source = "D2 Risk Management: Risk Evaluation; ISO 14971 4.2, 4.4 d); decided 2026-10-11 (plan D-13): severity 1-5 Negligible to Catastrophic, probability 1-5 Improbable to Frequent, each pair Acceptable, Review (ALARP) or Unacceptable; decided 2026-10-11 (plan D-21): QA reviews and Management approves the policy"
+status = "implemented"
+
+[[requirement]]
+id = "URS-QMS-018"
+module = 39
+title = "Each product family has one Risk Management File, recording its finished goods (each in exactly one file), its intended use, its reasonably foreseeable misuse and an effective risk management plan; once the file has an approved risk assessment, these change only through the next approved revision."
+source = "D2 Risk Management: Risk Identification; ISO 14971 4.4, 4.5, 5.2; product families are client data, decided 2026-10-11 (plan D-13)"
+status = "implemented"
+
+[[requirement]]
+id = "URS-QMS-019"
+module = 39
+title = "Each hazard records its category, sequence of events, hazardous situation and harm, with a severity and a probability before and after control; the system works out each risk's acceptability from the policy in force and nobody types it."
+source = "D2 Risk Management: Risk Analysis, Risk Evaluation; ISO 14971 5.4, 5.5, 6"
+status = "implemented"
+
+[[requirement]]
+id = "URS-QMS-020"
+module = 39
+title = "Every unacceptable risk has a risk control measure of an ISO 14971 7.1 kind, linked to a real record: an effective controlled document, a specification, an item, a bill of materials or an operation; inherently safe design is a Specification document, an item or a bill of materials, and information for safety is a Packaging and Labelling document; each control's version is pinned when the assessment is approved."
+source = "D2 Risk Management: Control Measures; ISO 14971 7.1, 7.2; decided 2026-10-11 (plan Q6): a design element is an effective Specification document, an item or a bill of materials"
+status = "implemented"
+
+[[requirement]]
+id = "URS-QMS-021"
+module = 39
+title = "Each control references the records verifying its implementation and its effectiveness, and a hazard a control introduces is analysed as a hazard; every hazard has a residual risk no higher than before control, and a residual risk that is not acceptable needs a justification (as low as reasonably practicable, or benefit-risk)."
+source = "ISO 14971 7.2 to 7.6"
+status = "implemented"
+
+[[requirement]]
+id = "URS-QMS-022"
+module = 39
+title = "A risk assessment revision is authored, reviewed by another person and approved by QA, a third person, each with an electronic signature; approval checks everything again and is refused while a control's record is no longer in force; the approved revision supersedes the previous one, and nothing is deleted or cancelled."
+source = "ISO 13485 4.2.4, 4.2.5; 21 CFR 11.50; ISO 14971 4.5"
+status = "implemented"
+
+[[requirement]]
+id = "URS-QMS-023"
+module = 39
+title = "QA authors a Risk Management Report on the approved revision in force and QA, another person, approves it with an electronic signature: the plan implemented, the overall residual risk evaluated as acceptable or justified, and the effective SOPs that collect production and post-production information; a new approved revision makes the report no longer current."
+source = "D2 Risk Management: Risk Report; ISO 14971 8, 9, 10.1"
+status = "implemented"
+
+[[requirement]]
+id = "URS-QMS-024"
+module = 39
+title = "A change request with an impact on risk must list a Risk Management File before QA assesses it; its approval raises a Risk Review of each file it lists, and it cannot be closed while one is open; a new revision of an approved file needs an approved change request listing it, or an open review."
+source = "Plan: real links between modules; ISO 14971 10; ISO 13485 7.3.9"
+status = "implemented"
+
+[[requirement]]
+id = "URS-QMS-025"
+module = 39
+title = "A Risk Review is raised once when a control's record gets a new version or is no longer in force (when it is saved, and by a daily check), when the periodic review set in Quality Settings falls due, and, through the interface modules 43 and 35 will call, when a complaint or a CAPA names a covered item; one review is open per file and source; QA closes it with an electronic signature, as no change with a rationale or by approving a new revision; an open review is a reminder."
+source = "D2 Risk Management: Risk Review; ISO 14971 10.2, 10.3; periodic review every 12 months and 30 days to answer, set in Quality Settings, decided 2026-10-11; complaint and CAPA triggers are raised by modules 43 and 35"
+status = "implemented"
+
 # --- Wave 1: lot status and incoming QC (modules 1, 4, 6, 16, 17) ----------------
 # Planned on 2026-10-08 from the Phase 0 gap audit: the diagrams' first quality gate.
 # Each becomes `implemented` only with its passing tests. On 2026-10-08 the client

@@ -146,6 +146,7 @@ doc_events = {
 	"Operation": {
 		"validate": "meddevice_suite.master_data.routing.guard",
 		"onload": "meddevice_suite.master_data.routing.onload",
+		"on_update": "meddevice_suite.qms.pinned_records.on_pinned_change",  # module 39: a risk control's new version
 	},
 	"Workstation": {
 		"validate": "meddevice_suite.master_data.routing.guard",
@@ -154,6 +155,7 @@ doc_events = {
 	"Routing": {
 		"validate": "meddevice_suite.master_data.routing.guard",
 		"onload": "meddevice_suite.master_data.routing.onload",
+		"on_update": "meddevice_suite.qms.pinned_records.on_pinned_change",  # pinned records (qms/pinned_records.py)
 	},
 	"Job Card": {
 		# Module 3: approved operations and workstations; modules 38 and 40: the workstation's
@@ -219,10 +221,18 @@ doc_events = {
 		"on_submit": [
 			"meddevice_suite.master_data.versioning.record_displaced_default",
 			"meddevice_suite.master_data.bom.sign_approval",
+			# Module 39: the bill in force changed, for the risk controls pinning it.
+			"meddevice_suite.qms.pinned_records.on_pinned_change",
 		],
-		"on_update_after_submit": "meddevice_suite.master_data.versioning.record_displaced_default",
+		"on_update_after_submit": [
+			"meddevice_suite.master_data.versioning.record_displaced_default",
+			"meddevice_suite.qms.pinned_records.on_pinned_change",
+		],
 		"before_cancel": "meddevice_suite.master_data.versioning.guard_cancel",
-		"on_cancel": "meddevice_suite.master_data.versioning.let_change_requests_not_block_cancel",
+		"on_cancel": [
+			"meddevice_suite.master_data.versioning.let_change_requests_not_block_cancel",
+			"meddevice_suite.qms.pinned_records.on_pinned_change",
+		],
 	},
 	"Asset": {
 		# Equipment master (module 8): approved by QA with a signature before it is used.
@@ -236,7 +246,10 @@ doc_events = {
 	"Quality Inspection Template": {
 		"validate": "meddevice_suite.master_data.specification.guard_template",
 		"on_trash": "meddevice_suite.master_data.specification.protect_template",
+		"on_update": "meddevice_suite.qms.pinned_records.on_pinned_change",  # module 39: pinned records
 	},
+	# Module 39: a controlled document revised or withdrawn, for the risk controls pinning it.
+	"Controlled Document": {"on_update": "meddevice_suite.qms.pinned_records.on_pinned_change"},
 	# Approved suppliers (module 4): orders only from approved suppliers, for approved items.
 	"Purchase Order": {
 		"validate": "meddevice_suite.master_data.supplier_approval.guard_purchase_order",
@@ -253,7 +266,10 @@ doc_events = {
 			"meddevice_suite.master_data.item_master.guard_item",
 		],
 		"onload": "meddevice_suite.master_data.item_master.item_onload",
-		"on_update": "meddevice_suite.master_data.versioning.update_variants_under_control",
+		"on_update": [
+			"meddevice_suite.master_data.versioning.update_variants_under_control",
+			"meddevice_suite.qms.pinned_records.on_pinned_change",  # module 39: pinned records
+		],
 	},
 	# Quality Settings (URS-PLT-013): the lockout is changed there, under change control.
 	"System Settings": {"validate": "meddevice_suite.compliance.access_policy.guard_system_settings"},
@@ -318,6 +334,9 @@ scheduler_events = {
 		"meddevice_suite.master_data.supplier_approval.send_certificate_alerts",
 		"meddevice_suite.master_data.customer_licence.send_expiry_alerts",
 		"meddevice_suite.master_data.supplier_rating.rate_finished_months",
+		# Module 39: risk reviews due, and the pinned controls changed past the document hooks.
+		"meddevice_suite.qms.risk_management.raise_periodic_reviews",
+		"meddevice_suite.qms.pinned_records.sweep",
 		# After the alerts above: reminders track what they told people (module 60).
 		"meddevice_suite.work_management.reminders.run",
 	],
