@@ -86,7 +86,10 @@ doc_events = {
 	"Delivery Note": {"validate": "meddevice_suite.lot_control.lot_status.guard_delivery_note"},
 	"Pick List": {"validate": "meddevice_suite.lot_control.lot_status.guard_pick_list"},
 	"Packing Slip": {"validate": "meddevice_suite.lot_control.lot_status.guard_packing_slip"},
-	"Work Order": {"validate": "meddevice_suite.lot_control.lot_status.guard_work_order"},
+	"Work Order": {
+		"before_validate": "meddevice_suite.lot_control.lot_status.guard_unvalidated_work_order",
+		"validate": "meddevice_suite.lot_control.lot_status.guard_work_order",
+	},
 	"Purchase Receipt": {
 		"validate": [
 			"meddevice_suite.lot_control.lot_status.guard_purchase_receipt",
