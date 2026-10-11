@@ -38,6 +38,8 @@
   "training_due_days",
   "column_break_training",
   "training_expiry_warning_days",
+  "section_regulatory",
+  "regulatory_licence_warning_days",
   "section_control",
   "change_request",
   "changed_under",
@@ -286,6 +288,20 @@
    "description": "How many days before a training expires its refresher opens (1 to 365)."
   },
   {
+   "fieldname": "section_regulatory",
+   "fieldtype": "Section Break",
+   "label": "Regulatory"
+  },
+  {
+   "fieldname": "regulatory_licence_warning_days",
+   "fieldtype": "Int",
+   "label": "Licence Renewal Alert (days)",
+   "default": "90",
+   "reqd": 1,
+   "non_negative": 1,
+   "description": "How many days before a licence expires, or an obligation of it falls due, QA is alerted (1 to 730)."
+  },
+  {
    "fieldname": "section_control",
    "fieldtype": "Section Break",
    "label": "Change control"
@@ -324,7 +340,7 @@
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-10-11 18:00:00.000000",
+ "modified": "2026-10-11 21:00:00.000000",
  "modified_by": "Administrator",
  "module": "Compliance",
  "name": "Quality Settings",

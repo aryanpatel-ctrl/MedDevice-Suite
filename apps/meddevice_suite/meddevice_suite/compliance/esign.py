@@ -53,6 +53,7 @@ def apply_lockout() -> None:
 # Record types whose signature binds part of the record, not all of it: dotted path of
 # content(doc) -> dict. An item's approval binds what QA approved (master_data.item_master).
 SIGNED_CONTENT: dict[str, str] = {
+	"Regulatory Licence": "meddevice_suite.qms.regulatory_licence.signed_content",
 	"Item": "meddevice_suite.master_data.item_master.signed_content",
 	"Customer": "meddevice_suite.master_data.customer_licence.customer_signed_content",
 	"BOM": "meddevice_suite.master_data.bom.signed_content",

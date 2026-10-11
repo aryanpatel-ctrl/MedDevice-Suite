@@ -41,6 +41,7 @@ CALIBRATION = "meddevice_suite.qms.calibration"
 MAINTENANCE = "meddevice_suite.qms.preventive_maintenance"
 QUALIFICATION = "meddevice_suite.qms.qualification"
 TRAINING = "meddevice_suite.qms.training"
+REGULATORY_LICENCE = "meddevice_suite.qms.regulatory_licence"
 
 # (record type, act) -> the signed act. Each module adds the acts it signs.
 SIGNING_ACTIONS: dict[tuple[str, str], SignedAct] = {
@@ -107,6 +108,10 @@ SIGNING_ACTIONS: dict[tuple[str, str], SignedAct] = {
 	("Training Record", "Not Competent"): SignedAct("Rejected", f"{TRAINING}.sign_not_competent"),
 	("Training Record", "Record History"): SignedAct("Verified", f"{TRAINING}.record_history"),
 	("Training Record", "Revoke"): SignedAct("Rejected", f"{TRAINING}.revoke"),
+	# Module 41, regulatory licences
+	("Regulatory Licence", "Verify"): SignedAct("Verified", f"{REGULATORY_LICENCE}.verify"),
+	("Regulatory Licence", "Reject"): SignedAct("Rejected", f"{REGULATORY_LICENCE}.reject"),
+	("Regulatory Licence", "Withdraw"): SignedAct("Rejected", f"{REGULATORY_LICENCE}.withdraw"),
 }
 
 

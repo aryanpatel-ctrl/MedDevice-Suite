@@ -88,6 +88,28 @@ def approved_change(
 	return doc.name
 
 
+def licence_for_test() -> str:
+	"""A licence of the plant a change can name (module 41); recording and verifying one is tested in
+	qms/test_regulatory_licence.py."""
+	licence_type = f"Licence type for tests {frappe.generate_hash(length=4)}"
+	frappe.get_doc({"doctype": "Regulatory Licence Type", "licence_type_name": licence_type}).insert(
+		ignore_permissions=True
+	)
+	return (
+		frappe.get_doc(
+			{
+				"doctype": "Regulatory Licence",
+				"licence_type": licence_type,
+				"licence_number": f"MFG/{frappe.generate_hash(length=5)}",
+				"issuing_authority": "State Licensing Authority",
+				"valid_from": today(),
+			}
+		)
+		.insert(ignore_permissions=True)
+		.name
+	)
+
+
 def assessment(classification: str = "Minor", regulatory: str = "No", days: int = 90) -> dict:
 	return {
 		**dict.fromkeys(change_control.IMPACT_AREAS, "No"),
@@ -365,10 +387,28 @@ class TestAssessment(ChangeControlTestCase):
 				with self.assertRaises(frappe.ValidationError):
 					self.act(self.qa, doc.name, "Assess")
 
+	def with_licence(self) -> list[dict]:
+		return [
+			{"reference_doctype": "Controlled Document", "reference_name": self.document},
+			{"reference_doctype": "Regulatory Licence", "reference_name": licence_for_test()},
+		]
+
 	def test_a_change_needing_regulatory_notification_is_always_major(self):
 		with self.assertRaisesRegex(frappe.ValidationError, "regulatory notification is a Major change"):
-			self.assessed("Minor", regulatory="Yes")
-		self.assertEqual(self.assessed("Major", regulatory="Yes").classification, "Major")
+			self.assessed("Minor", regulatory="Yes", affected_records=self.with_licence())
+		self.assertEqual(
+			self.assessed("Major", regulatory="Yes", affected_records=self.with_licence()).classification,
+			"Major",
+		)
+
+	@verifies("URS-REG-006")
+	def test_a_change_needing_regulatory_notification_names_the_licence(self):
+		with self.assertRaisesRegex(frappe.ValidationError, "lists the licence or registration"):
+			self.assessed("Major", regulatory="Yes")
+		self.assertEqual(
+			self.assessed("Major", regulatory="Yes", affected_records=self.with_licence()).status,
+			"Awaiting Approval",
+		)
 
 	def test_the_check_is_due_within_the_allowed_days(self):
 		with self.assertRaisesRegex(frappe.ValidationError, "within 730 days"):

@@ -1,0 +1,83 @@
+{
+ "actions": [],
+ "creation": "2026-10-11 21:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "obligation",
+  "due_date",
+  "done_on",
+  "done_by",
+  "evidence",
+  "alerted"
+ ],
+ "fields": [
+  {
+   "fieldname": "obligation",
+   "fieldtype": "Data",
+   "label": "Obligation",
+   "reqd": 1,
+   "in_list_view": 1,
+   "description": "For example: retention fee, surveillance audit."
+  },
+  {
+   "fieldname": "due_date",
+   "fieldtype": "Date",
+   "label": "Due",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "done_on",
+   "fieldtype": "Date",
+   "label": "Done On",
+   "in_list_view": 1,
+   "read_only": 1,
+   "no_copy": 1,
+   "allow_on_submit": 1
+  },
+  {
+   "fieldname": "done_by",
+   "fieldtype": "Link",
+   "label": "Recorded By",
+   "options": "User",
+   "read_only": 1,
+   "no_copy": 1,
+   "allow_on_submit": 1
+  },
+  {
+   "fieldname": "evidence",
+   "fieldtype": "Link",
+   "label": "Evidence",
+   "options": "Important File",
+   "in_list_view": 1,
+   "read_only": 1,
+   "no_copy": 1,
+   "allow_on_submit": 1
+  },
+  {
+   "fieldname": "alerted",
+   "fieldtype": "Check",
+   "label": "Alerted",
+   "hidden": 1,
+   "read_only": 1,
+   "no_copy": 1,
+   "allow_on_submit": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-10-11 21:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "QMS",
+ "name": "Regulatory Licence Obligation",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0,
+ "istable": 1,
+ "editable_grid": 1
+}

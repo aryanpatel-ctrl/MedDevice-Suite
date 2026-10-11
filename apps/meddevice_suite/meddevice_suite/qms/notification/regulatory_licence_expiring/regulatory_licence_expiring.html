@@ -1,0 +1,1 @@
+<p>{{ _("Licence {0} ({1}) expires or has an obligation due on or before {2}, or overdue. Apply for the renewal or do the obligation; QA records the renewal and verifies it, or records the obligation with its evidence.").format(doc.licence_number, doc.licence_type, frappe.format_value(doc.valid_until, {"fieldtype": "Date"}) if doc.valid_until else _("its due date")) }}</p>
