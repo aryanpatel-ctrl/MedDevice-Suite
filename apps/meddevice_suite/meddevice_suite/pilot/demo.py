@@ -225,8 +225,9 @@ def load_demo_data() -> None:
 				for index, (operation, workstation, minutes) in enumerate(steps, 1)
 			],
 		)
+	approve_bom = approve_as("QA Manager", password, "BOM")
 	for code, (_name, _hsn, _rate, line, materials) in PRODUCTS.items():
-		ensure_bom(code, line, materials, company)
+		ensure_bom(code, line, materials, company, approve_bom)
 
 
 def ensure(doctype: str, existing: str, **values) -> None:
@@ -302,21 +303,21 @@ def item_master_data(code: str, group: str) -> dict:
 	return data
 
 
-def approve_as(profile: str, password: str) -> Callable[[str], None]:
-	"""QA's signed approval of a demo item, by the demo user of the job; an approved item is left
-	as it is."""
+def approve_as(profile: str, password: str, doctype: str = "Item") -> Callable[[str], None]:
+	"""QA's signed approval of a demo item (module 1) or bill of materials (module 2), by the demo
+	user of the job; one approved already is left as it is."""
+	from meddevice_suite.master_data import bom as bill_of_materials
 
-	def approve(code: str) -> None:
-		if item_master.approved(code):
+	def approve(name: str) -> None:
+		if doctype == "Item" and item_master.approved(name):
+			return
+		if doctype == "BOM" and frappe.db.get_value("BOM", name, "docstatus") == 1:
 			return
 		from meddevice_suite.pilot.flow import as_job  # the flow builds on this module
 
+		act = item_master.approve if doctype == "Item" else bill_of_materials.approve
 		with as_job(profile):
-			item_master.approve(
-				frappe.get_doc("Item", code),
-				password=password,
-				reason="Item master and specification checked (demo)",
-			)
+			act(frappe.get_doc(doctype, name), password=password, reason="Checked for the pilot (demo)")
 
 	return approve
 
@@ -408,10 +409,16 @@ def ensure_price(code: str, price_list: str, rate: float) -> None:
 		).insert(ignore_permissions=True)  # demo loader
 
 
-def ensure_bom(code: str, line: str, materials: dict[str, float], company: str) -> None:
+def ensure_bom(
+	code: str, line: str, materials: dict[str, float], company: str, approve: Callable[[str], None]
+) -> None:
+	"""The product's bill of materials, approved by QA with a signature (module 2)."""
 	if frappe.db.exists("BOM", {"item": code, "is_default": 1, "docstatus": 1}):
 		return
-	frappe.get_doc(
+	if draft := frappe.db.get_value("BOM", {"item": code, "docstatus": 0}):  # left by an earlier run
+		approve(draft)
+		return
+	bom = frappe.get_doc(
 		{
 			"doctype": "BOM",
 			"item": code,
@@ -425,7 +432,8 @@ def ensure_bom(code: str, line: str, materials: dict[str, float], company: str) 
 			"buying_price_list": "Standard Buying",
 			"items": [{"item_code": item, "qty": qty} for item, qty in materials.items()],
 		}
-	).insert(ignore_permissions=True).submit()  # demo loader
+	).insert(ignore_permissions=True)  # demo loader
+	approve(bom.name)
 
 
 def demo_user_email(profile: str) -> str:

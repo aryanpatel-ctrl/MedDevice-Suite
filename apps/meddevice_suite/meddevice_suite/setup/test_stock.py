@@ -62,6 +62,14 @@ def licensed_for_test(customer: str) -> str:
 	return doc.name
 
 
+def submit_bom_for_test(bom):
+	"""Submit a bill of materials as QA's signed approval would (module 2), for other modules'
+	tests; the signed act itself is tested in master_data/test_bom.py."""
+	bom.flags.bom_approval = True
+	bom.submit()
+	return bom
+
+
 def approve_for_test(*codes: str) -> None:
 	"""QA's approval of items that other modules' tests use (module 1), recorded as the signed act
 	records it, so that those tests need not set up everything an approval checks. The signed act

@@ -929,6 +929,13 @@ source = "DFD 3.4 IQC Inspection, 5.3 Final QC Inspection, D6; D2 Incoming QC (I
 status = "planned"
 
 [[requirement]]
+id = "URS-MST-007"
+module = 2
+title = "A bill of materials is drafted by Production and approved by QA with an electronic signature, which is its only submit, for the Administrator too; QA approves it only when its product is a QA-approved finished good or sub-assembly, it has at least one component, every component is a QA-approved item with a quantity above zero, and its process-loss allowance is between 0 and 100 percent; the signature binds what was approved (product, quantity, components, operations, process loss), not the costs ERPNext updates; a work order is made only from an approved, active bill of its own product."
+source = "DFD D3 Item / BOM / Routing Master, 2.2 MRP, 4.1 Create Production Order; master plan section 3 (BOM: components and quantities per unit, scrap allowance, version; masters approved before use) and tracker step 8 (versioned, e-signed, changed only through change control); ISO 13485 7.5.1, 4.2.3; 21 CFR 11.50, 11.70; decided 2026-10-11 under the client's instruction to follow the DFD"
+status = "implemented"
+
+[[requirement]]
 id = "URS-MST-008"
 module = 5
 title = "A customer is sold to only under a licence QA has verified: Sales records each licence of a customer with its type, number, issuing authority, validity dates and a copy; QA verifies or rejects it with an electronic signature and a reason, and withdraws a verified licence with a signature when the authority suspends or cancels it; a sales order, delivery note, or invoice that delivers stock is refused when submitted for a customer that holds no verified licence valid both on the document's date and on the day it is submitted, lines added to a submitted order likewise; a customer with a decided licence or exemption is not renamed or merged; unless QA has decided with an electronic signature and a reason that the customer buys without one (such as a hospital buying for its own use), a decision QA can reverse the same way; Sales and QA are alerted once before a verified licence expires, unless a renewed licence that continues it without a gap is already verified."

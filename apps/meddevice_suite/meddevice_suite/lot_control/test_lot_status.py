@@ -28,7 +28,12 @@ from meddevice_suite.pilot.flow import lot_of
 from meddevice_suite.qa import verifies
 from meddevice_suite.qms.test_document_control import signer
 from meddevice_suite.setup.install import apply_configuration
-from meddevice_suite.setup.test_stock import approve_for_test, licensed_for_test, stock_item
+from meddevice_suite.setup.test_stock import (
+	approve_for_test,
+	licensed_for_test,
+	stock_item,
+	submit_bom_for_test,
+)
 
 RAW = "MDS-LOT-RAW"
 PRODUCT = "MDS-LOT-PRODUCT"
@@ -550,11 +555,9 @@ class TestOnlyAnApprovedLotLeaves(LotTestCase):
 					"is_default": 1,
 					"items": [{"item_code": RAW, "qty": 1}],
 				}
-			)
-			.insert()
-			.submit()
-			.name
+			).insert()
 		)
+		bom = bom if isinstance(bom, str) else submit_bom_for_test(bom).name
 
 		def work_order(**warehouses) -> Document:
 			return frappe.get_doc(
