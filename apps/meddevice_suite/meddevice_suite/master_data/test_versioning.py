@@ -15,7 +15,7 @@ from meddevice_suite.qa import verifies
 from meddevice_suite.qms.change_control import approved_changes_for
 from meddevice_suite.qms.test_change_control import approved_change, signer
 from meddevice_suite.setup.install import apply_configuration
-from meddevice_suite.setup.test_stock import approve_for_test
+from meddevice_suite.setup.test_stock import approve_for_test, licensed_for_test
 
 NINE_MASTERS = {
 	"Item",
@@ -43,6 +43,12 @@ def last_changes(doctype: str, name: str) -> list:
 	return (
 		frappe.parse_json(frappe.get_doc("Audit Event", event[0]).changes).get("changed", []) if event else []
 	)
+
+
+def licensed(customer: frappe.model.document.Document) -> frappe.model.document.Document:
+	"""A customer the tests sell to holds a verified licence (module 5)."""
+	licensed_for_test(customer.name)
+	return customer
 
 
 def new_item_code() -> str:
@@ -380,14 +386,16 @@ class TestVersionedMasters(VersioningTestCase):
 					"supplier_group": "Raw Material",
 				}
 			).insert(),
-			"Customer": frappe.get_doc(
-				{
-					"doctype": "Customer",
-					"customer_name": f"MDS Fresh {new_item_code()}",
-					"customer_group": "Commercial",
-					"territory": "India",
-				}
-			).insert(),
+			"Customer": licensed(
+				frappe.get_doc(
+					{
+						"doctype": "Customer",
+						"customer_name": f"MDS Fresh {new_item_code()}",
+						"customer_group": "Commercial",
+						"territory": "India",
+					}
+				).insert()
+			),
 			"Workstation": frappe.get_doc(
 				{"doctype": "Workstation", "workstation_name": f"MDS WS {new_item_code()}"}
 			).insert(),
@@ -574,14 +582,16 @@ class TestRequirementMatrix(VersioningTestCase):
 			}
 		).insert()
 		receipt.submit()
-		customer = frappe.get_doc(
-			{
-				"doctype": "Customer",
-				"customer_name": f"MDS In Use {suffix}",
-				"customer_group": "Commercial",
-				"territory": "India",
-			}
-		).insert()
+		customer = licensed(
+			frappe.get_doc(
+				{
+					"doctype": "Customer",
+					"customer_name": f"MDS In Use {suffix}",
+					"customer_group": "Commercial",
+					"territory": "India",
+				}
+			).insert()
+		)
 		order = frappe.get_doc(
 			{
 				"doctype": "Sales Order",

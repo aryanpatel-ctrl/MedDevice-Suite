@@ -8,6 +8,7 @@
   "section_alerts",
   "lot_expiry_warning_days",
   "supplier_certificate_warning_days",
+  "customer_licence_warning_days",
   "document_review_warning_days",
   "column_break_alerts",
   "change_action_warning_days",
@@ -46,6 +47,15 @@
    "reqd": 1,
    "non_negative": 1,
    "description": "Days before the certificate of a supplier's decision in force expires that QA and Purchase are alerted (1 to 365)."
+  },
+  {
+   "fieldname": "customer_licence_warning_days",
+   "fieldtype": "Int",
+   "label": "Customer Licence Alert",
+   "default": "30",
+   "reqd": 1,
+   "non_negative": 1,
+   "description": "Days before a customer's verified licence expires that Sales and QA are alerted, unless a renewed licence is verified (1 to 365)."
   },
   {
    "fieldname": "document_review_warning_days",
@@ -144,7 +154,7 @@
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-10-11 02:30:00.000000",
+ "modified": "2026-10-11 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Compliance",
  "name": "Quality Settings",

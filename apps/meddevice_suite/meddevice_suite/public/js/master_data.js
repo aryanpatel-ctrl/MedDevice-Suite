@@ -113,3 +113,49 @@ for (const doctype of [
 		},
 	});
 }
+
+// Customer licences (module 5): the customer's form says whether it may be sold to today, and
+// Sales records a licence from it. Orders and deliveries are checked on the server
+// (master_data/customer_licence.py).
+frappe.ui.form.on("Customer", {
+	refresh(frm) {
+		if (frm.is_new()) return;
+		const licence = frm.doc.__onload?.customer_licence;
+		if (!licence) return;
+		if (licence.exempt) {
+			frm.dashboard.set_headline_alert(
+				__("Buys without a licence, as QA decided with a signature."),
+				"blue"
+			);
+		} else if (licence.valid.length) {
+			const held = licence.valid
+				.map((row) =>
+					__("{0} until {1}", [
+						frappe.utils.escape_html(row.licence_number),
+						frappe.datetime.str_to_user(row.valid_until),
+					])
+				)
+				.join("; ");
+			frm.dashboard.set_headline_alert(__("Licence verified by QA: {0}.", [held]), "green");
+		} else {
+			frm.dashboard.set_headline_alert(
+				__(
+					"No licence verified by QA is valid today: no sales order or delivery is made for this customer."
+				),
+				"red"
+			);
+		}
+		if (frappe.model.can_create("Customer Licence")) {
+			frm.add_custom_button(__("Record Licence"), () =>
+				frappe.new_doc("Customer Licence", { customer: frm.doc.name })
+			);
+		}
+		if (frappe.user.has_role("Quality Manager") && !frm.is_dirty()) {
+			const act = licence.exempt ? "Require Licence" : "Exempt From Licence";
+			frm.add_custom_button(__(act), () =>
+				// Closing the dialog signs nothing; there is nothing more to do then.
+				esign.sign(frm, act, "Approved", { ask_reason: true }).catch(() => {})
+			);
+		}
+	},
+});

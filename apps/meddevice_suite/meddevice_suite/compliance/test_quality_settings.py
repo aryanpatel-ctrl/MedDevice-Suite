@@ -65,6 +65,7 @@ class TestValues(QualitySettingsTestCase):
 			{
 				"lot_expiry_warning_days": 30,
 				"supplier_certificate_warning_days": 30,
+				"customer_licence_warning_days": 30,
 				"document_review_warning_days": 30,
 				"change_action_warning_days": 7,
 				"default_effectiveness_check_days": 90,

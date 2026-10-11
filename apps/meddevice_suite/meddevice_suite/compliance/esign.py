@@ -59,7 +59,10 @@ def apply_lockout() -> None:
 # record type -> fields the system maintains after signing, outside what a signature binds.
 # Record types whose signature binds part of the record, not all of it: dotted path of
 # content(doc) -> dict. An item's approval binds what QA approved (master_data.item_master).
-SIGNED_CONTENT: dict[str, str] = {"Item": "meddevice_suite.master_data.item_master.signed_content"}
+SIGNED_CONTENT: dict[str, str] = {
+	"Item": "meddevice_suite.master_data.item_master.signed_content",
+	"Customer": "meddevice_suite.master_data.customer_licence.customer_signed_content",
+}
 
 SYSTEM_MAINTAINED: dict[str, tuple[str, ...]] = {
 	"Document Revision": ("status", "docstatus", "superseded_by"),
@@ -76,6 +79,8 @@ SYSTEM_MAINTAINED: dict[str, tuple[str, ...]] = {
 	"Lot Release": ("docstatus", "stock_entry", "supplier_return"),
 	# The certificate alert is bookkeeping of the alert, not part of the decision.
 	"Supplier Approval": ("docstatus", "certificate_alerted"),
+	# The expiry alert is bookkeeping of the alert, not part of the verified licence.
+	"Customer Licence": ("docstatus", "expiry_alerted"),
 	"Change Request Action": (
 		"done",
 		"done_on",
