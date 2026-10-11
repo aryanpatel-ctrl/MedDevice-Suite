@@ -91,6 +91,7 @@ doc_events = {
 		"validate": [
 			"meddevice_suite.master_data.warehouse.guard_stock_ledger_entry",  # module 7: approved stores
 			"meddevice_suite.lot_control.lot_status.guard_stock_ledger_entry",
+			"meddevice_suite.lot_control.expiry.guard_stock_ledger_entry",  # module 18: expiry, FEFO
 		]
 	},
 	"Stock Entry": {

@@ -1,6 +1,6 @@
 # Batch inventory, expiry, FEFO picking and putaway (module 18) — feature document and browser test guide
 
-Requirements: **URS-STK-001, URS-STK-002, URS-STK-003** (`meddevice_suite/qa/requirements.toml`). Also touched: URS-CMP-027 (lot expiry alerts, module 51: the alert is the only expiry-driven behaviour this app adds), URS-STK-004/005 (a lot's status and store, module 17, which keep expiry-first picking to approved stock), URS-PLT-007 (the journey that proves expiry-first issue and delivery).
+Requirements: **URS-STK-001, URS-STK-002, URS-STK-003**, and since 2026-10-11 **URS-STK-008** (expired lots) and **URS-STK-009** (first expiry, first out for lots named by hand) (`meddevice_suite/qa/requirements.toml`; code `lot_control/expiry.py`, report *Lots Taken Out of Expiry Order*). Also touched: URS-CMP-027 (lot expiry alerts, module 51: the alert is the only expiry-driven behaviour this app adds), URS-STK-004/005 (a lot's status and store, module 17, which keep expiry-first picking to approved stock), URS-PLT-007 (the journey that proves expiry-first issue and delivery).
 Code: `meddevice_suite/setup/stock.py` (locked Stock Settings, negative-stock refusal), `compliance/alerts.py` with `compliance/notification/lot_expiring_soon/` and `lot_expired/` (expiry alerts), hooks in `meddevice_suite/hooks.py`; the lot stores and status that putaway relies on in `lot_control/lot_status.py` and `lot_control/stores.py`; test fixtures `qa/ui_journey.py`, `pilot/demo.py`, `pilot/flow.py`. Module approach in the register: **ready** (standard ERPNext, configured by this app), so most behaviour here is ERPNext's, pinned and locked by configuration.
 State on 2026-10-10: configured since the Phase 0/1 baseline (commits d4b2b3b6, 02c5f213, a11c586c) and reused by modules 16 and 17; server and browser suites green locally on the complete code; GitHub CI on this branch was in progress when this document was written (section 8).
 
@@ -77,10 +77,17 @@ Each lot is alerted once per alert (field **Expiry Alert Sent** on the lot, book
 
 Goods receipts always land in the company's Quarantine store (whatever the item or the form defaulted to); a work order's finished lot lands in the Quarantine store; QA's Release moves the lot to the item's **Default Warehouse** (an approved store, e.g. `Stores - <abbr>` for raw materials, `Finished Goods - <abbr>` for products in the demo data); Hold and Reject move it to the Hold or Rejected store. ERPNext's own **Putaway Rule** master is not part of the scope: it is not listed in the Stock sidebar (`setup/sidebars.py` allowlist) and the demo data defines none.
 
+### 2.5a Expired lots (URS-STK-008) and lots named by hand (URS-STK-009), since 2026-10-11
+
+Both are checked on the stock ledger entry, after the store and lot-status checks, so every document, the form and the API are held alike (`lot_control/expiry.py`).
+
+- **An expired lot** (Expiry Date before the posting date, as ERPNext counts it; a lot expiring today is still usable) leaves its store only into the hold, rejected or returns store, by QA's own decision, back to its supplier, or as counted. A Material Issue, a transfer to production, consumption, a delivery and a move to another usable store are refused: *Lot X expired on D; it cannot be issued, used or delivered. Move it to the hold store; QA decides it.* (ERPNext already refused it on a delivery and some production entries; a material issue or a move to a usable store went through.)
+- **First expiry, first out for a lot named by hand:** when stock goes to production (issue, transfer for manufacture, consumption, repack, subcontracting) or to a customer (delivery note, invoice that updates stock), a lot is refused while an earlier-expiring Approved lot of the same item, not expired, would still be in the same store after the document (what the document itself takes of it is counted). A lot without an expiry date goes after every lot that has one. A move between stores is not a use.
+- **Exception:** the document states its **FEFO Exception Reason** (for example, the customer asked for one lot); a blank reason is none. The reason stays on the document and in its audit trail, and **Stock › Lots Taken Out of Expiry Order** (also in Quality) lists every such document for QA.
+- Decided 2026-10-11 by the project, on the instruction to decide by the standard flow (to be confirmed with the client): an expired lot never goes to use; FEFO is enforced with a stated reason as the only exception, since a customer may ask for one lot and FEFO protects shelf life rather than the product's conformity.
+
 ### 2.6 What is intended but not implemented / outside this feature
 
-- **FEFO when a lot is named by hand.** ERPNext orders lots by expiry only while it picks them. A person who ticks *Use Serial No / Batch Fields* and names a later-expiring lot is not refused; nothing in the app checks that an earlier-expiring Approved lot of the same item exists. Open point (section 3).
-- **Issuing an expired lot.** ERPNext refuses an expired lot on Manufacture, Material Transfer for Manufacture, Repack and Send to Subcontractor entries (*Batch X of Item Y has expired.*) and leaves expired lots out of automatic picking; a Material Issue or Delivery Note that names an expired lot by hand is not refused by ERPNext or by this app. The alert asks Stores to move it to the hold store; the status change itself is QA's Hold (module 17).
 - **Putaway Rule / bin locations.** Not used; stores are the only locations.
 - **Forcing lot control per item.** Nothing refuses a stock item without Has Batch No; the demo loader sets it on every item and the item master is QA's (module 1, Item Manager).
 - **Supplier's own expiry date.** ERPNext sets the lot's expiry from the shelf life; if the supplier's certificate states an earlier date, QA (Item Manager) corrects **Expiry Date** on the lot, which is audited and re-arms the alert. There is no field for it on the receipt line.
@@ -90,6 +97,8 @@ Goods receipts always land in the company's Quarantine store (whatever the item 
 > **URS-STK-001** Every lot of material and product can be tracked as a batch on every site.
 > **URS-STK-002** When stock is picked or issued, the lot that expires first is taken first.
 > **URS-STK-003** Stock can never go below zero, for any item or lot.
+> **URS-STK-008** A lot whose expiry date has passed is never issued, sent to production, consumed or delivered, from any document, the form or the API; it leaves its store only into the hold, rejected or returns store, by QA's own decision, back to its supplier, or as counted.
+> **URS-STK-009** When stock goes to production or to a customer, the lot that expires first goes first: a lot is refused while an earlier-expiring Approved lot of the same item that has not expired would still be in the same store after the document, unless the document states its FEFO exception reason, which is kept with it and in its audit trail and listed for QA; moving stock from one store to another is not held to it.
 
 | # | Acceptance criterion | Implementation | Automated verification |
 | --- | --- | --- | --- |
@@ -100,11 +109,13 @@ Goods receipts always land in the company's Quarantine store (whatever the item 
 | C5 | Issuing more than is in stock is refused | ERPNext `NegativeStockError` (settings off) | `TestStockNeverGoesNegative.test_issuing_more_than_is_in_stock_is_refused`; browser: "[URS-STK-003] Stores cannot move the released lots out of quarantine again, for none is left" |
 | C6 | No item and no lot may be allowed negative stock | `refuse_negative_stock` (Item and Batch validate) | `TestNoItemOrLotMayGoNegative.test_an_item_cannot_be_allowed_negative_stock`, `test_a_lot_cannot_be_allowed_negative_stock` |
 | C7 | Expiry alerts: 30 days, once, catch-up, expired, changed date, no stock / disabled / undated excluded, one failure does not stop the rest, daily, indexed | `send_expiry_alerts`, `reset_expiry_alert` | `compliance/test_alerts.py` `TestLotExpiryAlerts.*` (12 tests, URS-CMP-027) |
+| C9 | An expired lot is never issued, sent to production, moved to a usable store or delivered; it goes to the hold store, back to its supplier, or is counted; a lot expiring today is usable | `expiry.guard_stock_ledger_entry` | `lot_control/test_expiry.py` `TestExpiredLots.*` (URS-STK-008) |
+| C10 | A later-expiring lot named by hand is refused while an earlier Approved, unexpired lot stays in the store after the document; a stated reason lets it through and is reported; expired, unapproved and other stores' lots do not count; undated lots go last; moves between stores are not uses | `expiry.guard_stock_ledger_entry`, report *Lots Taken Out of Expiry Order* | `lot_control/test_expiry.py` `TestFirstExpiryFirstOut.*` (URS-STK-009) |
 | C8 | Putaway: receipts into Quarantine, release to the approved default store, finished lot into Quarantine | module 17 | `lot_control/test_lot_status.py` `test_goods_are_received_into_the_quarantine_store_whatever_store_was_named`, `TestTheDecisionMovesTheStock.test_release_moves_the_stock_to_the_approved_store_and_approves_the_lot`, `test_a_work_order_draws_from_an_approved_store_and_finishes_into_quarantine` |
 
 **Partial / ambiguous (client to decide):**
-- URS-STK-002 is met only when ERPNext picks the lots; a lot named by hand is not checked against FEFO (section 2.6). Decide whether a manual choice of a later-expiring lot must be refused or need a reason.
-- Issuing or delivering an **expired** lot by hand is not refused (section 2.6); no requirement states it. Decide whether expiry blocks issue (today: alert only; the Lot Expired message tells Stores to have it held).
+- Decided 2026-10-11: a lot named by hand is held to FEFO, with a stated reason as the exception (URS-STK-009); an expired lot is never used (URS-STK-008). Section 2.5a.
+- Open with the client: a minimum remaining shelf life at dispatch (some customers refuse lots near expiry) is not a requirement today.
 - URS-STK-001 "every lot … on every site": per-item batch tracking is configured by data (QA on the item master), not enforced.
 - "Putaway" in the module title is realised as the fixed store per status (module 17); ERPNext Putaway Rules are out of scope unless the client asks for bin-level locations.
 
@@ -147,12 +158,18 @@ Role: Stores, then Production Supervisor. Preconditions: two Approved lots of RM
 1. As Stores: Material Issue, line RM-SILICONE, Source Warehouse `Stores - <abbr>`, Qty 1, **no** Batch No; Save, Submit. Expected: the line's Serial and Batch Bundle holds L-NEW (expires first), not L-OLD.
 2. As Production Supervisor: **Manufacturing › Work Order › New** for FC-2W-SIL-16 qty 100 (Source `Stores - <abbr>`, WIP `Work In Progress - <abbr>`, Target `Quarantine - <abbr>`), Submit, **Start**, Create, Submit the Material Transfer for Manufacture. Expected: the silicone line's bundle holds L-NEW first; L-OLD only if L-NEW does not cover the quantity.
 3. As Stores: **Stock › Pick List › New** for RM-SILICONE qty 1 from `Stores - <abbr>` without a lot; Save. Expected: the location row's Batch No = L-NEW.
-4. As Stores: Material Issue naming **L-OLD** by hand, Qty 1. Expected: allowed (not refused: section 2.6, open point) — record the result.
+4. As Stores: Material Issue naming **L-OLD** by hand, Qty 1. Expected: refused, *Lot L-NEW expires on …, before lot L-OLD* (URS-STK-009). Fill **FEFO Exception Reason** and submit again: allowed; **Lots Taken Out of Expiry Order** lists it with the reason.
 Actual result: ____  Pass/Fail: ____  Cleanup: QA restores the expiry dates if changed.
 
 ### BI-06 Delivery takes the earliest-expiring finished lot (C3)
 Preconditions: two Approved lots of FC-2W-SIL-16 in `Finished Goods - <abbr>`: an older one expiring later and the lot just made (today + 1825 days); a Sales Order for 100.
 1. As Stores: from the Sales Order **Create › Delivery Note**; line Warehouse `Finished Goods - <abbr>`, no lot; Save, Submit. Expected: the delivered bundle is the lot that expires first; the other stays.
+Actual result: ____  Pass/Fail: ____
+
+### BI-06a An expired lot is not used (C9)
+Preconditions: an Approved lot whose Expiry Date QA set to yesterday, in `Stores - <abbr>`.
+1. As Stores: Material Issue naming it. Expected: refused, *Lot … expired on …; move it to the hold store*.
+2. Material Transfer of it to `Finished Goods - <abbr>`. Expected: refused. 3. Material Transfer of it to `Hold - <abbr>`. Expected: allowed.
 Actual result: ____  Pass/Fail: ____
 
 ### BI-07 Expiry alerts (C7; URS-CMP-027)
