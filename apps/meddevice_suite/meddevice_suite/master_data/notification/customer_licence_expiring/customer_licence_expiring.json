@@ -1,0 +1,35 @@
+{
+ "attach_print": 0,
+ "channel": "System Notification",
+ "condition_type": "Python",
+ "creation": "2026-10-11 12:00:00.000000",
+ "docstatus": 0,
+ "doctype": "Notification",
+ "document_type": "Customer Licence",
+ "enabled": 1,
+ "event": "Custom",
+ "idx": 0,
+ "is_standard": 1,
+ "message_type": "HTML",
+ "minutes_offset": 0,
+ "modified": "2026-10-11 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Master Data",
+ "name": "Customer Licence Expiring",
+ "notification_message": "{{ _(\"Licence {0} of customer {1} expires or expired on {2}. Ask the customer for the renewed licence; Sales records it and QA verifies it, or no further sales order or delivery is made for the customer.\").format(doc.licence_number, doc.customer_name or doc.customer, frappe.format_value(doc.valid_until, {\"fieldtype\": \"Date\"})) }}",
+ "owner": "Administrator",
+ "recipients": [
+  {
+   "receiver_by_role": "Quality Manager"
+  },
+  {
+   "receiver_by_role": "Sales User"
+  },
+  {
+   "receiver_by_role": "Sales Manager"
+  }
+ ],
+ "send_system_notification": 0,
+ "send_to_all_assignees": 0,
+ "subject": "Licence of customer {{ doc.customer_name or doc.customer }} valid until {{ doc.get_formatted('valid_until') }}"
+}

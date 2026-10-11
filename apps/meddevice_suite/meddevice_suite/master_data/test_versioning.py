@@ -19,6 +19,8 @@ from meddevice_suite.setup.test_stock import (
 	approve_equipment_for_test,
 	approve_for_test,
 	approve_masters_for_test,
+	licensed_for_test,
+	submit_bom_for_test,
 )
 
 NINE_MASTERS = {
@@ -47,6 +49,12 @@ def last_changes(doctype: str, name: str) -> list:
 	return (
 		frappe.parse_json(frappe.get_doc("Audit Event", event[0]).changes).get("changed", []) if event else []
 	)
+
+
+def licensed(customer: frappe.model.document.Document) -> frappe.model.document.Document:
+	"""A customer the tests sell to holds a verified licence (module 5)."""
+	licensed_for_test(customer.name)
+	return customer
 
 
 def new_item_code() -> str:
@@ -211,7 +219,7 @@ class TestVersionedMasters(VersioningTestCase):
 				"items": [{"item_code": material, "qty": 2, "rate": 1}],
 			}
 		).insert()
-		bom.submit()
+		submit_bom_for_test(bom)
 		bom = frappe.get_doc("BOM", bom.name)
 		bom.is_active = 0
 		bom.is_default = 0
@@ -228,21 +236,21 @@ class TestVersionedMasters(VersioningTestCase):
 	def test_a_new_default_bill_of_materials_replaces_the_one_in_force_only_under_control(self):
 		product, material = lot_item(new_item_code(), "Products"), lot_item(new_item_code())
 		in_force = self.bom(product, material)
-		in_force.submit()
+		submit_bom_for_test(in_force)
 		replacement = self.bom(product, material)
 		with self.assertRaisesRegex(frappe.ValidationError, "name the approved change request"):
-			replacement.submit()
+			submit_bom_for_test(replacement)
 		elsewhere = self.change_request_for("BOM", replacement.name)
 		replacement = frappe.get_doc("BOM", replacement.name)
 		replacement.set(CHANGE_REQUEST, elsewhere)
 		replacement.save()
 		with self.assertRaisesRegex(frappe.ValidationError, "does not list"):
-			replacement.submit()
+			submit_bom_for_test(replacement)
 		change = self.change_request_for("BOM", in_force.name)
 		replacement = frappe.get_doc("BOM", replacement.name)
 		replacement.set(CHANGE_REQUEST, change)
 		replacement.save()
-		replacement.submit()
+		submit_bom_for_test(replacement)
 		# ERPNext switched the old default off straight in the database; the change is recorded.
 		self.assertEqual(
 			frappe.db.get_value("BOM", in_force.name, ["is_default", VERSION, CHANGED_UNDER]), (0, 2, change)
@@ -252,7 +260,7 @@ class TestVersionedMasters(VersioningTestCase):
 	def test_a_bill_of_materials_is_cancelled_only_under_control(self):
 		product, material = lot_item(new_item_code(), "Products"), lot_item(new_item_code())
 		bom = self.bom(product, material)
-		bom.submit()
+		submit_bom_for_test(bom)
 		stage_reason("BOM", bom.name, "cancel", "Withdrawn")
 		with self.assertRaisesRegex(frappe.ValidationError, "name the approved change request"):
 			frappe.get_doc("BOM", bom.name).cancel()
@@ -370,7 +378,7 @@ class TestVersionedMasters(VersioningTestCase):
 			("Workstation", workstation.name), ("Operation", operation.name), ("Routing", routing.name)
 		)
 		product, material = lot_item(new_item_code(), "Products"), lot_item(new_item_code())
-		self.bom(product, material, with_operations=1, routing=routing.name).submit()
+		submit_bom_for_test(self.bom(product, material, with_operations=1, routing=routing.name))
 		routing = frappe.get_doc("Routing", routing.name)
 		self.assertTrue(MASTERS["Routing"].in_use(routing))
 		self.assertTrue(MASTERS["Operation"].in_use(operation))
@@ -390,14 +398,16 @@ class TestVersionedMasters(VersioningTestCase):
 					"supplier_group": "Raw Material",
 				}
 			).insert(),
-			"Customer": frappe.get_doc(
-				{
-					"doctype": "Customer",
-					"customer_name": f"MDS Fresh {new_item_code()}",
-					"customer_group": "Commercial",
-					"territory": "India",
-				}
-			).insert(),
+			"Customer": licensed(
+				frappe.get_doc(
+					{
+						"doctype": "Customer",
+						"customer_name": f"MDS Fresh {new_item_code()}",
+						"customer_group": "Commercial",
+						"territory": "India",
+					}
+				).insert()
+			),
 			"Workstation": frappe.get_doc(
 				{"doctype": "Workstation", "workstation_name": f"MDS WS {new_item_code()}"}
 			).insert(),
@@ -573,7 +583,7 @@ class TestRequirementMatrix(VersioningTestCase):
 			("Workstation", workstation.name), ("Operation", operation.name), ("Routing", routing.name)
 		)
 		product, material = lot_item(new_item_code(), "Products"), lot_item(new_item_code())
-		self.bom(product, material, with_operations=1, routing=routing.name).submit()
+		submit_bom_for_test(self.bom(product, material, with_operations=1, routing=routing.name))
 		supplier = frappe.get_doc(
 			{"doctype": "Supplier", "supplier_name": f"MDS In Use {suffix}", "supplier_group": "Raw Material"}
 		).insert()
@@ -587,14 +597,16 @@ class TestRequirementMatrix(VersioningTestCase):
 			}
 		).insert()
 		receipt.submit()
-		customer = frappe.get_doc(
-			{
-				"doctype": "Customer",
-				"customer_name": f"MDS In Use {suffix}",
-				"customer_group": "Commercial",
-				"territory": "India",
-			}
-		).insert()
+		customer = licensed(
+			frappe.get_doc(
+				{
+					"doctype": "Customer",
+					"customer_name": f"MDS In Use {suffix}",
+					"customer_group": "Commercial",
+					"territory": "India",
+				}
+			).insert()
+		)
 		order = frappe.get_doc(
 			{
 				"doctype": "Sales Order",
@@ -690,9 +702,9 @@ class TestWiredIn(VersioningTestCase):
 
 		product, material = lot_item(new_item_code(), "Products"), lot_item(new_item_code())
 		current = self.bom(product, material)
-		current.submit()
+		submit_bom_for_test(current)
 		other = self.bom(product, material, default=0)
-		other.submit()
+		submit_bom_for_test(other)
 		with self.assertRaises(frappe.PermissionError):
 			enqueue_replace_bom({"current_bom": current.name, "new_bom": other.name})
 

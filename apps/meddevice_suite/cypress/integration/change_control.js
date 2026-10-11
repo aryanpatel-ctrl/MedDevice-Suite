@@ -394,4 +394,35 @@ context("Change control", () => {
 			);
 		});
 	});
+
+	it("[URS-QMS-009] [URS-PLT-012] on the form, the requester may name a controlled document and Quality Settings, which names itself", () => {
+		// Found by the review of 2026-10-11: the form offered neither type to anyone, while the
+		// tests above made their requests through the API.
+		as("requester");
+		cy.visit("/desk/change-request/new");
+		cy.window().its("cur_frm.doc.__islocal").should("eq", 1);
+		cy.window().should((win) => {
+			const grid = win.cur_frm.fields_dict.affected_records.grid;
+			const options = grid.docfields.find(
+				(df) => df.fieldname === "reference_doctype"
+			).options;
+			expect(options.split("\n"), "record types offered").to.include.members([
+				"Controlled Document",
+				"Quality Settings",
+			]);
+		});
+		cy.window().then((win) => {
+			const row = win.frappe.model.add_child(win.cur_frm.doc, "affected_records");
+			win.frappe.model.set_value(
+				row.doctype,
+				row.name,
+				"reference_doctype",
+				"Quality Settings"
+			);
+		});
+		// A settings record has no list to look it up in: the form fills the record in itself.
+		cy.window().should((win) =>
+			expect(win.cur_frm.doc.affected_records[0].reference_name).to.equal("Quality Settings")
+		);
+	});
 });

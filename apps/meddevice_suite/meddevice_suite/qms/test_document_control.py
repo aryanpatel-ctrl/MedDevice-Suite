@@ -703,6 +703,16 @@ class TestPeriodicReviewAlerts(DocumentControlTestCase):
 				self.assertEqual(len(self.alerts(user, document)), 1)
 		self.assertEqual(self.alerts(self.outsider, document), [])
 
+	@verifies("URS-PLT-012")
+	def test_the_review_alert_follows_quality_settings(self):
+		from meddevice_suite.compliance.test_quality_settings import use_setting
+
+		inside, outside = self.due_in(40), self.due_in(50)
+		with use_setting("document_review_warning_days", 45):
+			send_review_alerts()
+		self.assertEqual(len(self.alerts(self.qa, inside)), 1)
+		self.assertEqual(self.alerts(self.qa, outside), [])
+
 	def test_an_overdue_review_is_alerted_and_a_later_one_waits(self):
 		overdue, later = self.due_in(-10), self.due_in(31)
 

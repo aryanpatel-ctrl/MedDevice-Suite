@@ -56,14 +56,19 @@ RETENTION_SCHEDULE: dict[str, tuple[int, str, tuple[str, ...]]] = {
 	"Quality system records": (
 		10,
 		QUALITY_BASIS,
-		("Controlled Document", "Document Revision", "Change Request"),
+		# Quality Settings: the validated system's adjustable values and their history.
+		("Controlled Document", "Document Revision", "Change Request", "Quality Settings"),
 	),
 	"Purchasing and supplier records": (
 		10,
 		QUALITY_BASIS,
 		("Supplier", "Supplier Approval", "Material Request", "Purchase Order", "Purchase Receipt"),
 	),
-	"Distribution records": (10, QUALITY_BASIS, ("Customer", "Delivery Note", "Packing Slip")),
+	"Distribution records": (
+		10,
+		QUALITY_BASIS,
+		("Customer", "Customer Licence", "Customer Licence Type", "Delivery Note", "Packing Slip"),
+	),
 	"Equipment and personnel records": (
 		10,
 		QUALITY_BASIS,

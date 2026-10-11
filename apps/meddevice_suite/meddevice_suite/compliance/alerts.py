@@ -22,6 +22,8 @@ from frappe.model.document import Document
 from frappe.modules.import_file import import_file
 from frappe.utils import add_days, today
 
+from meddevice_suite.compliance import quality_settings
+
 MODULE = "Compliance"
 EXPIRING_SOON = "Lot Expiring Soon"
 EXPIRED = "Lot Expired"
@@ -41,8 +43,8 @@ ALERTS: dict[str, str] = {
 	"Change Request Decided": "QMS",
 	"Change Effectiveness Check Due": "QMS",
 	"Supplier Certificate Expiring": "Master Data",  # approved suppliers (module 4)
+	"Customer Licence Expiring": "Master Data",  # customer licences (module 5)
 }
-WARNING_DAYS = 30
 # On the lot: the last expiry alert it has had. Bookkeeping of this module only.
 ALERT_FIELD = "mds_expiry_alert"
 CUSTOM_FIELDS = {
@@ -73,7 +75,7 @@ def apply_alerts() -> None:
 
 def send_expiry_alerts() -> None:
 	"""Daily: alert each lot with stock once as its expiry approaches, and once when expired."""
-	soon = add_days(today(), WARNING_DAYS)
+	soon = add_days(today(), quality_settings.value("lot_expiry_warning_days"))
 	for alert, expiry, already in (
 		(EXPIRED, ["<", today()], [EXPIRED]),
 		(EXPIRING_SOON, ["between", [today(), soon]], [EXPIRING_SOON, EXPIRED]),

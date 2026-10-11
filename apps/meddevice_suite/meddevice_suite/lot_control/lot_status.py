@@ -477,6 +477,15 @@ def guard_work_order(doc: Document, method: str | None = None) -> None:
 		)
 
 
+def guard_unvalidated_work_order(doc: Document, method: str | None = None) -> None:
+	"""Work Order before_validate: Production Plan and Subcontracting Inward Order save their work
+	orders with validation skipped (`flags.ignore_validate`), so `guard_work_order` would first run
+	when the order is submitted. Checked here as they are made; a validated order is checked at
+	`validate`, after ERPNext has filled its default stores."""
+	if doc.flags.ignore_validate:
+		guard_work_order(doc)
+
+
 def guard_purchase_receipt(doc: Document, method: str | None = None) -> None:
 	"""Purchase Receipt validate: goods are received into the company's Quarantine store, whatever
 	store the item or the form defaulted to, and quantity rejected at the door goes to the

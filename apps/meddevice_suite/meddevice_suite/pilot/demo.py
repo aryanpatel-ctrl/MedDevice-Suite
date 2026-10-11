@@ -23,11 +23,13 @@ to 9. Running the loader again adds only what is missing.
 
 import zlib
 from collections.abc import Callable
+from contextlib import AbstractContextManager
 
 import frappe
 from frappe import _
+from frappe.utils import add_days, today
 
-from meddevice_suite.master_data import item_master
+from meddevice_suite.master_data import customer_licence, item_master
 from meddevice_suite.pilot import refuse_unless_pilot_site
 from meddevice_suite.pilot.inspection import ensure_inspection_masters, ensure_inspection_template
 from meddevice_suite.setup.roles import JOB_PROFILES
@@ -43,6 +45,10 @@ SUPPLIERS = (
 	"Packaging Supplies (Demo)",
 )
 CUSTOMERS = ("City Hospital (Demo)", "Regional Medical Distributor (Demo)")
+# Module 5: the hospital buys for its own use without a licence, as QA decides; the distributor
+# holds a licence QA has verified.
+HOSPITAL, DISTRIBUTOR = CUSTOMERS
+LICENCE_TYPE = "Registration for the sale of medical devices (demo)"
 
 # code -> (name, unit, HSN, shelf life in days, supplier, buying rate)
 RAW_MATERIALS: dict[str, tuple[str, str, str, int, str, float]] = {
@@ -182,6 +188,7 @@ def load_demo_data() -> None:
 
 	for profile in JOB_PROFILES:  # QA's demo user approves the items below
 		ensure_demo_user(profile, password)
+	ensure_customers_may_buy(password)
 	approve = approve_as("QA Manager", password)
 	ensure_inspection_masters(company, approve, approve_as("QA Manager", password, "Asset"))
 	for code, (name, unit, hsn, shelf_life, supplier, rate) in RAW_MATERIALS.items():
@@ -229,8 +236,9 @@ def load_demo_data() -> None:
 		demo_user_email,
 		password,
 	)
+	approve_bom = approve_as("QA Manager", password, "BOM")
 	for code, (_name, _hsn, _rate, line, materials) in PRODUCTS.items():
-		ensure_bom(code, line, materials, company)
+		ensure_bom(code, line, materials, company, approve_bom)
 
 
 def ensure(doctype: str, existing: str, **values) -> None:
@@ -307,25 +315,116 @@ def item_master_data(code: str, group: str) -> dict:
 
 
 def approve_as(profile: str, password: str, doctype: str = "Item") -> Callable[[str], None]:
-	"""QA's signed approval of a demo item (module 1) or piece of equipment (module 8), by the demo
-	user of the job; one approved already is left as it is."""
-	from meddevice_suite.master_data import equipment
+	"""QA's signed approval of a demo item (module 1), bill of materials (module 2) or piece of
+	equipment (module 8), by the demo user of the job; one approved already is left as it is."""
+	approved, act, reason = signed_approval(doctype)
 
-	approved, act, reason = (
-		(item_master.approved, item_master.approve, "Item master and specification checked (demo)")
-		if doctype == "Item"
-		else (equipment.approved, equipment.approve, "Equipment details checked (demo)")
-	)
-
-	def approve(code: str) -> None:
-		if approved(code):
+	def approve(name: str) -> None:
+		if approved(name):
 			return
 		from meddevice_suite.pilot.flow import as_job  # the flow builds on this module
 
 		with as_job(profile):
-			act(frappe.get_doc(doctype, code), password=password, reason=reason)
+			act(frappe.get_doc(doctype, name), password=password, reason=reason)
 
 	return approve
+
+
+def signed_approval(doctype: str) -> tuple[Callable[[str], bool], Callable, str]:
+	"""Whether a record of the type is approved, QA's signed act that approves it, and the reason
+	the demo gives."""
+	from meddevice_suite.master_data import bom as bill_of_materials
+	from meddevice_suite.master_data import equipment
+
+	return {
+		"Item": (item_master.approved, item_master.approve, "Item master and specification checked (demo)"),
+		"BOM": (
+			lambda name: frappe.db.get_value("BOM", name, "docstatus") == 1,
+			bill_of_materials.approve,
+			"Components and quantities checked (demo)",
+		),
+		"Asset": (equipment.approved, equipment.approve, "Equipment details checked (demo)"),
+	}[doctype]
+
+
+def ensure_customers_may_buy(password: str) -> None:
+	"""Module 5, as the system records it: Sales records the distributor's licence and QA verifies
+	it with a signature; QA decides with a signature that the hospital buys without one."""
+	from meddevice_suite.pilot.flow import as_job  # the flow builds on this module
+
+	ensure_licence(
+		DISTRIBUTOR,
+		lambda: as_job("Sales"),
+		lambda: as_job("QA Manager"),
+		password,
+		"Licence copy checked (demo)",
+	)
+	if not customer_licence.buys_without_licence(HOSPITAL):
+		with as_job("QA Manager"):
+			customer_licence.exempt_from_licence(
+				frappe.get_doc("Customer", HOSPITAL),
+				password=password,
+				reason="Hospital buying for its own use (demo)",
+			)
+
+
+def ensure_licence(
+	customer: str,
+	as_sales: Callable[[], AbstractContextManager],
+	as_qa: Callable[[], AbstractContextManager],
+	password: str,
+	reason: str,
+) -> None:
+	"""A verified licence of a demo or journey customer, made as the system makes one: recorded by
+	Sales, verified by QA with a signature. A customer licensed today is left as it is."""
+	if customer_licence.licences_valid_on(customer, today()):
+		return
+	ensure(
+		customer_licence.TYPE_DOCTYPE,
+		LICENCE_TYPE,
+		licence_type=LICENCE_TYPE,
+		description="A registration to sell, stock or distribute medical devices (demo).",
+	)
+	with as_sales():
+		licence = frappe.get_doc(
+			{
+				"doctype": customer_licence.DOCTYPE,
+				"customer": customer,
+				"licence_type": LICENCE_TYPE,
+				"licence_number": f"DEMO-{zlib.crc32(customer.encode()):08X}",
+				"issuing_authority": "State Licensing Authority (demo)",
+				"valid_from": add_days(today(), -30),
+				"valid_until": add_days(today(), 730),
+				"licence_copy": licence_copy(customer),
+			}
+		).insert()
+	with as_qa():
+		customer_licence.verify(licence, password=password, reason=reason)
+
+
+def licence_copy(customer: str) -> str:
+	"""A placeholder copy of a demo customer's licence, as a private file."""
+	name = f"licence-{frappe.scrub(customer)}.pdf"
+	existing = frappe.db.get_value("File", {"file_name": name, "is_private": 1}, "file_url")
+	if existing:
+		return existing
+	return (
+		frappe.get_doc({"doctype": "File", "file_name": name, "is_private": 1, "content": blank_pdf()})
+		.insert(ignore_permissions=True)  # demo loader
+		.file_url
+	)
+
+
+def blank_pdf() -> bytes:
+	"""A one-page PDF standing in for a licence copy on the pilot and test sites."""
+	from io import BytesIO
+
+	from pypdf import PdfWriter  # Frappe's own PDF library
+
+	writer, out = PdfWriter(), BytesIO()
+	writer.add_blank_page(width=595, height=842)
+	writer.write(out)
+	return out.getvalue()
 
 
 def ensure_price(code: str, price_list: str, rate: float) -> None:
@@ -335,10 +434,16 @@ def ensure_price(code: str, price_list: str, rate: float) -> None:
 		).insert(ignore_permissions=True)  # demo loader
 
 
-def ensure_bom(code: str, line: str, materials: dict[str, float], company: str) -> None:
+def ensure_bom(
+	code: str, line: str, materials: dict[str, float], company: str, approve: Callable[[str], None]
+) -> None:
+	"""The product's bill of materials, approved by QA with a signature (module 2)."""
 	if frappe.db.exists("BOM", {"item": code, "is_default": 1, "docstatus": 1}):
 		return
-	frappe.get_doc(
+	if draft := frappe.db.get_value("BOM", {"item": code, "docstatus": 0}):  # left by an earlier run
+		approve(draft)
+		return
+	bom = frappe.get_doc(
 		{
 			"doctype": "BOM",
 			"item": code,
@@ -352,7 +457,8 @@ def ensure_bom(code: str, line: str, materials: dict[str, float], company: str) 
 			"buying_price_list": "Standard Buying",
 			"items": [{"item_code": item, "qty": qty} for item, qty in materials.items()],
 		}
-	).insert(ignore_permissions=True).submit()  # demo loader
+	).insert(ignore_permissions=True)  # demo loader
+	approve(bom.name)
 
 
 def demo_user_email(profile: str) -> str:
