@@ -548,6 +548,13 @@ title = "A person signs in only with their own user ID (their email address) and
 source = "Master plan section 10 (validation and system security: password policy, session timeout, account lockout); D1 System Foundation; 21 CFR 11.10(d), 11.100, 11.300; values decided 2026-10-11; no password history (11.300 met by unique IDs, strength, aging and lockout; decided 2026-10-11)"
 status = "implemented"
 
+[[requirement]]
+id = "URS-CMP-038"
+module = 47
+title = "Nobody changes the configuration of a site by hand: no role, the system administrator included, may create, change or delete custom fields, property setters, form customisations or client and server scripts, which change only with a release of this app, applied on install and migrate; a permission added by hand to change them does not last; and every change made to the configuration of the site (these records, print formats, workflows, alerts, and the manufacturing, buying, selling and print settings) is recorded in the audit trail with its old and new values."
+source = "Engineering rules section 1.3 (configuration is code); master plan section 10 (the audit trail covers masters, records and configuration); D1 System Foundation (Validation and system security); 21 CFR 11.10(a), (e), (k); found 2026-10-11: a system administrator could add fields, scripts and form changes on the live site with no record"
+status = "implemented"
+
 # --- Module 48: approval workflows (D1 approval points "A") ----------------
 [[requirement]]
 id = "URS-CMP-019"

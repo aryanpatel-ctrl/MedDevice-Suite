@@ -6,6 +6,7 @@ from meddevice_suite.qa import verifies
 from meddevice_suite.setup.install import apply_configuration
 from meddevice_suite.setup.roles import (
 	ACCESS_CONTROL,
+	CONFIGURATION,
 	CREATED_THROUGH_TRANSACTIONS,
 	FLAGS,
 	HIGHER_LEVELS,
@@ -98,7 +99,7 @@ class TestProfileRules(UnitTestCase):
 @verifies("URS-CMP-015")
 class TestPermissionMatrix(ProfileTestCase):
 	def test_every_regulated_business_record_type_has_a_declared_matrix(self):
-		self.assertEqual(set(PERMISSIONS), set(REGULATED_DOCTYPES) - ACCESS_CONTROL)
+		self.assertEqual(set(PERMISSIONS), set(REGULATED_DOCTYPES) - ACCESS_CONTROL - CONFIGURATION)
 
 	def test_applied_permissions_are_exactly_the_declared_ones(self):
 		for doctype in BUSINESS_RECORD_TYPES:

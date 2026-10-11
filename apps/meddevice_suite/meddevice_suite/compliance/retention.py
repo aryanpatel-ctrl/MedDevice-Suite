@@ -94,6 +94,24 @@ RETENTION_SCHEDULE: dict[str, tuple[int, str, tuple[str, ...]]] = {
 			"Stock Settings",
 		),
 	),
+	# How the validated system was configured, and every change to it (URS-CMP-038).
+	"System configuration records": (
+		10,
+		ACCESS_BASIS,
+		(
+			"Custom Field",
+			"Property Setter",
+			"Client Script",
+			"Server Script",
+			"Print Format",
+			"Workflow",
+			"Notification",
+			"Manufacturing Settings",
+			"Buying Settings",
+			"Selling Settings",
+			"Print Settings",
+		),
+	),
 	"Compliance evidence": (
 		10,
 		EVIDENCE_BASIS,

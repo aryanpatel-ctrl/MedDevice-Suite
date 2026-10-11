@@ -76,6 +76,7 @@ CORRECT = (*ENTER, "cancel", "amend")  # and correct by cancel and amend
 APPROVE = (*CORRECT, "export")
 
 MANAGEMENT = ("Sales Manager", "Purchase Manager", "Stock Manager", "Manufacturing Manager")
+SYSTEM_ADMINISTRATION = "System Manager"
 
 
 def oversight(rows: dict[str, tuple[str, ...]]) -> dict[str, tuple[str, ...]]:
@@ -288,6 +289,20 @@ HIGHER_LEVELS: dict[str, dict[tuple[str, int], tuple[str, ...]]] = {
 	"Delivery Note": {("Stock Manager", 1): ("read", "write")},
 }
 
+# Configuration of the site (URS-CMP-038; engineering rules section 1.3: configuration is code).
+# Fields, form changes and scripts change only with a release of this app, applied by
+# install and migrate through code that does not depend on these permissions; on a site nobody
+# may create, change or delete them, the system administrator included, who may look. Customize
+# Form, the screen that writes them, is closed altogether (Frappe checks read before running its
+# save). The Administrator account holds every permission in Frappe and is not for daily use.
+CONFIGURATION_PERMISSIONS: dict[str, dict[str, tuple[str, ...]]] = {
+	"Customize Form": {SYSTEM_ADMINISTRATION: ()},
+	"Custom Field": {SYSTEM_ADMINISTRATION: VIEW},
+	"Property Setter": {SYSTEM_ADMINISTRATION: VIEW},
+	"Client Script": {SYSTEM_ADMINISTRATION: VIEW},
+	"Server Script": {SYSTEM_ADMINISTRATION: VIEW},
+}
+
 # Record types outside the regulated scope that a job cannot work without. Each keeps
 # ERPNext's own permissions; only the listed flags are added.
 SUPPORTING_PERMISSIONS: dict[str, dict[str, tuple[str, ...]]] = {
@@ -367,9 +382,23 @@ def fills_in_by_hand(doctype: str, role: str, flags: tuple[str, ...]) -> bool:
 ACCESS_CONTROL = frozenset(
 	{"User", "Role", "Role Profile", "User Permission", "Custom DocPerm", "System Settings", "Stock Settings"}
 )
+# Audited configuration of the site (URS-CMP-038): not business records, so outside the matrix;
+# those a person could write are closed by CONFIGURATION_PERMISSIONS, the rest are workflows and
+# alerts declared in code (URS-CMP-022, URS-CMP-029) and settings the administrator keeps.
+CONFIGURATION = frozenset(
+	{
+		*CONFIGURATION_PERMISSIONS,
+		"Print Format",
+		"Workflow",
+		"Notification",
+		"Manufacturing Settings",
+		"Buying Settings",
+		"Selling Settings",
+		"Print Settings",
+	}
+)
 
 
-SYSTEM_ADMINISTRATION = "System Manager"
 BUSINESS_ROLES = frozenset(
 	role for roles in JOB_PROFILES.values() for role in roles if role != SYSTEM_ADMINISTRATION
 )
@@ -419,6 +448,15 @@ def apply_roles() -> None:
 		sync_permissions(doctype, declared_rows(doctype))
 	for doctype in SUPPORTING_PERMISSIONS:
 		sync_permissions(doctype, supporting_rows(doctype))
+	for doctype, rows in CONFIGURATION_PERMISSIONS.items():
+		# Exactly these rows: a row granting nothing still replaces Frappe's defaults.
+		sync_permissions(
+			doctype,
+			{
+				(role, 0): {**dict.fromkeys(FLAGS, 0), **dict.fromkeys(flags, 1)}
+				for role, flags in rows.items()
+			},
+		)
 	remove_hand_added_permissions()
 
 
