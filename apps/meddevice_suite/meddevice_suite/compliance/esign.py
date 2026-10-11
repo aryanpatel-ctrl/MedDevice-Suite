@@ -41,12 +41,14 @@ SHARED_ACCOUNTS = ("Administrator", "Guest")
 
 def apply_lockout() -> None:
 	"""Site configuration: an account locks after wrong passwords (URS-CMP-001), as many and for as
-	long as Quality Settings say (URS-PLT-011): applied when QA changes them and on every migrate,
+	long as Quality Settings say (URS-PLT-013): applied when QA changes them and on every migrate,
 	so a hand edit of the site's System Settings does not last."""
 	from meddevice_suite.compliance.quality_settings import value  # it builds on change control
 
+	# Frappe locks an account once its failures exceed this number (auth.LoginAttemptTracker); the
+	# setting is the number of wrong passwords that locks it.
 	frappe.db.set_single_value(
-		"System Settings", "allow_consecutive_login_attempts", value("login_lockout_attempts")
+		"System Settings", "allow_consecutive_login_attempts", value("login_lockout_attempts") - 1
 	)
 	frappe.db.set_single_value(
 		"System Settings", "allow_login_after_fail", value("login_lockout_minutes") * 60

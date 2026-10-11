@@ -877,6 +877,9 @@ class TestAlerts(ChangeControlTestCase):
 		from meddevice_suite.compliance.test_quality_settings import use_setting
 
 		doc = self.approved()  # actions due today and in 10 days
+		with use_setting("change_action_warning_days", 5):
+			send_change_alerts()
+		self.assertEqual(self.subjects(self.stores, doc.name), [])  # due in 10 days: outside 5
 		with use_setting("change_action_warning_days", 12):
 			send_change_alerts()
 		self.assertEqual(len(self.subjects(self.stores, doc.name)), 1)  # due in 10 days: within 12

@@ -151,15 +151,22 @@
  "owner": "Administrator",
  "permissions": [
   {
+   "select": 1,
    "read": 1,
    "write": 1,
    "print": 1,
    "role": "Quality Manager"
   },
   {
+   "select": 1,
    "read": 1,
    "print": 1,
+   "report": 1,
    "role": "System Manager"
+  },
+  {
+   "select": 1,
+   "role": "Desk User"
   }
  ],
  "row_format": "Dynamic",

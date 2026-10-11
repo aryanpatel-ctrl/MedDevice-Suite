@@ -170,7 +170,7 @@ Cross-module data: Notification Log (one per recipient and alert), Batch `mds_ex
 | Layer | Item |
 | --- | --- |
 | Definitions | `compliance/notification/<alert>/<alert>.json` + `.html` (standard Notifications, module Compliance, channel System Notification): Lot Expiring Soon, Lot Expired (event Custom, sent by the job); Quotation Awaiting Price Approval, Purchase Order Awaiting Approval, Quotation Price Approval Decided, Purchase Order Approval Decided (event Value Change on `workflow_state`, with `condition`) |
-| Register | `compliance/alerts.py` `ALERTS` (alert → shipping module), `WARNING_DAYS = 30`, `ALERT_FIELD = "mds_expiry_alert"`, `CUSTOM_FIELDS` (Batch: **Expiry Alert Sent**, Select, read-only, no-copy, after `expiry_date`) |
+| Register | `compliance/alerts.py` `ALERTS` (alert → shipping module), the lead time from Quality Settings (`quality_settings.value(...)`, URS-PLT-012), `ALERT_FIELD = "mds_expiry_alert"`, `CUSTOM_FIELDS` (Batch: **Expiry Alert Sent**, Select, read-only, no-copy, after `expiry_date`) |
 | Functions | `apply_alerts()` (import with `force=True`, `enabled = 1`, index on `Batch.expiry_date`), `send_expiry_alerts()`, `send(notification, lot, alert)` (savepoint, `frappe.log_error`), `reset_expiry_alert(doc)`, `protect(doc)` |
 | Hooks (`hooks.py`) | `scheduler_events.daily` → `compliance.alerts.send_expiry_alerts`; `Notification.before_validate` and `on_trash` → `alerts.protect`; `Batch.validate` → `alerts.reset_expiry_alert` (first of three Batch validators) |
 | Setup | `setup/install.py` `apply_configuration()` → `apply_alerts()` (after `apply_workflows`, `apply_retention`, `apply_archive_indexes`) |

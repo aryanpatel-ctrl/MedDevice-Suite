@@ -74,6 +74,16 @@ class ChangeRequest(Document):
 			for field in COMPLETION_FIELDS:
 				row.set(field, 0 if field == "done" else None)
 
+	def before_validate(self) -> None:
+		"""A settings record (a single DocType) is named by its type: it has no other name."""
+		for table, type_field, name_field in (
+			("affected_records", "reference_doctype", "reference_name"),
+			("actions", "target_doctype", "target_name"),
+		):
+			for row in self.get(table) or []:
+				if row.get(type_field) and frappe.get_meta(row.get(type_field)).issingle:
+					row.set(name_field, row.get(type_field))
+
 	def validate(self) -> None:
 		if self.is_new() or self.flags.change_control:
 			return

@@ -96,6 +96,8 @@ def validate(doc: Document) -> None:
 	request, doc.change_request = doc.get(CHANGE_REQUEST), None  # named afresh for each change
 	if not changed:
 		return
+	# One save at a time: the version below is read and raised under this lock.
+	frappe.db.sql("select value from `tabSingles` where doctype = %s for update", DOCTYPE)
 	if not request:
 		frappe.throw(
 			_("Quality Settings change only under an approved change request that lists them."),
@@ -104,18 +106,50 @@ def validate(doc: Document) -> None:
 	from meddevice_suite.qms.change_control import require_approved_change  # it reads these settings
 
 	require_approved_change(request, DOCTYPE, DOCTYPE)
+	if used_before(request):
+		frappe.throw(
+			_(
+				"Change request {0} has already changed Quality Settings; each change has its own request."
+			).format(request),
+			title=_("Change control"),
+		)
 	doc.set(CHANGED_UNDER, request)
 	doc.set(VERSION, (stored(VERSION) or 1) + 1)
 	doc.set(EFFECTIVE_FROM, today())
 
 
+def used_before(request: str) -> bool:
+	"""A request a change of the settings was already made under: the one recorded now, or one an
+	earlier change recorded (each change's audit event keeps the request it was made under)."""
+	return raw(CHANGED_UNDER) == request or bool(
+		frappe.db.exists("Audit Event", {"reference_doctype": DOCTYPE, "changes": ["like", f"%{request}%"]})
+	)
+
+
 def as_text(value: object, field: str) -> str:
 	"""A stored value as text, so that a form's empty string, None and a date object compare alike."""
 	if field == VERSION:
-		return str(cint(value) or 1)
+		return str(cint(value) if value not in (None, "") else 1)
 	if field == EFFECTIVE_FROM:
 		return str(getdate(value)) if value else ""
 	return str(value or "")
+
+
+def guard_system_lockout(doc: Document, method: str | None = None) -> None:
+	"""System Settings validate: the login lockout is set in Quality Settings (URS-PLT-013); a
+	change made in System Settings by hand is refused at once rather than undone at the next
+	migrate."""
+	before = doc.get_doc_before_save()
+	for field, wanted in (
+		("allow_consecutive_login_attempts", value("login_lockout_attempts") - 1),  # see apply_lockout
+		("allow_login_after_fail", value("login_lockout_minutes") * 60),
+	):
+		changed = before is None or cint(before.get(field)) != cint(doc.get(field))
+		if changed and cint(doc.get(field)) != wanted:
+			frappe.throw(
+				_("The login lockout is set in Quality Settings, under change control."),
+				frappe.PermissionError,
+			)
 
 
 def on_update(doc: Document) -> None:

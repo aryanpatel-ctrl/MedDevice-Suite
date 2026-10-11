@@ -73,6 +73,15 @@ class TestValues(QualitySettingsTestCase):
 			},
 		)
 
+	def test_the_form_shows_the_defaults_the_service_applies(self):
+		from meddevice_suite.qms.change_control import MAX_CHECK_DAYS
+
+		meta = frappe.get_meta(DOCTYPE)
+		for field, setting in SETTINGS.items():
+			with self.subTest(field=field):
+				self.assertEqual(int(meta.get_field(field).default), setting.default)
+		self.assertEqual(SETTINGS["default_effectiveness_check_days"].high, MAX_CHECK_DAYS)
+
 	def test_each_value_stays_within_its_bounds(self):
 		change = self.change_request()
 		for field, setting in SETTINGS.items():
@@ -123,6 +132,22 @@ class TestChangeControl(QualitySettingsTestCase):
 		with self.assertRaisesRegex(frappe.ValidationError, "only under an approved change request"):
 			self.settings(lot_expiry_warning_days=12).save()  # the last request does not cover another
 
+	def test_each_change_has_its_own_request(self):
+		first = self.change_request()
+		self.settings(lot_expiry_warning_days=10, change_request=first).save()
+		second = self.change_request()
+		self.settings(login_lockout_attempts=4, change_request=second).save()
+		for reused in (first, second):  # the one recorded now, and an earlier one
+			with self.subTest(reused=reused):
+				with self.assertRaisesRegex(frappe.ValidationError, "has already changed Quality Settings"):
+					self.settings(lot_expiry_warning_days=12, change_request=reused).save()
+		self.settings(lot_expiry_warning_days=12, change_request=self.change_request()).save()
+		self.assertEqual(frappe.get_doc(DOCTYPE).version, 4)
+
+	def test_the_version_cannot_be_set_to_nothing(self):
+		with self.assertRaises(frappe.PermissionError):
+			self.settings(version=0).save()
+
 	def test_saving_without_a_change_needs_no_request(self):
 		self.settings().save()
 		self.assertEqual(value("lot_expiry_warning_days"), 30)
@@ -161,17 +186,113 @@ class TestWhoChangesThem(QualitySettingsTestCase):
 		self.assertFalse(frappe.has_permission(DOCTYPE, "read", user=stores))
 		change = self.change_request()
 		frappe.set_user(admin)
-		with self.assertRaises(REFUSED):
-			frappe.client.set_value(DOCTYPE, DOCTYPE, "lot_expiry_warning_days", 10)
-		frappe.set_user(admin)
-		with self.assertRaises(REFUSED):
+		with self.assertRaises(frappe.PermissionError):  # not the missing request: it is named
+			frappe.client.set_value(
+				DOCTYPE, DOCTYPE, {"lot_expiry_warning_days": 10, "change_request": change}
+			)
+		with self.assertRaises(frappe.PermissionError):
 			self.settings(lot_expiry_warning_days=10, change_request=change).save()
 		self.assertEqual(value("lot_expiry_warning_days"), 30)
 
+	def test_a_hand_added_permission_does_not_last(self):
+		from meddevice_suite.setup.roles import apply_roles
+
+		frappe.set_user("Administrator")
+		for doctype in (DOCTYPE, "Supplier Approval"):
+			with self.subTest(doctype=doctype):
+				frappe.get_doc(
+					{
+						"doctype": "Custom DocPerm",
+						"parent": doctype,
+						"role": "System Manager",
+						"read": 1,
+						"write": 1,
+					}
+				).insert(ignore_permissions=True)
+				apply_roles()  # as on every migrate
+				self.assertFalse(frappe.db.exists("Custom DocPerm", {"parent": doctype}))
+		self.assertFalse(frappe.has_permission(DOCTYPE, "write", user=signer("System Administrator")))
+
 	def test_a_change_request_may_list_the_settings(self):
-		from meddevice_suite.qms.change_control import AFFECTED_TYPES
+		from meddevice_suite.qms.change_control import AFFECTED_TYPES, RESULT_TYPES
 
 		self.assertIn(DOCTYPE, AFFECTED_TYPES)
+		for doctype, field, expected in (
+			("Change Request Affected Record", "reference_doctype", AFFECTED_TYPES),
+			("Change Request Action", "target_doctype", AFFECTED_TYPES),
+			("Change Request Action", "result_doctype", RESULT_TYPES),
+		):
+			with self.subTest(field=field):
+				options = frappe.get_meta(doctype).get_field(field).options.split("\n")
+				self.assertEqual(tuple(option for option in options if option), expected)
+
+	def test_every_job_that_raises_a_change_may_name_the_settings_and_documents_on_screen(self):
+		"""The form offers only the record types a person may select (found by the review of
+		2026-10-11: nobody could pick Quality Settings, or a controlled document, on screen)."""
+		from meddevice_suite.setup.roles import JOB_PROFILES
+
+		for profile in JOB_PROFILES:
+			if profile == "System Administrator":
+				continue  # raises no change requests (URS-CMP-017)
+			with self.subTest(profile=profile):
+				frappe.set_user(signer(profile))
+				permissions = frappe.get_user()
+				permissions.build_permissions()
+				self.assertIn(DOCTYPE, permissions.can_select)
+				self.assertIn("Controlled Document", permissions.can_select)
+		frappe.set_user(signer("Stores"))
+		self.assertFalse(frappe.has_permission(DOCTYPE, "read"))  # naming it is not reading it
+
+	def test_a_settings_record_is_named_by_its_type_on_a_change_request(self):
+		frappe.set_user(self.requester)
+		request = frappe.get_doc(
+			{
+				"doctype": "Change Request",
+				"title": "Shorter lot warning",
+				"change_type": "System",
+				"description": "Warn 20 days ahead",
+				"reason": "Shelf lives are short",
+				"affected_records": [{"reference_doctype": DOCTYPE}],
+				"actions": [
+					{
+						"description": "Change the setting",
+						"action_owner": self.qa,
+						"due_date": frappe.utils.today(),
+						"target_doctype": DOCTYPE,
+					}
+				],
+			}
+		).insert()
+		self.assertEqual(request.affected_records[0].reference_name, DOCTYPE)
+		self.assertEqual(request.actions[0].target_name, DOCTYPE)
+
+
+@verifies("URS-PLT-012")
+class TestFromTheNextRun(QualitySettingsTestCase):
+	def test_a_lead_time_saved_under_change_control_applies_to_the_next_alert_run(self):
+		from frappe.utils import add_days, today
+
+		from meddevice_suite.compliance.alerts import send_expiry_alerts
+		from meddevice_suite.compliance.test_alerts import LOT_ITEM, ensure_lot_item
+
+		ensure_lot_item()
+		lot = frappe.get_doc(
+			{
+				"doctype": "Batch",
+				"batch_id": f"QS-{frappe.generate_hash(length=8).upper()}",
+				"item": LOT_ITEM,
+				"expiry_date": add_days(today(), 40),
+			}
+		).insert(ignore_permissions=True)
+		lot.db_set("batch_qty", 10, update_modified=False)
+		frappe.set_user("Administrator")
+		send_expiry_alerts()
+		self.assertFalse(frappe.db.exists("Notification Log", {"document_name": lot.name}))  # 40 > 30
+		frappe.set_user(self.qa)
+		self.settings(lot_expiry_warning_days=45, change_request=self.change_request()).save()
+		frappe.set_user("Administrator")
+		send_expiry_alerts()
+		self.assertTrue(frappe.db.exists("Notification Log", {"document_name": lot.name}))
 
 
 @verifies("URS-PLT-013")
@@ -179,12 +300,39 @@ class TestLockout(QualitySettingsTestCase):
 	def test_login_and_signing_follow_the_lockout_at_once(self):
 		change = self.change_request()
 		self.settings(login_lockout_attempts=3, login_lockout_minutes=10, change_request=change).save()
-		self.assertEqual(frappe.db.get_single_value("System Settings", "allow_consecutive_login_attempts"), 3)
+		# Frappe locks once failures exceed its number: three wrong passwords lock at 2.
+		self.assertEqual(frappe.db.get_single_value("System Settings", "allow_consecutive_login_attempts"), 2)
 		self.assertEqual(frappe.db.get_single_value("System Settings", "allow_login_after_fail"), 600)
+
+	def test_a_hand_edit_of_the_site_lockout_is_refused_at_once(self):
+		frappe.set_user("Administrator")  # who may open System Settings
+		settings = frappe.get_doc("System Settings")
+		settings.allow_consecutive_login_attempts = 0  # unlimited, by hand
+		with self.assertRaisesRegex(frappe.PermissionError, "set in Quality Settings"):
+			settings.save()
+		settings = frappe.get_doc("System Settings")
+		settings.save()  # other system settings still save
+
+	def test_an_account_locks_at_the_number_qa_set(self):
+		"""Login and signing follow QA's lockout: three wrong passwords lock the account."""
+		from meddevice_suite.compliance.esign import SigningRefused, sign
+		from meddevice_suite.compliance.test_esign import PASSWORD, reset_lockout
+
+		self.settings(login_lockout_attempts=3, change_request=self.change_request()).save()
+		user = signer("Stores")
+		frappe.set_user(user)
+		todo = frappe.get_doc({"doctype": "ToDo", "description": "Lockout check"}).insert()
+		for _attempt in range(3):
+			with self.assertRaises(SigningRefused):
+				sign(todo, "Approved", "Check", "not the password")
+		with self.assertRaises(frappe.SecurityException):  # locked: even the right password
+			sign(todo, "Approved", "Check", PASSWORD)
+		frappe.set_user("Administrator")
+		reset_lockout(user)
 
 	def test_a_hand_edit_of_the_site_settings_does_not_last(self):
 		change = self.change_request()
 		self.settings(login_lockout_attempts=4, change_request=change).save()
 		frappe.db.set_single_value("System Settings", "allow_consecutive_login_attempts", 0)  # by hand
 		apply_configuration()  # as on every migrate
-		self.assertEqual(frappe.db.get_single_value("System Settings", "allow_consecutive_login_attempts"), 4)
+		self.assertEqual(frappe.db.get_single_value("System Settings", "allow_consecutive_login_attempts"), 3)

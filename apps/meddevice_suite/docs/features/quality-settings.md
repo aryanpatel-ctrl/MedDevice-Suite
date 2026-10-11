@@ -32,7 +32,9 @@ State on 2026-10-11: built; tests written from the requirement matrix before the
 
 - Until QA saves a value, its default applies (the values decided with the client on 2026-10-07/08 and 2026-10-10).
 - **Change control:** saving a changed value needs **Change Request** = an approved request listing *Quality Settings* (the lookup offers only those). The request is recorded in **Last Changed Under**, **Version** goes up by one, **Effective From** becomes today, and the Change Request field is cleared for the next change. These three are set by the rule only.
-- **Lockout:** on save, and on every migrate, the site's System Settings are set to the two lockout values; a hand edit of System Settings does not last.
+- **One change, one request:** a request that already changed the settings (the one recorded now, or an earlier one) is refused; each change is raised and approved on its own.
+- **Lockout:** on save, and on every migrate, the site's System Settings are set to the two lockout values; changing them in System Settings by hand is refused at once (*The login lockout is set in Quality Settings, under change control*).
+- **Naming the settings on a change request:** every job that raises change requests may pick *Quality Settings* (and *Controlled Document*) as a record type without being able to read it; the record is filled in by itself, because a settings record has no list to look it up in. Before 2026-10-11 nobody could pick either type on screen.
 - **Alerts** read the setting each time they run: a change applies from the next daily run.
 
 ## 3. Requirements and acceptance criteria
@@ -80,13 +82,16 @@ Change request (System) listing Quality Settings → assessed and approved → Q
 
 | Layer | Item |
 | --- | --- |
-| DocType | `Quality Settings` (single, module Compliance); permissions: Quality Manager read/write, System Manager read |
+| DocType | `Quality Settings` (single, module Compliance); permissions declared in `setup/roles.py` `PERMISSIONS` and reset on every migrate: Quality Manager select/read/write, System Manager read, every desk user select only |
 | Service | `compliance/quality_settings.py`: `SETTINGS` (default, bounds), `raw`, `stored`, `value`, `validate`, `as_text`, `on_update` |
 | Readers | `alerts.send_expiry_alerts`, `supplier_approval.send_certificate_alerts`, `document_control.send_review_alerts`, `change_control.send_change_alerts`, `ChangeRequest.before_insert`, `esign.apply_lockout` |
 | Change control | `change_control.AFFECTED_TYPES` and the action's target and result lists include *Quality Settings* |
 | Desk | `quality_settings.js` (change request lookup), Quality workspace sidebar |
 
 ## 7. Defects, edge cases and risks
+
+**Found by the independent review of 2026-10-11 and fixed, each with a test:** nobody could pick Quality Settings, nor a controlled document, as a record type on a change request on screen (the form offers only types a person may select; the server tests built requests in code, so did not see it) — select added, single records named by their type, and a test of each job's selectable types; one approved request could cover any number of later changes — each change now needs its own; the System Administrator could grant itself write through Role Permissions and keep it — the permissions are now in the synced matrix; a hand edit of the lockout in System Settings lasted until the next migrate — refused at once; the lockout was not tested in use — three wrong passwords now lock an account in a test; version 0 could be stored; two saves at once could both write the same version — the save takes a lock.
+
 - A single's unset values read as 0 or 0001-01-01 in Frappe; the service reads the stored values directly so "never set" is told apart (found during the build, covered by the tests).
 - The lockout is now the setting's value, whatever was set by hand on System Settings (previously a stricter hand value stood): one source of truth.
 - A change applies from the next daily run of an alert, not retroactively.

@@ -165,7 +165,7 @@ class TestLockoutConfiguration(SigningTestCase):
 				apply_lockout()
 				self.assertEqual(
 					frappe.db.get_single_value("System Settings", "allow_consecutive_login_attempts"),
-					value("login_lockout_attempts"),
+					value("login_lockout_attempts") - 1,  # Frappe locks once failures exceed it
 				)
 				self.assertEqual(
 					frappe.db.get_single_value("System Settings", "allow_login_after_fail"),

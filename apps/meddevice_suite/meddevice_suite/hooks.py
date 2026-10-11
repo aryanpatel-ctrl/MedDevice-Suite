@@ -139,6 +139,8 @@ doc_events = {
 		"onload": "meddevice_suite.master_data.item_master.item_onload",
 		"on_update": "meddevice_suite.master_data.versioning.update_variants_under_control",
 	},
+	# Quality Settings (URS-PLT-013): the lockout is changed there, under change control.
+	"System Settings": {"validate": "meddevice_suite.compliance.quality_settings.guard_system_lockout"},
 	"Stock Settings": {
 		"validate": [
 			"meddevice_suite.setup.stock.protect_stock_settings",
