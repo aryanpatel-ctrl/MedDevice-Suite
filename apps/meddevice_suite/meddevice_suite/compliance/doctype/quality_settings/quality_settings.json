@@ -26,6 +26,8 @@
   "supplier_rating_quality_weight",
   "column_break_rating",
   "supplier_rating_threshold",
+  "section_reminders",
+  "reminder_escalation_days",
   "section_control",
   "change_request",
   "changed_under",
@@ -188,6 +190,20 @@
    "description": "A monthly score below this makes the supplier due for QA's re-evaluation (50 to 100)."
   },
   {
+   "fieldname": "section_reminders",
+   "fieldtype": "Section Break",
+   "label": "Reminders"
+  },
+  {
+   "fieldname": "reminder_escalation_days",
+   "fieldtype": "Int",
+   "label": "Escalate After Overdue (days)",
+   "default": "7",
+   "reqd": 1,
+   "non_negative": 1,
+   "description": "A reminder still not done this many days after it was due is escalated to QA and Management (1 to 90)."
+  },
+  {
    "fieldname": "section_control",
    "fieldtype": "Section Break",
    "label": "Change control"
@@ -226,7 +242,7 @@
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-10-11 18:00:00.000000",
+ "modified": "2026-10-11 22:00:00.000000",
  "modified_by": "Administrator",
  "module": "Compliance",
  "name": "Quality Settings",

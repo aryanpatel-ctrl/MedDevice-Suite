@@ -337,19 +337,26 @@ def send_expiry_alerts() -> None:
 		fields=["name", "customer", "valid_until"],
 		order_by="valid_until asc",
 	):
-		if frappe.db.exists(
-			DOCTYPE,
-			{
-				"customer": row.customer,
-				"docstatus": 1,
-				"status": VERIFIED,
-				# A renewal carries on without a gap: valid by the day after this one ends.
-				"valid_from": ["<=", add_days(row.valid_until, 1)],
-				"valid_until": [">", row.valid_until],
-			},
-		):
+		if renewed(row.customer, row.valid_until):
 			continue  # renewed: the customer's next licence is verified
 		alert(notification, row.name)
+
+
+def renewed(customer: str, valid_until) -> bool:
+	"""A verified licence of the customer carries on after this one ends, without a gap: valid by
+	the day after it ends, and until later."""
+	return bool(
+		frappe.db.exists(
+			DOCTYPE,
+			{
+				"customer": customer,
+				"docstatus": 1,
+				"status": VERIFIED,
+				"valid_from": ["<=", add_days(valid_until, 1)],
+				"valid_until": [">", valid_until],
+			},
+		)
+	)
 
 
 def alert(notification: Document, name: str) -> None:

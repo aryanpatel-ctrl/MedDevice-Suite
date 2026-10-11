@@ -1,0 +1,195 @@
+{
+ "actions": [],
+ "creation": "2026-10-11 22:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "title",
+  "description",
+  "responsible_role",
+  "column_break_when",
+  "frequency",
+  "first_due_date",
+  "lead_days",
+  "active",
+  "next_due_date"
+ ],
+ "fields": [
+  {
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "label": "Title",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "label": "What Is To Be Done"
+  },
+  {
+   "fieldname": "responsible_role",
+   "fieldtype": "Link",
+   "label": "Responsible Job (role)",
+   "options": "Role",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "column_break_when",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "frequency",
+   "fieldtype": "Select",
+   "label": "Frequency",
+   "options": "Weekly\nMonthly\nQuarterly\nHalf-yearly\nYearly",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "first_due_date",
+   "fieldtype": "Date",
+   "label": "First Due",
+   "reqd": 1
+  },
+  {
+   "fieldname": "lead_days",
+   "fieldtype": "Int",
+   "label": "Raise This Many Days Before",
+   "default": "7",
+   "reqd": 1,
+   "non_negative": 1
+  },
+  {
+   "fieldname": "active",
+   "fieldtype": "Check",
+   "label": "Active",
+   "default": "1",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "next_due_date",
+   "fieldtype": "Date",
+   "label": "Next Due",
+   "read_only": 1,
+   "no_copy": 1,
+   "in_list_view": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-10-11 22:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Work Management",
+ "name": "Reminder Schedule",
+ "owner": "Administrator",
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0,
+ "autoname": "format:RS-{#####}",
+ "naming_rule": "Expression",
+ "title_field": "title",
+ "search_fields": "title,responsible_role",
+ "description": "A recurring activity QA plans (module 60), such as the management review or an internal audit: the system raises each occurrence as a reminder.",
+ "permissions": [
+  {
+   "role": "Quality Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "delete": 0,
+   "email": 0,
+   "import": 0,
+   "share": 0,
+   "report": 1,
+   "print": 1,
+   "export": 1
+  },
+  {
+   "role": "Sales Manager",
+   "read": 1,
+   "write": 0,
+   "create": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "delete": 0,
+   "email": 0,
+   "import": 0,
+   "share": 0,
+   "report": 1,
+   "print": 1,
+   "export": 0
+  },
+  {
+   "role": "Purchase Manager",
+   "read": 1,
+   "write": 0,
+   "create": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "delete": 0,
+   "email": 0,
+   "import": 0,
+   "share": 0,
+   "report": 1,
+   "print": 1,
+   "export": 0
+  },
+  {
+   "role": "Stock Manager",
+   "read": 1,
+   "write": 0,
+   "create": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "delete": 0,
+   "email": 0,
+   "import": 0,
+   "share": 0,
+   "report": 1,
+   "print": 1,
+   "export": 0
+  },
+  {
+   "role": "Manufacturing Manager",
+   "read": 1,
+   "write": 0,
+   "create": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "delete": 0,
+   "email": 0,
+   "import": 0,
+   "share": 0,
+   "report": 1,
+   "print": 1,
+   "export": 0
+  },
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 0,
+   "create": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "delete": 0,
+   "email": 0,
+   "import": 0,
+   "share": 0,
+   "report": 1,
+   "print": 1,
+   "export": 0
+  }
+ ]
+}

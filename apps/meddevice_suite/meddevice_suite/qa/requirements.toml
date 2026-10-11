@@ -1025,3 +1025,17 @@ module = 0
 title = "The pilot's standard flow performs the certificate check, incoming inspection and signed release of every received lot, and the signed release of the finished lot, by the QC Inspector and QA Manager demo users, in place of the stand-in transfer to the approved store, in both the server and the browser journey."
 source = "Delivery plan Phase 2 (pilot); Phase 0 gap audit of 2026-10-08; D2, D3"
 status = "implemented"
+
+[[requirement]]
+id = "URS-PLT-014"
+module = 60
+title = "Every item the system alerts on as falling due (a lot's expiry, a supplier's certificate, a customer's licence, a document's review, a change action, a change's effectiveness check) is tracked as a reminder from the day it falls within its lead time until its own record shows the work done, which alone completes it, recording when; past its due date it is overdue, and overdue for the days QA sets in Quality Settings (7 until changed) it is escalated once to QA and Management and its responsible person; each job sees the reminders of its jobs and its own, QA and Management all; a reminder is never made, changed or deleted by hand."
+source = "DFD 9C Reminders / Next Due (C3 generate, C4 notify, C5 track and escalate, C6 mark completed), D11 Task, Approval & Reminders; master plan section 8 (calibration, maintenance, training, document review, CAPA, certificate, batch and vendor certificate due dates) and section 10 (escalation when overdue); decided 2026-10-11: a system reminder is completed only by the work in its record"
+status = "implemented"
+
+[[requirement]]
+id = "URS-PLT-015"
+module = 60
+title = "QA plans recurring activities, each with what is to be done, the responsible job, its first due date, a frequency (weekly, monthly, quarterly, half-yearly or yearly) and how many days before it is raised; the system raises each occurrence within that time and tells the responsible job; an occurrence is overdue and escalated as any reminder; a person of the responsible job, or QA, completes it saying what was done, and the next occurrence follows the calendar from the due date; a plan is never deleted, only made inactive."
+source = "DFD 9C Reminders / Next Due (C1 define reminder category, C2 set due date or frequency); master plan section 8; decided 2026-10-11: the next occurrence follows the calendar, not the day the last was done"
+status = "implemented"
