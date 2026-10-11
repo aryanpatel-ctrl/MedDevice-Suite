@@ -982,4 +982,4 @@ id = "URS-PLT-010"
 module = 0
 title = "The pilot's standard flow performs the certificate check, incoming inspection and signed release of every received lot, and the signed release of the finished lot, by the QC Inspector and QA Manager demo users, in place of the stand-in transfer to the approved store, in both the server and the browser journey."
 source = "Delivery plan Phase 2 (pilot); Phase 0 gap audit of 2026-10-08; D2, D3"
-status = "planned"
+status = "implemented"
