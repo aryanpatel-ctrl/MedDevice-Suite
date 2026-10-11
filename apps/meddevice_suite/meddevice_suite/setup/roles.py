@@ -123,6 +123,7 @@ PERMISSIONS: dict[str, dict[str, tuple[str, ...]]] = {
 			"Stock User": VIEW,
 			"QC Inspector": VIEW,
 			"Accounts User": VIEW,
+			"Maintenance User": PICK,  # the laboratory of an external calibration (module 38)
 		}
 	),
 	"Customer": oversight(
@@ -169,6 +170,7 @@ PERMISSIONS: dict[str, dict[str, tuple[str, ...]]] = {
 			"Maintenance User": VIEW,
 			"Accounts User": VIEW,
 			"QC Inspector": PICK,  # the instrument a reading was taken with (module 16)
+			"Manufacturing User": PICK,  # the machine a qualification is executed on (module 40)
 		}
 	),
 	# An operator names themselves on the time they log against a job card.

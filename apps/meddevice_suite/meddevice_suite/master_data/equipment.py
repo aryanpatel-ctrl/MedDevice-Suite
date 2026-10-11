@@ -53,6 +53,7 @@ CALIBRATION, CALIBRATION_DAYS, MAINTENANCE, MAINTENANCE_DAYS, QUALIFICATION = (
 	"mds_maintenance_interval_days",
 	"mds_needs_qualification",
 )
+REQUALIFICATION_DAYS = "mds_requalification_interval_days"  # module 40
 STATUS = "mds_equipment_status"
 APPROVAL_STATUS, APPROVED_BY, APPROVED_AT = (
 	"mds_equipment_approval",
@@ -85,6 +86,7 @@ CONTROLLED_FIELDS = (
 	MAINTENANCE,
 	MAINTENANCE_DAYS,
 	QUALIFICATION,
+	REQUALIFICATION_DAYS,
 )
 # ERPNext's asset statuses in which the equipment is not at hand to use.
 NOT_AT_HAND = ("Sold", "Scrapped", "In Maintenance", "Out of Order", "Capitalized", "Cancelled")
@@ -214,6 +216,16 @@ CUSTOM_FIELDS = {
 			"insert_after": MAINTENANCE_DAYS,
 		},
 		{
+			"fieldname": REQUALIFICATION_DAYS,
+			"allow_on_submit": 1,
+			"label": "Requalification Interval (days)",
+			"fieldtype": "Int",
+			"insert_after": QUALIFICATION,
+			"depends_on": f"eval:doc.{QUALIFICATION}",
+			"non_negative": 1,
+			"description": "Left at 0, the qualification does not expire.",
+		},
+		{
 			"fieldname": "mds_equipment_approval_column",
 			"fieldtype": "Column Break",
 			"insert_after": QUALIFICATION,
@@ -331,6 +343,8 @@ def signed_content(doc: Document) -> dict:
 	asset's accounting, its status from day to day, or ERPNext's own bookkeeping."""
 	content = {}
 	for field in (*CONTROLLED_FIELDS, "item_code", "asset_name"):  # not the location (moves)
+		if field == REQUALIFICATION_DAYS and not cint(doc.get(field)):
+			continue  # added with module 40: an approval signed before it, without one, still verifies
 		df = doc.meta.get_field(field)
 		value = doc.get(field)
 		content[field] = cint(value) if df and df.fieldtype in ("Check", "Int") else (value or None)
@@ -374,7 +388,7 @@ def guard_asset(doc: Document, method: str | None = None) -> None:
 		frappe.throw(
 			_("Equipment tag {0} is on {1} already; each piece of equipment has its own.").format(tag, other)
 		)
-	for field in (CALIBRATION_DAYS, MAINTENANCE_DAYS):
+	for field in (CALIBRATION_DAYS, MAINTENANCE_DAYS, REQUALIFICATION_DAYS):
 		if cint(doc.get(field)) < 0:
 			frappe.throw(_("{0} is a number of days.").format(_(doc.meta.get_label(field))))
 	if approved(doc) and (missing := missing_for_approval(doc)):
@@ -400,6 +414,10 @@ def usable(asset: str) -> frappe._dict:
 		return frappe._dict(ok=False, why=_("QA has not approved it"))
 	if row.get(STATUS) != IN_SERVICE:
 		return frappe._dict(ok=False, why=_("it is {0}").format(_(row.get(STATUS) or OUT_OF_SERVICE).lower()))
+	from meddevice_suite.qms.equipment_care import unfit  # modules 38 and 40 build on this one
+
+	if reasons := unfit([asset]).get(asset):
+		return frappe._dict(ok=False, why="; ".join(reasons))
 	return frappe._dict(ok=True)
 
 

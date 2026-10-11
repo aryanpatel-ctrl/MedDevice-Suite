@@ -128,6 +128,47 @@ def approve_equipment_for_test(asset: str) -> None:
 			equipment.STATUS: equipment.IN_SERVICE,
 		},
 	)
+	care_in_date_for_test(asset)
+
+
+def care_in_date_for_test(asset: str) -> None:
+	"""The equipment's calibration, maintenance and qualification in date, as their signed records
+	leave them (modules 38 and 40), for other modules' tests; the records and their signed acts
+	are tested in qms/test_equipment_care.py."""
+	from frappe.utils import add_days, cint, today
+
+	from meddevice_suite.master_data import equipment
+	from meddevice_suite.qms.equipment_care import unfit
+
+	if not unfit([asset]).get(asset):
+		return
+	needs = frappe.db.get_value(
+		"Asset", asset, [equipment.CALIBRATION, equipment.MAINTENANCE, equipment.QUALIFICATION], as_dict=True
+	)
+	if cint(needs.get(equipment.CALIBRATION)):
+		insert_care_record(
+			"Calibration Record",
+			asset,
+			result="Pass",
+			impact_status="Not needed",
+			next_due_date=add_days(today(), 365),
+		)
+	if cint(needs.get(equipment.MAINTENANCE)):
+		insert_care_record(
+			"Maintenance Record", asset, result="Satisfactory", next_due_date=add_days(today(), 365)
+		)
+	if cint(needs.get(equipment.QUALIFICATION)):
+		for stage in ("IQ", "OQ", "PQ"):
+			insert_care_record("Equipment Qualification", asset, stage=stage, outcome="Pass")
+
+
+def insert_care_record(doctype: str, asset: str, **values) -> None:
+	"""A completed care record written as its signed act leaves it (test fixture only)."""
+	from frappe.utils import today
+
+	frappe.get_doc(
+		{"doctype": doctype, "asset": asset, "performed_on": today(), "docstatus": 1, **values}
+	).db_insert()
 
 
 def approve_for_test(*codes: str) -> None:

@@ -343,7 +343,13 @@ SIDEBAR_ADDITIONS: dict[str, tuple[tuple[str, str, str], ...]] = {
 		("Customer Licence", "DocType", "Customer Licence"),
 		("Customer Licence Type", "DocType", "Customer Licence Type"),
 	),
-	"Assets": (("Equipment History Card", "Report", "Equipment History Card"),),  # module 62
+	"Assets": (
+		("Equipment History Card", "Report", "Equipment History Card"),  # module 62
+		("Calibration Record", "DocType", "Calibration Record"),  # module 38
+		("Maintenance Record", "DocType", "Maintenance Record"),
+		("Equipment Qualification", "DocType", "Equipment Qualification"),  # module 40
+		("Equipment Care Schedule", "Report", "Equipment Care Schedule"),
+	),
 }
 
 # Each job's own work list and its tasks (module 59), in every business area.

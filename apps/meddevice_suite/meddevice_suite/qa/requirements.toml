@@ -1001,8 +1001,8 @@ status = "implemented"
 [[requirement]]
 id = "URS-MST-011"
 module = 62
-title = "Each piece of equipment has a history card that lists, by date, its approval and every change to its record, its movements, its maintenance and calibration logs, its repairs with their downtime, and the inspections that used it as their instrument, with the number of repairs and the total downtime over the period shown."
-source = "DFD 9D Equipment Management (D2 history card, D5 performance tracking); master plan module 62 (equipment history card and performance tracking, beyond module 38); ISO 13485 6.3, 7.6 (records of maintenance and calibration); decided 2026-10-11"
+title = "Each piece of equipment has a history card that lists, by date, its approval and every change to its record, its movements, its calibrations, preventive maintenance and qualifications as signed (and before module 38 its maintenance logs), its repairs, and the inspections that used it as their instrument, with the number of repairs, the downtime of repairs and maintenance, and the number of calibrations found out of tolerance over the period shown."
+source = "DFD 9D Equipment Management (D2 history card, D5 performance tracking); master plan module 62 (equipment history card and performance tracking, beyond module 38); ISO 13485 6.3, 7.6 (records of maintenance and calibration); decided 2026-10-11; history card extended with modules 38 and 40 records on 2026-10-11 (rules section 8)"
 status = "implemented"
 
 [[requirement]]
@@ -1058,13 +1058,103 @@ status = "implemented"
 id = "URS-PLT-018"
 module = 61
 title = "QA keeps the important files repository's categories and sub-groups and, for each, the jobs that read its files and the jobs that upload them, a sub-group naming none taking its group's; files are kept in a category, not in a group, and a category holding files is neither made a group nor deleted; people see and open only the files of the categories their jobs read, QA and the system administrator all, and only the category's uploading jobs or QA add to or archive its files."
-source = "DFD 9E Important Files Repository (E1 create category, E2 create sub group, E5 access control, E6 search and retrieve), D9 Documents; master plan section 8 (licences, regulatory submissions, vendor and sterilization certificates, audit reports, any file that is not a controlled SOP); decided 2026-10-12: access by job per category, inherited by sub-groups"
+source = "DFD 9E Important Files Repository (E1 create category, E2 create sub group, E5 access control, E6 search and retrieve), D9 Documents; master plan section 8 (licences, regulatory submissions, vendor and sterilization certificates, audit reports, any file that is not a controlled SOP); decided 2026-10-11: access by job per category, inherited by sub-groups"
 status = "implemented"
 
 [[requirement]]
 id = "URS-PLT-019"
 module = 61
 title = "A file in the repository is a record of its versions: each upload is the next version, a private file fingerprinted as it is added, with who added it, when, what changed (from the second version) and, where it has one, until when it is valid; earlier versions are never changed or removed and their files are evidence that cannot be changed or deleted; a file is never deleted, only archived with a reason, and an archived file does not change; a current version's validity is tracked as a reminder by the category's uploading jobs, the days before it ends set by QA in Quality Settings (60 until changed), until a new version renews it or it is archived."
-source = "DFD 9E (E3 upload document, E4 version control); D9; ISO 13485 4.2.4, 4.2.5; 21 CFR 11.10(c), (e); decided 2026-10-12: validity tracked by the reminders (module 60)"
+source = "DFD 9E (E3 upload document, E4 version control); D9; ISO 13485 4.2.4, 4.2.5; 21 CFR 11.10(c), (e); decided 2026-10-11: validity tracked by the reminders (module 60)"
 status = "implemented"
 
+[[requirement]]
+id = "URS-EQP-001"
+module = 38
+title = "A calibration records its date and, per point, the nominal value, limits and the values found and left; the system works out what was in tolerance, the result on the values left and, for a pass, the next due date from the interval QA approved on the equipment; it follows an effective procedure when done in-house and names the laboratory, certificate number and certificate when external; it is completed only by its performer's electronic signature (Maintenance or QA), is never deleted, and does not change once completed but by QA's signed impact assessment."
+source = "Flowchart Calibration & Maintenance (calibration records); DFD 9D D6; ISO 13485 7.6; 21 CFR 11.50"
+status = "implemented"
+
+[[requirement]]
+id = "URS-EQP-002"
+module = 38
+title = "An in-house calibration is refused unless each reference standard it names is approved equipment, is not the instrument calibrated, and was itself in calibration on the day the calibration was done."
+source = "ISO 13485 7.6(a) (traceable to measurement standards)"
+status = "implemented"
+
+[[requirement]]
+id = "URS-EQP-003"
+module = 38
+title = "A calibration that finds a value out of tolerance lists the submitted inspections that named the instrument and the submitted job cards at its workstation since its last good calibration, alerts QA, and stays open for QA's signed assessment (no product impact, or product action needed), which a reminder tracks until it is signed."
+source = "ISO 13485 7.6 (assess the validity of previous results when equipment is found not to conform); decided 2026-10-11"
+status = "implemented"
+
+[[requirement]]
+id = "URS-EQP-004"
+module = 38
+title = "Preventive maintenance records its checks, each OK or not, what was done and the downtime; it is satisfactory only when every check is OK, only a satisfactory record sets the next due date, and it is completed only by its performer's electronic signature and never deleted."
+source = "DFD 9D D3 maintenance schedule, D4 maintenance execution; flowchart (maintenance plan, maintenance log, downtime tracking); ISO 13485 6.3"
+status = "implemented"
+
+[[requirement]]
+id = "URS-EQP-005"
+module = 38
+title = "Equipment that needs calibration, or preventive maintenance, is fit only while its latest completed record passed and its next due date has not passed; equipment never calibrated, or never maintained, is not fit."
+source = "ISO 13485 7.6, 6.3; production stage 3"
+status = "implemented"
+
+[[requirement]]
+id = "URS-EQP-006"
+module = 38
+title = "Equipment that is not fit, not qualified though it needs qualification, or under an open repair is refused as an inspection's instrument, at every save and submit of a job card at its workstation and every time logged on one, and when a work order on its workstation is submitted."
+source = "Production stage 3 (machine must be within calibration and maintenance due); decided 2026-10-11: block, never warn, on every entry path"
+status = "implemented"
+
+[[requirement]]
+id = "URS-EQP-007"
+module = 38
+title = "The Equipment Care Schedule shows each approved piece of equipment's next calibration, maintenance and requalification dates, each as in date, due soon, overdue, never done or not needed."
+source = "Flowchart (calibration schedule, maintenance plan)"
+status = "implemented"
+
+[[requirement]]
+id = "URS-EQP-008"
+module = 38
+title = "Calibration, maintenance and requalification falling due within the days QA sets in Quality Settings, and an open out-of-tolerance assessment, are tracked as reminders that only the records showing the work done complete."
+source = "Flowchart (alerts and reminders); DFD 9C"
+status = "implemented"
+
+[[requirement]]
+id = "URS-EQP-009"
+module = 38
+title = "ERPNext's own asset maintenance plans and logs are not used: saving one is refused."
+source = "Decided 2026-10-11: ERPNext's asset maintenance drops an end-dated task from its schedule after one completion, rewrites completed logs, allows changes after completion, records no as-found or as-left values and is not signed"
+status = "implemented"
+
+[[requirement]]
+id = "URS-EQP-010"
+module = 40
+title = "Each installation, operational and performance qualification is recorded against an effective protocol (an SOP or a form) with its tests, each passed or failed, and passes only when every test passes; its performer executes it with an electronic signature, a change after execution needs execution again, and QA, never its performer, approves it with an electronic signature or returns it with a signed reason; it is never deleted."
+source = "Flowchart compliance box (Equipment Qualification IQ/OQ/PQ); ISO 13485 7.5.6, 6.3"
+status = "implemented"
+
+[[requirement]]
+id = "URS-EQP-011"
+module = 40
+title = "An operational qualification is refused without an approved, passed installation qualification; a performance qualification without an approved, passed operational qualification done on or after it."
+source = "ISO 13485 7.5.6"
+status = "implemented"
+
+[[requirement]]
+id = "URS-EQP-012"
+module = 40
+title = "Equipment that needs qualification is qualified only while its latest approved IQ, OQ and PQ each passed, were done in that order, and the PQ is within the requalification interval QA approved on the equipment, if one is set."
+source = "ISO 13485 7.5.6; decided 2026-10-11: a requalification interval on the equipment, under change control"
+status = "implemented"
+
+[[requirement]]
+id = "URS-EQP-013"
+module = 38
+title = "After a completed repair, equipment that needs calibration is not fit until calibrated again and equipment that needs qualification until a PQ is done again; after a move to another place, equipment that needs qualification is not fit until qualified again from the IQ."
+source = "ISO 13485 7.6 (safeguarded from adjustments that would invalidate the measurement), 7.5.6 (revalidation after changes); decided 2026-10-11 by the implementer on the client's instruction to decide the open questions (plan, decisions D-11)"
+status = "implemented"

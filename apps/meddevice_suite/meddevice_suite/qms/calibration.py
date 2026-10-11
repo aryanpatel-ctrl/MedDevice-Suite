@@ -1,0 +1,280 @@
+"""Calibration (module 38; URS-EQP-001, URS-EQP-002, URS-EQP-003; ISO 13485 7.6; 21 CFR 11.50).
+
+A Calibration Record holds, per point, the nominal value, its limits and the values found before
+and left after adjustment; the system works out what was in tolerance, the result (on the values
+left: the instrument as it goes back into use) and, for a pass, the next due date from the
+interval QA approved on the equipment. An in-house calibration follows an effective procedure and
+names its reference standards, each approved equipment other than the instrument and itself in
+calibration on the day; an external one names the laboratory, its certificate number and the
+certificate, which becomes evidence. The record is completed only by its performer's signature
+(Maintenance or QA), never deleted, and corrected by cancel and amend.
+
+A value found out of tolerance means the instrument may have measured wrongly since its last good
+calibration: the record lists the inspections that named it and the job cards at its workstation
+since then, QA is alerted, and the record waits for QA's signed assessment (no product impact, or
+product action needed), which a reminder tracks until it is signed.
+"""
+
+import frappe
+from frappe import _
+from frappe.model.document import Document
+from frappe.utils import add_days, cint, flt, getdate, now_datetime, today
+
+from meddevice_suite.compliance.esign import sign
+from meddevice_suite.master_data import equipment
+
+DOCTYPE = "Calibration Record"
+IN_HOUSE, EXTERNAL = "In-house", "External laboratory"
+PASS, FAIL = "Pass", "Fail"
+NOT_NEEDED, OPEN, ASSESSED = "Not needed", "Open", "Assessed"
+NO_IMPACT, ACTION_NEEDED = "No product impact", "Product action needed"
+OUT_OF_TOLERANCE_ALERT = "Calibration Out of Tolerance"
+PROCEDURE_TYPES = ("SOP", "Work Instruction")
+PERFORMERS = frozenset({"Maintenance User", "Quality Manager"})
+QA_ROLE = "Quality Manager"
+PRECISION = 9
+
+
+def require(condition, message: str, exception: type[Exception] = frappe.ValidationError) -> None:
+	if not condition:
+		frappe.throw(message, exception)
+
+
+def only_by_signature(doc: Document, method: str | None = None) -> None:
+	"""before_validate: a record is completed (submitted) only by its signed act."""
+	if doc.get("_action") == "submit" and not doc.flags.calibration_signed:
+		frappe.throw(_("A calibration is completed by its performer's signature."), frappe.PermissionError)
+
+
+def in_tolerance(value, low, high) -> int:
+	return int(flt(low, PRECISION) <= flt(value, PRECISION) <= flt(high, PRECISION))
+
+
+def effective_procedure(name: str | None, types: tuple[str, ...]) -> bool:
+	if not name:
+		return False
+	row = frappe.db.get_value("Controlled Document", name, ["status", "document_type"], as_dict=True)
+	return bool(row) and row.status == "Effective" and row.document_type in types
+
+
+def last_done(asset: str, before: str | None = None, result: str | None = None) -> frappe._dict | None:
+	filters = {"asset": asset, "docstatus": 1}
+	if before:
+		filters["name"] = ["!=", before]
+	if result:
+		filters["result"] = result
+	rows = frappe.get_all(
+		DOCTYPE,
+		filters=filters,
+		fields=["name", "performed_on", "result", "next_due_date"],
+		order_by="performed_on desc, creation desc",
+		limit=1,
+	)
+	return rows[0] if rows else None
+
+
+def evaluate(doc: Document, method: str | None = None) -> None:
+	"""validate: what the record may hold, and what follows from its points."""
+	if doc.docstatus != 0:
+		return
+	asset = frappe.db.get_value(
+		"Asset", doc.asset, [equipment.APPROVAL_STATUS, equipment.STATUS, equipment.CALIBRATION], as_dict=True
+	)
+	require(asset, _("Equipment {0} does not exist.").format(doc.asset))
+	require(
+		asset.get(equipment.APPROVAL_STATUS) == equipment.APPROVED,
+		_("{0} is not approved equipment.").format(doc.asset),
+	)
+	require(asset.get(equipment.STATUS) != equipment.RETIRED, _("{0} is retired.").format(doc.asset))
+	require(cint(asset.get(equipment.CALIBRATION)), _("{0} does not need calibration.").format(doc.asset))
+	require(getdate(doc.performed_on) <= getdate(today()), _("A calibration is recorded once it is done."))
+	previous = last_done(doc.asset, before=doc.name)
+	require(
+		not previous or getdate(doc.performed_on) >= getdate(previous.performed_on),
+		_("{0} was calibrated on {1} already; a calibration is recorded in order.").format(
+			doc.asset, frappe.format_value(previous and previous.performed_on, {"fieldtype": "Date"})
+		),
+	)
+	if doc.calibrated_by == IN_HOUSE:
+		require(
+			effective_procedure(doc.procedure, PROCEDURE_TYPES),
+			_("An in-house calibration follows an effective SOP or work instruction."),
+		)
+		require(doc.standards, _("Name the reference standards used."))
+		check_standards(doc)
+	else:
+		require(
+			doc.laboratory and (doc.certificate_number or "").strip() and doc.certificate,
+			_("An external calibration names the laboratory, its certificate number and the certificate."),
+		)
+	require(doc.points, _("Record the points calibrated."))
+	for row in doc.points:
+		require(
+			flt(row.lower_limit, PRECISION) <= flt(row.upper_limit, PRECISION),
+			_("Row {0}: the lower limit is above the upper limit.").format(row.idx),
+		)
+		row.found_in_tolerance = in_tolerance(row.as_found, row.lower_limit, row.upper_limit)
+		row.left_in_tolerance = in_tolerance(row.as_left, row.lower_limit, row.upper_limit)
+	doc.out_of_tolerance = int(not all(row.found_in_tolerance for row in doc.points))
+	doc.result = PASS if all(row.left_in_tolerance for row in doc.points) else FAIL
+
+
+def check_standards(doc: Document) -> None:
+	"""URS-EQP-002: each reference standard is approved equipment, not the instrument, and was in
+	calibration on the day the calibration was done."""
+	day = getdate(doc.performed_on)
+	for row in doc.standards:
+		require(
+			row.standard != doc.asset,
+			_("Row {0}: an instrument is not its own reference standard.").format(row.idx),
+		)
+		require(
+			frappe.db.get_value("Asset", row.standard, equipment.APPROVAL_STATUS) == equipment.APPROVED,
+			_("Reference standard {0} is not approved equipment.").format(row.standard),
+		)
+		covering = frappe.get_all(
+			DOCTYPE,
+			filters={
+				"asset": row.standard,
+				"docstatus": 1,
+				"result": PASS,
+				"performed_on": ["<=", day],
+				"next_due_date": [">=", day],
+			},
+			fields=["next_due_date"],
+			order_by="performed_on desc",
+			limit=1,
+		)
+		require(
+			covering,
+			_("Reference standard {0} was not in calibration on {1}.").format(
+				row.standard, frappe.format_value(day, {"fieldtype": "Date"})
+			),
+		)
+		row.standard_due_on = covering[0].next_due_date
+
+
+def impact_since(asset: str, start, end) -> list[dict]:
+	"""What the instrument may have measured wrongly: submitted inspections that named it, and
+	submitted job cards at its workstation, from its last good calibration to this one."""
+	inspection, reading = (
+		frappe.qb.DocType("Quality Inspection"),
+		frappe.qb.DocType("Quality Inspection Reading"),
+	)
+	rows = (
+		frappe.qb.from_(inspection)
+		.join(reading)
+		.on(reading.parent == inspection.name)
+		.select(inspection.name, inspection.report_date, inspection.item_code, inspection.batch_no)
+		.where(
+			(inspection.docstatus == 1)
+			& (reading.mds_instrument == asset)
+			& (inspection.report_date >= getdate(start))
+			& (inspection.report_date <= getdate(end))
+		)
+		.distinct()
+		.orderby(inspection.report_date)
+		.run(as_dict=True)
+	)
+	impact = [
+		{
+			"reference_doctype": "Quality Inspection",
+			"reference_name": row.name,
+			"date": row.report_date,
+			"item_code": row.item_code,
+			"batch_no": row.batch_no,
+		}
+		for row in rows
+	]
+	workstation = frappe.db.get_value("Asset", asset, equipment.WORKSTATION)
+	if workstation:
+		for card in frappe.get_all(
+			"Job Card",
+			filters={
+				"workstation": workstation,
+				"docstatus": 1,
+				"posting_date": ["between", [getdate(start), getdate(end)]],
+			},
+			fields=["name", "posting_date", "production_item"],
+			order_by="posting_date asc",
+		):
+			impact.append(
+				{
+					"reference_doctype": "Job Card",
+					"reference_name": card.name,
+					"date": card.posting_date,
+					"item_code": card.production_item,
+				}
+			)
+	return impact
+
+
+def complete(doc: Document, password: str, reason: str | None = None) -> None:
+	"""Signed act: the performer completes the calibration."""
+	require(doc.docstatus == 0, _("{0} is completed already.").format(doc.name))
+	require(
+		PERFORMERS & set(frappe.get_roles()),
+		_("Maintenance or QA completes a calibration."),
+		frappe.PermissionError,
+	)
+	evaluate(doc)
+	doc.interval_days = cint(frappe.db.get_value("Asset", doc.asset, equipment.CALIBRATION_DAYS))
+	require(doc.interval_days > 0, _("{0} has no calibration interval.").format(doc.asset))
+	doc.next_due_date = add_days(doc.performed_on, doc.interval_days) if doc.result == PASS else None
+	doc.completed_by = frappe.session.user
+	if doc.out_of_tolerance:
+		good = last_done(doc.asset, before=doc.name, result=PASS)
+		doc.last_good_calibration = (
+			good.performed_on if good else getdate(frappe.db.get_value("Asset", doc.asset, "creation"))
+		)
+		doc.set("impact", impact_since(doc.asset, doc.last_good_calibration, doc.performed_on))
+		doc.impact_status = OPEN
+	else:
+		doc.impact_status = NOT_NEEDED
+	sign(doc, "Verified", "Complete", password, reason)
+	doc.flags.calibration_signed = True
+	# Nobody holds Frappe's submit permission on a calibration: the signed act is its only submit.
+	doc.flags.ignore_permissions = True
+	doc.submit()
+	if doc.out_of_tolerance:
+		frappe.get_doc("Notification", OUT_OF_TOLERANCE_ALERT).send(doc)
+
+
+def assess(doc: Document, decision: str, act: str, password: str, reason: str | None) -> None:
+	require(
+		doc.docstatus == 1 and doc.impact_status == OPEN,
+		_("{0} has no open impact assessment.").format(doc.name),
+	)
+	require(QA_ROLE in frappe.get_roles(), _("Only QA assesses the impact."), frappe.PermissionError)
+	require(reason, _("Say what was assessed and why."))
+	doc.impact_status, doc.impact_decision = ASSESSED, decision
+	doc.assessed_by, doc.assessed_on = frappe.session.user, now_datetime()
+	sign(doc, "Reviewed", act, password, reason, permission="read")
+	doc.flags.calibration_signed = True
+	doc.flags.audit_reason = reason  # the assessment is the reason for the change
+	doc.flags.ignore_permissions = True  # the impact fields are set by this signed act only
+	doc.save()
+
+
+def assess_no_impact(doc: Document, password: str, reason: str | None = None) -> None:
+	assess(doc, NO_IMPACT, "Assess: No Product Impact", password, reason)
+
+
+def assess_product_action(doc: Document, password: str, reason: str | None = None) -> None:
+	assess(doc, ACTION_NEEDED, "Assess: Product Action Needed", password, reason)
+
+
+def guard_after_completion(doc: Document, method: str | None = None) -> None:
+	"""before_update_after_submit: only the signed assessment changes a completed record."""
+	require(
+		doc.flags.calibration_signed, _("A completed calibration does not change."), frappe.PermissionError
+	)
+
+
+def refuse_erpnext_maintenance(doc: Document, method: str | None = None) -> None:
+	"""Asset Maintenance and Asset Maintenance Log before_validate: equipment is calibrated and
+	maintained on this app's signed records (URS-EQP-009)."""
+	frappe.throw(
+		_("Calibration and maintenance are recorded as Calibration and Maintenance Records, signed."),
+		title=_("Not used"),
+	)

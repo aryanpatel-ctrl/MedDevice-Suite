@@ -31,7 +31,11 @@ from frappe.utils import add_days, today
 
 from meddevice_suite.master_data import customer_licence, item_master
 from meddevice_suite.pilot import refuse_unless_pilot_site
-from meddevice_suite.pilot.inspection import ensure_inspection_masters, ensure_inspection_template
+from meddevice_suite.pilot.inspection import (
+	calibrate_instrument,
+	ensure_inspection_masters,
+	ensure_inspection_template,
+)
 from meddevice_suite.setup.roles import JOB_PROFILES
 
 DEMO = "(Demo)"
@@ -191,7 +195,10 @@ def load_demo_data() -> None:
 	ensure_customers_may_buy(password)
 	approve = approve_as("QA Manager", password)
 	approve_stores(company, password)  # module 7: before any stock moves
-	ensure_inspection_masters(company, approve, approve_as("QA Manager", password, "Asset"))
+	instrument = ensure_inspection_masters(company, approve, approve_as("QA Manager", password, "Asset"))
+	from meddevice_suite.pilot.flow import as_job  # the flow builds on this module
+
+	calibrate_instrument(instrument, password, lambda: as_job("Maintenance"))  # module 38: before it measures
 	for code, (name, unit, hsn, shelf_life, supplier, rate) in RAW_MATERIALS.items():
 		ensure_item(
 			code, name, "Raw Material", unit, hsn, shelf_life, company, store("Stores"), supplier=supplier
@@ -227,7 +234,6 @@ def load_demo_data() -> None:
 			],
 		)
 	from meddevice_suite.pilot.documents import approve_production_masters
-	from meddevice_suite.pilot.flow import as_job  # the flow builds on this module
 
 	# Module 3: each operation with its work instruction; QA approves them and the routings.
 	approve_production_masters(

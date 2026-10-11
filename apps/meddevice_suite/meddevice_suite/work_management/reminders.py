@@ -258,6 +258,126 @@ def files_ending() -> Iterator[Due]:
 		)
 
 
+CARE_ROLES = ("Maintenance User", QA_ROLE)
+
+
+def equipment_needing(field: str) -> list[frappe._dict]:
+	"""Approved equipment, not retired, that needs the care the field names."""
+	from meddevice_suite.master_data import equipment
+
+	return frappe.get_all(
+		"Asset",
+		filters={
+			field: 1,
+			equipment.APPROVAL_STATUS: equipment.APPROVED,
+			equipment.STATUS: ["!=", equipment.RETIRED],
+			"docstatus": ["<", 2],
+		},
+		fields=["name", "asset_name", equipment.APPROVED_AT],
+	)
+
+
+def care_due(field: str, doctype: str, setting: str, what: str) -> Iterator[Due]:
+	"""Each piece of equipment whose calibration or maintenance falls due within the lead time:
+	the next due date of its latest completed record, or, never done or last not passed, the day QA
+	approved it. Done when a new record moves the date on."""
+	from meddevice_suite.master_data import equipment
+	from meddevice_suite.qms.equipment_care import latest
+
+	assets = equipment_needing(field)
+	last = latest(doctype, [a.name for a in assets], ["next_due_date"]) if assets else {}
+	soon = getdate(within(setting))
+	for asset in assets:
+		record = last.get(asset.name)
+		due = (record and record.next_due_date) or getdate(asset.get(equipment.APPROVED_AT))
+		if getdate(due) <= soon:
+			yield Due(
+				"Asset",
+				asset.name,
+				due,
+				_("{0} of {1} is due on {2}").format(what, asset.asset_name or asset.name, date_text(due)),
+				CARE_ROLES,
+				part=doctype,
+			)
+
+
+def calibrations_due() -> Iterator[Due]:
+	from meddevice_suite.master_data import equipment
+
+	yield from care_due(
+		equipment.CALIBRATION, "Calibration Record", "calibration_warning_days", _("Calibration")
+	)
+
+
+def maintenance_due() -> Iterator[Due]:
+	from meddevice_suite.master_data import equipment
+
+	yield from care_due(
+		equipment.MAINTENANCE, "Maintenance Record", "maintenance_warning_days", _("Preventive maintenance")
+	)
+
+
+def requalifications_due() -> Iterator[Due]:
+	"""Each piece of equipment with a requalification interval whose last approved PQ reaches it
+	within the lead time; never qualified, due from the day QA approved it."""
+	from meddevice_suite.master_data import equipment
+	from meddevice_suite.qms.equipment_care import latest
+
+	assets = [a for a in equipment_needing(equipment.QUALIFICATION)]
+	if not assets:
+		return
+	intervals = dict(
+		frappe.get_all(
+			"Asset",
+			filters={"name": ["in", [a.name for a in assets]]},
+			fields=["name", equipment.REQUALIFICATION_DAYS],
+			as_list=True,
+		)
+	)
+	last_pq = latest(
+		"Equipment Qualification", [a.name for a in assets], [], {"stage": "PQ", "outcome": "Pass"}
+	)
+	soon = getdate(within("requalification_warning_days"))
+	for asset in assets:
+		pq = last_pq.get(asset.name)
+		if pq and not cint(intervals.get(asset.name)):
+			continue  # qualified, and the qualification does not expire
+		due = (
+			add_days(pq.performed_on, cint(intervals[asset.name]))
+			if pq
+			else getdate(asset.get(equipment.APPROVED_AT))
+		)
+		if getdate(due) <= soon:
+			yield Due(
+				"Asset",
+				asset.name,
+				due,
+				_("Qualification of {0} is due on {1}").format(
+					asset.asset_name or asset.name, date_text(due)
+				),
+				CARE_ROLES,
+				part="Equipment Qualification",
+			)
+
+
+def calibration_impacts_open() -> Iterator[Due]:
+	"""Each calibration found out of tolerance until QA signs its impact assessment."""
+	for row in frappe.get_all(
+		"Calibration Record",
+		filters={"docstatus": 1, "impact_status": "Open"},
+		fields=["name", "asset", "performed_on"],
+	):
+		yield Due(
+			"Calibration Record",
+			row.name,
+			row.performed_on,
+			_("Assess what {0} measured before it was found out of tolerance ({1})").format(
+				row.asset, row.name
+			),
+			(QA_ROLE,),
+		)
+
+
 # category -> what is due now (module that owns the record)
 CATEGORIES: dict[str, Callable[[], Iterator[Due]]] = {
 	"Lot Expiry": lots_expiring,  # module 18
@@ -268,6 +388,10 @@ CATEGORIES: dict[str, Callable[[], Iterator[Due]]] = {
 	"Effectiveness Check": effectiveness_checks_due,  # module 36
 	"Work Task": work_tasks_due,  # module 59
 	"File Validity": files_ending,  # module 61
+	"Calibration Due": calibrations_due,  # module 38
+	"Maintenance Due": maintenance_due,  # module 38
+	"Requalification Due": requalifications_due,  # module 40
+	"Calibration Impact": calibration_impacts_open,  # module 38
 }
 
 

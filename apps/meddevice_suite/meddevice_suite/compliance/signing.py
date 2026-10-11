@@ -37,6 +37,9 @@ EQUIPMENT = "meddevice_suite.master_data.equipment"
 ROUTING = "meddevice_suite.master_data.routing"
 WAREHOUSE = "meddevice_suite.master_data.warehouse"
 WORK_TASK = "meddevice_suite.work_management.work_task"
+CALIBRATION = "meddevice_suite.qms.calibration"
+MAINTENANCE = "meddevice_suite.qms.preventive_maintenance"
+QUALIFICATION = "meddevice_suite.qms.qualification"
 
 # (record type, act) -> the signed act. Each module adds the acts it signs.
 SIGNING_ACTIONS: dict[tuple[str, str], SignedAct] = {
@@ -85,6 +88,17 @@ SIGNING_ACTIONS: dict[tuple[str, str], SignedAct] = {
 	("Warehouse", "Approve"): SignedAct("Approved", f"{WAREHOUSE}.approve"),
 	("Work Task", "Approve"): SignedAct("Approved", f"{WORK_TASK}.approve"),
 	("Work Task", "Return"): SignedAct("Rejected", f"{WORK_TASK}.return_for_rework"),
+	("Calibration Record", "Complete"): SignedAct("Verified", f"{CALIBRATION}.complete"),
+	("Calibration Record", "Assess: No Product Impact"): SignedAct(
+		"Reviewed", f"{CALIBRATION}.assess_no_impact"
+	),
+	("Calibration Record", "Assess: Product Action Needed"): SignedAct(
+		"Reviewed", f"{CALIBRATION}.assess_product_action"
+	),
+	("Maintenance Record", "Complete"): SignedAct("Verified", f"{MAINTENANCE}.complete"),
+	("Equipment Qualification", "Execute"): SignedAct("Verified", f"{QUALIFICATION}.execute"),
+	("Equipment Qualification", "Approve"): SignedAct("Approved", f"{QUALIFICATION}.approve"),
+	("Equipment Qualification", "Return"): SignedAct("Rejected", f"{QUALIFICATION}.return_for_rework"),
 }
 
 

@@ -1,0 +1,406 @@
+{
+ "actions": [],
+ "creation": "2026-10-11 12:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "asset",
+  "performed_on",
+  "calibrated_by",
+  "column_break_by",
+  "procedure",
+  "laboratory",
+  "certificate_number",
+  "certificate",
+  "section_standards",
+  "standards",
+  "section_points",
+  "points",
+  "section_result",
+  "result",
+  "out_of_tolerance",
+  "column_break_result",
+  "interval_days",
+  "next_due_date",
+  "completed_by",
+  "section_impact",
+  "last_good_calibration",
+  "impact",
+  "impact_status",
+  "impact_decision",
+  "assessed_by",
+  "assessed_on",
+  "amended_from"
+ ],
+ "fields": [
+  {
+   "fieldname": "asset",
+   "fieldtype": "Link",
+   "label": "Equipment",
+   "options": "Asset",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "performed_on",
+   "fieldtype": "Date",
+   "label": "Calibrated On",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "calibrated_by",
+   "fieldtype": "Select",
+   "label": "Calibrated By",
+   "options": "In-house\nExternal laboratory",
+   "reqd": 1,
+   "default": "In-house"
+  },
+  {
+   "fieldname": "column_break_by",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "procedure",
+   "fieldtype": "Link",
+   "label": "Procedure",
+   "options": "Controlled Document",
+   "depends_on": "eval:doc.calibrated_by=='In-house'"
+  },
+  {
+   "fieldname": "laboratory",
+   "fieldtype": "Link",
+   "label": "Laboratory",
+   "options": "Supplier",
+   "depends_on": "eval:doc.calibrated_by=='External laboratory'"
+  },
+  {
+   "fieldname": "certificate_number",
+   "fieldtype": "Data",
+   "label": "Certificate Number",
+   "depends_on": "eval:doc.calibrated_by=='External laboratory'"
+  },
+  {
+   "fieldname": "certificate",
+   "fieldtype": "Attach",
+   "label": "Certificate",
+   "depends_on": "eval:doc.calibrated_by=='External laboratory'"
+  },
+  {
+   "fieldname": "section_standards",
+   "fieldtype": "Section Break",
+   "label": "Reference Standards",
+   "depends_on": "eval:doc.calibrated_by=='In-house'"
+  },
+  {
+   "fieldname": "standards",
+   "fieldtype": "Table",
+   "label": "Reference Standards",
+   "options": "Calibration Standard"
+  },
+  {
+   "fieldname": "section_points",
+   "fieldtype": "Section Break",
+   "label": "Points"
+  },
+  {
+   "fieldname": "points",
+   "fieldtype": "Table",
+   "label": "Points",
+   "options": "Calibration Point",
+   "reqd": 1
+  },
+  {
+   "fieldname": "section_result",
+   "fieldtype": "Section Break",
+   "label": "Result"
+  },
+  {
+   "fieldname": "result",
+   "fieldtype": "Select",
+   "label": "Result",
+   "options": "\nPass\nFail",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "out_of_tolerance",
+   "fieldtype": "Check",
+   "label": "Found Out of Tolerance",
+   "in_standard_filter": 1,
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "column_break_result",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "interval_days",
+   "fieldtype": "Int",
+   "label": "Interval (days)",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "next_due_date",
+   "fieldtype": "Date",
+   "label": "Next Due",
+   "search_index": 1,
+   "in_list_view": 1,
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "completed_by",
+   "fieldtype": "Link",
+   "label": "Completed By",
+   "options": "User",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "section_impact",
+   "fieldtype": "Section Break",
+   "label": "Product Measured Since the Last Good Calibration",
+   "depends_on": "eval:doc.out_of_tolerance"
+  },
+  {
+   "fieldname": "last_good_calibration",
+   "fieldtype": "Date",
+   "label": "Since",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "impact",
+   "fieldtype": "Table",
+   "label": "Records",
+   "options": "Calibration Impact",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "impact_status",
+   "fieldtype": "Select",
+   "label": "Impact Assessment",
+   "options": "\nNot needed\nOpen\nAssessed",
+   "in_standard_filter": 1,
+   "allow_on_submit": 1,
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "impact_decision",
+   "fieldtype": "Select",
+   "label": "Decision",
+   "options": "\nNo product impact\nProduct action needed",
+   "allow_on_submit": 1,
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "assessed_by",
+   "fieldtype": "Link",
+   "label": "Assessed By",
+   "options": "User",
+   "allow_on_submit": 1,
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "assessed_on",
+   "fieldtype": "Datetime",
+   "label": "Assessed On",
+   "allow_on_submit": 1,
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "options": "Calibration Record",
+   "read_only": 1,
+   "no_copy": 1,
+   "hidden": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-10-11 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "QMS",
+ "name": "Calibration Record",
+ "owner": "Administrator",
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0,
+ "autoname": "format:CAL-{YYYY}-{#####}",
+ "naming_rule": "Expression",
+ "is_submittable": 1,
+ "title_field": "asset",
+ "search_fields": "asset,result,next_due_date",
+ "description": "A calibration of a piece of equipment (module 38): points as found and as left, its result and next due date; completed only by signature, never deleted.",
+ "permissions": [
+  {
+   "role": "Maintenance User",
+   "select": 1,
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "delete": 0,
+   "email": 0,
+   "import": 0,
+   "share": 0,
+   "report": 1,
+   "print": 1,
+   "export": 0
+  },
+  {
+   "role": "Quality Manager",
+   "select": 1,
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "submit": 0,
+   "cancel": 1,
+   "amend": 1,
+   "delete": 0,
+   "email": 0,
+   "import": 0,
+   "share": 0,
+   "report": 1,
+   "print": 1,
+   "export": 1
+  },
+  {
+   "role": "Manufacturing User",
+   "select": 1,
+   "read": 1,
+   "write": 0,
+   "create": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "delete": 0,
+   "email": 0,
+   "import": 0,
+   "share": 0,
+   "report": 1,
+   "print": 1,
+   "export": 0
+  },
+  {
+   "role": "QC Inspector",
+   "select": 1,
+   "read": 1,
+   "write": 0,
+   "create": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "delete": 0,
+   "email": 0,
+   "import": 0,
+   "share": 0,
+   "report": 1,
+   "print": 1,
+   "export": 0
+  },
+  {
+   "role": "Sales Manager",
+   "select": 1,
+   "read": 1,
+   "write": 0,
+   "create": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "delete": 0,
+   "email": 0,
+   "import": 0,
+   "share": 0,
+   "report": 1,
+   "print": 1,
+   "export": 0
+  },
+  {
+   "role": "Purchase Manager",
+   "select": 1,
+   "read": 1,
+   "write": 0,
+   "create": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "delete": 0,
+   "email": 0,
+   "import": 0,
+   "share": 0,
+   "report": 1,
+   "print": 1,
+   "export": 0
+  },
+  {
+   "role": "Stock Manager",
+   "select": 1,
+   "read": 1,
+   "write": 0,
+   "create": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "delete": 0,
+   "email": 0,
+   "import": 0,
+   "share": 0,
+   "report": 1,
+   "print": 1,
+   "export": 0
+  },
+  {
+   "role": "Manufacturing Manager",
+   "select": 1,
+   "read": 1,
+   "write": 0,
+   "create": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "delete": 0,
+   "email": 0,
+   "import": 0,
+   "share": 0,
+   "report": 1,
+   "print": 1,
+   "export": 0
+  },
+  {
+   "role": "System Manager",
+   "select": 1,
+   "read": 1,
+   "write": 0,
+   "create": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "delete": 0,
+   "email": 0,
+   "import": 0,
+   "share": 0,
+   "report": 1,
+   "print": 1,
+   "export": 0
+  }
+ ]
+}
