@@ -28,7 +28,7 @@ from meddevice_suite.pilot.flow import lot_of
 from meddevice_suite.qa import verifies
 from meddevice_suite.qms.test_document_control import signer
 from meddevice_suite.setup.install import apply_configuration
-from meddevice_suite.setup.test_stock import approve_for_test, stock_item
+from meddevice_suite.setup.test_stock import approve_equipment_for_test, approve_for_test, stock_item
 
 RAW = "MDS-LOT-RAW"
 PRODUCT = "MDS-LOT-PRODUCT"
@@ -180,7 +180,7 @@ class LotTestCase(IntegrationTestCase):
 		cls.qc = signer("QC Inspector")
 		from meddevice_suite.pilot.inspection import ensure_inspection_masters, ensure_inspection_template
 
-		cls.instrument = ensure_inspection_masters(company(), approve_for_test)
+		cls.instrument = ensure_inspection_masters(company(), approve_for_test, approve_equipment_for_test)
 		cls.template = ensure_inspection_template(RAW, "Raw Material")
 
 	def tearDown(self):

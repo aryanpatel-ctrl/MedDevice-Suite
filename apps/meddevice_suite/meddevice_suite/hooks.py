@@ -103,6 +103,8 @@ doc_events = {
 		"validate": [
 			"meddevice_suite.master_data.specification.check_against_specification",
 			"meddevice_suite.lot_control.receipt.guard_incoming_inspection",
+			# Module 8: a reading's instrument is approved equipment in service.
+			"meddevice_suite.master_data.equipment.guard_inspection_instruments",
 		],
 		"before_submit": "meddevice_suite.master_data.specification.check_sample_size",
 	},
@@ -116,6 +118,11 @@ doc_events = {
 		"on_cancel": "meddevice_suite.master_data.versioning.let_change_requests_not_block_cancel",
 	},
 	"Asset": {
+		# Equipment master (module 8): approved by QA with a signature before it is used.
+		"validate": "meddevice_suite.master_data.equipment.guard_asset",
+		# Frappe runs no validate on a change after submit; the approval stays the signature's there too.
+		"before_update_after_submit": "meddevice_suite.master_data.equipment.guard_asset",
+		"onload": "meddevice_suite.master_data.equipment.asset_onload",
 		"before_cancel": "meddevice_suite.master_data.versioning.guard_cancel",
 		"on_cancel": "meddevice_suite.master_data.versioning.let_change_requests_not_block_cancel",
 	},

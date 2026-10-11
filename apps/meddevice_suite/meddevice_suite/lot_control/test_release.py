@@ -46,7 +46,7 @@ from meddevice_suite.pilot.inspection import (
 from meddevice_suite.qa import verifies
 from meddevice_suite.qms.test_document_control import signer
 from meddevice_suite.setup.install import apply_configuration
-from meddevice_suite.setup.test_stock import approve_for_test
+from meddevice_suite.setup.test_stock import approve_equipment_for_test, approve_for_test
 
 ITEM = "MDS-REL-RAW"
 FINISHED_ITEM = "MDS-REL-FINISHED"
@@ -78,7 +78,7 @@ class ReleaseTestCase(IntegrationTestCase):
 		ensure_parties()
 		lot_item(ITEM)
 		lot_item(NO_TEMPLATE_ITEM)
-		cls.instrument = ensure_inspection_masters(company(), approve_for_test)
+		cls.instrument = ensure_inspection_masters(company(), approve_for_test, approve_equipment_for_test)
 		cls.template = ensure_inspection_template(ITEM, "Raw Material")
 		cls.qa = signer("QA Manager")
 		cls.qc = signer("QC Inspector")

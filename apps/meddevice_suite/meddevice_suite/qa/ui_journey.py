@@ -84,10 +84,12 @@ def prepare_journey(password: str | None = None) -> dict:
 	if frappe.session.user != "Administrator":
 		frappe.throw(_("The browser journey is prepared only by the Administrator."), frappe.PermissionError)
 
-	ensure_masters(approve_as_qa(password))
+	ensure_masters(approve_as_qa(password), approve_as_qa(password, "Asset"))
 	write_off_leftover_stock()
 	return {
-		"instrument": ensure_inspection_masters(COMPANY, approve_as_qa(password)),
+		"instrument": ensure_inspection_masters(
+			COMPANY, approve_as_qa(password), approve_as_qa(password, "Asset")
+		),
 		"company": COMPANY,
 		"customer": CUSTOMER,
 		"supplier": SUPPLIER,
@@ -108,11 +110,19 @@ def prepare_journey(password: str | None = None) -> dict:
 	}
 
 
-def approve_as_qa(password: str | None) -> Callable[[str], None]:
-	"""QA's signed approval of a journey item (module 1), as the run's QA Manager user."""
+def approve_as_qa(password: str | None, doctype: str = "Item") -> Callable[[str], None]:
+	"""QA's signed approval of a journey item (module 1) or piece of equipment (module 8), as the
+	run's QA Manager user."""
+	from meddevice_suite.master_data import equipment
+
+	approved, act = (
+		(item_master.approved, item_master.approve)
+		if doctype == "Item"
+		else (equipment.approved, equipment.approve)
+	)
 
 	def approve(code: str) -> None:
-		if item_master.approved(code):
+		if approved(code):
 			return
 		if not password:
 			frappe.throw(_("Give the run's password of the job users to approve {0}.").format(code))
@@ -122,9 +132,7 @@ def approve_as_qa(password: str | None) -> Callable[[str], None]:
 		saved, qa = dict(frappe.local.session), email_for("QA Manager")
 		frappe.set_user(qa)  # nosemgrep: frappe-setuser - test site, Administrator only
 		try:
-			item_master.approve(
-				frappe.get_doc("Item", code), password=password, reason="Set up for the browser journey"
-			)
+			act(frappe.get_doc(doctype, code), password=password, reason="Set up for the browser journey")
 		finally:
 			frappe.set_user(saved["user"])  # nosemgrep: frappe-setuser - back to the Administrator
 			frappe.local.session.clear()
@@ -133,8 +141,10 @@ def approve_as_qa(password: str | None) -> Callable[[str], None]:
 	return approve
 
 
-def ensure_masters(approve: Callable[[str], None]) -> None:
-	ensure_inspection_masters(COMPANY, approve)  # the parameters the templates below name
+def ensure_masters(
+	approve: Callable[[str], None], approve_equipment: Callable[[str], None] | None = None
+) -> None:
+	ensure_inspection_masters(COMPANY, approve, approve_equipment)  # the parameters the templates below name
 	ensure(
 		"Warehouse",
 		store(QUARANTINE),

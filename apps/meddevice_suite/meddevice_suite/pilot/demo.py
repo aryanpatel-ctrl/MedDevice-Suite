@@ -183,7 +183,7 @@ def load_demo_data() -> None:
 	for profile in JOB_PROFILES:  # QA's demo user approves the items below
 		ensure_demo_user(profile, password)
 	approve = approve_as("QA Manager", password)
-	ensure_inspection_masters(company, approve)
+	ensure_inspection_masters(company, approve, approve_as("QA Manager", password, "Asset"))
 	for code, (name, unit, hsn, shelf_life, supplier, rate) in RAW_MATERIALS.items():
 		ensure_item(
 			code, name, "Raw Material", unit, hsn, shelf_life, company, store("Stores"), supplier=supplier
@@ -295,21 +295,24 @@ def item_master_data(code: str, group: str) -> dict:
 	return data
 
 
-def approve_as(profile: str, password: str) -> Callable[[str], None]:
-	"""QA's signed approval of a demo item, by the demo user of the job; an approved item is left
-	as it is."""
+def approve_as(profile: str, password: str, doctype: str = "Item") -> Callable[[str], None]:
+	"""QA's signed approval of a demo item (module 1) or piece of equipment (module 8), by the demo
+	user of the job; one approved already is left as it is."""
+	from meddevice_suite.master_data import equipment
+
+	approved, act, reason = (
+		(item_master.approved, item_master.approve, "Item master and specification checked (demo)")
+		if doctype == "Item"
+		else (equipment.approved, equipment.approve, "Equipment details checked (demo)")
+	)
 
 	def approve(code: str) -> None:
-		if item_master.approved(code):
+		if approved(code):
 			return
 		from meddevice_suite.pilot.flow import as_job  # the flow builds on this module
 
 		with as_job(profile):
-			item_master.approve(
-				frappe.get_doc("Item", code),
-				password=password,
-				reason="Item master and specification checked (demo)",
-			)
+			act(frappe.get_doc(doctype, code), password=password, reason=reason)
 
 	return approve
 

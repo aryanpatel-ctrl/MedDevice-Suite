@@ -39,6 +39,7 @@ from meddevice_suite.qa import verifies
 from meddevice_suite.qms.test_change_control import approved_change
 from meddevice_suite.qms.test_document_control import signer
 from meddevice_suite.setup.install import apply_configuration
+from meddevice_suite.setup.test_stock import approve_equipment_for_test
 
 REFUSED = (frappe.ValidationError, frappe.PermissionError)
 NOT_APPROVED = "Not yet approved by QA"
@@ -108,7 +109,7 @@ class ItemMasterTestCase(IntegrationTestCase):
 		cls.purchase = signer("Purchase")  # holds no QA role
 		cls.stores_user = signer("Stores")
 		cls.requester = signer("Production Supervisor")
-		ensure_inspection_masters(company(), lambda item: cls.approve_as_qa(item))
+		ensure_inspection_masters(company(), lambda item: cls.approve_as_qa(item), approve_equipment_for_test)
 		for doctype, name, values in (
 			("Supplier", SUPPLIER, {"supplier_name": SUPPLIER, "supplier_group": "Raw Material"}),
 			(

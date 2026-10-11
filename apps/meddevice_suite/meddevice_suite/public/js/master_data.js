@@ -113,3 +113,44 @@ for (const doctype of [
 		},
 	});
 }
+
+// Equipment master (module 8): the asset's form says whether QA has approved the equipment, or
+// what approval still needs, and QA approves it with a signature (master_data/equipment.py).
+frappe.ui.form.on("Asset", {
+	refresh(frm) {
+		if (frm.is_new()) return;
+		const approval = frm.doc.__onload?.equipment_approval;
+		if (!approval) return;
+		if (approval.approved) {
+			frm.dashboard.set_headline_alert(
+				__("Equipment approved by QA; what was approved changes under change control."),
+				"green"
+			);
+			return;
+		}
+		if (approval.missing.length) {
+			const missing = approval.missing
+				.map((what) => frappe.utils.escape_html(what))
+				.join("; ");
+			frm.dashboard.set_headline_alert(
+				__("Not yet approved by QA, so no inspection uses it. Still needed: {0}.", [
+					missing,
+				]),
+				"orange"
+			);
+			return;
+		}
+		frm.dashboard.set_headline_alert(
+			__("Not yet approved by QA, so no inspection uses it. Ready for QA's approval."),
+			"orange"
+		);
+		if (approval.approvable && !frm.is_dirty() && frappe.user.has_role("Quality Manager")) {
+			frm.add_custom_button(__("Approve Equipment"), () =>
+				// Closing the dialog signs nothing; there is nothing more to do then.
+				esign.sign(frm, "Approve", "Approved", { ask_reason: true }).catch(() => {})
+			)
+				.removeClass("btn-default")
+				.addClass("btn-primary");
+		}
+	},
+});

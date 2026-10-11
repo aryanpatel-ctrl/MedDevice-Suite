@@ -915,6 +915,20 @@ source = "DFD 3.4 IQC Inspection, 5.3 Final QC Inspection, D6; D2 Incoming QC (I
 status = "planned"
 
 [[requirement]]
+id = "URS-MST-010"
+module = 8
+title = "Each piece of equipment is an asset recording its unique equipment tag, its class (production machine, measuring instrument, test equipment, sterilization equipment or utility), manufacturer, model and serial number, where it is used, whether it affects product quality, and whether it needs calibration, preventive maintenance and qualification with their intervals, a measuring instrument always needing calibration; QA approves it with an electronic signature only when these are complete, and that signature is the only way it becomes approved; an inspection reading names as its instrument only approved equipment that is in service; once approved, what QA approved changes only under an approved change request."
+source = "DFD D10 Equipment Master and 9D Equipment Management (D1 equipment master); master plan tracker step 10 (equipment master with the history card), the flowchart's equipment module (equipment master, calibration schedule, maintenance plan) and decision of 10 October 2026 (an Equipment item behind each asset); ISO 13485 6.3, 7.5.1, 7.6; 21 CFR 820.70(g), 820.72; 21 CFR 11.50, 11.70; calibration and maintenance due dates and their blocking are module 38, qualification records module 40; decided 2026-10-11 under the client's instruction to follow the DFD"
+status = "implemented"
+
+[[requirement]]
+id = "URS-MST-011"
+module = 62
+title = "Each piece of equipment has a history card that lists, by date, its approval and every change to its record, its movements, its maintenance and calibration logs, its repairs with their downtime, and the inspections that used it as their instrument, with the number of repairs and the total downtime over the period shown."
+source = "DFD 9D Equipment Management (D2 history card, D5 performance tracking); master plan module 62 (equipment history card and performance tracking, beyond module 38); ISO 13485 6.3, 7.6 (records of maintenance and calibration); decided 2026-10-11"
+status = "implemented"
+
+[[requirement]]
 id = "URS-PLT-010"
 module = 0
 title = "The pilot's standard flow performs the certificate check, incoming inspection and signed release of every received lot, and the signed release of the finished lot, by the QC Inspector and QA Manager demo users, in place of the stand-in transfer to the approved store, in both the server and the browser journey."

@@ -328,8 +328,10 @@ SIDEBAR_ADDITIONS: dict[str, tuple[tuple[str, str, str], ...]] = {
 		("Lot Release", "DocType", "Lot Release"),
 		("Lots Awaiting Release", "Report", "Lots Awaiting Release"),
 		("Supplier Approval", "DocType", "Supplier Approval"),  # approved suppliers (module 4)
+		("Equipment History Card", "Report", "Equipment History Card"),  # module 62
 	),
 	"Buying": (("Supplier Approval", "DocType", "Supplier Approval"),),
+	"Assets": (("Equipment History Card", "Report", "Equipment History Card"),),  # module 62
 }
 
 

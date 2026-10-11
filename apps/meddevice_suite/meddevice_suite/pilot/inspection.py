@@ -12,7 +12,7 @@ import frappe
 from frappe import _
 from frappe.utils import today
 
-from meddevice_suite.master_data import item_master
+from meddevice_suite.master_data import equipment, item_master
 
 INSTRUMENT_ITEM = "INST-CALIPER"
 INSTRUMENT_NAME = "Digital Caliper (Demo)"
@@ -29,17 +29,33 @@ PARAMETERS: dict[str, tuple[tuple[str, object], ...]] = {
 STAGES = {"Raw Material": "Incoming", "Products": "Final"}
 METHODS = {APPEARANCE: "Visual, under daylight (demo)", DIMENSION: "Digital caliper (demo)"}
 SAMPLE_SIZE = 5  # demo; the client's sampling plans (ISO 2859-1) replace it
+# The instrument's equipment master (module 8), demo values.
+INSTRUMENT_EQUIPMENT = {
+	equipment.TAG: "QC-CAL-001 (demo)",
+	equipment.CLASS: "Measuring instrument",
+	equipment.MAKER: "Demo Instruments",
+	equipment.MODEL: "DC-150 (demo)",
+	equipment.SERIAL: "DEMO-0001",
+	equipment.QUALITY_IMPACT: 1,
+	equipment.CALIBRATION: 1,
+	equipment.CALIBRATION_DAYS: 365,
+}
 
 
-def ensure_inspection_masters(company: str, approve: Callable[[str], None] | None = None) -> str:
+def ensure_inspection_masters(
+	company: str,
+	approve: Callable[[str], None] | None = None,
+	approve_equipment: Callable[[str], None] | None = None,
+) -> str:
 	"""The parameters and the instrument; returns the instrument's asset name. `approve` is QA's
-	signed approval of the instrument's item (module 1), needed the first time only."""
+	signed approval of the instrument's item (module 1), `approve_equipment` of the instrument
+	itself (module 8), each needed the first time only."""
 	for specification, _acceptance in {p for params in PARAMETERS.values() for p in params}:
 		if not frappe.db.exists("Quality Inspection Parameter", specification):
 			frappe.get_doc({"doctype": "Quality Inspection Parameter", "parameter": specification}).insert(
 				ignore_permissions=True  # demo loader
 			)
-	return ensure_instrument(company, approve)
+	return ensure_instrument(company, approve, approve_equipment)
 
 
 def ensure_inspection_template(item: str, group: str) -> str:
@@ -96,13 +112,18 @@ def approve_instrument_item(approve: Callable[[str], None] | None) -> None:
 	approve(INSTRUMENT_ITEM)
 
 
-def ensure_instrument(company: str, approve: Callable[[str], None] | None = None) -> str:
+def ensure_instrument(
+	company: str,
+	approve: Callable[[str], None] | None = None,
+	approve_equipment: Callable[[str], None] | None = None,
+) -> str:
 	"""One measuring instrument as an ERPNext asset, so a reading can name it. Its item is approved
-	by QA (module 1) before the asset is made of it."""
+	by QA (module 1) before the asset is made of it, and the instrument itself as equipment
+	(module 8) before a reading names it."""
 	existing = frappe.db.get_value("Asset", {"asset_name": INSTRUMENT_NAME, "company": company})
 	if existing:  # made before the item master: its item is approved now
 		approve_instrument_item(approve)
-		return existing
+		return approved_instrument(existing, approve_equipment)
 	if not frappe.db.exists("Asset Category", ASSET_CATEGORY):
 		account = lambda account_type: frappe.db.get_value(  # noqa: E731
 			"Account", {"company": company, "account_type": account_type, "is_group": 0}, "name"
@@ -153,9 +174,31 @@ def ensure_instrument(company: str, approve: Callable[[str], None] | None = None
 			"net_purchase_amount": 15000,
 			"asset_quantity": 1,
 			"calculate_depreciation": 0,
+			**INSTRUMENT_EQUIPMENT,
 		}
 	).insert(ignore_permissions=True)  # demo loader
-	return asset.name
+	return approved_instrument(asset.name, approve_equipment)
+
+
+def approved_instrument(asset: str, approve_equipment: Callable[[str], None] | None) -> str:
+	"""The instrument with its equipment details, approved as equipment by QA (module 8)."""
+	if equipment.approved(asset):
+		return asset
+	doc = frappe.get_doc("Asset", asset)
+	missing = {field: value for field, value in INSTRUMENT_EQUIPMENT.items() if not doc.get(field)}
+	if missing or not doc.get("location"):
+		values = {**missing, "location": doc.location or LOCATION}
+		if doc.docstatus == 1:
+			# A demo instrument submitted before the equipment master: its details are filled in
+			# once, as data the module did not have yet (pilot and test sites only).
+			frappe.db.set_value("Asset", asset, values)
+		else:
+			doc.update(values)
+			doc.save(ignore_permissions=True)  # demo loader, while the instrument is in draft
+	if approve_equipment is None:
+		frappe.throw(_("QA approves {0} before a reading names it.").format(asset))
+	approve_equipment(asset)
+	return asset
 
 
 def readings_for(template: str, instrument: str, within_limits: bool = True) -> list[dict]:
