@@ -579,6 +579,21 @@ class TestOnlyAnApprovedLotLeaves(LotTestCase):
 		self.assertIn("goes to the Quarantine store until QA releases it", str(refused.exception))
 		work_order().insert()
 
+		# Production Plan and Subcontracting Inward Order make their work orders with validation
+		# skipped; the stores are checked on those too, not only when the order is submitted.
+		def unvalidated(**warehouses) -> Document:
+			order = work_order(**warehouses)
+			order.flags.ignore_validate = order.flags.ignore_mandatory = True
+			return order
+
+		with self.assertRaisesRegex(frappe.ValidationError, "draws materials from an approved store"):
+			unvalidated(wip_warehouse=store(stores.QUARANTINE)).insert()
+		with self.assertRaisesRegex(
+			frappe.ValidationError, "goes to the Quarantine store until QA releases it"
+		):
+			unvalidated(fg_warehouse=store("Finished Goods")).insert()
+		unvalidated().insert()
+
 	def test_goods_are_received_into_the_quarantine_store_whatever_store_was_named(self):
 		receipt = purchase_receive(RAW, 1, warehouse=store("Stores"))
 
