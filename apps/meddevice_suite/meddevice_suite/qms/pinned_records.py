@@ -105,32 +105,42 @@ def clean(names: Iterable[str | None]) -> list[str]:
 	return sorted({name for name in names if name})
 
 
-def version_tokens(doctype: str, names: Iterable[str | None]) -> dict[str, str]:
-	"""The version in force of each existing record, in one query."""
+# The columns each record type's version is read from; any other type, its version number.
+TOKEN_COLUMNS: dict[str, tuple[str, ...]] = {
+	CONTROLLED_DOCUMENT: ("current_revision",),
+	BOM: ("is_active", "is_default", "docstatus"),
+	RISK_REPORT: ("status", "docstatus"),
+}
+
+
+def version_tokens(doctype: str, names: Iterable[str | None], lock: bool = False) -> dict[str, str]:
+	"""The version in force of each existing record, in one query; `lock` reads them with row
+	locks held to the end of the transaction, so that none of them changes while what is read is
+	being approved (a device master record's approval, module 31)."""
 	require_pinnable(doctype)
 	names = clean(names)
 	if not names:
 		return {}
+	table = frappe.qb.DocType(doctype)
+	columns = TOKEN_COLUMNS.get(doctype, (VERSION,))
+	query = (
+		frappe.qb.from_(table)
+		.select(table.name, *(table[column] for column in columns))
+		.where(table.name.isin(names))
+	)
+	if lock:
+		query = query.for_update()
+	rows = query.run(as_dict=True)
 	if doctype == CONTROLLED_DOCUMENT:
-		rows = frappe.get_all(doctype, filters={"name": ["in", names]}, fields=["name", "current_revision"])
 		return {row.name: row.current_revision or "" for row in rows}
 	if doctype == BOM:
-		rows = frappe.get_all(
-			doctype,
-			filters={"name": ["in", names]},
-			fields=["name", "is_active", "is_default", "docstatus"],
-		)
 		return {
 			row.name: f"{row.name}|{cint(row.is_active)}|{cint(row.is_default)}|{cint(row.docstatus)}"
 			for row in rows
 		}
 	if doctype == RISK_REPORT:
 		# An approved report never changes; what moves on is whether it is still approved.
-		rows = frappe.get_all(
-			doctype, filters={"name": ["in", names]}, fields=["name", "status", "docstatus"]
-		)
 		return {row.name: f"{row.name}|{row.status}|{cint(row.docstatus)}" for row in rows}
-	rows = frappe.get_all(doctype, filters={"name": ["in", names]}, fields=["name", VERSION])
 	return {row.name: str(cint(row.get(VERSION))) for row in rows}
 
 

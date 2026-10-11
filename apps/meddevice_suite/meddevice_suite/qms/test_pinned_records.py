@@ -19,6 +19,8 @@ class TestPinnedRecords(DeviceMasterRecordTestCase):
 			self.assertEqual(pinned_records.version_token(doctype, name), token)
 			self.assertEqual(pinned_records.in_force(doctype, name), in_force)
 			self.assertEqual(pinned_records.version_tokens(doctype, [name, None, name]), {name: token})
+			# Read with row locks (a device master record's approval), the same version.
+			self.assertEqual(pinned_records.version_tokens(doctype, [name], lock=True), {name: token})
 			self.assertEqual(pinned_records.in_force_names(doctype, [name]), {name} if in_force else set())
 
 	def version(self, doctype: str, name: str) -> str:

@@ -67,15 +67,24 @@ function show_status(frm) {
 	if (status === "Out of Date") {
 		const changed = (frm.doc.elements || [])
 			.filter((row) => row.stale)
-			.map((row) =>
-				frappe.utils.escape_html(
+			.map(
+				(row) =>
 					`${__(row.reference_doctype)} ${row.reference_name}: ${row.change_note || ""}`
-				)
-			);
+			)
+			.concat((frm.doc.other_changes || "").split("\n").filter((line) => line.trim()))
+			.map((line) => frappe.utils.escape_html(line));
+		// The item's open work orders, for QA to decide on (the server lists them on load).
+		const orders = (frm.doc.__onload?.open_work_orders || []).map((name) =>
+			frappe.utils.escape_html(name)
+		);
 		frm.dashboard.set_headline_alert(
 			__(
-				"Out of date since {0}; not for use until QA approves a new revision. Changed: {1}",
-				[frappe.datetime.str_to_user(frm.doc.out_of_date_since), changed.join("; ")]
+				"Out of date since {0}; not for use until QA approves a new revision. Changed: {1}. Open work orders: {2}",
+				[
+					frappe.datetime.str_to_user(frm.doc.out_of_date_since),
+					changed.join("; "),
+					orders.length ? orders.join(", ") : __("none"),
+				]
 			),
 			"red"
 		);

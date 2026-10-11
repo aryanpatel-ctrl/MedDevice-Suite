@@ -4,7 +4,9 @@ A finished good is put into production only on its Current device master record 
 each demo product gets one, made as the system makes it: the Production Supervisor drafts it with
 its headings and its Packaging and Labelling document and signs it as its author; the QA Manager,
 another person, approves it with a signature. The labelling document is issued through document
-control and the product's in-process specification registered (module 6), if missing.
+control and the product's in-process specification registered (module 6), if missing. The record
+pins the risk management report in force of the product's family (plan D-23), which the caller
+puts in force first (pilot/risk.py).
 
 A product whose Current record still matches the live records is left as it is; one without a
 record, or whose record has gone out of date, gets the next revision. A revision left part-way by
@@ -32,7 +34,7 @@ HEADING_TEXT = {
 	dmr.PRODUCT_SPECIFICATIONS: "Materials and components as in the bill of materials; dimensions and performance as in the final specification (demo).",
 	dmr.MANUFACTURE: "Made on the routing below, each operation to its work instruction; packed, stored below 30 °C and dispatched as the labelling and storage condition state (demo).",
 	dmr.MEASURING: "In-process and final inspection against the specifications below, on the sampling plans they state (demo).",
-	dmr.RISK: "Risks managed under ISO 14971; the product family's risk management report is named below once approved (demo).",
+	dmr.RISK: "Risks managed under ISO 14971; the product family's risk management report in force is named below (demo).",
 }
 NOT_APPLICABLE = {
 	dmr.INSTALLATION: "Not applicable: a sterile single-use device, neither installed nor serviced (demo).",

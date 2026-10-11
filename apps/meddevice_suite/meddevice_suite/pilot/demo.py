@@ -15,6 +15,10 @@ Loads the masters the pilot walk-through needs, for the site's default company:
   "pilot_user_password", never from the code;
 - every item approved by the QA Manager's demo user with a signature (module 1), with a
   fictional GTIN in the GS1 range for restricted circulation (20…), never a real one;
+- a risk management file per product family (plan D-13: Foley catheters, urine collection bags)
+  with its approved risk assessment and its risk management report in force (module 39), which
+  each product's device master record pins (plan D-23); a second QA demo user approves what the
+  QA Manager wrote;
 - each product's device master record, drafted and signed by the Production Supervisor and
   approved by the QA Manager (module 31), so that it can be put into production.
 
@@ -69,6 +73,8 @@ RAW_MATERIALS: dict[str, tuple[str, str, str, int, str, float]] = {
 }
 
 CATHETER_LINE, URINE_BAG_LINE = "Foley Catheter Line", "Urine Bag Line"
+# Plan D-13: one risk management file per product family, each line making one family.
+RISK_FAMILIES = {CATHETER_LINE: f"Foley catheter {DEMO}", URINE_BAG_LINE: f"Urine collection bag {DEMO}"}
 
 # code -> (name, HSN, selling rate, production line, materials per BOM batch of 100 pieces)
 PRODUCTS: dict[str, tuple[str, str, float, str, dict[str, float]]] = {
@@ -258,10 +264,41 @@ def load_demo_data() -> None:
 	approve_bom = approve_as("QA Manager", password, "BOM")
 	for code, (_name, _hsn, _rate, line, materials) in PRODUCTS.items():
 		ensure_bom(code, line, materials, company, approve_bom)
+	from meddevice_suite.pilot.risk import ensure_risk_reports
+
+	# Module 39 (plan D-23): each product is in its family's risk management file, whose report is
+	# in force before the product's device master record is approved.
+	ensure_second_qa(password)
+	ensure_risk_reports(risk_families(), as_job, demo_user_email, password)
 	from meddevice_suite.pilot.device_master import ensure_device_master_records
 
 	# Module 31: each product's device master record is Current before it is put into production.
 	ensure_device_master_records(list(PRODUCTS), as_job, demo_user_email, password)
+
+
+def risk_families() -> dict[str, list[str]]:
+	"""Each product family's risk management file name, with its products."""
+	families: dict[str, list[str]] = {}
+	for code, (_name, _hsn, _rate, line, _materials) in PRODUCTS.items():
+		families.setdefault(RISK_FAMILIES[line], []).append(code)
+	return families
+
+
+def ensure_second_qa(password: str) -> None:
+	"""A second demo user with the QA Manager's job: QA does not approve the risk assessment or the
+	risk management report it wrote (module 39)."""
+	from meddevice_suite.pilot.risk import SECOND_QA
+
+	ensure(
+		"User",
+		demo_user_email(SECOND_QA),
+		email=demo_user_email(SECOND_QA),
+		first_name=SECOND_QA,
+		last_name=DEMO,
+		send_welcome_email=0,
+		new_password=password,
+		role_profiles=[{"role_profile": "QA Manager"}],
+	)
 
 
 def ensure(doctype: str, existing: str, **values) -> None:

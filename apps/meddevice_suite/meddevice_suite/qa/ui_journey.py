@@ -6,8 +6,9 @@ The browser walks the standard flow through the real screens, signed in as each 
 qa/site_setup.py but none of the pilot's demo data, and the pilot's loader never runs
 there; these helpers make what the journey needs instead, every record named "UIJ": a
 product and its raw materials, batch-tracked with a shelf life, a supplier, a customer, the
-quarantine store, a short routing with its workstations, the product's default BOM and its
-device master record (module 31), drafted by the Production Supervisor and approved by QA. Each
+quarantine store, a short routing with its workstations, the product's default BOM, its risk
+management file with its report in force (module 39, plan D-23) and its device master record
+(module 31), drafted by the Production Supervisor and approved by QA. Each
 item is approved by the run's QA Manager user with a signature (module 1), with the password
 the browser was given for the run. The site's defaults (company, price lists, stores) are left
 as they are.
@@ -65,6 +66,9 @@ RAW_MATERIALS: dict[str, tuple[str, str, str, int, float, float]] = {
 }
 ROUTING = "UIJ Catheter Line"
 LABELLING_TITLE = "UIJ labelling and instructions for use"
+# Plan D-23: each product is in a risk management file whose report is in force (module 39).
+PRODUCT_FAMILY = "UIJ Foley catheter (browser test)"
+RISK_TAG = "browser test"
 # (operation, workstation, minutes per batch of 100), in process order
 OPERATIONS = (
 	("UIJ Moulding", "UIJ Moulding Station", 20),
@@ -253,7 +257,18 @@ def ensure_masters(
 	)
 	if password:  # module 31: the product's device master record, Current before production
 		from meddevice_suite.pilot.device_master import ensure_device_master_record
+		from meddevice_suite.pilot.risk import ensure_risk_report
 
+		# Module 39 (plan D-23): the report in force of the product's file, which the record pins.
+		ensure_second_qa(password)
+		ensure_risk_report(
+			PRODUCT_FAMILY,
+			[PRODUCT],
+			lambda profile: acting_as(email_for(profile)),
+			email_for,
+			password,
+			RISK_TAG,
+		)
 		ensure_device_master_record(
 			PRODUCT,
 			lambda profile: acting_as(email_for(profile)),
@@ -362,17 +377,6 @@ def prepare_training(password: str) -> dict:
 	return {"record": name}
 
 
-# The browser's policy (module 39): severity counts double, so the matrix is not symmetric and a
-# swapped axis shows; D-13's scales, with the regions a test site needs.
-def browser_acceptability(severity: int, probability: int) -> str:
-	from meddevice_suite.qms import risk_management
-
-	weight = 2 * severity + probability
-	if weight >= 12:
-		return risk_management.UNACCEPTABLE
-	return risk_management.ALARP if weight >= 8 else risk_management.ACCEPTABLE
-
-
 @frappe.whitelist(methods=["POST"])
 def prepare_risk_management(password: str) -> dict:
 	"""A risk management file with a draft risk assessment, for the browser to sign on the forms
@@ -382,6 +386,7 @@ def prepare_risk_management(password: str) -> dict:
 	Returns {"file", "assessment", "author", "sop"}."""
 	from meddevice_suite.master_data.item_master import FINISHED_GOOD, ITEM_TYPE
 	from meddevice_suite.pilot.documents import ensure_work_instruction
+	from meddevice_suite.pilot.risk import ensure_policy
 	from meddevice_suite.qms import risk_management
 
 	ensure_test_site()
@@ -389,23 +394,9 @@ def prepare_risk_management(password: str) -> dict:
 		frappe.throw(_("The browser journey is prepared only by the Administrator."), frappe.PermissionError)
 	act_as = lambda profile: acting_as(email_for(profile))  # noqa: E731
 	author = ensure_second_qa(password)
-	if not risk_management.current_policy():
-		with acting_as(email_for("QA Manager")):
-			policy = frappe.get_doc(
-				{
-					"doctype": risk_management.POLICY,
-					"title": "Risk acceptability policy (browser test)",
-					"policy_statement": "ISO 14971 Annex C and the state of the art (browser test).",
-				}
-			).insert()
-			for cell in policy.matrix:
-				cell.acceptability = browser_acceptability(cell.severity, cell.probability)
-			policy.save()
-			risk_management.review_policy(policy, password=password, reason="Scales and matrix checked")
-		with acting_as(email_for("Management")):
-			risk_management.approve_policy(
-				frappe.get_doc(risk_management.POLICY, policy.name), password=password, reason="Approved"
-			)
+	# QA reviews the policy and Management approves it, when none is in force (pilot/risk.py): severity
+	# counts double, so the matrix is not symmetric and a swapped axis shows.
+	ensure_policy(act_as, password, RISK_TAG)
 	suffix = frappe.generate_hash(length=6)
 	plan = ensure_work_instruction("Risk management plan (browser test)", act_as, email_for, password, "SOP")
 	sop = ensure_work_instruction(
@@ -481,8 +472,11 @@ def prepare_risk_management(password: str) -> dict:
 
 def ensure_second_qa(password: str) -> str:
 	"""A second QA user with the run's password: a risk assessment is authored, reviewed and approved
-	by three people, and only QA authors one (module 39)."""
-	email = f"second.qa@{email_for('QA Manager').split('@', 1)[1]}"
+	by three people, and only QA authors one (module 39). Acted as the job pilot/risk.py names
+	`SECOND_QA`, whose address it is."""
+	from meddevice_suite.pilot.risk import SECOND_QA
+
+	email = email_for(SECOND_QA)
 	user = (
 		frappe.get_doc("User", email)
 		if frappe.db.exists("User", email)
@@ -507,9 +501,11 @@ def ensure_second_qa(password: str) -> str:
 
 
 # The browser's device master record (module 31): a product of its own on the journey's routing and
-# materials, so that revising its specification leaves the standard flow's product as it is.
+# materials, in a risk management file of its own, so that revising its specification leaves the
+# standard flow's product as it is.
 DMR_PRODUCT = "UIJ-DMR-FC-2W-SIL-14"
 DMR_PRODUCT_DETAILS = ("Foley catheter, 2-way, silicone, 14 Fr (browser test)", "90183910", 95, 1825)
+DMR_PRODUCT_FAMILY = "UIJ Foley catheter, device master record (browser test)"
 
 
 @frappe.whitelist(methods=["POST"])
@@ -517,11 +513,13 @@ def prepare_device_master_record(password: str) -> dict:
 	"""A draft revision of the browser product's device master record, drafted and completed by the
 	Production Supervisor, for the browser to sign as its author and approve as QA (module 31): the
 	product approved with its specifications, its approved default bill of materials on the
-	journey's routing, and an effective Packaging and Labelling document. A revision left in progress
-	by an earlier run is withdrawn by QA first. Returns {"record", "item", "specification"}."""
+	journey's routing, the risk management report in force of its own file (plan D-23), and an
+	effective Packaging and Labelling document. A revision left in progress by an earlier run is
+	withdrawn by QA first. Returns {"record", "item", "specification"}."""
 	from meddevice_suite.pilot.device_master import fill
 	from meddevice_suite.pilot.documents import ensure_work_instruction
 	from meddevice_suite.pilot.inspection import ensure_in_process_specification
+	from meddevice_suite.pilot.risk import ensure_risk_report
 	from meddevice_suite.qms import device_master_record as dmr
 
 	ensure_test_site()
@@ -542,6 +540,7 @@ def prepare_device_master_record(password: str) -> dict:
 	)
 	ensure_in_process_specification(DMR_PRODUCT)
 	act_as = lambda profile: acting_as(email_for(profile))  # noqa: E731
+	ensure_risk_report(DMR_PRODUCT_FAMILY, [DMR_PRODUCT], act_as, email_for, password, RISK_TAG)
 	labelling = ensure_work_instruction(
 		LABELLING_TITLE, act_as, email_for, password, "Packaging and Labelling"
 	)

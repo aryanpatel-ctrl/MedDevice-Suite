@@ -11,6 +11,7 @@ from meddevice_suite.compliance import quality_settings
 from meddevice_suite.compliance.alerts import ALERTS
 from meddevice_suite.compliance.audit_reason import stage_reason
 from meddevice_suite.compliance.esign import MEANINGS, SIGNED_CONTENT, is_unchanged_since, verify_signatures
+from meddevice_suite.compliance.fingerprint import sha256
 from meddevice_suite.compliance.quality_settings import SETTINGS
 from meddevice_suite.compliance.retention import retention_years
 from meddevice_suite.compliance.signing import SIGNING_ACTIONS, sign_action
@@ -28,7 +29,7 @@ from meddevice_suite.qms import risk_management as rm
 from meddevice_suite.qms.test_change_control import approved_change, signer
 from meddevice_suite.qms.test_risk_management import RiskTestCase
 from meddevice_suite.setup.sidebars import SIDEBAR_ADDITIONS
-from meddevice_suite.setup.test_stock import device_master_record_for_test
+from meddevice_suite.setup.test_stock import device_master_record_for_test, risk_report_for_test
 from meddevice_suite.work_management import reminders
 
 REFUSED = (frappe.ValidationError, frappe.PermissionError)  # Frappe or this module, whichever checks first
@@ -71,11 +72,22 @@ class DeviceMasterRecordTestCase(RiskTestCase):
 	) -> None:
 		self.sign_as(self.qa, doctype, name, "Approve", reason)
 
-	def product(self, in_process: bool = True, labelling: str | None = None) -> frappe._dict:
+	def product(
+		self,
+		in_process: bool = True,
+		labelling: str | None = None,
+		risk: bool = True,
+		sub_operation: bool = False,
+		sub_assembly: bool = False,
+	) -> frappe._dict:
 		"""An approved finished good with its final specification, an approved routing of one
 		operation to an effective work instruction, its in-process specification when the operation
-		carries an in-process check, its approved default bill of materials on the routing, and an
-		effective Packaging and Labelling document."""
+		carries an in-process check, its approved default bill of materials on the routing, an
+		effective Packaging and Labelling document and, unless told otherwise, the risk management
+		report in force of a file listing it (plan D-23; recorded as the signed acts leave it, as
+		risk management is tested in qms/test_risk_management.py). `sub_operation`: the operation has
+		a sub-operation with a work instruction of its own; `sub_assembly`: the bill uses a
+		sub-assembly made by its own approved bill."""
 		suffix = frappe.generate_hash(length=6).upper()
 		item = self.approved_item(FINISHED_GOOD)
 		material = self.approved_item()
@@ -84,6 +96,19 @@ class DeviceMasterRecordTestCase(RiskTestCase):
 			{"doctype": "Workstation", "workstation_name": f"MDS DMR WS {suffix}"}
 		).name
 		self.approve_master("Workstation", workstation)
+		step = step_instruction = None
+		if sub_operation:
+			step_instruction = self.effective("Work Instruction")
+			step = self.as_production(
+				{
+					"doctype": "Operation",
+					"name": f"MDS DMR STEP {suffix}",
+					"workstation": workstation,
+					routing.WORK_INSTRUCTION: step_instruction,
+					routing.IN_PROCESS_CHECK: "No",
+				}
+			).name
+			self.approve_master("Operation", step)
 		operation = self.as_production(
 			{
 				"doctype": "Operation",
@@ -91,6 +116,7 @@ class DeviceMasterRecordTestCase(RiskTestCase):
 				"workstation": workstation,
 				routing.WORK_INSTRUCTION: instruction,
 				routing.IN_PROCESS_CHECK: "Yes" if in_process else "No",
+				"sub_operations": [{"operation": step, "time_in_mins": 5}] if step else [],
 			}
 		).name
 		self.approve_master("Operation", operation)
@@ -111,7 +137,25 @@ class DeviceMasterRecordTestCase(RiskTestCase):
 				template(f"MDS DMR IPQC {suffix}", item, stage="In Process").insert().name
 			)
 			frappe.set_user("Administrator")
-		bom = self.bill(item, material, line)
+		component = component_bom = None
+		if sub_assembly:
+			component = self.approved_item(SUB_ASSEMBLY)
+			component_bom = self.component_bill(component, material)
+		bom = self.bill(
+			item,
+			material,
+			line,
+			**(
+				{
+					"items": [
+						{"item_code": material, "qty": 1, "rate": 1},
+						{"item_code": component, "qty": 1, "rate": 1, "bom_no": component_bom},
+					]
+				}
+				if component
+				else {}
+			),
+		)
 		return frappe._dict(
 			item=item,
 			material=material,
@@ -125,7 +169,30 @@ class DeviceMasterRecordTestCase(RiskTestCase):
 			),
 			in_process=in_process_specification,
 			labelling=labelling or self.effective("Packaging and Labelling"),
+			report=risk_report_for_test(item) if risk else None,
+			step=step,
+			step_instruction=step_instruction,
+			component=component,
+			component_bom=component_bom,
 		)
+
+	def component_bill(self, component: str, material: str, **values) -> str:
+		"""A sub-assembly's bill of materials, drafted by Production, approved by QA."""
+		bom = self.as_production(
+			{
+				"doctype": "BOM",
+				"item": component,
+				"company": company(),
+				"quantity": 1,
+				"is_active": 1,
+				"is_default": 1,
+				"rm_cost_as_per": "Valuation Rate",
+				"items": [{"item_code": material, "qty": 1, "rate": 1}],
+				**values,
+			}
+		).name
+		self.sign_as(self.qa, "BOM", bom, "Approve", "Components and quantities checked")
+		return bom
 
 	def bill(self, item: str, material: str, line: str, **values) -> str:
 		"""A bill of materials of the item on the routing, drafted by Production, approved by QA."""
@@ -252,6 +319,7 @@ class TestAssembly(DeviceMasterRecordTestCase):
 			(dmr.FINAL_SPECIFICATION, "Quality Inspection Template", p.final),
 			(dmr.LABELLING_DOCUMENT, "Controlled Document", p.labelling),
 			(dmr.DOCUMENT, "Controlled Document", self.plan_document),  # an SOP the author chose
+			(dmr.RISK_REPORT, rm.REPORT, p.report),  # plan D-23: every finished good has one
 		}
 		self.assertEqual(
 			{(row.element_type, row.reference_doctype, row.reference_name) for row in record.elements},
@@ -273,6 +341,26 @@ class TestAssembly(DeviceMasterRecordTestCase):
 		self.assertEqual([row.heading for row in record.headings], list(dmr.HEADINGS))
 		self.assertEqual((record.status, record.revision, record.author), (dmr.DRAFT, "01", self.supervisor))
 		self.assertEqual(record.name, f"DMR-{p.item}-01")
+
+	def test_sub_operations_and_sub_assembly_bills_are_pinned(self):
+		p = self.product(sub_operation=True, sub_assembly=True)
+		record = self.dmr_draft(p)
+		elements = {(row.element_type, row.reference_doctype, row.reference_name) for row in record.elements}
+		for expected in (
+			(dmr.OPERATION, "Operation", p.step),
+			(dmr.WORK_INSTRUCTION, "Controlled Document", p.step_instruction),
+			(dmr.SUB_ASSEMBLY_BILL, "BOM", p.component_bom),
+		):
+			with self.subTest(element=expected):
+				self.assertIn(expected, elements)
+		self.assertEqual(
+			self.element(record, "BOM", p.component_bom).pinned_version,
+			pinned_records.version_token("BOM", p.component_bom),
+		)
+		# A sub-operation without its work instruction is missing, as an operation is.
+		frappe.db.set_value("Operation", p.step, routing.WORK_INSTRUCTION, None)
+		with self.assertRaisesRegex(frappe.ValidationError, f"the work instruction of operation {p.step}"):
+			self.sign_as(self.supervisor, dmr.DOCTYPE, record.name, "Author")
 
 	def test_typed_version_overwritten(self):
 		p = self.product()
@@ -347,10 +435,14 @@ class TestAssembly(DeviceMasterRecordTestCase):
 			self.dmr_draft(frappe._dict(item=self.approved_item(SUB_ASSEMBLY), labelling=self.plan_document))
 
 	def test_the_risk_management_report_in_force_is_pinned(self):
-		p = self.product()
+		# Plan D-23 (decided 2026-10-12): every finished good is in a file whose report is in force.
+		p = self.product(risk=False)
+		record = self.dmr_draft(p)
+		with self.assertRaisesRegex(frappe.ValidationError, f"a risk management file listing {p.item}"):
+			self.sign_as(self.supervisor, dmr.DOCTYPE, record.name, "Author")
+
 		file = self.risk_file([p.item])
 		assessment = self.approved(file=file)
-		record = self.dmr_draft(p)
 		with self.assertRaisesRegex(frappe.ValidationError, f"risk management report in force of {file}"):
 			self.sign_as(self.supervisor, dmr.DOCTYPE, record.name, "Author")
 
@@ -360,14 +452,44 @@ class TestAssembly(DeviceMasterRecordTestCase):
 		row = self.element(record, rm.REPORT, report)
 		self.assertEqual((row.element_type, row.heading), (dmr.RISK_REPORT, dmr.RISK))
 
-		# The file's next report supersedes this one: the record goes out of date in that transaction.
-		self.approved_report(assessment.name)
+		# The file's next report supersedes this one: the record goes out of date in that transaction,
+		# and says which report is in force now.
+		following = self.approved_report(assessment.name)
+		record.reload()
+		self.assertEqual(record.status, dmr.OUT_OF_DATE)
+		self.assertEqual(self.element(record, rm.REPORT, report).change_note, "no longer in force")
+		self.assertIn(f"{following} in force, not in this record", record.other_changes)
+		self.assertIn(following, frappe.get_doc(dmr.DOCTYPE, dmr.revise(p.item)).summary_of_change)
+
+	@verifies("URS-QMS-029")
+	def test_a_risk_revision_taking_effect_puts_it_out_of_date(self):
+		p = self.product(risk=False)
+		file = self.risk_file([p.item])
+		self.approved_report(self.approved(file=file).name)
+		record = self.current_dmr(p)
+
+		self.approved(self.revise(file))  # risk_management.take_effect: the report no longer reports on it
+		record.reload()
+		self.assertEqual(record.status, dmr.OUT_OF_DATE)
+		row = next(row for row in record.elements if row.element_type == dmr.RISK_REPORT)
+		self.assertEqual((row.stale, row.change_note), (1, "no longer in force"))
+		self.assertIn(f"{file} has no risk management report in force", record.other_changes)
+		self.assertEqual(self.alerts_sent(record.name), 1)
+
+	@verifies("URS-QMS-029")
+	def test_a_record_that_pins_no_report_goes_out_of_date_when_one_is_approved(self):
+		# A record recorded without the report (as one approved before plan D-23 would be): the next
+		# report approved for the item's file puts it out of date.
+		p = self.product()
+		record = self.current_dmr(p)
+		row = next(row for row in record.elements if row.element_type == dmr.RISK_REPORT)
+		frappe.db.delete(dmr.ELEMENT, {"name": row.name})  # past every rule, to stand for that record
+		file = frappe.db.get_value(rm.FILE_ITEM, {"parenttype": rm.FILE, "item": p.item}, "parent")
+
+		self.approved_report(frappe.db.get_value(rm.FILE, file, "current_revision"))
 		self.assertEqual(self.status(record.name), dmr.OUT_OF_DATE)
-		self.assertEqual(
-			frappe.db.get_value(
-				dmr.ELEMENT, {"parent": record.name, "reference_name": report}, "change_note"
-			),
-			"no longer in force",
+		self.assertIn(
+			"in force, not in this record", frappe.db.get_value(dmr.DOCTYPE, record.name, "other_changes")
 		)
 
 	def approved_report(self, assessment: str) -> str:
@@ -405,10 +527,35 @@ class TestAssembly(DeviceMasterRecordTestCase):
 		for years in (0, item_master.longest_lifetime() + 1):
 			with self.subTest(years=years), self.assertRaisesRegex(frappe.ValidationError, "device lifetime"):
 				new_item(FINISHED_GOOD, **{item_master.DEVICE_LIFETIME: years})
+		# No shorter than the shelf life, in years rounded up: 400 days is 2 years.
+		with self.assertRaisesRegex(frappe.ValidationError, "shorter than its shelf life of 2 years"):
+			new_item(FINISHED_GOOD, shelf_life_in_days=400, **{item_master.DEVICE_LIFETIME: 1})
+		new_item(FINISHED_GOOD, shelf_life_in_days=730, **{item_master.DEVICE_LIFETIME: 2})
 		frappe.set_user(self.qa)
 		item.set(item_master.DEVICE_LIFETIME, 6)
 		with self.assertRaisesRegex(frappe.ValidationError, "is in use"):
 			item.save()  # a controlled field: changed only under an approved change request
+
+	def test_an_item_approved_before_the_lifetime_existed_is_unchanged_since_its_signature(self):
+		item = frappe.get_doc("Item", self.approved_item(FINISHED_GOOD))
+		signature = frappe.get_last_doc(
+			"Electronic Signature", filters={"reference_doctype": "Item", "reference_name": item.name}
+		)
+		# What QA's signature bound before plan D-16 added the field: the item's content without it.
+		before_d16 = {
+			field: value
+			for field, value in item_master.signed_content(item).items()
+			if field != item_master.DEVICE_LIFETIME
+		}
+		frappe.db.set_value("Electronic Signature", signature.name, "record_hash", sha256(before_d16))
+		# The column added with D-16 holds the default for every item made before it.
+		frappe.db.set_value(
+			"Item", item.name, item_master.DEVICE_LIFETIME, item_master.DEFAULT_LIFETIME_YEARS
+		)
+		self.assertTrue(is_unchanged_since(frappe.get_doc("Electronic Signature", signature.name)))
+		# Any other lifetime is bound, 0 too: written past the item's rules, it shows as a change.
+		frappe.db.set_value("Item", item.name, item_master.DEVICE_LIFETIME, 0)
+		self.assertFalse(is_unchanged_since(frappe.get_doc("Electronic Signature", signature.name)))
 
 
 # --- URS-QMS-028: signed by its author, approved by QA, supersedes the one before ---------------------
@@ -518,6 +665,10 @@ class TestSignatures(DeviceMasterRecordTestCase):
 	def test_changed_only_by_its_acts_and_never_deleted_or_cancelled(self):
 		p = self.product()
 		record = self.dmr_draft(p)
+		frappe.set_user("Administrator")
+		with self.assertRaisesRegex(frappe.PermissionError, "never deleted"):
+			frappe.delete_doc(dmr.DOCTYPE, record.name)  # not even a draft, by the Administrator
+		self.assertTrue(frappe.db.exists(dmr.DOCTYPE, record.name))
 		frappe.set_user(self.qa)  # not its author
 		doc = frappe.get_doc(dmr.DOCTYPE, record.name)
 		doc.summary_of_change = "Changed by someone else"
@@ -542,6 +693,32 @@ class TestSignatures(DeviceMasterRecordTestCase):
 			frappe.delete_doc(dmr.DOCTYPE, current.name, ignore_permissions=True)
 		self.assertTrue(frappe.db.exists(dmr.DOCTYPE, current.name))
 
+	def test_an_out_of_date_record_is_not_put_back_in_force_by_a_save(self):
+		p = self.product()
+		record = self.current_dmr(p)
+		self.revise_document(p.labelling)
+		stale = next(row.name for row in frappe.get_doc(dmr.DOCTYPE, record.name).elements if row.stale)
+		# Each field is allowed on submit, so the refusal is this module's, not Frappe's.
+		meta = frappe.get_meta(dmr.DOCTYPE)
+		self.assertTrue(all(meta.get_field(f).allow_on_submit for f in ("status", "out_of_date_since")))
+		self.assertTrue(frappe.get_meta(dmr.ELEMENT).get_field("stale").allow_on_submit)
+		for user in (self.qa, "Administrator"):
+			for change in (
+				lambda doc: doc.set("status", dmr.CURRENT),
+				lambda doc: doc.set("out_of_date_since", None),
+				lambda doc: next(row for row in doc.elements if row.name == stale).set("stale", 0),
+			):
+				with self.subTest(user=user, change=change):
+					frappe.set_user(user)
+					doc = frappe.get_doc(dmr.DOCTYPE, record.name)
+					change(doc)
+					with self.assertRaisesRegex(
+						frappe.PermissionError, "changes only through its signed acts"
+					):
+						doc.save()
+		frappe.set_user("Administrator")
+		self.assertEqual(self.status(record.name), dmr.OUT_OF_DATE)
+
 	def test_signature_excludes_status(self):
 		p = self.product()
 		record = self.current_dmr(p)
@@ -549,7 +726,10 @@ class TestSignatures(DeviceMasterRecordTestCase):
 		self.assertNotIn("status", content)
 		self.assertEqual(
 			[row[3:] for row in content["elements"]],
-			[[row.reference_name, row.pinned_version] for row in record.elements],
+			[
+				[row.reference_name, row.pinned_version, row.pinned_revision, row.title, row.changed_under]
+				for row in record.elements
+			],
 		)
 
 		self.revise_document(p.labelling)  # the record goes out of date
@@ -564,12 +744,18 @@ class TestSignatures(DeviceMasterRecordTestCase):
 
 	def test_the_signatures_bind_the_pinned_versions(self):
 		record = self.current_dmr(self.product())
-		row = record.elements[0]
-		frappe.db.set_value(dmr.ELEMENT, row.name, "pinned_version", "tampered")  # past every rule
 		signature = frappe.get_last_doc(
 			"Electronic Signature", filters={"reference_doctype": dmr.DOCTYPE, "reference_name": record.name}
 		)
-		self.assertFalse(is_unchanged_since(signature))
+		row = record.elements[0]
+		# What the printed index shows of each element is bound with its version.
+		for field in ("pinned_version", "pinned_revision", "title", "changed_under"):
+			with self.subTest(field=field):
+				kept = frappe.db.get_value(dmr.ELEMENT, row.name, field)
+				frappe.db.set_value(dmr.ELEMENT, row.name, field, "tampered")  # past every rule
+				self.assertFalse(is_unchanged_since(signature))
+				frappe.db.set_value(dmr.ELEMENT, row.name, field, kept)
+				self.assertTrue(is_unchanged_since(signature))
 
 
 # --- URS-QMS-029: out of date in the same transaction, alerted once, re-approved ----------------------
@@ -680,14 +866,81 @@ class TestOutOfDate(DeviceMasterRecordTestCase):
 		self.revise_document(p.labelling)
 		self.revise_document(p.instruction)  # a second change to a record already out of date
 		pinned_records.sweep()
-		# Called again for it (two changes racing), the process leaves a record out of date as it is.
+		# Called again for it (two changes racing), the process records nothing twice.
 		self.assertFalse(dmr.mark_out_of_date(record.name, dmr.changes_since_approval(record.name)))
 
 		self.assertEqual(self.alerts_sent(record.name), 1)
 		self.assertIn(dmr.OUT_OF_DATE_ALERT, ALERTS)
+		record.reload()
+		# Marked once, and still recording what changed after: both changes are shown.
 		self.assertEqual(
-			sum(r.stale for r in frappe.get_doc(dmr.DOCTYPE, record.name).elements), 1
-		)  # marked once, with what made it out of date
+			{row.reference_name for row in record.elements if row.stale}, {p.labelling, p.instruction}
+		)
+		reasons = frappe.get_all(
+			"Audit Event",
+			filters={"reference_doctype": dmr.DOCTYPE, "reference_name": record.name},
+			pluck="reason",
+		)
+		self.assertTrue(any("a further change recorded" in (reason or "") for reason in reasons))
+		summary = frappe.get_doc(dmr.DOCTYPE, self.next_revision_started(p.item)).summary_of_change
+		for name in (p.labelling, p.instruction):
+			self.assertIn(name, summary)  # the next revision is brought up to date after both
+
+	def next_revision_started(self, item: str) -> str:
+		frappe.set_user(self.supervisor)
+		try:
+			return dmr.revise(item)
+		finally:
+			frappe.set_user("Administrator")
+
+	def test_an_item_version_marks_out_of_date(self):
+		p = self.product()
+		record = self.current_dmr(p)
+		change = approved_change(self.author, self.qa, p.item, "Item", "Product or BOM")
+		item = frappe.get_doc("Item", p.item)  # QA changes it, under the change request
+		item.update({"shelf_life_in_days": 400, CHANGE_REQUEST: change})
+		item.save()
+		frappe.set_user("Administrator")
+
+		self.assertEqual(self.status(record.name), dmr.OUT_OF_DATE)
+		row = self.element(frappe.get_doc(dmr.DOCTYPE, record.name), "Item", p.item)
+		self.assertEqual((row.stale, row.current_changed_under), (1, change))
+
+	def test_a_routing_version_marks_out_of_date(self):
+		p = self.product()
+		record = self.current_dmr(p)
+		change = approved_change(self.supervisor, self.qa, p.routing, "Routing", "Process or Routing")
+		frappe.set_user(self.supervisor)
+		line = frappe.get_doc("Routing", p.routing)
+		line.operations[0].time_in_mins = (line.operations[0].time_in_mins or 0) + 5
+		line.set(CHANGE_REQUEST, change)
+		line.save()
+		frappe.set_user("Administrator")
+
+		self.assertEqual(self.status(record.name), dmr.OUT_OF_DATE)
+		row = self.element(frappe.get_doc(dmr.DOCTYPE, record.name), "Routing", p.routing)
+		self.assertEqual((row.stale, row.current_changed_under), (1, change))
+
+	def test_a_sub_operation_or_a_sub_assembly_bill_changed_marks_out_of_date(self):
+		p = self.product(sub_operation=True, sub_assembly=True)
+		record = self.current_dmr(p)
+		change = self.revise_document(p.step_instruction, "Sub-step clarified")
+		row = self.element(
+			frappe.get_doc(dmr.DOCTYPE, record.name), "Controlled Document", p.step_instruction
+		)
+		self.assertEqual(
+			(self.status(record.name), row.stale, row.current_changed_under), (dmr.OUT_OF_DATE, 1, change)
+		)
+
+		record = self.current_dmr(p, summary_of_change="Sub-step instruction brought in")
+		change = approved_change(self.author, self.qa, p.component_bom, "BOM", "Product or BOM")
+		frappe.set_user("Administrator")
+		self.component_bill(p.component, p.material, **{CHANGE_REQUEST: change})  # its new default
+		self.assertEqual(self.status(record.name), dmr.OUT_OF_DATE)
+		self.assertEqual(
+			self.element(frappe.get_doc(dmr.DOCTYPE, record.name), "BOM", p.component_bom).change_note,
+			"no longer in force",
+		)
 
 	def test_a_reminder_stays_open_until_reapproved(self):
 		p = self.product()
@@ -809,12 +1062,135 @@ class TestWorkOrders(DeviceMasterRecordTestCase):
 			with self.subTest(event=event):
 				self.assertIn(guard, events[event])
 
+	@verifies("URS-QMS-029")
+	def test_the_order_keeps_the_record_it_was_released_on_and_qa_sees_it_open(self):
+		p = self.product()
+		record = self.current_dmr(p)
+		order = self.work_order(p.item, p.bom)
+		order.set(dmr.RELEASED_ON, record.name)  # sent before submission: set by the system only
+		order.insert()
+		self.assertIsNone(order.get(dmr.RELEASED_ON))
+		order.submit()
+		self.assertEqual(frappe.db.get_value("Work Order", order.name, dmr.RELEASED_ON), record.name)
+		field = frappe.get_meta("Work Order").get_field(dmr.RELEASED_ON)
+		self.assertEqual((field.read_only, field.no_copy, field.options), (1, 1, dmr.DOCTYPE))
+
+		# Out of date: the alert and the record's form list the order still open, for QA to decide on.
+		self.revise_document(p.labelling)
+		self.assertEqual(dmr.open_work_orders(p.item), [order.name])
+		log = frappe.get_last_doc(
+			"Notification Log",
+			filters={"document_type": dmr.DOCTYPE, "document_name": record.name, "for_user": self.qa},
+		)
+		for message in (log.email_content, log.description):
+			self.assertIn(order.name, message or "")
+		frappe.set_user(self.qa)
+		doc = frappe.get_doc(dmr.DOCTYPE, record.name)
+		doc.run_method("onload")
+		self.assertEqual(doc.get_onload().get("open_work_orders"), [order.name])
+		frappe.set_user("Administrator")
+		frappe.db.set_value("Work Order", order.name, "status", "Completed")
+		self.assertEqual(dmr.open_work_orders(p.item), [])
+
+	def test_a_bill_changed_after_reapproval_stops_its_orders(self):
+		p = self.product()
+		self.current_dmr(p)
+		change = approved_change(self.author, self.qa, p.bom, "BOM", "Product or BOM")
+		frappe.set_user("Administrator")
+		bill = self.bill(p.item, p.material, p.routing, **{CHANGE_REQUEST: change})  # the new default
+		self.assertIsNone(dmr.current_record(p.item))
+		second = self.next_revision(p.item)
+		self.sign_as(self.supervisor, dmr.DOCTYPE, second.name, "Author")
+		self.sign_as(self.qa, dmr.DOCTYPE, second.name, "Approve")  # re-approved on the new bill
+		dmr.require_current_record(self.work_order(p.item, bill))
+		with self.assertRaisesRegex(frappe.ValidationError, "does not name bill of materials"):
+			self.work_order(p.item, p.bom).insert().submit()  # the bill replaced
+
+		change = approved_change(self.author, self.qa, bill, "BOM", "Product or BOM")
+		frappe.set_user("Administrator")
+		doc = frappe.get_doc("BOM", bill)
+		doc.update({"is_active": 0, "is_default": 0, CHANGE_REQUEST: change})
+		stage_reason("BOM", bill, "update_after_submit", "Product line closed")
+		doc.save()  # the bill re-approved on is switched off
+		with self.assertRaisesRegex(frappe.ValidationError, "no Current device master record"):
+			dmr.require_current_record(self.work_order(p.item, bill))
+
+	def making_entry(self, item: str, purpose: str = "Manufacture", **values) -> Document:
+		"""A stock entry that makes `item` from the product's material, as built before it is posted."""
+		return frappe.get_doc(
+			{
+				"doctype": "Stock Entry",
+				"stock_entry_type": purpose,
+				"company": company(),
+				"items": [
+					{
+						"item_code": values.pop("material", None) or item,
+						"qty": 1,
+						"s_warehouse": store("Stores"),
+					},
+					{"item_code": item, "qty": 1, "t_warehouse": store("Quarantine"), "is_finished_item": 1},
+				],
+				**values,
+			}
+		)
+
+	def test_a_finished_good_is_made_only_on_its_released_work_order(self):
+		p = self.product()
+		material = p.material
+		for purpose in ("Manufacture", "Repack"):
+			with (
+				self.subTest(purpose=purpose),
+				self.assertRaisesRegex(
+					frappe.ValidationError,
+					"made only on a work order released on its Current device master record",
+				),
+			):
+				dmr.guard_stock_entry(self.making_entry(p.item, purpose, material=material), "before_submit")
+		# Not a making entry, or not a finished good made: not held to it.
+		dmr.guard_stock_entry(
+			self.making_entry(p.item, "Material Receipt", material=material), "before_submit"
+		)
+		dmr.guard_stock_entry(self.making_entry(material, material=material), "before_submit")
+		# Saved as a draft, it is checked when it is submitted.
+		dmr.guard_stock_entry(self.making_entry(p.item, material=material), "before_validate")
+
+		record = self.current_dmr(p)
+		order = self.work_order(p.item, p.bom).insert()
+		dmr.guard_stock_entry(
+			self.making_entry(p.item, material=material, work_order=order.name), "before_submit"
+		)
+		other = self.product()
+		with self.assertRaisesRegex(frappe.ValidationError, "made only on a work order of its own"):
+			dmr.guard_stock_entry(
+				self.making_entry(other.item, material=material, work_order=order.name), "before_submit"
+			)
+		self.revise_document(p.labelling)  # the record goes out of date: the order makes no more
+		self.assertEqual(self.status(record.name), dmr.OUT_OF_DATE)
+		with self.assertRaisesRegex(frappe.ValidationError, "no Current device master record"):
+			dmr.guard_stock_entry(
+				self.making_entry(p.item, material=material, work_order=order.name), "before_submit"
+			)
+
+	def test_the_making_guard_runs_on_every_submit(self):
+		events = frappe.get_hooks("doc_events")["Stock Entry"]
+		guard = "meddevice_suite.qms.device_master_record.guard_stock_entry"
+		for event in ("before_validate", "before_submit"):
+			with self.subTest(event=event):
+				self.assertIn(guard, events[event])
+
 	def test_the_fixture_for_other_modules_records_it_as_approval_leaves_it(self):
 		p = self.product()
 		name = device_master_record_for_test(p.item)
 		self.assertEqual(dmr.current_record(p.item), name)
 		self.assertEqual(device_master_record_for_test(p.item), name)  # made once
-		dmr.require_current_record(self.work_order(p.item, p.bom))
+		self.assertEqual(dmr.require_current_record(self.work_order(p.item, p.bom)), name)
+		# Plan D-23: it pins the report in force of the item's file, as the risk fixture leaves it.
+		self.assertEqual(risk_report_for_test(p.item), p.report)
+		self.assertIn(
+			(dmr.RISK_REPORT, p.report),
+			[(row.element_type, row.reference_name) for row in frappe.get_doc(dmr.DOCTYPE, name).elements],
+		)
+		self.assertTrue(pinned_records.in_force(rm.REPORT, p.report))
 
 
 # --- Permissions and registration ------------------------------------------------------------------

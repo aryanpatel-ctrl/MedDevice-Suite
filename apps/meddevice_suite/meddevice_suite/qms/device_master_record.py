@@ -17,35 +17,45 @@ It is issued in revisions, as documents are (module 30):
 	                    any revision not yet replaced may be ✍Withdrawn (the product is discontinued)
 
 - the revision names its elements, each pinned at the version in force when it is assembled
-  (`assemble`): the item itself, its default bill of materials, the bill's routing, each operation
-  and its work instruction, the item's final specification and its in-process specification
-  (needed when an operation of the routing carries an in-process check, module 3), the risk
-  management report in force of the item's risk management file when the item is in one (module
-  39), and the effective controlled documents the author chooses, at least one of them a Packaging
-  and Labelling document. Nobody types a version: every save of a draft fills the pins afresh;
+  (`assemble`): the item itself, its default bill of materials and, one level down, the bills of
+  its sub-assemblies, the bill's routing, each operation and each of its sub-operations with its
+  work instruction, the item's final specification and its in-process specification (needed when
+  an operation of the routing carries an in-process check, module 3), the risk management report
+  in force of the item's risk management file (module 39; every finished good is in one, plan
+  D-23, decided 2026-10-12), and the effective controlled documents the author chooses, at least
+  one of them a Packaging and Labelling document. Nobody types a version: every save of a draft
+  fills the pins afresh;
 - the author (QA or the Production Supervisor) signs it Authored; QA, another person, approves it.
-  Approval assembles it again and is refused if anything is missing, no longer in force, or has
-  moved on since the author signed, if the item is not approved, or if another revision of the
-  item is in progress. The approved revision is Current and the one before it Superseded, in the
-  same transaction; nothing is deleted or cancelled;
+  Approval assembles it again, reading the pinned records with row locks, and is refused if
+  anything is missing, no longer in force, or has moved on since the author signed, if the item is
+  not approved, or if another revision of the item is in progress. The approved revision is
+  Current and the one before it Superseded, in the same transaction; nothing is deleted or
+  cancelled;
 - a new version of a pinned record, its withdrawal, deactivation or replacement as the default
   makes the Current revision Out of Date in the transaction that changes it (qms/pinned_records.py;
-  a daily sweep catches changes written past the hooks): each changed element shows its version
-  now and the change request it was made under. QA is alerted once, and a "DMR Re-approval"
-  reminder stays open until a new revision is approved. Going out of date is a documented system
-  process: the signatures bind what was approved, not the status, so they stay intact;
+  a daily sweep catches changes written past the hooks), and so does a risk management report put
+  in force for the item's file that the revision does not pin (`risk_files_changed`): each changed
+  element shows its version now and the change request it was made under. QA is alerted once, with
+  the item's open work orders to decide on, and a "DMR Re-approval" reminder stays open until a
+  new revision is approved. A revision out of date already keeps recording what changes after it,
+  without a second alert. Going out of date is a documented system process: the signatures bind
+  what was approved, not the status, so they stay intact;
 - only a Current revision prints as the controlled index with its signatures; any other prints
   marked "not for use";
 - a work order for a finished good is submitted only when the item's device master record is
   Current, still matches the live records and pins the bill of materials the order uses (plan Q8,
-  accepted 2026-10-11).
+  accepted 2026-10-11); the order keeps the record that released it. A finished good is made (a
+  Manufacture or Repack stock entry) only on such a work order, while its record is still Current.
 
 The signed acts are registered in `compliance.signing.SIGNING_ACTIONS`; what a signature binds is
 `signed_content` (`compliance.esign.SIGNED_CONTENT`).
 """
 
+from collections.abc import Iterable
+
 import frappe
 from frappe import _
+from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 from frappe.model.document import Document
 from frappe.query_builder import Criterion
 from frappe.utils import add_days, cint, getdate, now_datetime
@@ -87,9 +97,10 @@ RISK = "Risk Management"
 HEADINGS = (GENERAL, LABELLING, PRODUCT_SPECIFICATIONS, MANUFACTURE, MEASURING, INSTALLATION, RISK)
 
 # The kinds of element, each filed under its heading.
-DEVICE, BILL, ROUTE, OPERATION, WORK_INSTRUCTION = (
+DEVICE, BILL, SUB_ASSEMBLY_BILL, ROUTE, OPERATION, WORK_INSTRUCTION = (
 	"Device",
 	"Bill of Materials",
+	"Sub-assembly Bill of Materials",
 	"Routing",
 	"Operation",
 	"Work Instruction",
@@ -99,6 +110,7 @@ LABELLING_DOCUMENT, RISK_REPORT, DOCUMENT = "Packaging and Labelling", "Risk Man
 ELEMENT_TYPES = (
 	DEVICE,
 	BILL,
+	SUB_ASSEMBLY_BILL,
 	ROUTE,
 	OPERATION,
 	WORK_INSTRUCTION,
@@ -133,7 +145,33 @@ SYSTEM_FIELDS = (
 	"supersedes",
 	"superseded_by",
 	"out_of_date_since",
+	"other_changes",
 )
+
+# The record a work order was released on, set when the order is submitted (URS-QMS-031).
+RELEASED_ON = "mds_device_master_record"
+CUSTOM_FIELDS = {
+	"Work Order": [
+		{
+			"fieldname": RELEASED_ON,
+			"label": "Device Master Record",
+			"fieldtype": "Link",
+			"options": DOCTYPE,
+			"insert_after": "bom_no",
+			"read_only": 1,
+			"no_copy": 1,
+			"description": "The Current device master record the order was released on; set by the system when the order is submitted.",
+		}
+	]
+}
+# A submitted work order no longer open for production.
+CLOSED_ORDER_STATUSES = ("Completed", "Stopped", "Closed")
+# Stock entries that make an item (ERPNext's purposes).
+MAKING_PURPOSES = ("Manufacture", "Repack")
+
+
+def apply_device_master_record_fields() -> None:
+	create_custom_fields(CUSTOM_FIELDS, ignore_validate=True)
 
 
 def require(condition: object, message: str, exception: type[Exception] = frappe.ValidationError) -> None:
@@ -338,25 +376,38 @@ def revise(item: str) -> str:
 				for row in earlier.documents
 			],
 		)
-		if changed := [
-			f"{_(row.reference_doctype)} {row.reference_name}: {row.change_note}"
-			for row in earlier.elements
-			if row.stale
-		]:
-			# What made the record out of date, for the author to complete and sign.
+		if changed := changes_to_bring_up_to_date(earlier):
+			# Everything that made the record out of date, for the author to complete and sign.
 			doc.summary_of_change = _("Brought up to date after: {0}").format("; ".join(changed))
 	doc.insert()
 	return doc.name
 
 
+def changes_to_bring_up_to_date(record: Document) -> list[str]:
+	"""Every change since the record was approved: those it has recorded (each changed element,
+	and anything else, such as a risk management report it does not pin) and, for a record not yet
+	replaced, any that the hooks and the daily sweep have not recorded yet."""
+	changed = {
+		(row.reference_doctype, row.reference_name): row.change_note for row in record.elements if row.stale
+	}
+	if record.status in IN_USE:
+		live = changes_since_approval(record.name)
+		for change, (note, _changed_under) in zip(live, notes_of(live), strict=True):
+			changed.setdefault((change.pin.doctype, change.pin.name), note)
+	return [
+		*(f"{_(doctype)} {name}: {note}" for (doctype, name), note in changed.items()),
+		*other_changes_of(record),
+	]
+
+
 # --- Assembling the elements (URS-QMS-026, URS-QMS-027) ------------------------------------------
 
 
-def assemble(doc: Document) -> list[str]:
+def assemble(doc: Document, lock: bool = False) -> list[str]:
 	"""Fill the elements from the live records, each pinned at its version in force, and return
-	what the record still lacks. The bill of materials, routing, operations, work instructions,
+	what the record still lacks. The bills of materials, routing, operations, work instructions,
 	specifications and risk report are found by the system; the author's documents are the ones
-	chosen on the record."""
+	chosen on the record. `lock` reads the versions with row locks (at approval)."""
 	rows: list[dict] = []
 	missing: list[str] = []
 
@@ -377,40 +428,30 @@ def assemble(doc: Document) -> list[str]:
 		missing.append(_("the default bill of materials, approved by QA"))
 	else:
 		add(BILL, "BOM", bill, PRODUCT_SPECIFICATIONS)
+		# One level down: the bills its sub-assemblies are made by, as its lines name them.
+		for sub_assembly_bill in dict.fromkeys(
+			frappe.get_all(
+				"BOM Item",
+				filters={"parent": bill, "parenttype": "BOM", "bom_no": ["is", "set"]},
+				pluck="bom_no",
+				order_by="idx asc",
+			)
+		):
+			add(SUB_ASSEMBLY_BILL, "BOM", sub_assembly_bill, PRODUCT_SPECIFICATIONS)
 		line = frappe.db.get_value("BOM", bill, "routing")
 		if line:
 			add(ROUTE, "Routing", line, MANUFACTURE)
 		else:
 			missing.append(_("the routing of {0}").format(bill))
-		operations = list(
-			dict.fromkeys(
-				frappe.get_all(
-					"BOM Operation",
-					filters={"parent": bill, "parenttype": "BOM"},
-					pluck="operation",
-					order_by="idx asc",
-				)
-			)
+		operations = frappe.get_all(
+			"BOM Operation",
+			filters={"parent": bill, "parenttype": "BOM"},
+			pluck="operation",
+			order_by="idx asc",
 		)
 		if not operations:
 			missing.append(_("the operations of {0}").format(bill))
-		details = {
-			row.name: row
-			for row in frappe.get_all(
-				"Operation",
-				filters={"name": ["in", operations or [""]]},
-				fields=["name", routing.WORK_INSTRUCTION, routing.IN_PROCESS_CHECK],
-			)
-		}
-		for operation in operations:
-			add(OPERATION, "Operation", operation, MANUFACTURE)
-			found = details.get(operation) or {}
-			if instruction := found.get(routing.WORK_INSTRUCTION):
-				add(WORK_INSTRUCTION, CONTROLLED_DOCUMENT, instruction, MANUFACTURE)
-			else:
-				missing.append(_("the work instruction of operation {0}").format(operation))
-			if found.get(routing.IN_PROCESS_CHECK) == "Yes":
-				in_process_checked.append(operation)
+		in_process_checked = add_operations(operations, add, missing)
 	in_process = specification.specification_for(doc.item, specification.IN_PROCESS)
 	if in_process:
 		add(IN_PROCESS_SPECIFICATION, pinned_records.SPECIFICATION, in_process, MEASURING)
@@ -426,8 +467,47 @@ def assemble(doc: Document) -> list[str]:
 		missing.append(_("the final specification of {0}").format(doc.item))
 	missing += add_documents(doc, add)
 	missing += add_risk_report(doc.item, add)
-	replace_rows(doc, "elements", pinned(rows), ("element_type", "reference_doctype", "reference_name"))
+	replace_rows(doc, "elements", pinned(rows, lock), ("element_type", "reference_doctype", "reference_name"))
 	return missing
+
+
+def add_operations(operations: list[str], add, missing: list[str]) -> list[str]:
+	"""Each operation of the bill, followed by its sub-operations (module 3), with the work
+	instruction each is done by; returns those that carry an in-process check."""
+	steps = frappe.get_all(
+		"Sub Operation",
+		filters={"parenttype": "Operation", "parent": ["in", operations or [""]]},
+		fields=["parent", "operation"],
+		order_by="idx asc",
+	)
+	sub_operations: dict[str, list[str]] = {}
+	for step in steps:
+		if step.operation and step.operation != step.parent:
+			sub_operations.setdefault(step.parent, []).append(step.operation)
+	ordered = list(
+		dict.fromkeys(
+			name for operation in operations for name in (operation, *sub_operations.get(operation, ()))
+		)
+	)
+	details = {
+		row.name: row
+		for row in frappe.get_all(
+			"Operation",
+			filters={"name": ["in", ordered or [""]]},
+			fields=["name", routing.WORK_INSTRUCTION, routing.IN_PROCESS_CHECK],
+		)
+	}
+	in_process_checked = []
+	for operation in ordered:
+		add(OPERATION, "Operation", operation, MANUFACTURE)
+		found = details.get(operation) or {}
+		if instruction := found.get(routing.WORK_INSTRUCTION):
+			add(WORK_INSTRUCTION, CONTROLLED_DOCUMENT, instruction, MANUFACTURE)
+		else:
+			missing.append(_("the work instruction of operation {0}").format(operation))
+		if found.get(routing.IN_PROCESS_CHECK) == "Yes":
+			in_process_checked.append(operation)
+	return in_process_checked
 
 
 def replace_rows(doc: Document, table: str, rows: list[dict], key: tuple[str, ...]) -> None:
@@ -467,23 +547,30 @@ def add_documents(doc: Document, add) -> list[str]:
 	return [_("at least one effective Packaging and Labelling document")]
 
 
-def add_risk_report(item: str, add) -> list[str]:
-	"""The report in force of the item's risk management file, when the item is in one (module 39)."""
+def risk_file_of(item: str) -> tuple[str | None, str | None]:
+	"""The risk management file listing the item (one at most, module 39) and its report in force."""
 	file = frappe.db.get_value(
 		"Risk Management File Item", {"parenttype": pinned_records.RISK_FILE, "item": item}, "parent"
 	)
+	return file, (frappe.db.get_value(pinned_records.RISK_FILE, file, "current_report") if file else None)
+
+
+def add_risk_report(item: str, add) -> list[str]:
+	"""Plan D-23 (decided 2026-10-12): every finished good is listed in a risk management file whose
+	risk management report is in force (module 39); that report is pinned."""
+	file, report = risk_file_of(item)
 	if not file:
-		return []
-	report = frappe.db.get_value(pinned_records.RISK_FILE, file, "current_report")
+		return [_("a risk management file listing {0}, with its report in force (plan D-23)").format(item)]
 	if not report:
 		return [_("the risk management report in force of {0}").format(file)]
 	add(RISK_REPORT, pinned_records.RISK_REPORT, report, RISK)
 	return []
 
 
-def pinned(rows: list[dict]) -> list[dict]:
+def pinned(rows: list[dict], lock: bool = False) -> list[dict]:
 	"""Each record once, with the version in force, its label, its title and the change request
-	that version was made under, read from the live records: one query per record type."""
+	that version was made under, read from the live records: one query per record type for the
+	versions (with row locks when `lock`), one for the rest."""
 	first: dict[tuple[str, str], dict] = {}
 	for row in rows:
 		first.setdefault((row["reference_doctype"], row["reference_name"]), row)
@@ -491,7 +578,10 @@ def pinned(rows: list[dict]) -> list[dict]:
 	by_type: dict[str, list[str]] = {}
 	for row in unique:
 		by_type.setdefault(row["reference_doctype"], []).append(row["reference_name"])
-	tokens = {doctype: pinned_records.version_tokens(doctype, names) for doctype, names in by_type.items()}
+	tokens = {
+		doctype: pinned_records.version_tokens(doctype, names, lock=lock)
+		for doctype, names in by_type.items()
+	}
 	about = {doctype: describe(doctype, names) for doctype, names in by_type.items()}
 	for row in unique:
 		known = about[row["reference_doctype"]].get(row["reference_name"]) or {}
@@ -568,10 +658,10 @@ def out_of_force(doc: Document) -> list[str]:
 	]
 
 
-def what_is_lacking(doc: Document) -> list[str]:
+def what_is_lacking(doc: Document, lock: bool = False) -> list[str]:
 	"""What stands in the way of signing: the item approved, every heading written, every required
 	element there and in force (URS-QMS-026, URS-QMS-027)."""
-	lacking = assemble(doc)
+	lacking = assemble(doc, lock)
 	for row in doc.headings or []:
 		if not plain(row.content):
 			lacking.append(
@@ -582,7 +672,7 @@ def what_is_lacking(doc: Document) -> list[str]:
 	return lacking
 
 
-def require_signable(doc: Document) -> None:
+def require_signable(doc: Document, lock: bool = False) -> None:
 	require(
 		item_master.approved(doc.item),
 		_("{0} is not approved by QA; its record is not signed.").format(doc.item),
@@ -592,7 +682,7 @@ def require_signable(doc: Document) -> None:
 	approved_before = frappe.db.exists(DOCTYPE, {"item": doc.item, "docstatus": 1, "name": ["!=", doc.name]})
 	require(not approved_before or plain(doc.summary_of_change), _("Say what changed in this revision."))
 	normalise_headings(doc)
-	lacking = what_is_lacking(doc)
+	lacking = what_is_lacking(doc, lock)
 	require(not lacking, _("{0} cannot be signed yet; it lacks {1}.").format(doc.name, "; ".join(lacking)))
 
 
@@ -620,8 +710,17 @@ def author(doc: Document, password: str, reason: str | None = None) -> None:
 
 
 def pins_of_record(doc: Document) -> list[tuple]:
+	"""Each element as the signatures bind it (`signed_content`)."""
 	return [
-		(row.element_type, row.reference_doctype, row.reference_name, row.pinned_version)
+		(
+			row.element_type,
+			row.reference_doctype,
+			row.reference_name,
+			row.pinned_version,
+			row.pinned_revision,
+			row.title,
+			row.changed_under,
+		)
 		for row in doc.elements or []
 	]
 
@@ -640,7 +739,9 @@ def approve(doc: Document, password: str, reason: str | None = None) -> None:
 	other = revision_in_progress(doc.item, other_than=doc.name)
 	require(not other, _("{0} also has revision {1} in progress.").format(doc.item, other))
 	signed_pins = pins_of_record(doc)
-	require_signable(doc)  # assembles it again from the live records
+	# Assembled again from the live records, read with row locks held until the approval commits:
+	# a change to a pinned record waits for it, and then finds the record Current to mark.
+	require_signable(doc, lock=True)
 	moved = sorted({f"{_(pin[1])} {pin[2]}" for pin in set(pins_of_record(doc)) ^ set(signed_pins)})
 	require(
 		not moved,
@@ -706,8 +807,10 @@ def withdraw(doc: Document, password: str, reason: str | None = None) -> None:
 def signed_content(doc: Document) -> dict:
 	"""What the author's and QA's signatures bind (compliance.esign.SIGNED_CONTENT): the item, the
 	revision, what was written under each heading, and each element with the version it was pinned
-	at; not the status, nor what the system records as the record goes out of date (which elements
-	are stale, their versions now, since when), so the signatures stay intact when it does."""
+	at and what the printed index shows of it (the version as read, its title, the change request
+	it was made under); not the status, nor what the system records as the record goes out of date
+	(which elements are stale, their versions now, since when, other changes), so the signatures
+	stay intact when it does."""
 	return {
 		"item": doc.item,
 		"revision": doc.revision,
@@ -717,7 +820,16 @@ def signed_content(doc: Document) -> dict:
 			[row.heading, cint(row.not_applicable), plain(row.content)] for row in doc.get("headings") or []
 		],
 		"elements": [
-			[row.element_type, row.heading, row.reference_doctype, row.reference_name, row.pinned_version]
+			[
+				row.element_type,
+				row.heading,
+				row.reference_doctype,
+				row.reference_name,
+				row.pinned_version,
+				row.pinned_revision or None,
+				row.title or None,
+				row.changed_under or None,
+			]
 			for row in doc.get("elements") or []
 		],
 	}
@@ -727,8 +839,9 @@ def signed_content(doc: Document) -> dict:
 
 
 def element_pins(targets: dict[str, list[str]] | None) -> list[pinned_records.Pin]:
-	"""Pinned records (qms/pinned_records.py): the elements of every Current record, or those on
-	the target records."""
+	"""Pinned records (qms/pinned_records.py): the elements of every approved record not yet
+	replaced, Current or Out of Date (one out of date already keeps recording what changes after),
+	or those on the target records."""
 	record, element = frappe.qb.DocType(DOCTYPE), frappe.qb.DocType(ELEMENT)
 	query = (
 		frappe.qb.from_(record)
@@ -741,7 +854,7 @@ def element_pins(targets: dict[str, list[str]] | None) -> list[pinned_records.Pi
 			element.pinned_version,
 			element.name,
 		)
-		.where((record.status == CURRENT) & (record.docstatus == 1))
+		.where(record.status.isin(IN_USE) & (record.docstatus == 1))
 	)
 	if targets is not None:
 		if not any(targets.values()):
@@ -763,8 +876,8 @@ def element_pins(targets: dict[str, list[str]] | None) -> list[pinned_records.Pi
 
 
 def elements_changed(changes: list[pinned_records.Change]) -> None:
-	"""Each Current record with a changed element goes out of date once, on its own, so that one
-	record's failure (logged; the daily sweep finds it again) holds back no other."""
+	"""Each record with a changed element records it, on its own, so that one record's failure
+	(logged; the daily sweep finds it again) holds back no other: a Current one goes out of date."""
 	by_record: dict[str, list[pinned_records.Change]] = {}
 	for change in changes:
 		by_record.setdefault(change.pin.owner, []).append(change)
@@ -779,40 +892,80 @@ def elements_changed(changes: list[pinned_records.Change]) -> None:
 			frappe.db.release_savepoint(SAVEPOINT)
 
 
-def mark_out_of_date(name: str, changes: list[pinned_records.Change]) -> bool:
-	"""A documented system process: the Current record is marked Out of Date, each changed element
-	with its version now and the change request it was made under, and QA is alerted once. Saved
-	as an update after submission with the system's reason, so the audit trail records it; returns
-	whether it was marked (a record out of date already is left as it is)."""
-	table = frappe.qb.DocType(DOCTYPE)
-	frappe.qb.from_(table).select(table.name).where(table.name == name).for_update().run()
-	doc = frappe.get_doc(DOCTYPE, name)
-	if doc.docstatus != 1 or doc.status != CURRENT:
-		return False
+def notes_of(changes: list[pinned_records.Change]) -> list[tuple[str, str | None]]:
+	"""For each change, in order: what it is in words (the version now, or no longer in force) and
+	the change request that version was made under; one query per record type."""
 	by_type: dict[str, list[str]] = {}
 	for change in changes:
 		by_type.setdefault(change.pin.doctype, []).append(change.pin.name)
 	now = {doctype: describe(doctype, names) for doctype, names in by_type.items()}
-	rows = {row.name: row for row in doc.elements}
 	notes = []
 	for change in changes:
-		row = rows.get(change.pin.row)
-		if row is None:
-			continue
 		known = now[change.pin.doctype].get(change.pin.name) or {}
 		note = (
 			_("now {0}").format(known.get("label") or change.current)
 			if change.in_force
 			else _("no longer in force")
 		)
+		notes.append((note, known.get("changed_under")))
+	return notes
+
+
+def other_changes_of(doc: Document) -> list[str]:
+	return [line for line in (doc.get("other_changes") or "").splitlines() if line.strip()]
+
+
+def mark_out_of_date(
+	name: str, changes: list[pinned_records.Change], other_changes: list[str] | None = None
+) -> bool:
+	"""A documented system process: each changed element is marked with its version now and the
+	change request it was made under, and anything else that puts the record out of date (a risk
+	management report in force that it does not pin, plan D-23) is written under Other Changes. A
+	Current record goes Out of Date and QA is alerted, once; a record out of date already keeps
+	recording what changes after it, without a second alert. Saved as an update after submission
+	with the system's reason, so the audit trail records it; returns whether anything new was
+	recorded (a change recorded already is left as it is)."""
+	table = frappe.qb.DocType(DOCTYPE)
+	frappe.qb.from_(table).select(table.name).where(table.name == name).for_update().run()
+	doc = frappe.get_doc(DOCTYPE, name)
+	if doc.docstatus != 1 or doc.status not in IN_USE:
+		return False
+	rows = {row.name: row for row in doc.elements}
+	recorded = []
+	for change, (note, changed_under) in zip(changes, notes_of(changes), strict=True):
+		row = rows.get(change.pin.row)
+		if row is None:
+			continue
+		if cint(row.stale) and (row.current_version, row.change_note, row.current_changed_under) == (
+			change.current,
+			note,
+			changed_under,
+		):
+			continue  # recorded already
 		row.stale, row.current_version, row.change_note = 1, change.current, note
-		row.current_changed_under = known.get("changed_under")
-		notes.append(f"{_(row.reference_doctype)} {row.reference_name}: {note}")
-	doc.status, doc.out_of_date_since = OUT_OF_DATE, now_datetime()
+		row.current_changed_under = changed_under
+		recorded.append(f"{_(row.reference_doctype)} {row.reference_name}: {note}")
+	others = other_changes_of(doc)
+	for line in other_changes or []:
+		if line not in others:
+			others.append(line)
+			recorded.append(line)
+	if not recorded:
+		return False
+	doc.other_changes = "\n".join(others) or None
+	goes_out_of_date = doc.status == CURRENT
+	if goes_out_of_date:
+		doc.status, doc.out_of_date_since = OUT_OF_DATE, now_datetime()
 	act(doc)  # a system process, for whoever's change caused it
-	doc.flags.audit_reason = _("Out of date: a pinned record changed ({0})").format("; ".join(notes))[:900]
+	reason = (
+		_("Out of date: a record it depends on changed ({0})")
+		if goes_out_of_date
+		else _("Out of date, a further change recorded ({0})")
+	)
+	doc.flags.audit_reason = reason.format("; ".join(recorded))[:900]
 	doc.save()
-	alert(doc)
+	if goes_out_of_date:
+		alert(doc)
 	return True
 
 
@@ -827,6 +980,37 @@ def alert(doc: Document) -> None:
 		frappe.log_error(title=f"Out-of-date alert for {doc.name} could not be sent")
 	else:
 		frappe.db.release_savepoint(f"{SAVEPOINT}_alert")
+
+
+def risk_files_changed(items: Iterable[str]) -> None:
+	"""Module 39, in the transaction that approves a risk management report or puts a revision of a
+	file in force (which may list items newly, or no longer): each approved record of these items
+	not yet replaced that does not pin the report now in force of the item's file records why, and a
+	Current one goes out of date (plan D-23). The change of a report a record pins reaches it as a
+	pinned record (`pinned_records.records_changed`); this reaches the records that pin none, or not
+	this one. Raised, not logged: no sweep would find it again."""
+	for item in sorted({item for item in items if item}):
+		record = in_use_record(item)
+		if not record:
+			continue
+		file, report = risk_file_of(item)
+		if report and frappe.db.exists(
+			ELEMENT,
+			{
+				"parent": record,
+				"parenttype": DOCTYPE,
+				"reference_doctype": pinned_records.RISK_REPORT,
+				"reference_name": report,
+			},
+		):
+			continue
+		if not file:
+			note = _("{0} is in no risk management file").format(item)
+		elif not report:
+			note = _("{0} has no risk management report in force").format(file)
+		else:
+			note = _("{0}: risk management report {1} in force, not in this record").format(file, report)
+		mark_out_of_date(record, [], [note])
 
 
 def changes_since_approval(name: str) -> list[pinned_records.Change]:
@@ -855,22 +1039,44 @@ def reapprovals_due(days: int) -> list[frappe._dict]:
 	]
 
 
+def open_work_orders(item: str) -> list[str]:
+	"""The item's submitted work orders not yet completed, stopped or closed: what QA decides on when
+	its record goes out of date (the alert and the record's form list them)."""
+	return frappe.get_all(
+		"Work Order",
+		filters={"production_item": item, "docstatus": 1, "status": ["not in", CLOSED_ORDER_STATUSES]},
+		pluck="name",
+		order_by="creation asc",
+	)
+
+
 # --- Production (URS-QMS-031) ------------------------------------------------------------------------
 
 
 def guard_work_order(doc: Document, method: str | None = None) -> None:
 	"""Work Order before_validate when it is being submitted (which also runs when a caller skips
 	validation) and before_submit: a finished good is put into production only on its Current
-	device master record, which pins the bill of materials the order uses (plan Q8)."""
+	device master record, which pins the bill of materials the order uses (plan Q8); the order
+	keeps the record it was released on. Whatever was sent for that field before is discarded."""
 	if method == "before_validate" and doc.get("_action") != "submit":
+		doc.set(RELEASED_ON, None)
 		return
-	require_current_record(doc)
+	doc.set(RELEASED_ON, require_current_record(doc))
 
 
-def require_current_record(doc: Document) -> None:
+def is_finished_good(item: str | None) -> bool:
+	return (
+		bool(item) and frappe.db.get_value("Item", item, item_master.ITEM_TYPE) == item_master.FINISHED_GOOD
+	)
+
+
+def require_current_record(doc: Document | frappe._dict) -> str | None:
+	"""The Current record a work order (or its stored values) is released on: refused unless the
+	finished good's record is Current, names the order's bill of materials as its bill, and still
+	matches the live records. None for an item that is not a finished good."""
 	item = doc.get("production_item")
-	if not item or frappe.db.get_value("Item", item, item_master.ITEM_TYPE) != item_master.FINISHED_GOOD:
-		return
+	if not is_finished_good(item):
+		return None
 	record = current_record(item)
 	require(
 		record,
@@ -884,6 +1090,7 @@ def require_current_record(doc: Document) -> None:
 			{
 				"parent": record,
 				"parenttype": DOCTYPE,
+				"element_type": BILL,
 				"reference_doctype": "BOM",
 				"reference_name": doc.get("bom_no") or "",
 			},
@@ -899,3 +1106,49 @@ def require_current_record(doc: Document) -> None:
 			record, ", ".join(f"{_(c.pin.doctype)} {c.pin.name}" for c in moved)
 		),
 	)
+	return record
+
+
+def guard_stock_entry(doc: Document, method: str | None = None) -> None:
+	"""Stock Entry before_validate when it is being submitted (which also runs when a caller skips
+	validation) and before_submit: a finished good is made only on a work order of it, and only
+	while the order's item still has its Current device master record pinning the order's bill of
+	materials (URS-QMS-031). A Manufacture or Repack entry that makes a finished good (the finished
+	line, or any line into a store) names that work order; one made otherwise is refused."""
+	if method == "before_validate" and doc.get("_action") != "submit":
+		return
+	purpose = doc.get("purpose") or frappe.db.get_value(
+		"Stock Entry Type", doc.get("stock_entry_type"), "purpose"
+	)
+	if purpose not in MAKING_PURPOSES:
+		return
+	made = {
+		row.item_code
+		for row in doc.get("items") or []
+		if row.get("item_code") and (cint(row.get("is_finished_item")) or row.get("t_warehouse"))
+	}
+	finished = sorted(
+		frappe.get_all(
+			"Item",
+			filters={"name": ["in", sorted(made) or [""]], item_master.ITEM_TYPE: item_master.FINISHED_GOOD},
+			pluck="name",
+		)
+	)
+	if not finished:
+		return
+	require(
+		doc.get("work_order"),
+		_(
+			"{0} is a finished good: it is made only on a work order released on its Current device master record."
+		).format(", ".join(finished)),
+	)
+	order = frappe.db.get_value("Work Order", doc.work_order, ["production_item", "bom_no"], as_dict=True)
+	require(order, _("Work order {0} does not exist.").format(doc.work_order))
+	others = [item for item in finished if item != order.production_item]
+	require(
+		not others,
+		_("Work order {0} makes {1}; {2} is made only on a work order of its own.").format(
+			doc.work_order, order.production_item, ", ".join(others)
+		),
+	)
+	require_current_record(order)

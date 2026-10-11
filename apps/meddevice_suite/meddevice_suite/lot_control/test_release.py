@@ -1,4 +1,5 @@
 import frappe
+from erpnext.manufacturing.doctype.work_order.work_order import make_stock_entry as make_production_entry
 from frappe.model.document import Document
 from frappe.tests import IntegrationTestCase
 
@@ -37,6 +38,7 @@ from meddevice_suite.lot_control.test_lot_status import (
 	stock_entry,
 	store,
 )
+from meddevice_suite.master_data.bom import default_bom
 from meddevice_suite.pilot.flow import lot_of
 from meddevice_suite.pilot.inspection import (
 	ensure_inspection_masters,
@@ -46,7 +48,12 @@ from meddevice_suite.pilot.inspection import (
 from meddevice_suite.qa import verifies
 from meddevice_suite.qms.test_document_control import signer
 from meddevice_suite.setup.install import apply_configuration
-from meddevice_suite.setup.test_stock import approve_equipment_for_test, approve_for_test
+from meddevice_suite.setup.test_stock import (
+	approve_equipment_for_test,
+	approve_for_test,
+	device_master_record_for_test,
+	submit_bom_for_test,
+)
 
 ITEM = "MDS-REL-RAW"
 FINISHED_ITEM = "MDS-REL-FINISHED"
@@ -645,33 +652,47 @@ class TestTheQueueAndTheFinishedLot(ReleaseTestCase):
 		set_status(material, APPROVED, "Approved material for the test's production")
 		lot_item(FINISHED_ITEM, "Products")
 		approve_for_test(ITEM, FINISHED_ITEM)  # module 1: production uses approved items only
-		# Made by a manufacture entry, as a work order makes its finished lot.
-		entry = frappe.get_doc(
+		# Made by a manufacture entry on a work order released on the product's Current device master
+		# record (module 31), as the finished lot is made.
+		bom = default_bom(FINISHED_ITEM) or (
+			submit_bom_for_test(
+				frappe.get_doc(
+					{
+						"doctype": "BOM",
+						"item": FINISHED_ITEM,
+						"company": company(),
+						"quantity": 1,
+						"is_active": 1,
+						"is_default": 1,
+						"items": [{"item_code": ITEM, "qty": 1}],
+					}
+				).insert()
+			).name
+		)
+		device_master_record_for_test(FINISHED_ITEM)
+		order = frappe.get_doc(
 			{
-				"doctype": "Stock Entry",
-				"stock_entry_type": "Manufacture",
+				"doctype": "Work Order",
+				"production_item": FINISHED_ITEM,
+				"bom_no": bom,
+				"qty": 1,
 				"company": company(),
-				"fg_completed_qty": 1,
-				"items": [
-					{
-						"item_code": ITEM,
-						"qty": 1,
-						"s_warehouse": store("Stores"),
-						"batch_no": material,
-						"use_serial_batch_fields": 1,
-						"basic_rate": 10,
-					},
-					{
-						"item_code": FINISHED_ITEM,
-						"qty": 1,
-						"t_warehouse": store(stores.QUARANTINE),
-						"is_finished_item": 1,
-					},
-				],
+				"skip_transfer": 1,  # the materials are taken from the approved store as it is made
+				"source_warehouse": store("Stores"),
+				"wip_warehouse": store("Work In Progress"),
+				"fg_warehouse": store(stores.QUARANTINE),
 			}
 		).insert()
+		order.submit()
+		entry = frappe.get_doc(make_production_entry(order.name, "Manufacture", 1))
+		for row in entry.items:
+			if row.item_code == ITEM:
+				row.update({"batch_no": material, "use_serial_batch_fields": 1})
+		entry.insert()
 		entry.submit()
-		lot = lot_of(frappe.get_doc("Stock Entry", entry.name).items[1])
+		lot = lot_of(
+			next(row for row in frappe.get_doc("Stock Entry", entry.name).items if row.is_finished_item)
+		)
 
 		decision = self.decide(lot, "Release", "Final inspection accepted")
 

@@ -1,1 +1,2 @@
 <p>{{ _("Device master record {0} of {1} is out of date since {2}: a record it pins has a new version or is no longer in force. It is not used for production until QA approves a new revision; the changed elements are marked on the record.").format(doc.name, doc.item, frappe.format_value(doc.out_of_date_since, {"fieldtype": "Datetime"})) }}</p>
+<p>{% if open_work_orders %}{{ _("Open work orders of {0}, for QA to decide on: {1}.").format(doc.item, ", ".join(open_work_orders)) }}{% else %}{{ _("{0} has no open work order.").format(doc.item) }}{% endif %}</p>

@@ -23,7 +23,7 @@
    "fieldname": "element_type",
    "fieldtype": "Select",
    "label": "Element",
-   "options": "Device\nBill of Materials\nRouting\nOperation\nWork Instruction\nIn-process Specification\nFinal Specification\nPackaging and Labelling\nRisk Management Report\nDocument",
+   "options": "Device\nBill of Materials\nSub-assembly Bill of Materials\nRouting\nOperation\nWork Instruction\nIn-process Specification\nFinal Specification\nPackaging and Labelling\nRisk Management Report\nDocument",
    "read_only": 1,
    "in_list_view": 1,
    "columns": 2
@@ -123,7 +123,7 @@
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-10-11 22:00:00.000000",
+ "modified": "2026-10-12 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "QMS",
  "name": "Device Master Record Element",

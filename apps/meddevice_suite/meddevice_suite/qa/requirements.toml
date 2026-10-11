@@ -919,8 +919,8 @@ status = "implemented"
 [[requirement]]
 id = "URS-QMS-026"
 module = 31
-title = "Each approved finished good has one device master record in force. Each revision records the ISO 13485 4.2.3 headings (general description and intended use, labelling and instructions for use, product specifications, manufacture with packaging, storage, handling and distribution, measuring and monitoring, installation and servicing, risk management), with the reason for any that does not apply, and pins the item, its default bill of materials, the routing and each operation with its work instruction, the final specification and the in-process specification when an operation carries an in-process check, at least one Packaging and Labelling document, the documents the author chooses, and the risk management report in force when the item is in a risk management file. The device lifetime (5 years unless QA states another) is on the item, under change control, and shown on the record."
-source = "Master plan; flowchart DMR structure; ISO 13485 4.2.3; 21 CFR 820.181; CDSCO MDR 2017 Device Master File; decided 2026-10-11 (plan D-15): the contents, (plan D-16): the device lifetime, (plan Q7): no further mandatory documents"
+title = "Each approved finished good has one device master record in force. Each revision records the ISO 13485 4.2.3 headings (general description and intended use, labelling and instructions for use, product specifications, manufacture with packaging, storage, handling and distribution, measuring and monitoring, installation and servicing, risk management), with the reason for any that does not apply, and pins the item, its default bill of materials and the bills of materials of its sub-assemblies one level down, the routing and each operation and sub-operation with its work instruction, the final specification and the in-process specification when an operation carries an in-process check, at least one Packaging and Labelling document, the documents the author chooses, and the risk management report in force of the risk management file that lists the item: every finished good is listed in one, and the record is not approved without its report in force. The device lifetime (5 years unless QA states another, never shorter than the shelf life) is on the item, under change control, and shown on the record."
+source = "Master plan; flowchart DMR structure; ISO 13485 4.2.3, 7.1; ISO 14971 4.5; 21 CFR 820.181; CDSCO MDR 2017 Device Master File; decided 2026-10-11 (plan D-15): the contents, (plan D-16): the device lifetime, (plan Q7): no further mandatory documents; decided 2026-10-12 (plan D-23): every finished good is in a risk management file whose report is in force before its device master record is approved"
 status = "implemented"
 
 [[requirement]]
@@ -940,8 +940,8 @@ status = "implemented"
 [[requirement]]
 id = "URS-QMS-029"
 module = 31
-title = "A new version of any pinned record, its withdrawal, deactivation or replacement as the default makes the Current device master record Out of Date in the same transaction, with a daily check as a backstop, showing for each changed element its version now and the change request it was made under; the signatures stay intact. QA is alerted once, and a DMR Re-approval reminder, due within the days set in Quality Settings, stays open until a new revision is approved."
-source = "Client decision; ISO 13485 7.3.9; re-approval due in 14 days, set in Quality Settings, decided 2026-10-11"
+title = "A new version of any pinned record, its withdrawal, deactivation or replacement as the default, and a risk management report put in force for the item's file that the record does not pin, make the Current device master record Out of Date in the same transaction, with a daily check as a backstop, showing for each changed element its version now and the change request it was made under; a record already out of date keeps recording later changes, and the next revision is brought up to date after all of them; the signatures stay intact. QA is alerted once, with the item's open work orders to decide on, which the record's form also lists, and a DMR Re-approval reminder, due within the days set in Quality Settings, stays open until a new revision is approved."
+source = "Client decision; ISO 13485 7.3.9; re-approval due in 14 days, set in Quality Settings, decided 2026-10-11; decided 2026-10-12 (plan D-23): the risk management report in force"
 status = "implemented"
 
 [[requirement]]
@@ -954,7 +954,7 @@ status = "implemented"
 [[requirement]]
 id = "URS-QMS-031"
 module = 31
-title = "A work order for a finished good is submitted only when the item's device master record is Current, still matches the live records and pins the bill of materials the work order uses."
+title = "A work order for a finished good is submitted only when the item's device master record is Current, still matches the live records and pins the bill of materials the work order uses; the order keeps the record it was released on. A finished good is made (a Manufacture or Repack stock entry) only on a work order of it, and only while that record is still Current."
 source = "21 CFR 820.181; ISO 13485 7.5.1; decided 2026-10-11 (plan D-15, Q8 accepted)"
 status = "implemented"
 

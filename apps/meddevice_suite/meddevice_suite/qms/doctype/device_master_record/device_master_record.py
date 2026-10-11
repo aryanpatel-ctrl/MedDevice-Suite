@@ -34,3 +34,6 @@ class DeviceMasterRecord(Document):
 	def onload(self) -> None:
 		# The form offers a new revision only when none is in progress (the server checks again).
 		self.set_onload("revision_in_progress", device_master_record.revision_in_progress(self.item))
+		if self.status == device_master_record.OUT_OF_DATE:
+			# The item's open work orders, for QA to decide on while the record is out of date.
+			self.set_onload("open_work_orders", device_master_record.open_work_orders(self.item))

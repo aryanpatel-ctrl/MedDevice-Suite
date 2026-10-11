@@ -30,7 +30,10 @@ analysis is a Risk Assessment, issued in revisions as documents are (module 30):
 
 QA authors a Risk Management Report on the approved revision (ISO 14971 8, 9) and another QA
 person approves it: the plan implemented, the overall residual risk acceptable or justified, and
-the SOPs that collect production and post-production information (ISO 14971 10).
+the SOPs that collect production and post-production information (ISO 14971 10). Every finished
+good's device master record pins the report in force of its file (module 31, plan D-23): when a
+report is approved, or a revision takes effect and leaves the file without one, the records of the
+file's items that do not pin the report now in force go out of date in the same transaction.
 
 A Risk Review is raised by the system: when a change request listing the file is approved, when a
 pinned control changes or is withdrawn (qms/pinned_records.py), when the periodic review falls
@@ -865,6 +868,7 @@ def take_effect(doc: Document) -> None:
 	previous_report = file.current_report
 	if previous_report:
 		frappe.get_doc(REPORT, previous_report).db_set("status", SUPERSEDED)
+	listed_before = [row.item for row in file.items]
 	file.update(
 		{
 			"intended_use": doc.intended_use,
@@ -881,8 +885,10 @@ def take_effect(doc: Document) -> None:
 	file.set("items", [{"item": row.item} for row in doc.items])
 	save(file)
 	# The report no longer reports on the analysis in force: what pins it (a device master record,
-	# module 31) is told in this transaction.
+	# module 31) is told in this transaction, and so is the record of every item the file listed
+	# before or lists now, which has no report in force until the next is approved (plan D-23).
 	pinned_records.records_changed(REPORT, [previous_report])
+	device_master_records_changed([*listed_before, *(row.item for row in doc.items)])
 	if doc.risk_review:
 		review_doc = frappe.get_doc(REVIEW, doc.risk_review)
 		review_doc.update(
@@ -1051,14 +1057,30 @@ def approve_report(doc: Document, password: str, reason: str | None = None) -> N
 	doc.approver, doc.approved_on, doc.status = frappe.session.user, now_datetime(), APPROVED
 	sign(doc, "Approved", "Approve", password, reason)
 	submit(doc)
+	report_takes_effect(doc)
+
+
+def report_takes_effect(doc: Document) -> None:
+	"""The approved report is the file's from now on and the one before it is superseded. What pins
+	the superseded report, and the device master record of each item of the file, is told in this
+	transaction (module 31, plan D-23)."""
 	file = frappe.get_doc(FILE, doc.risk_management_file)
 	previous = file.current_report if file.current_report != doc.name else None
 	if previous:
 		frappe.get_doc(REPORT, previous).db_set("status", SUPERSEDED)
 	file.current_report = doc.name
 	save(file)
-	# What pins the superseded report (a device master record, module 31) is told in this transaction.
 	pinned_records.records_changed(REPORT, [previous])
+	device_master_records_changed([row.item for row in file.items])
+
+
+def device_master_records_changed(items: list[str]) -> None:
+	"""Module 31 (plan D-23): each item's device master record must pin the report in force of the
+	item's file; one that does not goes out of date in this transaction."""
+	# Imported here: the device master record builds on this module.
+	from meddevice_suite.qms.device_master_record import risk_files_changed
+
+	risk_files_changed(items)
 
 
 # --- Risk reviews (URS-QMS-024, URS-QMS-025) --------------------------------------------------

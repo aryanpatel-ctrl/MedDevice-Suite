@@ -10,13 +10,16 @@ from meddevice_suite.pilot.demo import (
 	EXTRA_STORES,
 	PRODUCTS,
 	RAW_MATERIALS,
+	RISK_FAMILIES,
 	ROUTINGS,
 	SUPPLIERS,
 	demo_user_email,
 	load_demo_data,
 )
+from meddevice_suite.pilot.risk import SECOND_QA
 from meddevice_suite.pilot.site import prepare_pilot_site
 from meddevice_suite.qa import verifies
+from meddevice_suite.qms import pinned_records
 from meddevice_suite.setup.install import apply_configuration
 from meddevice_suite.setup.roles import JOB_PROFILES
 
@@ -36,6 +39,18 @@ COUNTED = (
 	"Item Price",
 	"Device Master Record",
 )
+
+
+def signers(doctype: str, name: str) -> list[tuple[str, str]]:
+	return [
+		(row.signer, row.meaning)
+		for row in frappe.get_all(
+			"Electronic Signature",
+			filters={"reference_doctype": doctype, "reference_name": name},
+			fields=["signer", "meaning"],
+			order_by="signed_at asc, creation asc",
+		)
+	]
 
 
 class PilotTestCase(IntegrationTestCase):
@@ -136,6 +151,47 @@ class TestDemoData(PilotTestCase):
 				)
 				self.assertEqual(record.author, demo_user_email("Production Supervisor"))
 				self.assertEqual(record.approver, demo_user_email("QA Manager"))
+
+	@verifies("URS-QMS-026")
+	def test_each_product_family_has_its_risk_management_report_in_force_signed_by_its_people(self):
+		# Plan D-23: every finished good is in its family's file, whose report is in force (D-13).
+		for code, (_name, _hsn, _rate, line, _materials) in PRODUCTS.items():
+			with self.subTest(product=code):
+				file = frappe.db.get_value(
+					"Risk Management File Item",
+					{"parenttype": "Risk Management File", "item": code},
+					"parent",
+				)
+				family, assessment, report = frappe.db.get_value(
+					"Risk Management File", file, ["family_name", "current_revision", "current_report"]
+				)
+				self.assertEqual(family, RISK_FAMILIES[line])
+				self.assertTrue(pinned_records.in_force("Risk Management Report", report))
+				self.assertEqual(
+					signers("Risk Assessment", assessment),
+					[
+						(demo_user_email("QA Manager"), "Authored"),
+						(demo_user_email("Production Supervisor"), "Reviewed"),
+						(demo_user_email(SECOND_QA), "Approved"),
+					],
+				)
+				self.assertEqual(
+					signers("Risk Management Report", report),
+					[(demo_user_email("QA Manager"), "Authored"), (demo_user_email(SECOND_QA), "Approved")],
+				)
+				record = frappe.db.get_value(
+					"Device Master Record", {"item": code, "status": "Current", "docstatus": 1}
+				)
+				self.assertTrue(
+					frappe.db.exists(
+						"Device Master Record Element",
+						{
+							"parent": record,
+							"element_type": "Risk Management Report",
+							"reference_name": report,
+						},
+					)
+				)
 
 	def test_each_job_has_a_demo_user_with_exactly_its_roles(self):
 		for profile, roles in JOB_PROFILES.items():

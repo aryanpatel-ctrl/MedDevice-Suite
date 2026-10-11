@@ -100,7 +100,11 @@ doc_events = {
 		]
 	},
 	"Stock Entry": {
+		# Module 31: a finished good is made only on a work order of it, while its device master
+		# record is Current (before_validate runs even when validation is skipped).
+		"before_validate": "meddevice_suite.qms.device_master_record.guard_stock_entry",
 		"validate": "meddevice_suite.lot_control.lot_status.guard_stock_entry",
+		"before_submit": "meddevice_suite.qms.device_master_record.guard_stock_entry",
 		"before_cancel": "meddevice_suite.lot_control.lot_status.refuse_cancel_of_release_transfer",
 	},
 	"Delivery Note": {

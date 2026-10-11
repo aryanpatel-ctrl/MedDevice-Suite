@@ -1,7 +1,7 @@
 import frappe
 from erpnext.stock.stock_ledger import NegativeStockError
 from frappe.tests import IntegrationTestCase
-from frappe.utils import now_datetime
+from frappe.utils import now_datetime, today
 
 from meddevice_suite.master_data import item_master
 from meddevice_suite.qa import verifies
@@ -92,15 +92,23 @@ def approve_masters_for_test(*masters: tuple[str, str]) -> None:
 def work_instruction_for_test() -> str:
 	"""A work instruction in effect for other modules' tests; issuing one through document control
 	is tested in qms/test_document_control.py."""
-	title = "Work instruction for tests"
-	existing = frappe.db.get_value("Controlled Document", {"title": title, "status": "Effective"})
+	return effective_document_for_test("Work instruction for tests", "Work Instruction")
+
+
+def effective_document_for_test(title: str, document_type: str) -> str:
+	"""A controlled document of the type in effect, for other modules' tests, recorded as an approved
+	revision leaves it; issuing one through document control is tested in
+	qms/test_document_control.py."""
+	existing = frappe.db.get_value(
+		"Controlled Document", {"title": title, "document_type": document_type, "status": "Effective"}
+	)
 	if existing:
 		return existing
 	doc = frappe.get_doc(
 		{
 			"doctype": "Controlled Document",
 			"title": title,
-			"document_type": "Work Instruction",
+			"document_type": document_type,
 			"department": "PRD",
 			"process_owner": "Administrator",
 		}
@@ -113,16 +121,148 @@ def work_instruction_for_test() -> str:
 	return doc.name
 
 
+def risk_report_for_test(item: str) -> str:
+	"""The risk management report in force of the file that lists a finished good, for other
+	modules' tests (module 39; plan D-23: a finished good's device master record pins it), recorded
+	as the signed acts leave them: the policy in force, the file listing the item, an approved
+	assessment of one acceptable hazard taking effect for the file, and the approved report taking
+	effect, without the signatures or the content the acts check. Writing, signing and approving
+	them is tested in qms/test_risk_management.py."""
+	from meddevice_suite.qms import pinned_records
+	from meddevice_suite.qms import risk_management as rm
+
+	file = frappe.db.get_value(rm.FILE_ITEM, {"parenttype": rm.FILE, "item": item}, "parent")
+	report = frappe.db.get_value(rm.FILE, file, "current_report") if file else None
+	if report and pinned_records.in_force(rm.REPORT, report):
+		return report
+	if not rm.current_policy():
+		policy_for_test()
+	if not file:
+		file = (
+			frappe.get_doc(
+				{
+					"doctype": rm.FILE,
+					"family_name": f"Risk file for tests {item}",
+					"intended_use": "As stated in the instructions for use (test).",
+					"foreseeable_misuse": "Reuse of a single-use device (test).",
+					"risk_management_plan": effective_document_for_test(
+						"Risk management plan for tests", "SOP"
+					),
+					"items": [{"item": item}],
+				}
+			)
+			.insert(ignore_permissions=True)
+			.name
+		)
+	assessment = frappe.db.get_value(rm.FILE, file, "current_revision")
+	if not assessment:
+		name = rm.revision_in_progress(file)
+		doc = (
+			frappe.get_doc(rm.ASSESSMENT, name)
+			if name
+			else frappe.get_doc(
+				{
+					"doctype": rm.ASSESSMENT,
+					"risk_management_file": file,
+					"hazards": [
+						{
+							"hazard_id": "H-01",
+							"hazard_category": "Energy",
+							"hazard": "Hazard for tests",
+							"sequence_of_events": "Sequence of events for tests",
+							"hazardous_situation": "Hazardous situation for tests",
+							"harm": "Harm for tests",
+							"severity": 1,
+							"probability": 1,
+							"residual_severity": 1,
+							"residual_probability": 1,
+						}
+					],
+				}
+			).insert(ignore_permissions=True)
+		)
+		doc.update({"status": rm.APPROVED, "approver": "Administrator", "approved_on": now_datetime()})
+		rm.submit(doc)
+		rm.take_effect(doc)
+		assessment = doc.name
+	name = frappe.db.get_value(
+		rm.REPORT,
+		{"risk_assessment": assessment, "status": ["in", (rm.DRAFT, rm.AWAITING_APPROVAL)], "docstatus": 0},
+	)
+	doc = (
+		frappe.get_doc(rm.REPORT, name)
+		if name
+		else frappe.get_doc(
+			{
+				"doctype": rm.REPORT,
+				"risk_assessment": assessment,
+				"plan_implemented": 1,
+				"plan_review": "Plan implemented (test).",
+				"overall_conclusion": "Residual risk acceptable (test).",
+				"information_sources": [
+					{
+						"controlled_document": effective_document_for_test(
+							"Production and post-production information for tests", "SOP"
+						)
+					}
+				],
+			}
+		).insert(ignore_permissions=True)
+	)
+	doc.update({"status": rm.APPROVED, "approver": "Administrator", "approved_on": now_datetime()})
+	rm.submit(doc)
+	rm.report_takes_effect(doc)
+	return doc.name
+
+
+def policy_for_test() -> str:
+	"""A risk acceptability policy in force on the D-13 scales, severity counting double (as
+	qms/test_risk_management.py's standard matrix), recorded as Management's signed approval leaves
+	it; the signed acts are tested there."""
+	from meddevice_suite.qms import risk_management as rm
+
+	doc = frappe.get_doc(
+		{
+			"doctype": rm.POLICY,
+			"title": "Risk acceptability policy for tests",
+			"policy_statement": "ISO 14971 Annex C (test).",
+		}
+	).insert(ignore_permissions=True)
+	for cell in doc.matrix:
+		weight = 2 * cell.severity + cell.probability
+		cell.acceptability = rm.UNACCEPTABLE if weight >= 12 else rm.ALARP if weight >= 8 else rm.ACCEPTABLE
+	doc.update(
+		{
+			"status": rm.IN_FORCE,
+			"reviewed_by": "Administrator",
+			"reviewed_at": now_datetime(),
+			"approved_by": "Administrator",
+			"approved_at": now_datetime(),
+			"in_force_since": today(),
+		}
+	)
+	rm.submit(doc)
+	return doc.name
+
+
 def device_master_record_for_test(item: str) -> str:
 	"""A Current device master record of a finished good other modules' tests put into production
 	(module 31), recorded as QA's signed approval leaves it: its elements pinned from the live
-	records and the revision before it superseded, without the signatures or the completeness the
-	signed acts check. Drafting, signing and approving one is tested in
+	records, the risk management report in force of the item's file among them (plan D-23,
+	`risk_report_for_test`), and the revision before it superseded, without the signatures or the
+	completeness the signed acts check. Drafting, signing and approving one is tested in
 	qms/test_device_master_record.py."""
 	from meddevice_suite.qms import device_master_record as dmr
 
+	report = risk_report_for_test(item)
 	current = dmr.current_record(item)
-	if current and not dmr.changes_since_approval(current):
+	if (
+		current
+		and not dmr.changes_since_approval(current)
+		and frappe.db.exists(
+			dmr.ELEMENT, {"parent": current, "parenttype": dmr.DOCTYPE, "reference_name": report}
+		)
+	):
 		return current
 	name = (
 		dmr.revision_in_progress(item) or frappe.get_doc({"doctype": dmr.DOCTYPE, "item": item}).insert().name
