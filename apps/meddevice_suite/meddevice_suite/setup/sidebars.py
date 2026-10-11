@@ -330,6 +330,7 @@ SIDEBAR_ADDITIONS: dict[str, tuple[tuple[str, str, str], ...]] = {
 		("Quality Settings", "DocType", "Quality Settings"),  # adjustable values (URS-PLT-012)
 		("Reminder", "DocType", "Reminder"),  # reminders and next due (module 60)
 		("Reminder Schedule", "DocType", "Reminder Schedule"),
+		("File Category", "DocType", "File Category"),
 		("Customer Licence", "DocType", "Customer Licence"),  # customer licences (module 5)
 		("Equipment History Card", "Report", "Equipment History Card"),  # module 62
 	),
@@ -346,7 +347,11 @@ SIDEBAR_ADDITIONS: dict[str, tuple[tuple[str, str, str], ...]] = {
 }
 
 # Each job's own work list and its tasks (module 59), in every business area.
-WORK_ENTRIES = (("My Work", "Report", "My Work"), ("Work Task", "DocType", "Work Task"))
+WORK_ENTRIES = (
+	("My Work", "Report", "My Work"),
+	("Work Task", "DocType", "Work Task"),
+	("Important File", "DocType", "Important File"),  # important files repository (module 61)
+)
 BUSINESS_AREAS = (
 	"Selling",
 	"Buying",

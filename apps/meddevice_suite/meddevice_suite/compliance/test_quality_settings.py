@@ -77,6 +77,7 @@ class TestValues(QualitySettingsTestCase):
 				"supplier_rating_quality_weight": 70,
 				"supplier_rating_threshold": 80,
 				"reminder_escalation_days": 7,
+				"file_validity_warning_days": 60,
 			},
 		)
 

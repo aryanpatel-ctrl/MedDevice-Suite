@@ -28,6 +28,7 @@
   "supplier_rating_threshold",
   "section_reminders",
   "reminder_escalation_days",
+  "file_validity_warning_days",
   "section_control",
   "change_request",
   "changed_under",
@@ -204,6 +205,15 @@
    "description": "A reminder still not done this many days after it was due is escalated to QA and Management (1 to 90)."
   },
   {
+   "fieldname": "file_validity_warning_days",
+   "fieldtype": "Int",
+   "label": "File Validity Alert (days)",
+   "default": "60",
+   "reqd": 1,
+   "non_negative": 1,
+   "description": "How many days before a repository file's validity ends (a licence, a certificate) its renewal is raised (1 to 365)."
+  },
+  {
    "fieldname": "section_control",
    "fieldtype": "Section Break",
    "label": "Change control"
@@ -242,7 +252,7 @@
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-10-11 22:00:00.000000",
+ "modified": "2026-10-12 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Compliance",
  "name": "Quality Settings",

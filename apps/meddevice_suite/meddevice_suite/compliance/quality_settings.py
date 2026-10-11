@@ -54,6 +54,8 @@ SETTINGS: dict[str, Setting] = {
 	"supplier_rating_threshold": Setting(80, 50, 100),
 	# Reminders (URS-PLT-014), decided 2026-10-11: overdue this many days, escalated to QA and Management
 	"reminder_escalation_days": Setting(7, 1, 90),
+	# Important files repository (URS-PLT-019), decided 2026-10-12: a licence's or certificate's renewal
+	"file_validity_warning_days": Setting(60, 1, 365),
 }
 
 

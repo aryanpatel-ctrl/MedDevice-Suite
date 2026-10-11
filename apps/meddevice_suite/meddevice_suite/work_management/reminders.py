@@ -237,6 +237,27 @@ def work_tasks_due() -> Iterator[Due]:
 		)
 
 
+def files_ending() -> Iterator[Due]:
+	"""Each active repository file whose current version's validity ends within the lead time,
+	until a new version renews it or it is archived; its category's uploaders answer for it."""
+	from meddevice_suite.files_repository.files import EDITORS, access
+
+	files = frappe.get_all(
+		"Important File",
+		filters={"status": "Active", "valid_until": ["<=", within("file_validity_warning_days")]},
+		fields=["name", "title", "category", "valid_until"],
+	)
+	known = access() if files else {}
+	for row in files:
+		yield Due(
+			"Important File",
+			row.name,
+			row.valid_until,
+			_("{0} is valid until {1}").format(row.title, date_text(row.valid_until)),
+			tuple(sorted(known.get(row.category, {}).get(EDITORS) or {QA_ROLE})),
+		)
+
+
 # category -> what is due now (module that owns the record)
 CATEGORIES: dict[str, Callable[[], Iterator[Due]]] = {
 	"Lot Expiry": lots_expiring,  # module 18
@@ -246,6 +267,7 @@ CATEGORIES: dict[str, Callable[[], Iterator[Due]]] = {
 	"Change Action": change_actions_due,  # module 36
 	"Effectiveness Check": effectiveness_checks_due,  # module 36
 	"Work Task": work_tasks_due,  # module 59
+	"File Validity": files_ending,  # module 61
 }
 
 
