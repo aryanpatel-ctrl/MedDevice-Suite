@@ -53,6 +53,8 @@ def ensure_role_stores(company: str, abbr: str) -> None:
 		if frappe.db.exists("Warehouse", name) and not frappe.db.get_value("Warehouse", name, "is_group"):
 			store = frappe.get_doc("Warehouse", name)
 			store.set(ROLE_FIELD, role)
+			# The store named after the role is that store already: its stock does not stop it.
+			store.flags.first_role_by_configuration = True
 			store.save(ignore_permissions=True)  # setup code
 			continue
 		frappe.get_doc(
@@ -97,7 +99,9 @@ def role_of(warehouse: str | None) -> str | None:
 
 def protect_store_role(doc: Document, method: str | None = None) -> None:
 	"""Warehouse validate: one store per role per company, never a group, and a store that
-	holds stock keeps its role until the stock is moved."""
+	holds stock keeps its role until the stock is moved. The one exception is the configuration
+	giving a store named after a role that role for the first time (a site with stock before lot
+	control): the store is already what the role says."""
 	role = doc.get(ROLE_FIELD)
 	if role and doc.is_group:
 		frappe.throw(_("A {0} store holds stock itself; a group of stores cannot be one.").format(_(role)))
@@ -108,7 +112,8 @@ def protect_store_role(doc: Document, method: str | None = None) -> None:
 		if other:
 			frappe.throw(_("{0} is already the {1} store of {2}.").format(other, _(role), doc.company))
 	before = doc.get_doc_before_save()
-	if before and (before.get(ROLE_FIELD) or "") != (role or "") and holds_stock(doc.name):
+	first_role = bool(doc.flags.first_role_by_configuration) and not (before and before.get(ROLE_FIELD))
+	if before and not first_role and (before.get(ROLE_FIELD) or "") != (role or "") and holds_stock(doc.name):
 		frappe.throw(
 			_("{0} holds stock; move the stock before changing what the store is for.").format(doc.name)
 		)
