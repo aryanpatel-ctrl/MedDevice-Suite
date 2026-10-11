@@ -232,6 +232,7 @@ class RiskTestCase(ItemMasterTestCase, DocumentControlTestCase):
 		try:
 			revision = frappe.get_doc(rm.ASSESSMENT, rm.start_revision(file, change_request=change, **values))
 			revision.summary_of_change = "Hazards reviewed under the change"
+			revision.reviewer = self.supervisor  # the author chooses the reviewer, as for a document
 			revision.save()
 		finally:
 			frappe.set_user("Administrator")
@@ -866,6 +867,7 @@ class TestReviews(RiskTestCase):
 		frappe.set_user(self.qa)
 		revision = frappe.get_doc(rm.ASSESSMENT, rm.start_revision(file, risk_review=review))
 		revision.summary_of_change = "Hazard H-01 re-estimated after the CAPA"
+		revision.reviewer = self.supervisor
 		revision.save()
 		with self.assertRaisesRegex(frappe.ValidationError, "in progress"):
 			self.sign_as(self.qa2, rm.REVIEW, review, "Close: No Change", "Covered")
