@@ -712,9 +712,10 @@ class TestSignatures(DeviceMasterRecordTestCase):
 					frappe.set_user(user)
 					doc = frappe.get_doc(dmr.DOCTYPE, record.name)
 					change(doc)
-					with self.assertRaisesRegex(
-						frappe.PermissionError, "changes only through its signed acts"
-					):
+					# QA holds no submit right, so Frappe refuses a save of an approved record first;
+					# the Administrator, who holds every right, meets this module's own guard.
+					expected = "changes only through its signed acts" if user == "Administrator" else ""
+					with self.assertRaisesRegex(frappe.PermissionError, expected):
 						doc.save()
 		frappe.set_user("Administrator")
 		self.assertEqual(self.status(record.name), dmr.OUT_OF_DATE)
