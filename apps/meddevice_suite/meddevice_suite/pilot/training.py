@@ -70,6 +70,7 @@ def ensure_matrix(
 			old.flags.audit_reason = AMENDED  # the audit trail's question
 			old.cancel()
 			matrix = frappe.copy_doc(old)
+			matrix.docstatus = 0  # the amendment is a new draft of the cancelled matrix
 			matrix.amended_from = old.name
 			matrix.flags.audit_reason = AMENDED
 		else:
