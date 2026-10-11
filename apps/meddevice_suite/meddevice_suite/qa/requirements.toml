@@ -915,6 +915,13 @@ source = "DFD 3.4 IQC Inspection, 5.3 Final QC Inspection, D6; D2 Incoming QC (I
 status = "planned"
 
 [[requirement]]
+id = "URS-MST-009"
+module = 6
+title = "Each specification states how its stage is sampled: a fixed sample size, every unit, or ISO 2859-1 single sampling for normal inspection at an inspection level and an AQL; for ISO 2859-1 the inspection's sample size and its accept and reject numbers follow from the size of the lot inspected, as the system counts it, by the standard's tables and its arrows, and every unit is inspected when the sample would reach the lot; the inspector records the nonconforming units found, the lot is accepted only when they do not exceed the accept number and rejected when they reach the reject number, a reading out of its limits counts as a nonconforming unit, and the sampling plan of a specification in use changes only under an approved change request."
+source = "Master plan decision: sample sizes follow ISO 2859-1 single sampling at AQL unless the specification says 100 percent; tracker step 11 (controlled specifications and AQL sampling plans, changed only through change control); DFD D2 IQC, IPQC and final QC sampling; ISO 13485 7.4.3, 8.2.6; ISO 2859-1 Tables 1 and 2-A (identical to ANSI/ASQ Z1.4 and MIL-STD-105E), cross-checked against MIL-STD-105E, MIL-STD-105D, the AQLSchemes package, an ISO 2859-1 chart and an online calculator on 2026-10-11; normal inspection only (switching rules not in scope), decided 2026-10-11"
+status = "implemented"
+
+[[requirement]]
 id = "URS-PLT-010"
 module = 0
 title = "The pilot's standard flow performs the certificate check, incoming inspection and signed release of every received lot, and the signed release of the finished lot, by the QC Inspector and QA Manager demo users, in place of the stand-in transfer to the approved store, in both the server and the browser journey."

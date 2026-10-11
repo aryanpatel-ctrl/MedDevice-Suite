@@ -99,9 +99,15 @@ doc_events = {
 	# Controlled specifications (module 6): each inspection against the item's specification for
 	# its stage; a specification in use changes only under an approved change request.
 	"Quality Inspection": {
-		"before_validate": "meddevice_suite.master_data.specification.choose_specification",
+		"before_validate": [
+			"meddevice_suite.master_data.specification.choose_specification",
+			# Module 6: the sampling plan follows from the lot (URS-MST-009).
+			"meddevice_suite.master_data.sampling.apply_plan",
+		],
 		"validate": [
 			"meddevice_suite.master_data.specification.check_against_specification",
+			# After the readings are judged: under a plan, the lot by its nonconforming units.
+			"meddevice_suite.master_data.sampling.judge",
 			"meddevice_suite.lot_control.receipt.guard_incoming_inspection",
 		],
 		"before_submit": "meddevice_suite.master_data.specification.check_sample_size",

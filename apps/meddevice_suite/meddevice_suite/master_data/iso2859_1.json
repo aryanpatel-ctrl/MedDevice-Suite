@@ -1,0 +1,1138 @@
+{
+ "standard": "ISO 2859-1 single sampling plans for normal inspection: Table 1 (sample size code letters) and Table 2-A (master table). Identical to ANSI/ASQ Z1.4 and MIL-STD-105E.",
+ "verified": "2026-10-11: every cell confirmed against at least two independent sources, with no disagreement: MIL-STD-105E (everyspec.com scan), MIL-STD-105D (law.resource.org), the AQLSchemes R package 1.7-2 (R/AAZ14Single.R), the QC Advisor ISO 2859-1 chart, and the SQCOnline ISO 2859-1 calculator (all 416 cells). To be signed off by the client's QA against its own copy of ISO 2859-1 before go-live.",
+ "arrow_rule": {
+  "table_footnote": {
+   "text": "Use first sampling plan below arrow. If sample size equals, or exceeds, lot or batch size, do 100 percent inspection. / Use first sampling plan above arrow.",
+   "source": "MIL-STD-105E Table II-A footnote, https://everyspec.com/MIL-STD/MIL-STD-0100-0299/download.php?spec=MIL-STD-105E.011675.PDF (doc p.14); same wording in MIL-STD-105D Table II-A, https://law.resource.org/pub/us/cfr/ibr/003/fedspec/MIL-STD-105D.PDF"
+  },
+  "paragraph_4_9_3": {
+   "text": "Obtaining Sampling Plan. The AQL and the code letter shall be used to obtain the sampling plan from Tables II, III, or IV. When no sampling plan is available for a given combination of AQL and code letter, the tables direct the user to a different letter. The sample size to be used is given by the new code letter, not by the original letter. If this procedure leads to different sample sizes for different classes of defects, the code letter corresponding to the largest sample size derived may be used for all classes of defects.",
+   "source": "MIL-STD-105E para 4.9.3 (doc p.7), https://everyspec.com/MIL-STD/MIL-STD-0100-0299/download.php?spec=MIL-STD-105E.011675.PDF"
+  },
+  "iso_labelled_footnote": {
+   "text": "Use the first sampling plan below the arrow. If sample size equals, or exceeds, lot size, carry out 100% inspection. / Use the first sampling plan above the arrow.",
+   "source": "https://www.qcadvisor.com/wp-content/uploads/2023/05/AQL-QCADVISOR.pdf (page 2)"
+  },
+  "resolution_note": "Follow the arrow in the same AQL column to the first [Ac, Re] cell; use that cell's code letter's sample size with its Ac/Re. If that sample size >= lot size, inspect 100 percent. Never combine the original letter's n with the target cell's Ac/Re."
+ },
+ "code_letters": [
+  {
+   "lot_min": 2,
+   "lot_max": 8,
+   "S-1": "A",
+   "S-2": "A",
+   "S-3": "A",
+   "S-4": "A",
+   "I": "A",
+   "II": "A",
+   "III": "B"
+  },
+  {
+   "lot_min": 9,
+   "lot_max": 15,
+   "S-1": "A",
+   "S-2": "A",
+   "S-3": "A",
+   "S-4": "A",
+   "I": "A",
+   "II": "B",
+   "III": "C"
+  },
+  {
+   "lot_min": 16,
+   "lot_max": 25,
+   "S-1": "A",
+   "S-2": "A",
+   "S-3": "B",
+   "S-4": "B",
+   "I": "B",
+   "II": "C",
+   "III": "D"
+  },
+  {
+   "lot_min": 26,
+   "lot_max": 50,
+   "S-1": "A",
+   "S-2": "B",
+   "S-3": "B",
+   "S-4": "C",
+   "I": "C",
+   "II": "D",
+   "III": "E"
+  },
+  {
+   "lot_min": 51,
+   "lot_max": 90,
+   "S-1": "B",
+   "S-2": "B",
+   "S-3": "C",
+   "S-4": "C",
+   "I": "C",
+   "II": "E",
+   "III": "F"
+  },
+  {
+   "lot_min": 91,
+   "lot_max": 150,
+   "S-1": "B",
+   "S-2": "B",
+   "S-3": "C",
+   "S-4": "D",
+   "I": "D",
+   "II": "F",
+   "III": "G"
+  },
+  {
+   "lot_min": 151,
+   "lot_max": 280,
+   "S-1": "B",
+   "S-2": "C",
+   "S-3": "D",
+   "S-4": "E",
+   "I": "E",
+   "II": "G",
+   "III": "H"
+  },
+  {
+   "lot_min": 281,
+   "lot_max": 500,
+   "S-1": "B",
+   "S-2": "C",
+   "S-3": "D",
+   "S-4": "E",
+   "I": "F",
+   "II": "H",
+   "III": "J"
+  },
+  {
+   "lot_min": 501,
+   "lot_max": 1200,
+   "S-1": "C",
+   "S-2": "C",
+   "S-3": "E",
+   "S-4": "F",
+   "I": "G",
+   "II": "J",
+   "III": "K"
+  },
+  {
+   "lot_min": 1201,
+   "lot_max": 3200,
+   "S-1": "C",
+   "S-2": "D",
+   "S-3": "E",
+   "S-4": "G",
+   "I": "H",
+   "II": "K",
+   "III": "L"
+  },
+  {
+   "lot_min": 3201,
+   "lot_max": 10000,
+   "S-1": "C",
+   "S-2": "D",
+   "S-3": "F",
+   "S-4": "G",
+   "I": "J",
+   "II": "L",
+   "III": "M"
+  },
+  {
+   "lot_min": 10001,
+   "lot_max": 35000,
+   "S-1": "C",
+   "S-2": "D",
+   "S-3": "F",
+   "S-4": "H",
+   "I": "K",
+   "II": "M",
+   "III": "N"
+  },
+  {
+   "lot_min": 35001,
+   "lot_max": 150000,
+   "S-1": "D",
+   "S-2": "E",
+   "S-3": "G",
+   "S-4": "J",
+   "I": "L",
+   "II": "N",
+   "III": "P"
+  },
+  {
+   "lot_min": 150001,
+   "lot_max": 500000,
+   "S-1": "D",
+   "S-2": "E",
+   "S-3": "G",
+   "S-4": "J",
+   "I": "M",
+   "II": "P",
+   "III": "Q"
+  },
+  {
+   "lot_min": 500001,
+   "lot_max": null,
+   "S-1": "D",
+   "S-2": "E",
+   "S-3": "H",
+   "S-4": "K",
+   "I": "N",
+   "II": "Q",
+   "III": "R"
+  }
+ ],
+ "sample_sizes": {
+  "A": 2,
+  "B": 3,
+  "C": 5,
+  "D": 8,
+  "E": 13,
+  "F": 20,
+  "G": 32,
+  "H": 50,
+  "J": 80,
+  "K": 125,
+  "L": 200,
+  "M": 315,
+  "N": 500,
+  "P": 800,
+  "Q": 1250,
+  "R": 2000
+ },
+ "aqls": [
+  "0.010",
+  "0.015",
+  "0.025",
+  "0.040",
+  "0.065",
+  "0.10",
+  "0.15",
+  "0.25",
+  "0.40",
+  "0.65",
+  "1.0",
+  "1.5",
+  "2.5",
+  "4.0",
+  "6.5",
+  "10",
+  "15",
+  "25",
+  "40",
+  "65",
+  "100",
+  "150",
+  "250",
+  "400",
+  "650",
+  "1000"
+ ],
+ "normal_single": {
+  "A": [
+   "down",
+   "down",
+   "down",
+   "down",
+   "down",
+   "down",
+   "down",
+   "down",
+   "down",
+   "down",
+   "down",
+   "down",
+   "down",
+   "down",
+   [
+    0,
+    1
+   ],
+   "down",
+   "down",
+   [
+    1,
+    2
+   ],
+   [
+    2,
+    3
+   ],
+   [
+    3,
+    4
+   ],
+   [
+    5,
+    6
+   ],
+   [
+    7,
+    8
+   ],
+   [
+    10,
+    11
+   ],
+   [
+    14,
+    15
+   ],
+   [
+    21,
+    22
+   ],
+   [
+    30,
+    31
+   ]
+  ],
+  "B": [
+   "down",
+   "down",
+   "down",
+   "down",
+   "down",
+   "down",
+   "down",
+   "down",
+   "down",
+   "down",
+   "down",
+   "down",
+   "down",
+   [
+    0,
+    1
+   ],
+   "up",
+   "down",
+   [
+    1,
+    2
+   ],
+   [
+    2,
+    3
+   ],
+   [
+    3,
+    4
+   ],
+   [
+    5,
+    6
+   ],
+   [
+    7,
+    8
+   ],
+   [
+    10,
+    11
+   ],
+   [
+    14,
+    15
+   ],
+   [
+    21,
+    22
+   ],
+   [
+    30,
+    31
+   ],
+   [
+    44,
+    45
+   ]
+  ],
+  "C": [
+   "down",
+   "down",
+   "down",
+   "down",
+   "down",
+   "down",
+   "down",
+   "down",
+   "down",
+   "down",
+   "down",
+   "down",
+   [
+    0,
+    1
+   ],
+   "up",
+   "down",
+   [
+    1,
+    2
+   ],
+   [
+    2,
+    3
+   ],
+   [
+    3,
+    4
+   ],
+   [
+    5,
+    6
+   ],
+   [
+    7,
+    8
+   ],
+   [
+    10,
+    11
+   ],
+   [
+    14,
+    15
+   ],
+   [
+    21,
+    22
+   ],
+   [
+    30,
+    31
+   ],
+   [
+    44,
+    45
+   ],
+   "up"
+  ],
+  "D": [
+   "down",
+   "down",
+   "down",
+   "down",
+   "down",
+   "down",
+   "down",
+   "down",
+   "down",
+   "down",
+   "down",
+   [
+    0,
+    1
+   ],
+   "up",
+   "down",
+   [
+    1,
+    2
+   ],
+   [
+    2,
+    3
+   ],
+   [
+    3,
+    4
+   ],
+   [
+    5,
+    6
+   ],
+   [
+    7,
+    8
+   ],
+   [
+    10,
+    11
+   ],
+   [
+    14,
+    15
+   ],
+   [
+    21,
+    22
+   ],
+   [
+    30,
+    31
+   ],
+   [
+    44,
+    45
+   ],
+   "up",
+   "up"
+  ],
+  "E": [
+   "down",
+   "down",
+   "down",
+   "down",
+   "down",
+   "down",
+   "down",
+   "down",
+   "down",
+   "down",
+   [
+    0,
+    1
+   ],
+   "up",
+   "down",
+   [
+    1,
+    2
+   ],
+   [
+    2,
+    3
+   ],
+   [
+    3,
+    4
+   ],
+   [
+    5,
+    6
+   ],
+   [
+    7,
+    8
+   ],
+   [
+    10,
+    11
+   ],
+   [
+    14,
+    15
+   ],
+   [
+    21,
+    22
+   ],
+   [
+    30,
+    31
+   ],
+   [
+    44,
+    45
+   ],
+   "up",
+   "up",
+   "up"
+  ],
+  "F": [
+   "down",
+   "down",
+   "down",
+   "down",
+   "down",
+   "down",
+   "down",
+   "down",
+   "down",
+   [
+    0,
+    1
+   ],
+   "up",
+   "down",
+   [
+    1,
+    2
+   ],
+   [
+    2,
+    3
+   ],
+   [
+    3,
+    4
+   ],
+   [
+    5,
+    6
+   ],
+   [
+    7,
+    8
+   ],
+   [
+    10,
+    11
+   ],
+   [
+    14,
+    15
+   ],
+   [
+    21,
+    22
+   ],
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up"
+  ],
+  "G": [
+   "down",
+   "down",
+   "down",
+   "down",
+   "down",
+   "down",
+   "down",
+   "down",
+   [
+    0,
+    1
+   ],
+   "up",
+   "down",
+   [
+    1,
+    2
+   ],
+   [
+    2,
+    3
+   ],
+   [
+    3,
+    4
+   ],
+   [
+    5,
+    6
+   ],
+   [
+    7,
+    8
+   ],
+   [
+    10,
+    11
+   ],
+   [
+    14,
+    15
+   ],
+   [
+    21,
+    22
+   ],
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up"
+  ],
+  "H": [
+   "down",
+   "down",
+   "down",
+   "down",
+   "down",
+   "down",
+   "down",
+   [
+    0,
+    1
+   ],
+   "up",
+   "down",
+   [
+    1,
+    2
+   ],
+   [
+    2,
+    3
+   ],
+   [
+    3,
+    4
+   ],
+   [
+    5,
+    6
+   ],
+   [
+    7,
+    8
+   ],
+   [
+    10,
+    11
+   ],
+   [
+    14,
+    15
+   ],
+   [
+    21,
+    22
+   ],
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up"
+  ],
+  "J": [
+   "down",
+   "down",
+   "down",
+   "down",
+   "down",
+   "down",
+   [
+    0,
+    1
+   ],
+   "up",
+   "down",
+   [
+    1,
+    2
+   ],
+   [
+    2,
+    3
+   ],
+   [
+    3,
+    4
+   ],
+   [
+    5,
+    6
+   ],
+   [
+    7,
+    8
+   ],
+   [
+    10,
+    11
+   ],
+   [
+    14,
+    15
+   ],
+   [
+    21,
+    22
+   ],
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up"
+  ],
+  "K": [
+   "down",
+   "down",
+   "down",
+   "down",
+   "down",
+   [
+    0,
+    1
+   ],
+   "up",
+   "down",
+   [
+    1,
+    2
+   ],
+   [
+    2,
+    3
+   ],
+   [
+    3,
+    4
+   ],
+   [
+    5,
+    6
+   ],
+   [
+    7,
+    8
+   ],
+   [
+    10,
+    11
+   ],
+   [
+    14,
+    15
+   ],
+   [
+    21,
+    22
+   ],
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up"
+  ],
+  "L": [
+   "down",
+   "down",
+   "down",
+   "down",
+   [
+    0,
+    1
+   ],
+   "up",
+   "down",
+   [
+    1,
+    2
+   ],
+   [
+    2,
+    3
+   ],
+   [
+    3,
+    4
+   ],
+   [
+    5,
+    6
+   ],
+   [
+    7,
+    8
+   ],
+   [
+    10,
+    11
+   ],
+   [
+    14,
+    15
+   ],
+   [
+    21,
+    22
+   ],
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up"
+  ],
+  "M": [
+   "down",
+   "down",
+   "down",
+   [
+    0,
+    1
+   ],
+   "up",
+   "down",
+   [
+    1,
+    2
+   ],
+   [
+    2,
+    3
+   ],
+   [
+    3,
+    4
+   ],
+   [
+    5,
+    6
+   ],
+   [
+    7,
+    8
+   ],
+   [
+    10,
+    11
+   ],
+   [
+    14,
+    15
+   ],
+   [
+    21,
+    22
+   ],
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up"
+  ],
+  "N": [
+   "down",
+   "down",
+   [
+    0,
+    1
+   ],
+   "up",
+   "down",
+   [
+    1,
+    2
+   ],
+   [
+    2,
+    3
+   ],
+   [
+    3,
+    4
+   ],
+   [
+    5,
+    6
+   ],
+   [
+    7,
+    8
+   ],
+   [
+    10,
+    11
+   ],
+   [
+    14,
+    15
+   ],
+   [
+    21,
+    22
+   ],
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up"
+  ],
+  "P": [
+   "down",
+   [
+    0,
+    1
+   ],
+   "up",
+   "down",
+   [
+    1,
+    2
+   ],
+   [
+    2,
+    3
+   ],
+   [
+    3,
+    4
+   ],
+   [
+    5,
+    6
+   ],
+   [
+    7,
+    8
+   ],
+   [
+    10,
+    11
+   ],
+   [
+    14,
+    15
+   ],
+   [
+    21,
+    22
+   ],
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up"
+  ],
+  "Q": [
+   [
+    0,
+    1
+   ],
+   "up",
+   "down",
+   [
+    1,
+    2
+   ],
+   [
+    2,
+    3
+   ],
+   [
+    3,
+    4
+   ],
+   [
+    5,
+    6
+   ],
+   [
+    7,
+    8
+   ],
+   [
+    10,
+    11
+   ],
+   [
+    14,
+    15
+   ],
+   [
+    21,
+    22
+   ],
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up"
+  ],
+  "R": [
+   "up",
+   "up",
+   [
+    1,
+    2
+   ],
+   [
+    2,
+    3
+   ],
+   [
+    3,
+    4
+   ],
+   [
+    5,
+    6
+   ],
+   [
+    7,
+    8
+   ],
+   [
+    10,
+    11
+   ],
+   [
+    14,
+    15
+   ],
+   [
+    21,
+    22
+   ],
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up",
+   "up"
+  ]
+ }
+}
