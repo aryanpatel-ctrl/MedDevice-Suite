@@ -51,6 +51,19 @@ REGULATED_DOCTYPES: frozenset[str] = frozenset(
 		"Custom DocPerm",
 		"System Settings",
 		"Stock Settings",
+		# Configuration of the site (URS-CMP-038; master plan section 10: the audit trail covers
+		# masters, records and configuration)
+		"Custom Field",
+		"Property Setter",
+		"Client Script",
+		"Server Script",
+		"Print Format",
+		"Workflow",
+		"Notification",
+		"Manufacturing Settings",
+		"Buying Settings",
+		"Selling Settings",
+		"Print Settings",
 	}
 )
 
