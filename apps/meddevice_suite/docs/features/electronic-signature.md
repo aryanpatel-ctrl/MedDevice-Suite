@@ -3,6 +3,7 @@
 Requirement: **URS-CMP-001, URS-CMP-002, URS-CMP-003, URS-CMP-004, URS-CMP-005, URS-CMP-006, URS-CMP-030** (`meddevice_suite/qa/requirements.toml`). Also touched: URS-CMP-010 (the record's **Verify Integrity** button also verifies its signatures), URS-CMP-035 (clean sign-in page, module 47; `public/js/sign_out.js`).
 Code: `meddevice_suite/compliance/esign.py` (the signing service), `compliance/signing.py` (the register of signed acts and the desk entry point), `compliance/fingerprint.py` (shared with module 50), `compliance/doctype/electronic_signature/`, `public/js/esign.js`, hooks in `meddevice_suite/hooks.py`; the acts themselves live in the modules that sign (`qms/document_control.py`, `qms/change_control.py`, `lot_control/release.py`, `master_data/supplier_approval.py`).
 State on 2026-10-10: built (first commit `904153ee` 2026-10-05, desk dialog `a1c8e5cf` 2026-10-07, review gaps closed in `15970df7` and `b6e8ecc0`), server and browser suites green on the current branch; GitHub CI for the branch in progress (section 8).
+Changed 2026-10-12 (foundation review, branch `fix/immutable-records`): a signature is inserted only by signing and only under the signer's own account; no permission row may open the Electronic Signature to writing; a user who signed is never deleted; Controlled Document **Withdraw** is signed *Withdrawn* and Customer **Require Licence** *Rejected*; the declared meaning is enforced from the dialog to the record; the chain is verified by its links, not by time. Tests: `compliance/test_immutable_records.py` — written, **not yet run** (section 8).
 
 ## 1. Feature overview
 
@@ -33,12 +34,12 @@ A signed act is offered as a button on the record's form by the module that owns
 | --- | --- |
 | Title | **Sign: <act>** (e.g. *Sign: Approve*) |
 | Statement | **<Meaning>**: <meaning text>, then *<Record type> <name>, signed by <your full name>. Your signature is recorded with the date and time and is legally binding.* |
-| Meaning texts | Authored *I wrote this and it is complete and correct.*; Reviewed *I have reviewed this and found it fit for approval.*; Approved *I approve this.*; Rejected *I reject this.*; Released *I release this for use.*; Verified *I have verified this.* |
+| Meaning texts | Authored *I wrote this and it is complete and correct.*; Reviewed *I have reviewed this and found it fit for approval.*; Approved *I approve this.*; Rejected *I reject this.*; Released *I release this for use.*; Verified *I have verified this.*; Trained *I was trained in this, and I understand it.*; Competent *I have assessed this person and found them competent.*; Withdrawn *I withdraw this from use.* (2026-10-12) |
 | **Reason** (Small Text, required) | only when the act asks for one (`ask_reason: true`: Lot Release, Supplier Approval, Withdraw; Document Revision and Change Request per their own options) |
 | **Your password** (Password, required) | the signer's own account password |
 | Primary button | **Sign** |
 
-The dialog posts to `meddevice_suite.compliance.signing.sign_action` (POST only). On success the dialog closes and the form reloads; on refusal the password box is cleared and the dialog stays open with the server's message. Closing the dialog signs nothing.
+The dialog posts to `meddevice_suite.compliance.signing.sign_action` (POST only), with the meaning it showed; the server refuses a meaning other than the declared one (*<act> is now signed as <declared>, not as <shown>. Reload the page and sign again.*), so nobody signs under a meaning they were not shown (11.50(a)(3)). On success the dialog closes and the form reloads; on refusal the password box is cleared and the dialog stays open with the server's message. Closing the dialog signs nothing.
 
 Server side (`signing.sign_action`): the (record type, act) pair must be in `SIGNING_ACTIONS` or it is refused with *<act> cannot be signed on <record type>.* (permission error); the signer must be able to read the record; then the act's `perform` function runs its own checks, calls `esign.sign(...)` and performs the act in the same transaction. `signing.signing_actions(doctype)` tells the desk which acts exist for a record type.
 
@@ -48,11 +49,11 @@ In order:
 
 1. Session user is not **Administrator** or **Guest** → else *Sign in with your own account to sign; shared accounts cannot sign.*
 2. The account is enabled → else *Your account is disabled; it cannot sign.*
-3. Meaning is one of Authored, Reviewed, Approved, Rejected, Released, Verified → else *Unknown signature meaning: <x>*; an empty act → *A signature needs the action being signed.*
+3. Meaning is one of Authored, Reviewed, Approved, Rejected, Released, Verified, Trained, Competent, Withdrawn → else *Unknown signature meaning: <x>*; an empty act → *A signature needs the action being signed.*; an act declared in `SIGNING_ACTIONS` is signed only with its declared meaning → else *<act> on <record type> is signed as <declared>, not as <given>.* (2026-10-12).
 4. The reason contains no `<` or `>` → else *Write the reason without the characters < and >.* (Frappe would strip them after fingerprinting).
 5. The signer holds the act's permission on the record (`doc.check_permission(permission)`, default `write`; the calling act may pass another).
 6. Password re-entry through Frappe's own `check_password`, with the login-attempt tracker: a locked account is refused before the password is even looked at (`SecurityException`); a wrong password adds one failed attempt to the same counter as a failed login (System Settings *Allow Consecutive Login Attempts* / *Allow Login After Fail*), writes an **Activity Log** entry (operation Login, status Failed, subject *Electronic signature refused, wrong password: <act> on <record type> <name>*) through a background job so it survives the rolled-back request, and raises *Incorrect password. The signature was not recorded.* This is a `SigningRefused` validation error, not an authentication error, so the person is **not** signed out. A correct password resets the counter.
-7. The record row is locked (`FOR UPDATE`), the previous signature on the record is found, and the **Electronic Signature** is inserted (the only code path that may; `insert(ignore_permissions=True)` with the reason in a comment).
+7. The record row is locked (`FOR UPDATE`), the previous signature on the record is found, and the **Electronic Signature** is inserted (the only code path that may; `insert(ignore_permissions=True)` with the reason in a comment). The service marks the new record in its flags (`recorded_by_signing`), which a request cannot set (Frappe drops `flags` sent with a record); the record refuses an insert without the mark (section 2.5).
 
 Recorded fields (labels on screen): **Document Type**, **Document**, **Document Name at Signing**, **Action**, **Meaning**, **Signed By** (user ID), **Signer Name** (full name at signing), **Signed At** (server time, site zone), **Reason**, and under *Integrity*: **Record Fingerprint**, **Previous Signature**, **Signature Fingerprint**. Record name `ESIG-YYYY-NNNNN`.
 
@@ -61,7 +62,7 @@ Recorded fields (labels on screen): **Document Type**, **Document**, **Document 
 - **Record Fingerprint** = SHA-256 of the record's content as a canonical JSON (sorted keys), child rows included, minus: bookkeeping fields (`modified`, `modified_by`, `_user_tags`, `_comments`, `_assign`, `_liked_by`, `_seen`), the record's `name` (a rename must not read as tampering), each row's `parent` and `docstatus`, and the fields the system maintains after signing, declared per record type in `esign.SYSTEM_MAINTAINED` (e.g. Supplier Approval: `docstatus`, `certificate_alerted`; Lot Release: `docstatus`, `stock_entry`, `supplier_return`; Document Revision: `status`, `docstatus`, `superseded_by`).
 - **Signature Fingerprint** = SHA-256 of `[previous signature's fingerprint or "", Document Type, Document Name at Signing, Action, Meaning, Reason, Signed By, Signer Name, Signed At, Record Fingerprint]`.
 - **Previous Signature** links the newest signature of the record at signing time, found by the links (the signature no other signature names), not by time, under a row lock, so two signings of one record serialise.
-- `verify_signatures(doctype, name)` walks the record's signatures in `signed_at, creation` order and returns False if any signature's Previous Signature is not the one before it or its fingerprint does not recompute. `is_unchanged_since(signature)` recomputes the record's fingerprint and compares it with the one signed.
+- `verify_signatures(doctype, name)` follows the chain by its links, as the audit trail's `verify_events` does (since 2026-10-12; before, it ordered by `signed_at`, so a server clock set back between two signings read as tampering). It returns False if a signature's Previous Signature is missing, if two signatures follow the same one, if the record has more than one first signature, or if any fingerprint does not recompute. `is_unchanged_since(signature)` recomputes the record's fingerprint and compares it with the one signed.
 
 On screen, verification is the record's **View › Verify Integrity** button (module 50, `public/js/audit_trail.js`): green *Integrity verified — The audit trail and the signatures of <name> are intact.*, or red *Integrity problem found* listing *The signatures on this record do not verify.* and any audit-chain problems.
 
@@ -73,7 +74,11 @@ For printouts the Jinja method `signatures_for_print(doc)` is registered in `hoo
 
 ### 2.5 Permanence (URS-CMP-005)
 
-`ElectronicSignature.validate` refuses any save after the first (*An electronic signature cannot be changed.*) and `on_trash` refuses deletion (*An electronic signature cannot be deleted.*), both as permission errors, for every user including Administrator and `ignore_permissions=True`. The DocType is `in_create` (no New button); no role has create/write/delete. A user ID is permanent: renaming a User is refused (`audit.keep_user_id`: *User IDs are permanent in the audit trail. Create a new account instead of renaming <user>.*). The Electronic Signature is in the 10-year "Compliance evidence" retention class (module 54) and is not a log Frappe clears.
+`ElectronicSignature.validate` refuses any save after the first (*An electronic signature cannot be changed.*) and `on_trash` refuses deletion (*An electronic signature cannot be deleted.*), both as permission errors, for every user including Administrator and `ignore_permissions=True`. The DocType is `in_create` (no New button); no role has create/write/delete.
+
+Since 2026-10-12 (foundation review) a signature cannot be inserted past the signing service either: `before_insert` refuses one without the service's mark (*An electronic signature is recorded only by signing, with the signer's password.*), even with permissions and validation skipped, and `validate` refuses one whose owner is not its signer (*A signature is recorded only under the signer's own account.*). Before, a system manager could grant create on the Electronic Signature in Role Permissions Manager and post a signature in another person's name with a fingerprint that verified. That grant is itself refused now (`setup/roles.refuse_hand_added_permission`, module 47: no permission row on the evidence records may grant more than select, read, report, export or print, even on migrate).
+
+A user ID is permanent: renaming a User is refused (`audit.keep_user_id`: *User IDs are permanent in the audit trail. Create a new account instead of renaming <user>.*), and since 2026-10-12 so is deleting one who has signed, appears in the audit trail or owns a regulated record (`audit.keep_user_with_history`, 21 CFR 11.300(b): *<user> has acted on regulated records, so the user ID stays in the audit trail and cannot be deleted. Disable the account instead.*); a disabled account cannot sign (section 2.2). The Electronic Signature is in the 10-year "Compliance evidence" retention class (module 54) and is not a log Frappe clears.
 
 ### 2.6 The register of signed acts
 
@@ -82,10 +87,13 @@ For printouts the Jinja method `signatures_for_print(doc)` is registered in `hoo
 | Record type | Act | Meaning |
 | --- | --- | --- |
 | Document Revision | Author / Review / Return / Approve | Authored / Reviewed / Rejected / Approved |
-| Controlled Document | Withdraw | Approved |
+| Controlled Document | Withdraw | Withdrawn (was Approved until 2026-10-12) |
 | Change Request | Assess / Approve / Return / Reject / Verify Effective / Verify Not Effective | Reviewed / Approved / Rejected / Rejected / Verified / Verified |
 | Lot Release | Release / Reject / Hold | Released / Rejected / Approved |
 | Supplier Approval | Approve / Approve Conditionally / Not Approve | Approved / Approved / Rejected |
+| Customer | Exempt From Licence / Require Licence | Approved / Rejected (was Approved until 2026-10-12: ending an exemption revokes QA's approval of it, signed as a revoked competence is) |
+
+The table lists the acts of 2026-10-10 and the two meanings changed on 2026-10-12; the code is the full register. The meaning is written in the register, in the act's `esign.sign` call and in the form's script: `esign.sign` refuses a declared act signed with another meaning, `sign_action` refuses a meaning the dialog showed that is not the declared one, and `test_immutable_records.TestDeclaredMeaningIsTheSignedMeaning` checks every act's literal `sign(...)` call and meaning tables against the register. The Lot Release **Hold** meaning is under review on another branch.
 
 ### 2.7 What is intended but not implemented
 
@@ -106,6 +114,8 @@ For printouts the Jinja method `signatures_for_print(doc)` is registered in `hoo
 | C5 | URS-CMP-005: never edited or deleted, not even by system managers | controller `ElectronicSignature`, `in_create`, permissions | `TestSignaturesAreImmutable` (4 tests); `test_audit_review.TestQAReviewsTheEvidence.test_qa_managers_review_audit_events_and_signatures_but_never_change_them` |
 | C6 | URS-CMP-006: shared accounts refused; signer needs the act's permission on the record | `SHARED_ACCOUNTS`, `doc.check_permission(permission)` | `TestSignerIdentity`: `test_administrator_cannot_sign`, `test_signer_needs_permission_on_the_record`; `test_signing…test_someone_who_cannot_open_the_record_cannot_sign_it` |
 | C7 | URS-CMP-030: sign from the record in a dialog naming act and meaning, asking the password; only declared acts; only by someone who may open the record | `signing.sign_action` (POST), `signing_actions`, `esign.js` dialog | `TestSigningDialog` (7 tests incl. `test_signing_is_accepted_only_as_a_post_request`, `test_the_dialog_is_offered_only_the_declared_acts`); `qms/test_document_control.TestReviewAndApproval`; Cypress `document_control.js` "[URS-CMP-030] [URS-QMS-002] the author signs from the form; only the author is offered it" and "[URS-CMP-030] [URS-QMS-002] the reviewer signs, then QA approves; nobody can just submit" |
+
+| C8 | Foundation review 2026-10-12: no signature past signing or under another account (URS-CMP-005); no hand-made permission on it (URS-CMP-015); a user who signed is disabled, never deleted (URS-CMP-006); each act's meaning is its own and is the one shown (URS-CMP-002, URS-CMP-030); verification by links (URS-CMP-004) | `ElectronicSignature.before_insert`/`validate`, `roles.refuse_hand_added_permission`, `audit.keep_user_with_history`, `esign.sign` + `signing.declared_meaning`, `verify_signatures` | `compliance/test_immutable_records.py`: `TestSignaturesComeOnlyFromSigning`, `TestPermissionsOnTheAppsRecordTypes`, `TestUserIdsInTheTrailAreNeverDeleted`, `TestMeanings`, `TestDeclaredMeaningIsTheSignedMeaning`, `TestDeclaredMeaningIsEnforced`, `TestChainFollowedByLinks`; meaning asserts in `qms/test_document_control.TestWithdrawal` and `master_data/test_customer_licence.TestBuyingWithoutALicence` — **not yet run** |
 
 **Resolved 2026-10-10:** C3 on printouts (signed print formats for Lot Release, Supplier Approval and Change Request; tests `test_the_printout_shows_*`).
 **Ambiguous:** URS-CMP-002 says "optional reason" while several acts make it required in the dialog — the service accepts both, the act decides; not a conflict but worth confirming with the client. URS-CMP-001 "locked account cannot sign": the lockout is Frappe's login lockout (System Settings), so a site with *Allow Consecutive Login Attempts* = 0 (unlimited) never locks; the pilot's setting was not checked (section 7).
@@ -182,6 +192,14 @@ Role: QA Manager. Preconditions: a lot in Quarantine with a verified certificate
 4. **Compliance › Electronic Signature**, filter Document Type = *Lot Release*. Expected: the new row with Previous Signature empty (first signature on that record).
 Actual result: ____  Pass/Fail: ____
 
+### ES-11 Signatures come only from signing; meanings fit the act (C8) — test site, 2026-10-12
+1. As System Administrator, **Role Permissions Manager** › Document Type *Electronic Signature* › **Add a New Rule** (any role) or tick **Create** on a row. Expected: *The permissions on Electronic Signature are part of the validated configuration and change only with a release of this app.* (or, for a grant that writes, *Electronic Signature records are written only by the system; no role may be given create on them.*); nothing changes.
+2. From the browser console as System Administrator: `frappe.xcall("frappe.client.insert", {doc: {doctype: "Electronic Signature", reference_doctype: "Supplier Approval", reference_name: "<name>", action: "Approve", meaning: "Approved", signer: "qa.manager@demo.example.com"}})`. Expected: *An electronic signature is recorded only by signing, with the signer's password.*
+3. As QA Manager withdraw a throw-away Controlled Document. Expected: dialog statement **Withdrawn**: *I withdraw this from use.*; after signing, the Electronic signatures table shows Meaning *Withdrawn*, Act *Withdraw*.
+4. As QA Manager on a customer that buys without a licence, **Require Licence**. Expected: statement **Rejected**: *I reject this.*; recorded Meaning *Rejected*.
+5. As System Administrator open **Users** › a demo user who has signed › **Delete**. Expected: *<user> has acted on regulated records, so the user ID stays in the audit trail and cannot be deleted. Disable the account instead.*; untick **Enabled** and save. Expected: saved; that user can no longer sign.
+Actual result: ____  Pass/Fail: ____
+
 ### Refusal messages at a glance (for the tester)
 | Situation | Exact message |
 | --- | --- |
@@ -192,6 +210,11 @@ Actual result: ____  Pass/Fail: ____
 | Reason with `<` or `>` | *Write the reason without the characters < and >.* |
 | Edit / delete a signature | *An electronic signature cannot be changed.* / *An electronic signature cannot be deleted.* |
 | Rename a user | *User IDs are permanent in the audit trail. Create a new account instead of renaming <user>.* |
+| Delete a user with history | *<user> has acted on regulated records, so the user ID stays in the audit trail and cannot be deleted. Disable the account instead.* |
+| Insert a signature past signing | *An electronic signature is recorded only by signing, with the signer's password.* |
+| Signature under another account | *A signature is recorded only under the signer's own account.* |
+| Declared act with another meaning | *<act> on <record type> is signed as <declared>, not as <given>.* |
+| Dialog loaded before a meaning changed | *<act> is now signed as <declared>, not as <shown>. Reload the page and sign again.* |
 
 ### Regression
 - The signed journeys still work: `document_control.js` (author → reviewer → QA), `standard_flow.js` (QA approves the supplier, releases lots) — automated, section 8.
@@ -213,8 +236,8 @@ Cross-module data: Electronic Signature (new), Activity Log (failed signings), t
 | Service | `compliance/esign.py`: `sign(doc, meaning, action, password, reason=None, permission="write")`, `authenticate`, `record_failed_signing`, `last_signature`, `record_fingerprint`, `signature_fingerprint`, `verify_signatures`, `is_unchanged_since`; constants `MEANINGS`, `SHARED_ACCOUNTS`, `SYSTEM_MAINTAINED`; exception `SigningRefused(frappe.ValidationError)` |
 | Register / desk entry | `compliance/signing.py`: `SignedAct(meaning, perform)`, `SIGNING_ACTIONS`, `sign_action` (`@frappe.whitelist(methods=["POST"])`), `signing_actions`, `signatures_of`, `onload`, `signatures_for_print` |
 | Fingerprints | `compliance/fingerprint.py`: `record_content`, `without_volatile_fields`, `VOLATILE_FIELDS`, `sha256` (canonical JSON, sorted keys, UTF-8), `plain_text`, `chain_head` (left-join on the link field, `FOR UPDATE`) |
-| Hooks (`hooks.py`) | `doc_events["*"]["onload"]` → `signing.onload`; `jinja.methods` → `signing.signatures_for_print`; `User.before_rename` → `audit.keep_user_id` |
-| API routes | `POST /api/method/meddevice_suite.compliance.signing.sign_action` (`doctype`, `name`, `action`, `password`, `reason`); `GET /api/method/meddevice_suite.compliance.signing.signing_actions?doctype=…`; `/api/resource/Electronic Signature` read-only under the DocType permissions |
+| Hooks (`hooks.py`) | `doc_events["*"]["onload"]` → `signing.onload`; `jinja.methods` → `signing.signatures_for_print`; `User.before_rename` → `audit.keep_user_id`; `User.on_trash` → `audit.keep_user_with_history`; `Custom DocPerm.before_validate` → `roles.refuse_hand_added_permission` (2026-10-12) |
+| API routes | `POST /api/method/meddevice_suite.compliance.signing.sign_action` (`doctype`, `name`, `action`, `password`, `reason`, `meaning` — the meaning shown, checked against the register); `GET /api/method/meddevice_suite.compliance.signing.signing_actions?doctype=…`; `/api/resource/Electronic Signature` read-only under the DocType permissions |
 | Desk | `public/js/esign.js` (`meddevice_suite.esign.sign(frm, action, meaning, {ask_reason})`, *Electronic signatures* dashboard section); `public/js/audit_trail.js` **Verify Integrity** → `audit_timeline.verify_record` (`signatures_intact`); list `/desk/electronic-signature` in the **Compliance** area (`workspace_sidebar/compliance.json`; area visible to Quality Manager and System Manager, `setup/desk.py`) |
 | Lockout | Frappe `get_login_attempt_tracker` / `check_password(delete_tracker_cache=False)`; System Settings `allow_consecutive_login_attempts`, `allow_login_after_fail`; failed signing → Activity Log via `frappe.enqueue(queue="short")` |
 | Retention / archive | `compliance/retention.py` "Compliance evidence" 10 years; `compliance/archive.py` copies `electronic_signatures` into each record's file |
@@ -222,7 +245,7 @@ Cross-module data: Electronic Signature (new), Activity Log (failed signings), t
 
 ## 7. Defects, edge cases and risks
 
-**Confirmed and fixed (all with tests, from the git history of `compliance/`):** a wrong password signed the user out (Frappe's `AuthenticationError`; now `SigningRefused`); failed signings were lost with the rolled-back request (now queued to Activity Log); renaming a record broke its chain (now `document_name_at_signing` is hashed, not `reference_name`); a reason with `<`/`>` was stored altered after fingerprinting (now refused); a disabled account with a live session could still sign (now refused); signatures were slow at scale (indexes added, `b1ab3c75`); a second signing of the same record could chain to a stale head (now `FOR UPDATE` and link-based head, `15970df7`).
+**Confirmed and fixed (all with tests, from the git history of `compliance/`):** a wrong password signed the user out (Frappe's `AuthenticationError`; now `SigningRefused`); failed signings were lost with the rolled-back request (now queued to Activity Log); renaming a record broke its chain (now `document_name_at_signing` is hashed, not `reference_name`); a reason with `<`/`>` was stored altered after fingerprinting (now refused); a disabled account with a live session could still sign (now refused); signatures were slow at scale (indexes added, `b1ab3c75`); a second signing of the same record could chain to a stale head (now `FOR UPDATE` and link-based head, `15970df7`). Foundation review 2026-10-12: a signature could be inserted past the service by anyone given create (refused in `before_insert`); a signature could name another person (owner must be the signer); a user who signed could be deleted and the ID reused (refused); Controlled Document Withdraw and Customer Require Licence were signed *Approved*; verification ordered by time and read a clock set back as tampering (now by links).
 
 **Potential (not confirmed as defects):**
 - Fixed 2026-10-10: a site that allows unlimited attempts, or has no lockout time, is given the standard limit (5 attempts, 15 minutes) by `apply_lockout`, run on install and every migrate (since 2026-10-11 written with the rest of the access policy, `compliance/access_policy.py`); the value is Quality Settings' (URS-PLT-013) (`test_the_site_locks_an_account_after_wrong_passwords`).
@@ -246,6 +269,8 @@ Executed by the lead on 2026-10-10 on the current branch (local test site; CI = 
 | GitHub CI | current branch | in progress |
 | Manual browser tests ES-01…ES-09 | — | **not executed** (no manual tester session); the automated journeys cover ES-01 steps 1–3 and ES-05 step 2 (document_control.js, audit_trail.js) |
 
+2026-10-12 changes (section 1): `compliance/test_immutable_records.py` and the edited meaning asserts were written without a site and are **not yet run**; ES-11 **not executed**.
+
 Untested: ES-02 step 5 (real lockout in the browser), ES-06 step 3 (database-level tampering; only the server test `test_an_altered_signature_is_detected` covers it), ES-07 step 2 (documented gap), translated sessions.
 
 ## 9. Final QA checklist
@@ -257,6 +282,7 @@ Untested: ES-02 step 5 (real lockout in the browser), ES-06 step 3 (database-lev
 | Shared accounts refused; permission on the record required; only declared acts; POST only | Verified (automated) |
 | Record and chain fingerprints; altered/removed signature and changed record detected; rename safe | Verified (automated + browser Verify Integrity) |
 | Never edited or deleted, not even by Administrator; no role may create | Verified (automated) |
+| Never inserted past signing or under another account; no hand-made permission opens it; a user who signed is disabled, not deleted; meanings fit the act and match the dialog; chain verified by links (2026-10-12) | **Not tested** (tests written, not yet run) |
 | Shown on the form for anyone who may open the record | Verified (automated + browser journey) |
 | Shown on printouts | Verified for Controlled Copy only; other print formats **Failed/gap** (section 2.7) |
 | Manual ES-01…ES-09 | **Not tested** |

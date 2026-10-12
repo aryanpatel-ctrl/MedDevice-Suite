@@ -30,6 +30,7 @@ from frappe.model import child_table_fields, no_value_fields, table_fields
 from frappe.model.document import Document
 from frappe.utils import cint, flt, get_datetime, getdate, now_datetime, to_timedelta
 
+from meddevice_suite.compliance import audit_scope
 from meddevice_suite.compliance.audit_reason import (
 	STAGED_ACTION,
 	action_finished,
@@ -176,6 +177,53 @@ def keep_user_id(doc: Document, method: str, old: str, new: str, merge: bool = F
 		)
 
 
+def keep_user_with_history(doc: Document, method: str | None = None) -> None:
+	"""User on_trash: a user ID in the audit trail is never deleted, so it is never given to anyone
+	else (21 CFR 11.300(b)). The audit trail does not stop a deletion (hooks.py,
+	ignore_links_on_delete), and a new account under the deleted ID would take over the deleted
+	person's events and signatures. A person who leaves has the account disabled instead.
+
+	Runs before Frappe checks the links that would otherwise block the deletion."""
+	if doc.name in ("Administrator", "Guest"):  # Frappe never deletes these
+		return
+	if has_history(doc.name):
+		frappe.throw(
+			_(
+				"{0} has acted on regulated records, so the user ID stays in the audit trail and cannot be "
+				"deleted. Disable the account instead."
+			).format(doc.name),
+			frappe.PermissionError,
+		)
+
+
+def has_history(user: str) -> bool:
+	"""Whether the user appears in the audit trail, has signed, or owns a regulated record.
+
+	The indexed lookups come first; ownership covers records made before the audit trail was
+	installed. A user is deleted rarely, so reading each regulated record type once is affordable.
+	"""
+	if frappe.db.exists("Audit Event", {"user": user}) or frappe.db.exists(
+		"Electronic Signature", {"signer": user}
+	):
+		return True
+	if frappe.db.exists("Audit Event", {"impersonated_by": user}):
+		return True
+	return any(frappe.db.exists(doctype, {"owner": user}) for doctype in regulated_record_types())
+
+
+def regulated_record_types() -> list[str]:
+	"""The regulated record types stored one record per row: declared ones and this app's own."""
+	return frappe.get_all(
+		"DocType",
+		filters={"istable": 0, "issingle": 0, "is_virtual": 0},
+		or_filters={
+			"name": ["in", sorted(audit_scope.REGULATED_DOCTYPES)],
+			"module": ["in", frappe.get_module_list(audit_scope.APP)],
+		},
+		pluck="name",
+	)
+
+
 def should_audit(doc: Document) -> bool:
 	# Child-table rows are recorded in their parent record's events.
 	return not frappe.flags.in_install and not doc.meta.istable and is_regulated(doc.doctype, doc.meta.module)
@@ -280,7 +328,9 @@ def record(doctype: str, name: str, action: str, changes: dict, reason: str | No
 		}
 	)
 	event.event_hash = event_fingerprint(event, previous.event_hash if previous else "")
-	# No role may create audit events; this service is the only writer.
+	# No role may create audit events; this service is the only writer, and the record refuses
+	# an insert without this mark, which a request cannot set on a document.
+	event.flags.recorded_by_audit_trail = True
 	event.insert(ignore_permissions=True)
 	return event
 

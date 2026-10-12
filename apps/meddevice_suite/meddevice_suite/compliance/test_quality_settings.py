@@ -217,7 +217,7 @@ class TestWhoChangesThem(QualitySettingsTestCase):
 		frappe.set_user("Administrator")
 		for doctype in (DOCTYPE, "Supplier Approval"):
 			with self.subTest(doctype=doctype):
-				frappe.get_doc(
+				row = frappe.get_doc(
 					{
 						"doctype": "Custom DocPerm",
 						"parent": doctype,
@@ -225,7 +225,10 @@ class TestWhoChangesThem(QualitySettingsTestCase):
 						"read": 1,
 						"write": 1,
 					}
-				).insert(ignore_permissions=True)
+				)
+				with self.assertRaises(frappe.PermissionError):  # refused as it is made
+					frappe.get_doc(row.as_dict()).insert(ignore_permissions=True)
+				row.db_insert()  # one written straight to the database is removed on migrate
 				apply_roles()  # as on every migrate
 				self.assertFalse(frappe.db.exists("Custom DocPerm", {"parent": doctype}))
 		self.assertFalse(frappe.has_permission(DOCTYPE, "write", user=signer("System Administrator")))
