@@ -5,7 +5,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
-from meddevice_suite.qms import qualification
+from meddevice_suite.qms import equipment_care, qualification
 
 
 class EquipmentQualification(Document):
@@ -19,6 +19,9 @@ class EquipmentQualification(Document):
 
 	def before_update_after_submit(self) -> None:
 		frappe.throw(_("An approved qualification does not change."), frappe.PermissionError)
+
+	def before_cancel(self) -> None:
+		equipment_care.only_by_correction(self)
 
 	def on_trash(self) -> None:
 		frappe.throw(_("A qualification is never deleted."), frappe.PermissionError)

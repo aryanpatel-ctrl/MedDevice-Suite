@@ -4,7 +4,8 @@ execution; ISO 13485 6.3).
 A Maintenance Record holds its checks, each OK or not, what was done and the downtime. It is
 satisfactory only when every check is OK; only a satisfactory record sets the next due date, from
 the interval QA approved on the equipment. Completed only by its performer's signature (Maintenance
-or QA), never deleted, corrected by cancel and amend.
+or QA), never deleted, and corrected only by QA's signed Correct (plan D-29,
+`equipment_care.correct`), which cancels it and opens its amendment.
 """
 
 import frappe
@@ -18,6 +19,9 @@ from meddevice_suite.master_data import equipment
 DOCTYPE = "Maintenance Record"
 SATISFACTORY, NOT_SATISFACTORY = "Satisfactory", "Not satisfactory"
 PERFORMERS = frozenset({"Maintenance User", "Quality Manager"})
+# Set only by the signed act. A draft never holds them, though Frappe's Amend copies them from the
+# cancelled record.
+SET_BY_ACTS = ("interval_days", "next_due_date", "completed_by")
 
 
 def require(condition, message: str, exception: type[Exception] = frappe.ValidationError) -> None:
@@ -34,6 +38,8 @@ def only_by_signature(doc: Document, method: str | None = None) -> None:
 def evaluate(doc: Document, method: str | None = None) -> None:
 	if doc.docstatus != 0:
 		return
+	for field in SET_BY_ACTS:
+		doc.set(field, None)
 	asset = frappe.db.get_value(
 		"Asset", doc.asset, [equipment.APPROVAL_STATUS, equipment.STATUS, equipment.MAINTENANCE], as_dict=True
 	)

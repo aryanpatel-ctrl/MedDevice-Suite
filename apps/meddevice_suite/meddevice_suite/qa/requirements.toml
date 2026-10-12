@@ -1136,8 +1136,8 @@ status = "implemented"
 [[requirement]]
 id = "URS-EQP-001"
 module = 38
-title = "A calibration records its date and, per point, the nominal value, limits and the values found and left; the system works out what was in tolerance, the result on the values left and, for a pass, the next due date from the interval QA approved on the equipment; it follows an effective procedure when done in-house and names the laboratory, certificate number and certificate when external; it is completed only by its performer's electronic signature (Maintenance or QA), is never deleted, and does not change once completed but by QA's signed impact assessment."
-source = "Flowchart Calibration & Maintenance (calibration records); DFD 9D D6; ISO 13485 7.6; 21 CFR 11.50"
+title = "A calibration records its date and, per point, the nominal value, limits and the values found and left; the system works out what was in tolerance, the result on the values left and, for a pass, the next due date from the interval QA approved on the equipment; it follows an effective procedure when done in-house and names the laboratory, certificate number and certificate when external; it is completed only by its performer's electronic signature (Maintenance or QA), is never deleted, and does not change once completed but by QA's signed impact assessment; once completed it is corrected only by QA's electronically signed correction with a reason, which cancels it and opens its amendment as a new draft, completed again by its performer's signature, and the platform's own cancel is refused."
+source = "Flowchart Calibration & Maintenance (calibration records); DFD 9D D6; ISO 13485 7.6; 21 CFR 11.50; decided 2026-10-12 (plan D-29): corrected only by QA's signed correction"
 status = "implemented"
 
 [[requirement]]
@@ -1150,22 +1150,22 @@ status = "implemented"
 [[requirement]]
 id = "URS-EQP-003"
 module = 38
-title = "A calibration that finds a value out of tolerance lists the submitted inspections that named the instrument and the submitted job cards at its workstation since its last good calibration, alerts QA, and stays open for QA's signed assessment (no product impact, or product action needed), which a reminder tracks until it is signed."
-source = "ISO 13485 7.6 (assess the validity of previous results when equipment is found not to conform); decided 2026-10-11"
+title = "A calibration that finds a value out of tolerance lists the submitted inspections that named the instrument and the submitted job cards at its workstation since its last good calibration, alerts QA, and stays open for QA's signed assessment (no product impact, or product action needed), which a reminder tracks until it is signed; when QA withdraws the calibration for correction, its open assessment stays open on it, listed and tracked by the same reminder, until QA signs it there."
+source = "ISO 13485 7.6 (assess the validity of previous results when equipment is found not to conform); decided 2026-10-11; decided 2026-10-12 (plan D-29): a correction keeps the open assessment"
 status = "implemented"
 
 [[requirement]]
 id = "URS-EQP-004"
 module = 38
-title = "Preventive maintenance records its checks, each OK or not, what was done and the downtime; it is satisfactory only when every check is OK, only a satisfactory record sets the next due date, and it is completed only by its performer's electronic signature and never deleted."
-source = "DFD 9D D3 maintenance schedule, D4 maintenance execution; flowchart (maintenance plan, maintenance log, downtime tracking); ISO 13485 6.3"
+title = "Preventive maintenance records its checks, each OK or not, what was done and the downtime; it is satisfactory only when every check is OK, only a satisfactory record sets the next due date, and it is completed only by its performer's electronic signature and never deleted; once completed it is corrected only by QA's electronically signed correction with a reason, which cancels it and opens its amendment as a new draft, and the platform's own cancel is refused."
+source = "DFD 9D D3 maintenance schedule, D4 maintenance execution; flowchart (maintenance plan, maintenance log, downtime tracking); ISO 13485 6.3; decided 2026-10-12 (plan D-29)"
 status = "implemented"
 
 [[requirement]]
 id = "URS-EQP-005"
 module = 38
-title = "Equipment that needs calibration, or preventive maintenance, is fit only while its latest completed record passed and its next due date has not passed; equipment never calibrated, or never maintained, is not fit."
-source = "ISO 13485 7.6, 6.3; production stage 3"
+title = "Equipment that needs calibration, or preventive maintenance, is fit only while its latest completed record passed and its next due date has not passed; equipment never calibrated, or never maintained, is not fit; nor is equipment whose calibration, maintenance or qualification QA has withdrawn for correction, from the moment it is withdrawn until its amendment is completed."
+source = "ISO 13485 7.6, 6.3; production stage 3; decided 2026-10-12 (plan D-29)"
 status = "implemented"
 
 [[requirement]]
@@ -1185,8 +1185,8 @@ status = "implemented"
 [[requirement]]
 id = "URS-EQP-008"
 module = 38
-title = "Calibration, maintenance and requalification falling due within the days QA sets in Quality Settings, and an open out-of-tolerance assessment, are tracked as reminders that only the records showing the work done complete."
-source = "Flowchart (alerts and reminders); DFD 9C"
+title = "Calibration, maintenance and requalification falling due within the days QA sets in Quality Settings, and an open out-of-tolerance assessment, also of a calibration withdrawn for correction, are tracked as reminders that only the records showing the work done complete."
+source = "Flowchart (alerts and reminders); DFD 9C; decided 2026-10-12 (plan D-29): a correction does not complete the impact reminder"
 status = "implemented"
 
 [[requirement]]
@@ -1199,8 +1199,8 @@ status = "implemented"
 [[requirement]]
 id = "URS-EQP-010"
 module = 40
-title = "Each installation, operational and performance qualification is recorded against an effective protocol (an SOP or a form) with its tests, each passed or failed, and passes only when every test passes; its performer executes it with an electronic signature, a change after execution needs execution again, and QA, never its performer, approves it with an electronic signature or returns it with a signed reason; it is never deleted."
-source = "Flowchart compliance box (Equipment Qualification IQ/OQ/PQ); ISO 13485 7.5.6, 6.3"
+title = "Each installation, operational and performance qualification is recorded against an effective protocol (an SOP or a form) with its tests, each passed or failed, and passes only when every test passes; its performer executes it with an electronic signature, a change after execution needs execution again, and QA, never its performer, approves it with an electronic signature or returns it with a signed reason; it is never deleted; once approved it is corrected only by QA's electronically signed correction with a reason, which cancels it and opens its amendment as a new draft, executed and approved again, and the platform's own cancel is refused."
+source = "Flowchart compliance box (Equipment Qualification IQ/OQ/PQ); ISO 13485 7.5.6, 6.3; decided 2026-10-12 (plan D-29)"
 status = "implemented"
 
 [[requirement]]
@@ -1213,8 +1213,8 @@ status = "implemented"
 [[requirement]]
 id = "URS-EQP-012"
 module = 40
-title = "Equipment that needs qualification is qualified only while its latest approved IQ, OQ and PQ each passed, were done in that order, and the PQ is within the requalification interval QA approved on the equipment, if one is set."
-source = "ISO 13485 7.5.6; decided 2026-10-11: a requalification interval on the equipment, under change control"
+title = "Equipment that needs qualification is qualified only while its latest approved IQ, OQ and PQ each passed, were done in that order, and the PQ is within the requalification interval QA approved on the equipment, if one is set, and while none of its approved stages is withdrawn for correction with its amendment not yet approved."
+source = "ISO 13485 7.5.6; decided 2026-10-11: a requalification interval on the equipment, under change control; decided 2026-10-12 (plan D-29)"
 status = "implemented"
 
 [[requirement]]

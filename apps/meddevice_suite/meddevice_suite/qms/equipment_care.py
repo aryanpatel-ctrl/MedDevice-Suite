@@ -17,6 +17,13 @@ transfers it), a qualified machine is fit again only once qualified again, IQ, O
 after the day it moved. A move alone does not need a calibration: an instrument is carried by hand
 and its calibration interval covers it.
 
+A completed calibration, maintenance or qualification record is corrected only by QA's signed
+Correct, with a reason (decided 2026-10-12, plan D-29): the act cancels the record under that
+signature and opens its amendment as a new draft, which is completed again by its own signed act.
+Frappe's own Cancel and the API are refused: cancelling a failed record unsigned would make the
+pass before it the latest, and the equipment fit again. From the moment the record is cancelled
+until its amendment is completed, the equipment is not fit, whatever the records before it say.
+
 `master_data.equipment.usable` applies this, so an inspection names only fit instruments; and a
 job card, at every save, submit and time log, and a work order at submit, are refused while any
 equipment at their workstations is not usable. Block, never warn.
@@ -30,6 +37,7 @@ from frappe.model.document import Document
 from frappe.query_builder import Order
 from frappe.utils import add_days, cint, getdate, today
 
+from meddevice_suite.compliance.esign import sign
 from meddevice_suite.master_data import equipment
 
 CALIBRATION, MAINTENANCE, QUALIFICATION = (
@@ -37,9 +45,18 @@ CALIBRATION, MAINTENANCE, QUALIFICATION = (
 	"Maintenance Record",
 	"Equipment Qualification",
 )
+QA_ROLE = "Quality Manager"
+# The signed act that completes each record type. A cancelled record carrying its signature was
+# completed and then withdrawn for correction; a draft discarded unfinished carries none.
+COMPLETED_BY_ACT = {CALIBRATION: "Complete", MAINTENANCE: "Complete", QUALIFICATION: "Approve"}
 # ERPNext asset movements that take equipment somewhere else; a receipt is its first placing and an
 # issue hands it to a person.
 RELOCATIONS = ("Transfer", "Transfer and Issue")
+
+
+def require(condition, message: str, exception: type[Exception] = frappe.ValidationError) -> None:
+	if not condition:
+		frappe.throw(message, exception)
 
 
 def latest(
@@ -83,6 +100,47 @@ def repaired_and_moved(assets: list[str]) -> tuple[dict, dict]:
 	return repaired, moved
 
 
+def being_corrected(doctype: str, assets: list[str]) -> dict[str, list[str]]:
+	"""Each asset's records of this type withdrawn for correction whose correction is not yet
+	completed, by asset (plan D-29). A withdrawn record is no longer read as done, so without this
+	the record before it, perhaps a pass before a failure, would decide fitness again.
+
+	A correction is done once an amendment of the record is completed, or once an amendment was
+	itself completed and then withdrawn: that one then carries the pending correction. A draft
+	amendment, or one discarded unfinished, does not settle it."""
+	cancelled = frappe.get_all(
+		doctype,
+		filters={"asset": ["in", assets], "docstatus": 2},
+		fields=["name", "asset"],
+		order_by="performed_on asc, creation asc",
+	)
+	if not cancelled:
+		return {}
+	names = [row.name for row in cancelled]
+	amendments = frappe.get_all(
+		doctype,
+		filters={"amended_from": ["in", names], "docstatus": ["in", (1, 2)]},
+		fields=["name", "amended_from", "docstatus"],
+	)
+	completed = set(
+		frappe.get_all(
+			"Electronic Signature",
+			filters={
+				"reference_doctype": doctype,
+				"reference_name": ["in", names + [row.name for row in amendments]],
+				"action": COMPLETED_BY_ACT[doctype],
+			},
+			pluck="reference_name",
+		)
+	)
+	settled = {row.amended_from for row in amendments if row.docstatus == 1 or row.name in completed}
+	pending: dict[str, list[str]] = {}
+	for row in cancelled:
+		if row.name in completed and row.name not in settled:
+			pending.setdefault(row.asset, []).append(row.name)
+	return pending
+
+
 def unfit(assets: Iterable[str], on=None) -> dict[str, list[str]]:
 	"""Why each piece of equipment is not fit on the day, by asset; fit equipment is left out."""
 	assets = sorted(set(assets) - {None, ""})
@@ -99,6 +157,7 @@ def unfit(assets: Iterable[str], on=None) -> dict[str, list[str]]:
 	}
 	calibrated = latest(CALIBRATION, assets, ["result", "next_due_date"])
 	maintained = latest(MAINTENANCE, assets, ["result", "next_due_date"])
+	correcting = {doctype: being_corrected(doctype, assets) for doctype in COMPLETED_BY_ACT}
 	from meddevice_suite.qms.qualification import not_qualified  # it reads these records too
 
 	repaired, moved = repaired_and_moved(assets)
@@ -116,6 +175,17 @@ def unfit(assets: Iterable[str], on=None) -> dict[str, list[str]]:
 	for asset in assets:
 		why = []
 		need = needs.get(asset) or {}
+		for needed, doctype, what in (
+			(equipment.CALIBRATION, CALIBRATION, _("calibration")),
+			(equipment.MAINTENANCE, MAINTENANCE, _("preventive maintenance")),
+			(equipment.QUALIFICATION, QUALIFICATION, _("qualification")),
+		):
+			# Whatever the records before it say: the one withdrawn may be the one that failed.
+			if cint(need.get(needed)):
+				why.extend(
+					_("its {0} {1} is being corrected").format(what, name)
+					for name in correcting[doctype].get(asset, ())
+				)
 		for needed, record, what, passed in (
 			(equipment.CALIBRATION, calibrated, _("calibration"), "Pass"),
 			(equipment.MAINTENANCE, maintained, _("preventive maintenance"), "Satisfactory"),
@@ -154,6 +224,48 @@ def unfit(assets: Iterable[str], on=None) -> dict[str, list[str]]:
 		if why:
 			reasons[asset] = why
 	return reasons
+
+
+# --- Correction of a completed record (plan D-29) -------------------------------------------------
+
+
+def only_by_correction(doc: Document, method: str | None = None) -> None:
+	"""before_cancel of a calibration, maintenance or qualification record: Frappe's Cancel button
+	and the API would withdraw a completed record unsigned, and the equipment would then be judged
+	on the record before it. Only QA's signed Correct cancels one."""
+	if not doc.flags.care_correction:
+		frappe.throw(
+			_("{0} is not cancelled on its own; QA corrects it by signing Correct, with a reason.").format(
+				doc.name
+			),
+			frappe.PermissionError,
+		)
+
+
+def correct(doc: Document, password: str, reason: str | None = None) -> str:
+	"""Signed act: QA withdraws a completed record for correction, saying why. The record is
+	cancelled under this signature and its amendment opened as a draft, which is completed again by
+	its own signed act; until then the equipment is not fit (`being_corrected`). Returns the
+	amendment's name, for the form to open it."""
+	require(doc.doctype in COMPLETED_BY_ACT, _("{0} is not corrected this way.").format(_(doc.doctype)))
+	require(
+		doc.docstatus == 1, _("{0} is not completed; only a completed record is corrected.").format(doc.name)
+	)
+	require(QA_ROLE in frappe.get_roles(), _("Only QA corrects a completed record."), frappe.PermissionError)
+	require(reason, _("Say what is to be corrected and why."))
+	sign(doc, "Rejected", "Correct", password, reason, permission="read")
+	doc.flags.care_correction = True
+	doc.flags.audit_reason = reason  # the audit trail asks the reason for the cancellation
+	doc.flags.ignore_permissions = True  # nobody holds Frappe's cancel: this signed act is its only cancel
+	doc.cancel()
+	# Copied without what the signed acts set (the fields not to copy): the amendment is completed
+	# afresh. Frappe's Amend on the form copies those too, and each record type clears them on a draft.
+	amendment = frappe.copy_doc(doc)
+	amendment.docstatus = 0  # a draft, also where Frappe's copy keeps the status (in its tests)
+	amendment.amended_from = doc.name
+	amendment.flags.audit_reason = reason  # and for the amendment
+	amendment.insert()
+	return amendment.name
 
 
 # --- At the point of use ------------------------------------------------------------------------

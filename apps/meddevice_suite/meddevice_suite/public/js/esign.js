@@ -15,7 +15,8 @@ const MEANING_TEXT = {
 
 const esign = frappe.provide("meddevice_suite.esign");
 
-// Sign `action` on the form's record; resolves once signed, rejects if the dialog is closed.
+// Sign `action` on the form's record; resolves once signed, with the name of a record the act
+// opened (a correction opens its amendment), and rejects if the dialog is closed.
 esign.sign = (frm, action, meaning, { ask_reason = false } = {}) =>
 	new Promise((resolve, reject) => {
 		let signed = false;
@@ -64,11 +65,11 @@ esign.sign = (frm, action, meaning, { ask_reason = false } = {}) =>
 						password,
 						reason: reason || null,
 					})
-					.then(() => {
+					.then((opened) => {
 						signed = true;
 						dialog.hide();
 						frm.reload_doc();
-						resolve();
+						resolve(opened);
 					})
 					.catch(() => {
 						dialog.set_value("password", "");
