@@ -97,7 +97,15 @@ SIGNED_CONTENT: dict[str, str] = {
 
 SYSTEM_MAINTAINED: dict[str, tuple[str, ...]] = {
 	"Document Revision": ("status", "docstatus", "superseded_by"),
-	"Controlled Document": ("status", "current_revision", "effective_since", "next_review_date"),
+	# The review alert's bookkeeping too: a periodic review's signature stays intact when the next
+	# review is alerted (module 30, found in the foundation review of 2026-10-12).
+	"Controlled Document": (
+		"status",
+		"current_revision",
+		"effective_since",
+		"next_review_date",
+		"review_alerted_for",
+	),
 	# The plan approved with a change stays what was signed while its actions are done.
 	"Change Request": (
 		"status",

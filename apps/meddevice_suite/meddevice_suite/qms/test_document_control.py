@@ -11,7 +11,7 @@ from frappe.utils.password import update_password
 from frappe.www.printview import get_rendered_template
 from pypdf import PdfWriter
 
-from meddevice_suite.compliance.esign import verify_signatures
+from meddevice_suite.compliance.esign import is_unchanged_since, verify_signatures
 from meddevice_suite.compliance.signing import sign_action
 from meddevice_suite.compliance.test_esign import PASSWORD, reset_lockout
 from meddevice_suite.qa import verifies
@@ -768,3 +768,143 @@ class TestPeriodicReviewAlerts(DocumentControlTestCase):
 			"meddevice_suite.qms.document_control.send_review_alerts",
 			frappe.get_hooks("scheduler_events").get("daily", []),
 		)
+
+
+@verifies("URS-QMS-034")
+class TestPeriodicReview(DocumentControlTestCase):
+	"""Found in the foundation review of 2026-10-12: a due review could be settled only by issuing a
+	new revision, though ISO 13485 4.2.4 asks for a review, and an update only where one is needed."""
+
+	def due_document(self, days: int = 5):
+		document = self.register()
+		revision = self.issue(document)
+		frappe.db.set_value("Controlled Document", document.name, "next_review_date", add_days(today(), days))
+		return frappe.get_doc("Controlled Document", document.name), revision
+
+	def review(
+		self, user: str, document, reason: str | None = "Read against current practice; still correct"
+	):
+		self.as_user(user)
+		sign_action("Controlled Document", document.name, "Review", PASSWORD, reason)
+		return frappe.get_doc("Controlled Document", document.name)
+
+	def test_qa_signs_the_effective_revision_still_current_and_the_next_review_moves_on(self):
+		document, revision = self.due_document()
+		before = frappe.get_doc("Document Revision", revision.name)
+
+		reviewed = self.review(self.qa, document)
+
+		self.assertEqual(getdate(reviewed.next_review_date), getdate(add_years(today(), 2)))
+		self.assertEqual((reviewed.status, reviewed.current_revision), ("Effective", revision.name))
+		after = frappe.get_doc("Document Revision", revision.name)
+		self.assertEqual(
+			(after.status, after.file, after.file_sha256, after.modified),
+			("Effective", before.file, before.file_sha256, before.modified),
+		)
+		signature = frappe.get_last_doc(
+			"Electronic Signature",
+			filters={"reference_doctype": "Controlled Document", "reference_name": document.name},
+		)
+		self.assertEqual(
+			(signature.signer, signature.action, signature.meaning, signature.reason),
+			(self.qa, "Review", "Reviewed", "Read against current practice; still correct"),
+		)
+		self.assertTrue(verify_signatures("Controlled Document", document.name))
+		event = frappe.get_last_doc(
+			"Audit Event",
+			filters={"reference_doctype": "Controlled Document", "reference_name": document.name},
+		)
+		self.assertEqual(event.user, self.qa)
+		self.assertIn(
+			"next_review_date", [field for field, *_values in frappe.parse_json(event.changes)["changed"]]
+		)
+
+	def test_the_review_period_set_on_the_document_is_used(self):
+		document, _revision = self.due_document()
+		self.as_user(self.qa)
+		document.review_period_years = 3
+		document.save()
+
+		self.assertEqual(
+			getdate(self.review(self.qa, document).next_review_date), getdate(add_years(today(), 3))
+		)
+
+	def test_only_qa_who_approves_the_revisions_signs_the_review(self):
+		document, _revision = self.due_document()
+		for user in (self.author, self.reviewer):  # the process owner and a reviewer of revisions
+			with self.subTest(user=user), self.assertRaises(frappe.PermissionError):
+				self.review(user, document)
+		self.assertEqual(
+			getdate(frappe.db.get_value("Controlled Document", document.name, "next_review_date")),
+			getdate(add_days(today(), 5)),
+		)
+
+	def test_the_review_says_what_it_found(self):
+		document, _revision = self.due_document()
+		with self.assertRaisesRegex(frappe.ValidationError, "Say what the review found"):
+			self.review(self.qa, document, reason=None)
+
+	def test_only_an_effective_document_without_a_revision_in_progress_is_reviewed(self):
+		with self.assertRaisesRegex(frappe.ValidationError, "Only a document in effect"):
+			self.review(self.qa, self.register("Never issued"))
+
+		document, _revision = self.due_document()
+		draft = self.draft(document, summary="Sampling plan changed")
+		with self.assertRaisesRegex(frappe.ValidationError, f"Revision {draft.name} .* is in progress"):
+			self.review(self.qa, document)
+
+		withdrawn, _revision = self.due_document()
+		self.as_user(self.qa)
+		sign_action("Controlled Document", withdrawn.name, "Withdraw", PASSWORD, "Replaced")
+		with self.assertRaisesRegex(frappe.ValidationError, "Only a document in effect"):
+			self.review(self.qa, withdrawn)
+
+	def test_the_review_settles_the_reminder_at_once_with_who_reviewed(self):
+		from meddevice_suite.work_management import reminders
+
+		document, _revision = self.due_document()
+		frappe.set_user("Administrator")
+		reminders.track("Document Review", list(reminders.document_reviews_due()))
+		reminder = frappe.db.get_value(
+			"Reminder",
+			{"category": "Document Review", "reference_name": document.name, "status": "Open"},
+			"name",
+		)
+		self.assertTrue(reminder)
+
+		self.review(self.qa, document)
+
+		self.assertEqual(
+			frappe.db.get_value("Reminder", reminder, ["status", "completed_by"]), ("Completed", self.qa)
+		)
+		frappe.set_user("Administrator")
+		reminders.track("Document Review", list(reminders.document_reviews_due()))
+		self.assertFalse(
+			frappe.db.exists(
+				"Reminder",
+				{"category": "Document Review", "reference_name": document.name, "status": "Open"},
+			)
+		)
+
+	def test_the_signature_stays_intact_when_the_next_review_is_alerted(self):
+		document, _revision = self.due_document()
+		self.review(self.qa, document)
+		signature = frappe.get_last_doc(
+			"Electronic Signature",
+			filters={"reference_doctype": "Controlled Document", "reference_name": document.name},
+		)
+		# As the review alert records it, two years on.
+		frappe.db.set_value("Controlled Document", document.name, "review_alerted_for", add_years(today(), 2))
+
+		self.assertTrue(is_unchanged_since(signature))
+
+	def test_the_form_puts_the_review_first_once_it_is_due(self):
+		document, _revision = self.due_document(days=5)
+		self.as_user(self.qa)
+		loaded = frappe.get_doc("Controlled Document", document.name)
+		loaded.run_method("onload")
+		self.assertTrue(loaded.get_onload().get("review_due"))
+
+		reviewed = self.review(self.qa, document)
+		reviewed.run_method("onload")
+		self.assertFalse(reviewed.get_onload().get("review_due"))

@@ -580,6 +580,30 @@ def complete(name: str, how: str, by: str | None = None) -> None:
 	update(name, status=COMPLETED, completed_on=now_datetime(), completed_by=by, completion=how)
 
 
+def settle(
+	category: str,
+	reference_doctype: str,
+	reference_name: str,
+	how: str,
+	by: str | None = None,
+	still_due_on: object = None,
+) -> None:
+	"""The work in a record was done just now by `by` (a document reviewed and found current): its
+	open reminders of the category are completed at once, not at the next daily run, with who did it.
+	One for `still_due_on`, the record's due date now, stays open: the daily run would not raise its
+	key again."""
+	filters = {
+		"category": category,
+		"reference_doctype": reference_doctype,
+		"reference_name": reference_name,
+		"status": ["in", STILL_OPEN],
+	}
+	if still_due_on:
+		filters["due_date"] = ["!=", getdate(still_due_on)]
+	for name in frappe.get_all(DOCTYPE, filters=filters, pluck="name"):
+		complete(name, how, by=by)
+
+
 def follow_up(name: str) -> None:
 	"""A reminder past its due date is Overdue; overdue for the escalation days, escalated once."""
 	reminder = frappe.get_doc(DOCTYPE, name)

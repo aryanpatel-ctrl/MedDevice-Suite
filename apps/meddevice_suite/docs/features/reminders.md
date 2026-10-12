@@ -26,7 +26,7 @@ DFD trace: 9C Reminders / Next Due (C1 define reminder category, C2 set due date
 | Lot Expiry | a lot with stock nears or passes its expiry | Stores, QA | used up, or kept apart (on hold, rejected) |
 | Supplier Certificate | the certificate of the decision in force | QA, Purchase | QA decides the supplier again |
 | Customer Licence | a verified licence ends | QA, Sales | a renewal is verified without a gap |
-| Document Review | an effective document's next review | the process owner, QA | reviewed (the next review date moves on) |
+| Document Review | an effective document's next review | the process owner, QA | reviewed (the next review date moves on): a new revision taking effect, or QA's signed **Review: Still Current**, which completes the reminder at once with QA as Completed By (`reminders.settle`, URS-QMS-034, 2026-10-12) |
 | Change Action | an action of an approved change | its owner, QA | the action is done |
 | Effectiveness Check | an implemented change's check falls due | QA | the change is closed |
 

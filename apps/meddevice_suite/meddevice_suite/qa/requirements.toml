@@ -865,6 +865,15 @@ title = "An approved change request authorises one change of each record it list
 source = "ISO 13485 7.3.9, 4.2.4 (changes reviewed and approved before implementation); found in the foundation review of 2026-10-12"
 status = "implemented"
 
+# --- Module 30: periodic review (added 2026-10-12) ------------------------------
+
+[[requirement]]
+id = "URS-QMS-034"
+module = 30
+title = "QA, who approves a document's revisions, can sign an effective document as reviewed and still current, with what the review found and a password; the document and its effective revision are unchanged, the next review date moves on by the document's review period, and the document's open review reminder is completed at once with who reviewed it; it is refused while a revision is in progress or the document is not in effect."
+source = "ISO 13485 4.2.4 b) (review and update documents as necessary); 21 CFR 11.50; found in the foundation review of 2026-10-12"
+status = "implemented"
+
 # --- Module 39: risk management (ISO 14971:2019) ---------------------------------
 
 [[requirement]]
