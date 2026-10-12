@@ -291,6 +291,22 @@ class TestVersionedMasters(VersioningTestCase):
 		frappe.get_doc("BOM", bom.name).cancel()
 		self.assertEqual(frappe.db.get_value("BOM", bom.name, ["docstatus", CHANGED_UNDER]), (2, change))
 
+		# The request still lists the cancelled bill of materials, and is still acted on; a record it
+		# names that does not exist is still refused.
+		from meddevice_suite.qms import change_control
+
+		request = frappe.get_doc("Change Request", change)
+		self.assertEqual(
+			[(row.reference_name, row.get(change_control.CHANGE_RECORD)) for row in request.affected_records],
+			[(bom.name, bom.name)],
+		)
+		request.flags.audit_reason = "A later act on the request"
+		change_control.save(request)
+		request.affected_records[0].reference_name = "BOM-DOES-NOT-EXIST"
+		request.flags.audit_reason = "A record that does not exist"
+		with self.assertRaises(frappe.LinkValidationError):
+			change_control.save(request)
+
 	def test_a_master_in_use_keeps_its_name(self):
 		code = self.item_in_use()
 		with self.assertRaises(frappe.PermissionError):

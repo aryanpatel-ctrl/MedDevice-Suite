@@ -788,7 +788,25 @@ def locked(name: str) -> Document:
 def save(doc: Document) -> None:
 	# The act has made its own checks; the controller's edit rules are for people editing the form.
 	doc.flags.change_control = True
+	require_linked_records_exist(doc)
+	# A record the change cancelled (a bill of materials, an equipment record) stays listed and named
+	# as where the change was made; Frappe refuses any link to a cancelled document, which would stop
+	# every later act on the request. Its links were checked just above, for existence only.
+	doc.flags.ignore_links = True
 	doc.save(ignore_permissions=True)
+
+
+def require_linked_records_exist(doc: Document) -> None:
+	"""Frappe's own link check on the request and its rows, every record it names to exist,
+	cancelled or not."""
+	missing = list(doc.get_invalid_links()[0])
+	for row in doc.get_all_children():
+		missing.extend(row.get_invalid_links(is_submittable=doc.meta.is_submittable)[0])
+	if missing:
+		frappe.throw(
+			_("Could not find {0}").format(", ".join(message for _field, _name, message in missing)),
+			frappe.LinkValidationError,
+		)
 
 
 def require(condition, message: str, exception: type[Exception] = frappe.ValidationError) -> None:
