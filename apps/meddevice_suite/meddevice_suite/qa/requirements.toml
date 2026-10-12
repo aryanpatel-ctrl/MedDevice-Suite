@@ -998,8 +998,8 @@ status = "implemented"
 [[requirement]]
 id = "URS-STK-005"
 module = 17
-title = "No stock of a lot that is not Approved can be issued to production, transferred to an approved store, picked, packed or delivered, through the form or the API; a Quarantine, Hold or Rejected lot moves only into the quarantine, hold, rejected or returns stores, or back to its supplier."
-source = "D2 Material Issue (From Approved Stock), Reject / Return To Supplier; D3 Rejected (return flow); D4 4.3 Issue Material, 7.2 Allocate Released Batch; ISO 13485 7.5.8, 8.3"
+title = "No stock of a lot that is not Approved can be issued to production, transferred to an approved store, picked, packed, delivered or changed by a stock count, through the form or the API; a Quarantine or Hold lot moves only by QA's signed decision into the store of its status, and rejected stock only goes back to its supplier, is scrapped or is kept in the returns store."
+source = "D2 Material Issue (From Approved Stock), Reject / Return To Supplier; D3 Rejected (return flow); D4 4.3 Issue Material, 7.2 Allocate Released Batch; ISO 13485 7.5.8, 8.3; no stock count of a lot that is not Approved, nor of stock kept apart, decided 2026-10-12 (plan D-24)"
 status = "implemented"
 
 [[requirement]]
@@ -1014,6 +1014,13 @@ id = "URS-STK-007"
 module = 17
 title = "When lot status is installed on a site that already holds stock, every lot is given a status by a migration recorded in the audit trail: lots in the approved and finished goods stores become Approved, every other lot Quarantine."
 source = "Engineering rules section 8 (schema changes migrate existing data); ISO 13485 4.2.5; status by store role decided under the client's instruction of 2026-10-08, confirmed against the physical count at cutover"
+status = "implemented"
+
+[[requirement]]
+id = "URS-STK-010"
+module = 17
+title = "Where stock of a lot may go follows from its lot status and the kind of store it is in, by one rule for every document, the form and the API: approved stock in an approved store is used, moved between approved stores or set apart in the hold or rejected store; stock in the quarantine, hold or returns store leaves only by a signed QA decision; stock in the rejected store, whatever its lot's status, only goes back to its supplier, is scrapped or moves to the returns store, never into usable stock, not even by a release; new stock of a lot that is not Approved never comes into an approved store; goods a customer sends back come only into the returns store, whatever their lot's status, and leave it only by QA's signed disposition: back to the approved store once the lot is Approved and an inspection made after they came back is accepted, or to the rejected store."
+source = "D2 Quarantine / Approved Stock, Reject / Return To Supplier; D3 Rejected (return flow); master plan section 3 (rejected and returns areas); ISO 13485 7.5.8, 8.2.6, 8.3; 21 CFR 11.50; found in the review of 2026-10-12 (stock rejected at the door was released with its lot; approved stock was used from the rejected, hold and returns stores; a customer's return came back into usable stock); customer returns into the returns store and their signed disposition decided 2026-10-12 (plan D-25)"
 status = "implemented"
 
 [[requirement]]
@@ -1033,8 +1040,8 @@ status = "implemented"
 [[requirement]]
 id = "URS-QC-003"
 module = 16
-title = "A lot that enters stock other than from a work order (on a goods receipt, or on a material receipt such as opening stock) is released by QA with an electronic signature only once an accepted incoming inspection made on the document that brought it in exists for it: release sets the lot Approved and moves its stock to the approved store in one audited transaction; QA can instead reject it with a signature and a reason, which sets it Rejected, moves the stock to the rejected store and creates the return to the supplier for Purchase; or hold it, which sets it Hold and moves it to the hold store; a held lot is released only after a new accepted inspection and with a reason."
-source = "D2 Pass? No: Reject / Return To Supplier, Yes: Put Away; D3 Accepted / Rejected; D4 3.5, 3.6; ISO 13485 7.4.3, 8.3; 21 CFR 11.50; release of a held lot after retest decided under the client's instruction of 2026-10-08; inspection of material-receipt lots, and opening stock loaded as material receipts and inspected (DFD 3.1-3.5), decided on 2026-10-09"
+title = "A lot that enters stock other than from a work order (on a goods receipt, or on a material receipt such as opening stock) is released by QA with an electronic signature only once the newest incoming inspection made on the document that brought it in is accepted: release sets the lot Approved and moves its stock in quarantine to the approved store in one audited transaction, never the quantity rejected at the door, which stays in the rejected store; QA can instead reject it with a signature and a reason, which sets it Rejected, moves that stock to the rejected store and drafts its return to the supplier for Purchase, the accepted quantity only; or hold it, which sets it Hold and moves it to the hold store; a held lot is released only after a new accepted inspection and with a reason. What the decision acts on, its quantity, where the lot came from and when it was held, is read when QA signs, not from the draft."
+source = "D2 Pass? No: Reject / Return To Supplier, Yes: Put Away; D3 Accepted / Rejected; D4 3.5, 3.6; ISO 13485 7.4.3, 8.3; 21 CFR 11.50; release of a held lot after retest decided under the client's instruction of 2026-10-08; inspection of material-receipt lots, and opening stock loaded as material receipts and inspected (DFD 3.1-3.5), decided on 2026-10-09; newest inspection decides, decision on the stock of the lot's status only, read when signed: found in the review of 2026-10-12"
 status = "implemented"
 
 [[requirement]]
@@ -1201,8 +1208,8 @@ status = "implemented"
 [[requirement]]
 id = "URS-EQP-001"
 module = 38
-title = "A calibration records its date and, per point, the nominal value, limits and the values found and left; the system works out what was in tolerance, the result on the values left and, for a pass, the next due date from the interval QA approved on the equipment; it follows an effective procedure when done in-house and names the laboratory, certificate number and certificate when external; it is completed only by its performer's electronic signature (Maintenance or QA), is never deleted, and does not change once completed but by QA's signed impact assessment."
-source = "Flowchart Calibration & Maintenance (calibration records); DFD 9D D6; ISO 13485 7.6; 21 CFR 11.50"
+title = "A calibration records its date and, per point, the nominal value, limits and the values found and left; the system works out what was in tolerance, the result on the values left and, for a pass, the next due date from the interval QA approved on the equipment; it follows an effective procedure when done in-house and names the laboratory, certificate number and certificate when external; it is completed only by its performer's electronic signature (Maintenance or QA), is never deleted, and does not change once completed but by QA's signed impact assessment; once completed it is corrected only by QA's electronically signed correction with a reason, which cancels it and opens its amendment as a new draft, completed again by its performer's signature, and the platform's own cancel is refused."
+source = "Flowchart Calibration & Maintenance (calibration records); DFD 9D D6; ISO 13485 7.6; 21 CFR 11.50; decided 2026-10-12 (plan D-29): corrected only by QA's signed correction"
 status = "implemented"
 
 [[requirement]]
@@ -1215,22 +1222,22 @@ status = "implemented"
 [[requirement]]
 id = "URS-EQP-003"
 module = 38
-title = "A calibration that finds a value out of tolerance lists the submitted inspections that named the instrument and the submitted job cards at its workstation since its last good calibration, alerts QA, and stays open for QA's signed assessment (no product impact, or product action needed), which a reminder tracks until it is signed."
-source = "ISO 13485 7.6 (assess the validity of previous results when equipment is found not to conform); decided 2026-10-11"
+title = "A calibration that finds a value out of tolerance lists the submitted inspections that named the instrument and the submitted job cards at its workstation since its last good calibration, alerts QA, and stays open for QA's signed assessment (no product impact, or product action needed), which a reminder tracks until it is signed; when QA withdraws the calibration for correction, its open assessment stays open on it, listed and tracked by the same reminder, until QA signs it there."
+source = "ISO 13485 7.6 (assess the validity of previous results when equipment is found not to conform); decided 2026-10-11; decided 2026-10-12 (plan D-29): a correction keeps the open assessment"
 status = "implemented"
 
 [[requirement]]
 id = "URS-EQP-004"
 module = 38
-title = "Preventive maintenance records its checks, each OK or not, what was done and the downtime; it is satisfactory only when every check is OK, only a satisfactory record sets the next due date, and it is completed only by its performer's electronic signature and never deleted."
-source = "DFD 9D D3 maintenance schedule, D4 maintenance execution; flowchart (maintenance plan, maintenance log, downtime tracking); ISO 13485 6.3"
+title = "Preventive maintenance records its checks, each OK or not, what was done and the downtime; it is satisfactory only when every check is OK, only a satisfactory record sets the next due date, and it is completed only by its performer's electronic signature and never deleted; once completed it is corrected only by QA's electronically signed correction with a reason, which cancels it and opens its amendment as a new draft, and the platform's own cancel is refused."
+source = "DFD 9D D3 maintenance schedule, D4 maintenance execution; flowchart (maintenance plan, maintenance log, downtime tracking); ISO 13485 6.3; decided 2026-10-12 (plan D-29)"
 status = "implemented"
 
 [[requirement]]
 id = "URS-EQP-005"
 module = 38
-title = "Equipment that needs calibration, or preventive maintenance, is fit only while its latest completed record passed and its next due date has not passed; equipment never calibrated, or never maintained, is not fit."
-source = "ISO 13485 7.6, 6.3; production stage 3"
+title = "Equipment that needs calibration, or preventive maintenance, is fit only while its latest completed record passed and its next due date has not passed; equipment never calibrated, or never maintained, is not fit; nor is equipment whose calibration, maintenance or qualification QA has withdrawn for correction, from the moment it is withdrawn until its amendment is completed."
+source = "ISO 13485 7.6, 6.3; production stage 3; decided 2026-10-12 (plan D-29)"
 status = "implemented"
 
 [[requirement]]
@@ -1250,8 +1257,8 @@ status = "implemented"
 [[requirement]]
 id = "URS-EQP-008"
 module = 38
-title = "Calibration, maintenance and requalification falling due within the days QA sets in Quality Settings, and an open out-of-tolerance assessment, are tracked as reminders that only the records showing the work done complete."
-source = "Flowchart (alerts and reminders); DFD 9C"
+title = "Calibration, maintenance and requalification falling due within the days QA sets in Quality Settings, and an open out-of-tolerance assessment, also of a calibration withdrawn for correction, are tracked as reminders that only the records showing the work done complete."
+source = "Flowchart (alerts and reminders); DFD 9C; decided 2026-10-12 (plan D-29): a correction does not complete the impact reminder"
 status = "implemented"
 
 [[requirement]]
@@ -1264,8 +1271,8 @@ status = "implemented"
 [[requirement]]
 id = "URS-EQP-010"
 module = 40
-title = "Each installation, operational and performance qualification is recorded against an effective protocol (an SOP or a form) with its tests, each passed or failed, and passes only when every test passes; its performer executes it with an electronic signature, a change after execution needs execution again, and QA, never its performer, approves it with an electronic signature or returns it with a signed reason; it is never deleted."
-source = "Flowchart compliance box (Equipment Qualification IQ/OQ/PQ); ISO 13485 7.5.6, 6.3"
+title = "Each installation, operational and performance qualification is recorded against an effective protocol (an SOP or a form) with its tests, each passed or failed, and passes only when every test passes; its performer executes it with an electronic signature, a change after execution needs execution again, and QA, never its performer, approves it with an electronic signature or returns it with a signed reason; it is never deleted; once approved it is corrected only by QA's electronically signed correction with a reason, which cancels it and opens its amendment as a new draft, executed and approved again, and the platform's own cancel is refused."
+source = "Flowchart compliance box (Equipment Qualification IQ/OQ/PQ); ISO 13485 7.5.6, 6.3; decided 2026-10-12 (plan D-29)"
 status = "implemented"
 
 [[requirement]]
@@ -1278,8 +1285,8 @@ status = "implemented"
 [[requirement]]
 id = "URS-EQP-012"
 module = 40
-title = "Equipment that needs qualification is qualified only while its latest approved IQ, OQ and PQ each passed, were done in that order, and the PQ is within the requalification interval QA approved on the equipment, if one is set."
-source = "ISO 13485 7.5.6; decided 2026-10-11: a requalification interval on the equipment, under change control"
+title = "Equipment that needs qualification is qualified only while its latest approved IQ, OQ and PQ each passed, were done in that order, and the PQ is within the requalification interval QA approved on the equipment, if one is set, and while none of its approved stages is withdrawn for correction with its amendment not yet approved."
+source = "ISO 13485 7.5.6; decided 2026-10-11: a requalification interval on the equipment, under change control; decided 2026-10-12 (plan D-29)"
 status = "implemented"
 
 [[requirement]]

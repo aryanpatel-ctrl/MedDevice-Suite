@@ -7,12 +7,16 @@ interval QA approved on the equipment. An in-house calibration follows an effect
 names its reference standards, each approved equipment other than the instrument and itself in
 calibration on the day; an external one names the laboratory, its certificate number and the
 certificate, which becomes evidence. The record is completed only by its performer's signature
-(Maintenance or QA), never deleted, and corrected by cancel and amend.
+(Maintenance or QA), never deleted, and corrected only by QA's signed Correct (plan D-29,
+`equipment_care.correct`), which cancels it and opens its amendment.
 
 A value found out of tolerance means the instrument may have measured wrongly since its last good
 calibration: the record lists the inspections that named it and the job cards at its workstation
 since then, QA is alerted, and the record waits for QA's signed assessment (no product impact, or
-product action needed), which a reminder tracks until it is signed.
+product action needed), which a reminder tracks until it is signed. A record withdrawn for
+correction keeps its open assessment, still tracked, until QA signs it on that record: what was
+found on the instrument stays with the record that found it, and a correction cannot make it, or
+the reminder's overdue days, disappear.
 """
 
 import frappe
@@ -33,6 +37,19 @@ PROCEDURE_TYPES = ("SOP", "Work Instruction")
 PERFORMERS = frozenset({"Maintenance User", "Quality Manager"})
 QA_ROLE = "Quality Manager"
 PRECISION = 9
+# Set only by the signed acts. A draft never holds them, though Frappe's Amend copies them from the
+# cancelled record: an amendment is completed, and its impact assessed, afresh.
+SET_BY_ACTS = (
+	"interval_days",
+	"next_due_date",
+	"completed_by",
+	"last_good_calibration",
+	"impact",
+	"impact_status",
+	"impact_decision",
+	"assessed_by",
+	"assessed_on",
+)
 
 
 def require(condition, message: str, exception: type[Exception] = frappe.ValidationError) -> None:
@@ -77,6 +94,8 @@ def evaluate(doc: Document, method: str | None = None) -> None:
 	"""validate: what the record may hold, and what follows from its points."""
 	if doc.docstatus != 0:
 		return
+	for field in SET_BY_ACTS:
+		doc.set(field, [] if field == "impact" else None)
 	asset = frappe.db.get_value(
 		"Asset", doc.asset, [equipment.APPROVAL_STATUS, equipment.STATUS, equipment.CALIBRATION], as_dict=True
 	)
@@ -241,8 +260,10 @@ def complete(doc: Document, password: str, reason: str | None = None) -> None:
 
 
 def assess(doc: Document, decision: str, act: str, password: str, reason: str | None) -> None:
+	"""QA's signed assessment, on a completed record or on one withdrawn for correction (plan D-29),
+	which keeps its open assessment."""
 	require(
-		doc.docstatus == 1 and doc.impact_status == OPEN,
+		doc.docstatus in (1, 2) and doc.impact_status == OPEN,
 		_("{0} has no open impact assessment.").format(doc.name),
 	)
 	require(QA_ROLE in frappe.get_roles(), _("Only QA assesses the impact."), frappe.PermissionError)
@@ -250,6 +271,17 @@ def assess(doc: Document, decision: str, act: str, password: str, reason: str | 
 	doc.impact_status, doc.impact_decision = ASSESSED, decision
 	doc.assessed_by, doc.assessed_on = frappe.session.user, now_datetime()
 	sign(doc, "Reviewed", act, password, reason, permission="read")
+	if doc.docstatus == 2:
+		# Frappe saves no cancelled record; the audit trail records these values as written by code.
+		doc.db_set(
+			{
+				"impact_status": doc.impact_status,
+				"impact_decision": doc.impact_decision,
+				"assessed_by": doc.assessed_by,
+				"assessed_on": doc.assessed_on,
+			}
+		)
+		return
 	doc.flags.calibration_signed = True
 	doc.flags.audit_reason = reason  # the assessment is the reason for the change
 	doc.flags.ignore_permissions = True  # the impact fields are set by this signed act only

@@ -7,9 +7,10 @@ from frappe.model.document import Document
 from frappe.utils import flt
 
 from meddevice_suite.compliance.audit import same
-from meddevice_suite.lot_control import lot_status
-from meddevice_suite.lot_control.lot_status import HOLD, STATUS_FIELD
+from meddevice_suite.lot_control import lot_status, stores
+from meddevice_suite.lot_control.lot_status import QUARANTINE, STATUS_FIELD
 from meddevice_suite.lot_control.receipt import origin_of, receipt_line_of
+from meddevice_suite.lot_control.release import decided_stock, held_since
 
 # What QA may set while the decision is a draft; everything else the signed act sets.
 QA_FIELDS = frozenset({"batch"})
@@ -45,18 +46,23 @@ class LotRelease(Document):
 			self.describe_lot()
 
 	def describe_lot(self) -> None:
-		"""What the form shows QA about the lot before they decide."""
+		"""What QA decides on, read from the lot as stored: shown on the draft, and read again under the
+		lot's lock when QA signs (`release.decide`), so a decision never rests on a draft made before
+		the lot was held, moved or received again. The quantity is the stock a decision on the lot
+		acts on, in the store of its status; stock rejected at the door and goods a customer sent back
+		are not in it."""
 		lot = frappe.get_doc("Batch", self.batch)
+		status = lot.get(STATUS_FIELD) or QUARANTINE
 		self.item = lot.item
-		self.lot_status_before = lot.get(STATUS_FIELD)
-		self.quantity = sum(flt(holding.get("qty")) for holding in lot_status.holdings_of(lot.name))
+		self.lot_status_before = status
+		self.quantity = sum(flt(holding.qty) for holding in decided_stock(None, lot.name, status))
 		# Where the stock came from, as the stock ledger says, not the batch's own reference.
 		origin = origin_of(lot.name)
 		self.source_doctype = origin.voucher_type if origin else None
 		self.source_name = origin.voucher_no if origin else None
 		line = receipt_line_of(lot.name) if self.source_doctype == "Purchase Receipt" else None
 		self.supplier = line.supplier if line else lot.supplier
-		self.held_since = lot.mds_status_set_at if lot.get(STATUS_FIELD) == HOLD else None
+		self.held_since = held_since(lot)
 
 	def onload(self) -> None:
 		if self.docstatus == 0 and self.batch:
@@ -68,6 +74,10 @@ class LotRelease(Document):
 					"status": lot.get(STATUS_FIELD),
 					"from_supplier": bool(line),
 					"certificate_verified": bool(line and line.verified),
+					# Goods a customer sent back, waiting for QA's disposition (plan D-25).
+					"returned": sum(
+						flt(holding.qty) for holding in lot_status.holdings_of(lot.name, {stores.RETURNS})
+					),
 				},
 			)
 

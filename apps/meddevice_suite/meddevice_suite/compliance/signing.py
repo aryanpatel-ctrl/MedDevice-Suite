@@ -4,7 +4,9 @@ Every act that can be signed in the system is declared in SIGNING_ACTIONS: the
 record type, the act as the signer sees it, the meaning of the signature, and
 the function that checks the act is allowed, signs through `esign.sign` and
 performs the act. The desk's signing dialog can only reach the acts listed
-here, so the list is also the system's register of signed acts.
+here, so the list is also the system's register of signed acts. An act that
+opens a new record (a correction opens its amendment) returns its name, for
+the form to open it.
 
 The declared meaning is the one recorded (21 CFR 11.50(a)(3)): the dialog sends the
 meaning it showed, which must be the declared one, and `esign.sign` refuses to sign a
@@ -27,7 +29,9 @@ from meddevice_suite.compliance.audit_scope import is_regulated
 @dataclass(frozen=True)
 class SignedAct:
 	meaning: str  # one of esign.MEANINGS
-	perform: str  # dotted path of perform(doc, password, reason) -> None: checks, signs, acts
+	# dotted path of perform(doc, password, reason) -> None, or the name of a record the act opened:
+	# checks, signs, acts
+	perform: str
 
 
 DOCUMENT_CONTROL = "meddevice_suite.qms.document_control"
@@ -44,6 +48,7 @@ WORK_TASK = "meddevice_suite.work_management.work_task"
 CALIBRATION = "meddevice_suite.qms.calibration"
 MAINTENANCE = "meddevice_suite.qms.preventive_maintenance"
 QUALIFICATION = "meddevice_suite.qms.qualification"
+EQUIPMENT_CARE = "meddevice_suite.qms.equipment_care"
 TRAINING = "meddevice_suite.qms.training"
 RISK = "meddevice_suite.qms.risk_management"
 REGULATORY_LICENCE = "meddevice_suite.qms.regulatory_licence"
@@ -68,10 +73,12 @@ SIGNING_ACTIONS: dict[tuple[str, str], SignedAct] = {
 	("Change Request", "Verify Not Effective"): SignedAct(
 		"Verified", f"{CHANGE_CONTROL}.verify_not_effective"
 	),
-	# Modules 16 and 17, the decision on a lot
+	# Modules 16 and 17, the decision on a lot, and on goods a customer sent back (plan D-25)
 	("Lot Release", "Release"): SignedAct("Released", f"{LOT_RELEASE}.release"),
 	("Lot Release", "Reject"): SignedAct("Rejected", f"{LOT_RELEASE}.reject"),
-	("Lot Release", "Hold"): SignedAct("Approved", f"{LOT_RELEASE}.hold"),
+	("Lot Release", "Hold"): SignedAct("Held", f"{LOT_RELEASE}.hold"),
+	("Lot Release", "Return to Stock"): SignedAct("Released", f"{LOT_RELEASE}.return_to_stock"),
+	("Lot Release", "Reject Return"): SignedAct("Rejected", f"{LOT_RELEASE}.reject_return"),
 	# Module 4, the decision on a supplier
 	("Supplier Approval", "Approve"): SignedAct("Approved", f"{SUPPLIER_APPROVAL}.approve"),
 	("Supplier Approval", "Approve Conditionally"): SignedAct(
@@ -110,6 +117,12 @@ SIGNING_ACTIONS: dict[tuple[str, str], SignedAct] = {
 	("Equipment Qualification", "Execute"): SignedAct("Verified", f"{QUALIFICATION}.execute"),
 	("Equipment Qualification", "Approve"): SignedAct("Approved", f"{QUALIFICATION}.approve"),
 	("Equipment Qualification", "Return"): SignedAct("Rejected", f"{QUALIFICATION}.return_for_rework"),
+	# Modules 38 and 40: QA withdraws a completed record for correction, which opens its amendment
+	# (plan D-29). "Rejected": the record as completed is withdrawn, as a licence or a risk
+	# assessment is; no other meaning says that a signed record no longer stands.
+	("Calibration Record", "Correct"): SignedAct("Rejected", f"{EQUIPMENT_CARE}.correct"),
+	("Maintenance Record", "Correct"): SignedAct("Rejected", f"{EQUIPMENT_CARE}.correct"),
+	("Equipment Qualification", "Correct"): SignedAct("Rejected", f"{EQUIPMENT_CARE}.correct"),
 	# Module 37, training
 	("Training Matrix", "Approve"): SignedAct("Approved", f"{TRAINING}.approve_matrix"),
 	("Training Record", "Trained"): SignedAct("Trained", f"{TRAINING}.sign_trained"),
@@ -151,8 +164,8 @@ def sign_action(
 	password: str,
 	reason: str | None = None,
 	meaning: str | None = None,
-) -> None:
-	"""Sign `action` on a record, from the signing dialog.
+) -> str | None:
+	"""Sign `action` on a record, from the signing dialog; the name of a record the act opened.
 
 	`meaning` is the meaning the dialog showed the signer; a page loaded before the declaration
 	changed may show another, and nobody signs under a meaning they were not shown.
@@ -168,7 +181,7 @@ def sign_action(
 		)
 	doc = frappe.get_doc(doctype, name)
 	doc.check_permission("read")
-	frappe.get_attr(signed_act.perform)(doc, password=password, reason=(reason or "").strip() or None)
+	return frappe.get_attr(signed_act.perform)(doc, password=password, reason=(reason or "").strip() or None)
 
 
 def declared_meaning(doctype: str, action: str) -> str | None:
