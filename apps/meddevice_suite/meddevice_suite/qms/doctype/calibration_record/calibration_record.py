@@ -5,7 +5,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
-from meddevice_suite.qms import calibration
+from meddevice_suite.qms import calibration, equipment_care
 
 
 class CalibrationRecord(Document):
@@ -19,6 +19,12 @@ class CalibrationRecord(Document):
 
 	def before_update_after_submit(self) -> None:
 		calibration.guard_after_completion(self)
+
+	def before_cancel(self) -> None:
+		equipment_care.only_by_correction(self)
+
+	def copy_attachments_from_amended_from(self) -> None:
+		equipment_care.copy_attachments(self)
 
 	def on_trash(self) -> None:
 		frappe.throw(_("A calibration record is never deleted."), frappe.PermissionError)
