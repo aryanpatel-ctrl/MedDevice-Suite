@@ -13,7 +13,7 @@ material, packaging item, sub-assembly or finished good is lot-tracked, with a s
 and a storage condition. A purchased material or packaging item requires incoming
 inspection and has its incoming specification (module 6). A finished good has its final
 specification and its regulatory and label data: sterile or not, device class, pack sizes
-and the UDI device identifier, a GTIN no other item carries. A template item (one with
+and the UDI device identifier, a GTIN no other item carries, and its lifetime (plan D-16). A template item (one with
 variants) is never approved itself: each variant is approved on its own, with its own
 identifier, and a template's controlled changes reach its variants in use (MST-001).
 
@@ -23,6 +23,7 @@ items that stand behind the equipment register's assets (module 8).
 """
 
 import re
+from math import ceil
 
 import frappe
 from frappe import _
@@ -45,6 +46,11 @@ UNITS_PER_BOX, BOXES_PER_CARTON, UDI_DI = "mds_units_per_box", "mds_boxes_per_ca
 # The GTIN as 14 digits (GS1's form for storing it): one GTIN written as GTIN-12, -13 or -14 is the
 # same identifier, and the database refuses a second item with it, however close the two saves.
 GTIN_KEY = "mds_gtin14"
+# Plan D-16 (decided 2026-10-11): the device's lifetime, 5 years unless QA states another. Its records
+# are kept for at least the lifetime, and not less than two years from the product's release (ISO
+# 13485 4.2.5); this app keeps them the lifetime plus two years at least, so retention bounds it.
+DEVICE_LIFETIME, DEFAULT_LIFETIME_YEARS, RETAINED_BEYOND_LIFETIME_YEARS = "mds_device_lifetime_years", 5, 2
+DAYS_PER_YEAR = 365  # the shelf life is set in days; a lifetime in whole years covers it
 
 RAW_MATERIAL, PACKAGING, SUB_ASSEMBLY = "Raw Material", "Packaging", "Sub-assembly (WIP)"
 FINISHED_GOOD, CONSUMABLE, SPARE_PART, EQUIPMENT = "Finished Good", "Consumable", "Spare Part", "Equipment"
@@ -68,6 +74,7 @@ CONTROLLED_FIELDS = (
 	UNITS_PER_BOX,
 	BOXES_PER_CARTON,
 	UDI_DI,
+	DEVICE_LIFETIME,
 )
 
 # Record types that name an item without putting it to use: the item's own setup, its prices
@@ -224,6 +231,16 @@ CUSTOM_FIELDS = {
 			"no_copy": 1,
 			"unique": 1,
 		},
+		{
+			"fieldname": DEVICE_LIFETIME,
+			"label": "Device lifetime (years)",
+			"fieldtype": "Int",
+			"default": str(DEFAULT_LIFETIME_YEARS),
+			"non_negative": 1,
+			"insert_after": GTIN_KEY,
+			"depends_on": f'eval:doc.{ITEM_TYPE}=="{FINISHED_GOOD}"',
+			"description": "How long the device is expected to stay safe and effective in use; its records are kept at least this long plus two years.",
+		},
 	],
 }
 
@@ -339,6 +356,8 @@ def missing_for_approval(doc: Document) -> list[str]:
 			missing.append(_("its pack sizes (units per box, boxes per carton)"))
 		if not valid_gtin(doc.get(UDI_DI)):
 			missing.append(_("its UDI device identifier (a GTIN)"))
+		if doc.meta.get_field(DEVICE_LIFETIME) and cint(doc.get(DEVICE_LIFETIME)) <= 0:
+			missing.append(_("its device lifetime"))
 		if not specification_of(doc.name, FINAL):
 			missing.append(_("its final specification (module 6)"))
 	return missing
@@ -393,6 +412,7 @@ def guard_item(doc: Document, method: str | None = None) -> None:
 				)
 	if len(temperatures) == 2 and temperatures[MIN_TEMPERATURE] > temperatures[MAX_TEMPERATURE]:
 		frappe.throw(_("The minimum storage temperature is not above the maximum."))
+	check_lifetime(doc)
 	if not approved(doc) and doc.get("reorder_levels"):
 		# ERPNext's automatic reorder makes one batch of requests for every item; a draft item in it
 		# would stop the batch for the approved ones too.
@@ -414,6 +434,41 @@ def guard_item(doc: Document, method: str | None = None) -> None:
 				),
 				title=_("Approved item"),
 			)
+
+
+def longest_lifetime() -> int:
+	"""The longest lifetime the records' retention covers. ISO 13485 4.2.5 keeps them for at least
+	the lifetime of the device, and not less than two years from its release; this app keeps them
+	the lifetime plus two years, which meets both, and the device's records as long as the item's."""
+	from meddevice_suite.compliance.retention import retention_years  # compliance builds no item rule
+
+	return cint(retention_years("Item")) - RETAINED_BEYOND_LIFETIME_YEARS
+
+
+def shelf_life_years(doc: Document) -> int:
+	"""The item's shelf life in whole years, rounded up."""
+	return ceil(cint(doc.get("shelf_life_in_days")) / DAYS_PER_YEAR)
+
+
+def check_lifetime(doc: Document) -> None:
+	"""A finished good's lifetime is a number of years its records' retention covers (plan D-16),
+	and no shorter than its shelf life: a device is used up to its expiry date."""
+	if doc.get(ITEM_TYPE) != FINISHED_GOOD or not doc.meta.get_field(DEVICE_LIFETIME):
+		return
+	years, longest = cint(doc.get(DEVICE_LIFETIME)), longest_lifetime()
+	if not 1 <= years <= longest:
+		frappe.throw(
+			_(
+				"The device lifetime is 1 to {0} years: its records are kept {1} years, at least the lifetime plus two."
+			).format(longest, longest + RETAINED_BEYOND_LIFETIME_YEARS)
+		)
+	shelf_life = shelf_life_years(doc)
+	if years < shelf_life:
+		frappe.throw(
+			_(
+				"The device lifetime of {0} is {1} years, shorter than its shelf life of {2} years: a device is used until its expiry date."
+			).format(doc.name, years, shelf_life)
+		)
 
 
 def item_onload(doc: Document, method: str | None = None) -> None:
@@ -451,7 +506,12 @@ def signed_content(doc: Document) -> dict:
 		VERSION,
 		EFFECTIVE_FROM,
 	)
-	content = {field: doc.get(field) for field in fields}
+	content = {field: doc.get(field) for field in fields if field != DEVICE_LIFETIME}
+	if cint(doc.get(DEVICE_LIFETIME)) != DEFAULT_LIFETIME_YEARS:
+		# Added with plan D-16, its column holding the default for every item made before it: an
+		# approval signed before it still verifies. Any other lifetime is bound, 0 too, so that a
+		# lifetime written over the default past the item's rules shows as a change since signing.
+		content[DEVICE_LIFETIME] = cint(doc.get(DEVICE_LIFETIME))
 	for table, row_fields in master.tables.items():  # a variant's attributes, units, barcodes
 		content[table] = [{f: row.get(f) for f in row_fields} for row in doc.get(table) or []]
 	return content

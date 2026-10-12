@@ -48,6 +48,7 @@ EQUIPMENT_CARE = "meddevice_suite.qms.equipment_care"
 TRAINING = "meddevice_suite.qms.training"
 RISK = "meddevice_suite.qms.risk_management"
 REGULATORY_LICENCE = "meddevice_suite.qms.regulatory_licence"
+DEVICE_MASTER_RECORD = "meddevice_suite.qms.device_master_record"
 
 # (record type, act) -> the signed act. Each module adds the acts it signs.
 SIGNING_ACTIONS: dict[tuple[str, str], SignedAct] = {
@@ -138,6 +139,11 @@ SIGNING_ACTIONS: dict[tuple[str, str], SignedAct] = {
 	("Regulatory Licence", "Verify"): SignedAct("Verified", f"{REGULATORY_LICENCE}.verify"),
 	("Regulatory Licence", "Reject"): SignedAct("Rejected", f"{REGULATORY_LICENCE}.reject"),
 	("Regulatory Licence", "Withdraw"): SignedAct("Rejected", f"{REGULATORY_LICENCE}.withdraw"),
+	# Module 31, the device master record: its author signs it and QA, another person, approves it
+	("Device Master Record", "Author"): SignedAct("Authored", f"{DEVICE_MASTER_RECORD}.author"),
+	("Device Master Record", "Approve"): SignedAct("Approved", f"{DEVICE_MASTER_RECORD}.approve"),
+	("Device Master Record", "Return"): SignedAct("Rejected", f"{DEVICE_MASTER_RECORD}.return_for_changes"),
+	("Device Master Record", "Withdraw"): SignedAct("Rejected", f"{DEVICE_MASTER_RECORD}.withdraw"),
 }
 
 

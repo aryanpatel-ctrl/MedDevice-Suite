@@ -118,9 +118,19 @@ class TestBrowserJourney(IntegrationTestCase):
 			{code: details[5] * QUANTITY / bom.quantity for code, details in RAW_MATERIALS.items()},
 		)
 		self.assertEqual(journey["product_shelf_life_days"], PRODUCT_DETAILS[3])
+		# Module 31: production of the product runs on its Current device master record, which pins
+		# the bill the work order uses, drafted by the Production Supervisor and approved by QA.
+		record = frappe.get_doc("Device Master Record", journey["device_master_record"])
+		self.assertEqual((record.item, record.status, record.docstatus), (PRODUCT, "Current", 1))
+		self.assertIn(
+			("BOM", journey["bom"]), [(row.reference_doctype, row.reference_name) for row in record.elements]
+		)
 
-		# Preparing again makes no second set of masters.
-		self.assertEqual(prepare_journey(self.password)["bom"], journey["bom"])
+		# Preparing again makes no second set of masters, nor a second record.
+		again = prepare_journey(self.password)
+		self.assertEqual(
+			(again["bom"], again["device_master_record"]), (journey["bom"], journey["device_master_record"])
+		)
 
 	def test_starts_from_the_lots_put_in_store_whatever_an_earlier_run_left(self):
 		prepare_journey(self.password)

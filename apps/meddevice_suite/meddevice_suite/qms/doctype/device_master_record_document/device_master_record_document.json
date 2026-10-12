@@ -1,0 +1,65 @@
+{
+ "actions": [],
+ "creation": "2026-10-11 22:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "controlled_document",
+  "title",
+  "document_type",
+  "heading"
+ ],
+ "fields": [
+  {
+   "fieldname": "controlled_document",
+   "fieldtype": "Link",
+   "label": "Controlled Document",
+   "options": "Controlled Document",
+   "reqd": 1,
+   "in_list_view": 1,
+   "columns": 3
+  },
+  {
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "label": "Title",
+   "fetch_from": "controlled_document.title",
+   "read_only": 1,
+   "in_list_view": 1,
+   "columns": 3
+  },
+  {
+   "fieldname": "document_type",
+   "fieldtype": "Data",
+   "label": "Document Type",
+   "fetch_from": "controlled_document.document_type",
+   "read_only": 1,
+   "in_list_view": 1,
+   "columns": 2
+  },
+  {
+   "fieldname": "heading",
+   "fieldtype": "Select",
+   "label": "Heading",
+   "options": "\nGeneral Description and Intended Use\nLabelling and Instructions for Use\nProduct Specifications\nManufacture, Packaging, Storage, Handling and Distribution\nMeasuring and Monitoring\nInstallation and Servicing\nRisk Management",
+   "in_list_view": 1,
+   "columns": 2,
+   "description": "Where the document is filed; left blank, a Packaging and Labelling document is filed under labelling, a specification under product specifications, any other under manufacture."
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-10-11 22:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "QMS",
+ "name": "Device Master Record Document",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0,
+ "istable": 1,
+ "editable_grid": 1
+}

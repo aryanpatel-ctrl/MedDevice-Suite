@@ -7,7 +7,7 @@ on a site that is not marked as a pilot site.
 """
 
 from meddevice_suite.pilot import refuse_unless_pilot_site
-from meddevice_suite.qa.site_setup import complete_setup_wizard
+from meddevice_suite.qa.site_setup import complete_setup_wizard, ensure_fiscal_years, with_fiscal_year
 
 PILOT_COMPANY = {
 	"language": "English",
@@ -17,8 +17,6 @@ PILOT_COMPANY = {
 	"company_name": "Demo Medical Devices",
 	"company_abbr": "DMD",
 	"chart_of_accounts": "Standard",
-	"fy_start_date": "2026-04-01",
-	"fy_end_date": "2027-03-31",
 	"setup_demo": 0,
 	"enable_audit_trail": 1,
 	"company_gstin": "",
@@ -27,4 +25,5 @@ PILOT_COMPANY = {
 
 def prepare_pilot_site() -> None:
 	refuse_unless_pilot_site()
-	complete_setup_wizard(PILOT_COMPANY)
+	complete_setup_wizard(with_fiscal_year(PILOT_COMPANY))
+	ensure_fiscal_years()  # the pilot runs for months: next year's postings find their year
