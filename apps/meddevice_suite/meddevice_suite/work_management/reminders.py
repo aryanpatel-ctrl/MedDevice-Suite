@@ -17,11 +17,12 @@ was settled (a lot back from hold) is raised again: a settled reminder never sta
 one (found in the foundation review of 2026-10-12).
 
 Raised, a reminder tells its responsible person, or, naming none, everyone of its responsible
-jobs; past its due date it is Overdue; overdue for the days QA sets (Quality Settings), it is
-escalated once to QA and Management, and its responsible person told again. What each reminder's
+jobs, unless the module that owns the record already tells them as the item falls due (its
+alert, declared on the category as `told_by`): one notice per item, from one source. Past its due
+date it is Overdue; overdue for the days QA sets (Quality Settings), it is escalated once to QA
+and Management, and its responsible person told again, for every category. What each reminder's
 people were last told is kept on it (`notified`), so the daily run never tells them twice, and a
-notice that failed is sent on the next run. The alerts of the modules that own the records
-(compliance/alerts.py and others) still tell their jobs as each item falls due.
+notice that failed is sent on the next run.
 
 QA also plans recurring activities (Reminder Schedule: a management review, an internal audit):
 each occurrence is raised within its lead time, its job is told, it escalates like any other,
@@ -502,24 +503,56 @@ def dmr_reapprovals_due() -> Iterator[Due]:
 		)
 
 
-# category -> what is due now (module that owns the record)
-CATEGORIES: dict[str, Callable[[], Iterator[Due]]] = {
-	"Lot Expiry": lots_expiring,  # module 18
-	"Supplier Certificate": supplier_certificates_expiring,  # module 4
-	"Customer Licence": customer_licences_expiring,  # module 5
-	"Document Review": document_reviews_due,  # module 30
-	"Change Action": change_actions_due,  # module 36
-	"Effectiveness Check": effectiveness_checks_due,  # module 36
-	"Work Task": work_tasks_due,  # module 59
-	"File Validity": files_ending,  # module 61
-	"Calibration Due": calibrations_due,  # module 38
-	"Maintenance Due": maintenance_due,  # module 38
-	"Requalification Due": requalifications_due,  # module 40
-	"Calibration Impact": calibration_impacts_open,  # module 38
-	"Training Due": training_due,  # module 37
-	"Risk Review": risk_reviews_open,  # module 39
-	"Regulatory Licence": regulatory_licences_due,  # module 41
-	"DMR Re-approval": dmr_reapprovals_due,  # module 31
+@dataclass(frozen=True)
+class Category:
+	"""A kind of reminder: what is due now, and who tells its people as an item falls due.
+
+	`told_by` names the function of the module that owns the record which already tells the
+	reminder's responsible people, once, as the item falls due (its alert); the reminder then sends
+	no notice of its own when raised, so nobody is told the same thing twice. Empty, the reminder
+	tells them. No module alert escalates: escalation is the reminder's, for every category."""
+
+	due: Callable[[], Iterator[Due]]
+	told_by: str = ""
+
+
+# category -> what is due now and who tells it (module that owns the record)
+CATEGORIES: dict[str, Category] = {
+	"Lot Expiry": Category(  # module 18: Lot Expiring Soon, then Lot Expired, to Stores and QA
+		lots_expiring, "meddevice_suite.compliance.alerts.send_expiry_alerts"
+	),
+	"Supplier Certificate": Category(  # module 4: Supplier Certificate Expiring, to QA and Purchase
+		supplier_certificates_expiring,
+		"meddevice_suite.master_data.supplier_approval.send_certificate_alerts",
+	),
+	"Customer Licence": Category(  # module 5: Customer Licence Expiring, to QA and Sales
+		customer_licences_expiring, "meddevice_suite.master_data.customer_licence.send_expiry_alerts"
+	),
+	"Document Review": Category(  # module 30: Document Review Due, to the process owner and QA
+		document_reviews_due, "meddevice_suite.qms.document_control.send_review_alerts"
+	),
+	"Change Action": Category(  # module 36: the action's owner, directly
+		change_actions_due, "meddevice_suite.qms.change_control.alert_action_owner"
+	),
+	"Effectiveness Check": Category(  # module 36: Change Effectiveness Check Due, to QA
+		effectiveness_checks_due, "meddevice_suite.qms.change_control.alert_effectiveness"
+	),
+	"Work Task": Category(work_tasks_due),  # module 59
+	"File Validity": Category(files_ending),  # module 61
+	"Calibration Due": Category(calibrations_due),  # module 38
+	"Maintenance Due": Category(maintenance_due),  # module 38
+	"Requalification Due": Category(requalifications_due),  # module 40
+	"Calibration Impact": Category(  # module 38: Calibration Out of Tolerance, to QA, on completion
+		calibration_impacts_open, "meddevice_suite.qms.calibration.complete"
+	),
+	"Training Due": Category(training_due),  # module 37
+	"Risk Review": Category(risk_reviews_open),  # module 39
+	"Regulatory Licence": Category(  # module 41: Regulatory Licence Expiring, to QA, licences and duties
+		regulatory_licences_due, "meddevice_suite.qms.regulatory_licence.send_expiry_alerts"
+	),
+	"DMR Re-approval": Category(  # module 31: Device Master Record Out of Date, to QA
+		dmr_reapprovals_due, "meddevice_suite.qms.device_master_record.alert"
+	),
 }
 
 
@@ -531,10 +564,10 @@ def run() -> None:
 	overdue, escalate what has stayed overdue, and tell each reminder's people what they have not
 	been told yet. One category's failure is logged and leaves its reminders as they were; the
 	others go on."""
-	for category, due_now in CATEGORIES.items():
+	for category, kind in CATEGORIES.items():
 		in_step(
 			f"reminders of {category}",
-			lambda category=category, due_now=due_now: track(category, due_now),
+			lambda category=category, due_now=kind.due: track(category, due_now),
 		)
 	for name in frappe.get_all(SCHEDULE, filters={"active": 1}, pluck="name"):
 		in_step(f"recurring reminder {name}", lambda name=name: raise_occurrence(name))
@@ -664,11 +697,13 @@ def send_notices() -> None:
 
 
 def notify(name: str) -> None:
-	"""Raised: its responsible person is told, or, naming none, everyone of its responsible jobs.
-	Escalated: QA, Management and its responsible person, by the "Reminder Overdue" alert. What
-	was told is recorded on the reminder in the same step, so it is never told twice."""
+	"""Raised: its responsible person is told, or, naming none, everyone of its responsible jobs,
+	unless its category's module has told them already (`Category.told_by`). Escalated: QA,
+	Management and its responsible person, by the "Reminder Overdue" alert. What was told is
+	recorded on the reminder in the same step, so it is never told twice."""
 	reminder = frappe.get_doc(DOCTYPE, name)
-	if not reminder.notified:
+	kind = CATEGORIES.get(reminder.category)
+	if not reminder.notified and not (kind and kind.told_by):
 		tell_raised(reminder)
 	if reminder.status == ESCALATED and reminder.notified != ESCALATED:
 		frappe.get_doc("Notification", OVERDUE_ALERT).send(reminder)

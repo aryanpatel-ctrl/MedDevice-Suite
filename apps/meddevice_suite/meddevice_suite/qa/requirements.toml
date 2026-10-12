@@ -1150,7 +1150,7 @@ status = "implemented"
 [[requirement]]
 id = "URS-PLT-020"
 module = 60
-title = "When a reminder is raised, its responsible person is told, or, when it names none, everyone holding its responsible jobs; when it is escalated, QA, Management and its responsible person are told; each is told of each once, however often the daily run repeats, and a notice that could not be sent is sent on the next run."
+title = "When a reminder is raised, its responsible person is told, or, when it names none, everyone holding its responsible jobs, by one notice: the alert of the module that owns the record where it has one, the reminder's otherwise; when it is escalated, QA, Management and its responsible person are told by the reminder; each is told of each once, however often the daily run repeats, and a notice that could not be sent is sent on the next run."
 source = "DFD 9C Reminders / Next Due (C4 notify users, C5 track and escalate); master plan section 10 (escalation when overdue); found in the foundation review of 2026-10-12: a system reminder told nobody when it was raised"
 status = "implemented"
 

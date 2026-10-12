@@ -205,7 +205,7 @@ class TestOverdueAndEscalation(ReminderTestCase):
 			raise RuntimeError("source unreadable")
 			yield  # a generator, as the categories are
 
-		with patch.dict(reminders.CATEGORIES, {"Lot Expiry": broken}):
+		with patch.dict(reminders.CATEGORIES, {"Lot Expiry": reminders.Category(broken)}):
 			self.run_reminders()
 		self.assertEqual(reminder_of("Lot Expiry", "Batch", lot).status, OPEN)  # not completed by the failure
 		self.assertEqual(reminder_of("Document Review", "Controlled Document", document).status, OPEN)
@@ -338,20 +338,52 @@ class TestRecurringReminders(ReminderTestCase):
 # --- Found in the foundation review of 2026-10-12 ---------------------------------------------------
 
 
+# Category -> who tells its people as an item falls due: "module" where the module that owns the
+# record alerts them (and the reminder must stay silent), "reminder" where only the reminder
+# does. A category missing here fails the test, so adding one forces this decision.
+RAISE_NOTICE_FROM = {
+	"Lot Expiry": "module",  # compliance.alerts: Lot Expiring Soon, Lot Expired
+	"Supplier Certificate": "module",  # Supplier Certificate Expiring
+	"Customer Licence": "module",  # Customer Licence Expiring
+	"Document Review": "module",  # Document Review Due
+	"Change Action": "module",  # change_control.alert_action_owner
+	"Effectiveness Check": "module",  # Change Effectiveness Check Due
+	"Work Task": "reminder",  # the task's own steps tell nobody of the due date
+	"File Validity": "reminder",  # the repository has no alert of its own
+	"Calibration Due": "reminder",  # equipment care has no due-date alert
+	"Maintenance Due": "reminder",
+	"Requalification Due": "reminder",
+	"Calibration Impact": "module",  # Calibration Out of Tolerance, sent on completion
+	"Training Due": "reminder",  # training opens records and tells nobody
+	"Risk Review": "reminder",  # a review is raised without an alert
+	"Regulatory Licence": "module",  # Regulatory Licence Expiring, licences and obligations
+	"DMR Re-approval": "module",  # Device Master Record Out of Date
+}
+
+
 @verifies("URS-PLT-014", "URS-PLT-020")
 class TestEveryCategoryKeepsTheContract(ReminderTestCase):
 	"""Data-driven over reminders.CATEGORIES, so a category added later is held to the contract
 	without a test of its own: what it shows due within its lead time is part of what it shows
 	still to be done; its reminder is raised within the lead time and its people told once; it stays
 	open while its item is still to be done, whatever the lead time; it is settled only when the
-	item is done; and an item due again is raised again. Each category's reading of its own records
-	is tested with its module."""
+	item is done; and an item due again is raised again. Its people get one notice of the raise,
+	from one source: the module's alert where the category declares one, the reminder otherwise.
+	Each category's reading of its own records is tested with its module."""
 
 	def test_each_category_keeps_the_contract(self):
-		for category, due_now in reminders.CATEGORIES.items():
+		for category, kind in reminders.CATEGORIES.items():
 			with self.subTest(category=category):
-				self.check_reading(category, due_now)
-				self.check_lifecycle(category)
+				self.check_reading(category, kind.due)
+				self.check_lifecycle(category, told_by_module=bool(kind.told_by))
+
+	def test_each_category_declares_who_tells_its_people_on_raise(self):
+		self.assertEqual(set(reminders.CATEGORIES), set(RAISE_NOTICE_FROM))
+		for category, kind in reminders.CATEGORIES.items():
+			with self.subTest(category=category):
+				self.assertEqual("module" if kind.told_by else "reminder", RAISE_NOTICE_FROM[category])
+				if kind.told_by:
+					self.assertTrue(callable(frappe.get_attr(kind.told_by)))  # names a real alert
 
 	def check_reading(self, category: str, due_now) -> None:
 		due = {item.key(category) for item in due_now()}
@@ -360,7 +392,7 @@ class TestEveryCategoryKeepsTheContract(ReminderTestCase):
 		self.assertFalse(frappe.flags.reminders_whole_horizon)
 		self.assertLessEqual(due, still_to_do)
 
-	def check_lifecycle(self, category: str) -> None:
+	def check_lifecycle(self, category: str, told_by_module: bool) -> None:
 		tag = frappe.generate_hash(length=8)  # its own item on every run of the tests
 		subject = f"Contract of {category} {tag}"
 		item = frappe._dict(done=False, due=getdate(add_days(today(), 20)))
@@ -381,10 +413,12 @@ class TestEveryCategoryKeepsTheContract(ReminderTestCase):
 				order_by="creation asc",
 			)
 
+		# One notice of the raise, from one source: none from the reminder where the module alerts.
+		told = [] if told_by_module else [subject]
 		run(30)
 		raised = run(30)
 		self.assertEqual([(r.status, r.notified) for r in raised], [(OPEN, RAISED)])  # raised once
-		self.assertEqual(notices(raised[0].name, self.qa), [subject])  # told once
+		self.assertEqual(notices(raised[0].name, self.qa), told)
 		# QA shortens the lead time: the item, 20 days out, is outside it but still to be done.
 		self.assertEqual([r.status for r in run(10)], [OPEN])
 		item.done = True
@@ -394,7 +428,7 @@ class TestEveryCategoryKeepsTheContract(ReminderTestCase):
 		item.done = False  # due again: a lot back from hold, a renewal withdrawn
 		again = run(30)
 		self.assertEqual([r.status for r in again], [COMPLETED, OPEN])
-		self.assertEqual(notices(again[1].name, self.qa), [subject])
+		self.assertEqual(notices(again[1].name, self.qa), told)
 
 
 @verifies("URS-PLT-014")
@@ -437,24 +471,50 @@ class TestSettledOnlyWhenTheWorkIsDone(ReminderTestCase):
 
 @verifies("URS-PLT-020")
 class TestNotices(ReminderTestCase):
+	def raised(self, roles: tuple[str, ...], user: str | None = None) -> str:
+		"""A reminder of a category the reminder itself tells, raised for an item of the test."""
+		category = next(name for name, kind in reminders.CATEGORIES.items() if not kind.told_by)
+		tag = frappe.generate_hash(length=8)
+		item = reminders.Due("User", self.qa, add_days(today(), 5), f"Notice test {tag}", roles, user, tag)
+		frappe.set_user("Administrator")
+		reminders.track(category, lambda: iter([item]))
+		return frappe.db.get_value("Reminder", {"category": category, "subject": item.subject})
+
 	def test_raised_its_jobs_are_told_once_when_it_names_no_person(self):
-		lot = receive(ITEM, 5, store("Stores"))
-		frappe.db.set_value("Batch", lot, "expiry_date", add_days(today(), 10))
-		self.run_reminders()
-		self.run_reminders()
-		raised = reminder_of("Lot Expiry", "Batch", lot)
+		name = self.raised(("Stock User", QA_ROLE))
+		reminders.send_notices()
+		reminders.send_notices()
 		for user in (self.stores_user, self.qa):
 			with self.subTest(user=user):
-				self.assertEqual(len(notices(raised.name, user)), 1)
-		self.assertEqual(notices(raised.name, self.purchase), [])  # not one of its jobs
+				self.assertEqual(len(notices(name, user)), 1)
+		self.assertEqual(notices(name, self.purchase), [])  # not one of its jobs
 
 	def test_raised_its_person_is_told_not_its_jobs(self):
-		change = approved_change(self.requester, self.qa, work_instruction_for_test())
-		self.run_reminders()
-		raised = reminder_of("Change Action", "Change Request", change)
-		self.assertEqual(raised.responsible_user, self.requester)
-		self.assertEqual(len(notices(raised.name, self.requester)), 1)
-		self.assertEqual(notices(raised.name, self.qa), [])
+		name = self.raised((QA_ROLE,), self.requester)
+		reminders.send_notices()
+		self.assertEqual(len(notices(name, self.requester)), 1)
+		self.assertEqual(notices(name, self.qa), [])
+
+	def test_where_the_module_alerts_its_people_are_told_once_by_the_module_alone(self):
+		from meddevice_suite.compliance.alerts import send_expiry_alerts
+
+		lot = receive(ITEM, 5, store("Stores"))
+		frappe.db.set_value("Batch", lot, "expiry_date", add_days(today(), 10))
+		for _day in range(2):
+			frappe.set_user("Administrator")
+			send_expiry_alerts()  # the daily job runs the module's alerts before the reminders
+			self.run_reminders()
+		raised = reminder_of("Lot Expiry", "Batch", lot)
+		self.assertEqual(frappe.db.get_value("Reminder", raised.name, "notified"), RAISED)
+		for user in (self.stores_user, self.qa):
+			with self.subTest(user=user):
+				lot_alerts = frappe.get_all(
+					"Notification Log",
+					filters={"document_type": "Batch", "document_name": lot, "for_user": user},
+					pluck="name",
+				)
+				self.assertEqual(len(lot_alerts), 1)  # Lot Expiring Soon, once
+				self.assertEqual(notices(raised.name, user), [])  # and nothing more from the reminder
 
 	def test_escalated_qa_management_and_its_person_are_told_once(self):
 		change = approved_change(self.requester, self.qa, work_instruction_for_test())
@@ -462,26 +522,26 @@ class TestNotices(ReminderTestCase):
 		frappe.db.set_value("Change Request Action", action, "due_date", add_days(today(), -5))
 		manager = signer("Management")
 		with use_setting("reminder_escalation_days", 3):
-			self.run_reminders()  # raised overdue and escalated in the same run: both told
+			self.run_reminders()  # raised overdue and escalated in the same run
 			self.run_reminders()
 		escalated = reminder_of("Change Action", "Change Request", change)
 		self.assertEqual(escalated.status, ESCALATED)
 		self.assertEqual(frappe.db.get_value("Reminder", escalated.name, "notified"), ESCALATED)
-		self.assertEqual(len(notices(escalated.name, self.requester)), 2)  # raised, then escalated
+		# Its module told the owner of the action as it fell due; the reminder tells the escalation.
+		self.assertEqual(len(notices(escalated.name, self.requester)), 1)
 		for user in (self.requester, self.qa, manager):
 			with self.subTest(user=user):
 				self.assertEqual(told_of_escalation(escalated.name).count(user), 1)
 
 	def test_a_notice_that_could_not_be_sent_is_sent_on_the_next_run(self):
-		change = approved_change(self.requester, self.qa, work_instruction_for_test())
+		name = self.raised(("Stock User",))
 		with patch.object(reminders, "enqueue_create_notification", side_effect=RuntimeError("queue down")):
-			self.run_reminders()
-		raised = reminder_of("Change Action", "Change Request", change)
-		self.assertEqual(raised.status, OPEN)  # raised, though nobody could be told
-		self.assertEqual(notices(raised.name, self.requester), [])
-		self.assertFalse(frappe.db.get_value("Reminder", raised.name, "notified"))
-		self.run_reminders()
-		self.assertEqual(len(notices(raised.name, self.requester)), 1)
+			reminders.send_notices()
+		self.assertEqual(frappe.db.get_value("Reminder", name, "status"), OPEN)  # raised, nobody told
+		self.assertEqual(notices(name, self.stores_user), [])
+		self.assertFalse(frappe.db.get_value("Reminder", name, "notified"))
+		reminders.send_notices()
+		self.assertEqual(len(notices(name, self.stores_user)), 1)
 
 	def test_the_upgrade_records_what_was_told_before_it(self):
 		from meddevice_suite.patches.v0_1 import record_reminders_already_told

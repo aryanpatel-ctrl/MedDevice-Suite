@@ -3,7 +3,8 @@
 
 Before, an escalated reminder had told QA, Management and its responsible person, and a recurring
 occurrence had told its job as it was raised; a system reminder had told nobody when it was raised,
-so it is left unrecorded and its people are told once on the next run. Reminders already recorded
+so it is left unrecorded: on the next run its people are told once, by the reminder, unless its
+category's module alerts them itself. Reminders already recorded
 are left alone, so the patch can run again without effect. Each change goes through the reminders
 service, so the audit trail records it.
 """
