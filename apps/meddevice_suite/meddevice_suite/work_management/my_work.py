@@ -39,7 +39,10 @@ class Waiting:
 def records(
 	doctype: str, filters: dict, fields: tuple[str, ...] = ("name", "modified")
 ) -> list[frappe._dict]:
-	"""The records the person may read that match."""
+	"""The records the person may read that match; none of a record type they may not read, which
+	Frappe's list would refuse outright, so one source a job does not see never empties the list."""
+	if not frappe.has_permission(doctype, "read"):
+		return []
 	return frappe.get_list(doctype, filters=filters, fields=list(fields), limit=0, order_by="modified asc")
 
 
