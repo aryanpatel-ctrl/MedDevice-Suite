@@ -23,5 +23,8 @@ class EquipmentQualification(Document):
 	def before_cancel(self) -> None:
 		equipment_care.only_by_correction(self)
 
+	def copy_attachments_from_amended_from(self) -> None:
+		equipment_care.copy_attachments(self)
+
 	def on_trash(self) -> None:
 		frappe.throw(_("A qualification is never deleted."), frappe.PermissionError)

@@ -268,6 +268,25 @@ def correct(doc: Document, password: str, reason: str | None = None) -> str:
 	return amendment.name
 
 
+def copy_attachments(amendment: Document) -> None:
+	"""The amendment of a corrected record carries the files of the record it corrects, as Frappe's
+	amend does, copied from that record's own file rows. Frappe's copy checks the signer against
+	whichever file first has the same address, and identical files share one: one laboratory
+	certificate often covers several instruments, so a file another person uploaded for another
+	instrument refused the correction. The signer read the corrected record (`correct` checks it), and
+	its files are already stored and validated; only the record they are attached to changes."""
+	for name in frappe.get_all(
+		"File",
+		filters={"attached_to_doctype": amendment.doctype, "attached_to_name": amendment.amended_from},
+		pluck="name",
+	):
+		copy = frappe.copy_doc(frappe.get_doc("File", name))
+		copy.attached_to_name = amendment.name
+		copy.set_new_name()
+		copy.set_user_and_timestamp()
+		copy.db_insert()  # the copy of a stored file; Frappe's insert would run the check above again
+
+
 # --- At the point of use ------------------------------------------------------------------------
 
 

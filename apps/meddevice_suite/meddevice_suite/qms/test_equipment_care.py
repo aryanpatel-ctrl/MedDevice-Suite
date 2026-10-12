@@ -271,6 +271,48 @@ class TestCalibration(CareTestCase):
 		finally:
 			frappe.set_user("Administrator")
 
+	def test_a_certificate_shared_with_another_record_does_not_stop_the_correction(self):
+		"""One laboratory certificate often covers several instruments, and identical files share one
+		address: Frappe's amend checked the signer against whichever file had it, here one only its
+		owner may read, and refused the correction."""
+		record = self.calibrated(self.approved())
+		# The same file, uploaded by Maintenance for another instrument and not yet attached: only its
+		# owner may read it.
+		shared = frappe.copy_doc(
+			frappe.get_doc("File", {"file_url": record.certificate, "attached_to_name": record.name})
+		)
+		shared.update({"attached_to_doctype": None, "attached_to_name": None, "attached_to_field": None})
+		shared.set_new_name()
+		shared.owner = self.maintenance
+		shared.db_insert()  # as Frappe stores an upload; its own insert would rename a file it did not write
+		self.assertEqual(shared.file_url, record.certificate)
+
+		# And a supporting file attached to the record, as the form's attachments do.
+		data_sheet = frappe.get_doc(
+			{
+				"doctype": "File",
+				"file_name": "raw-readings.txt",
+				"content": "Raw readings of the calibration",
+				"is_private": 1,
+				"attached_to_doctype": "Calibration Record",
+				"attached_to_name": record.name,
+			}
+		).insert()
+
+		amendment = self.sign(
+			self.qa, "Calibration Record", record.name, "Correct", "Wrong certificate number"
+		)
+		self.assertEqual(
+			sorted(
+				frappe.get_all(
+					"File",
+					filters={"attached_to_doctype": "Calibration Record", "attached_to_name": amendment},
+					pluck="file_url",
+				)
+			),
+			sorted([record.certificate, data_sheet.file_url]),
+		)
+
 
 @verifies("URS-EQP-002")
 class TestReferenceStandards(CareTestCase):
