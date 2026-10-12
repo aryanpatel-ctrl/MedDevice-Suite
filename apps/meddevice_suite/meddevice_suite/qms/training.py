@@ -18,7 +18,10 @@ that they were trained (or read and understood a document whose matrix row allow
 an assessor (the Production Supervisor or QA, never the trainee) signs Competent or Not Competent.
 What was planned for the training (method, date, trainer, assessor, assessment method) is fixed
 when the trainee signs. QA enters paper history from before the system with its certificate and a
-signature, and may revoke a competence with a signed reason (D-18). Records are never deleted.
+signature, and may revoke a competence with a signed reason (D-18). QA starts such a record from
+the Training Record list (`start_history`), for an employee and a document their job's approved
+matrix names; what the record holds beyond the training itself (why it exists, its validity,
+whether reading is enough) is set by the system there too, never typed. Records are never deleted.
 
 At the workstation, every operator logging time on a job card is competent, on the revision in
 effect, in the work instruction of the operation they do (URS-TRN-005); block, never warn.
@@ -53,6 +56,20 @@ ACTIVE = "Active"
 RECONCILE_SAVEPOINT = "training_reconcile"
 # What the trainee plans and signs for: fixed once trained.
 PLANNED = ("training_method", "training_date", "trainer", "assessor", "assessment_method", "certificate")
+# What the system sets when it opens a record: what it is for, and what the job's matrix says of it.
+OPENED_WITH = ("employee", "controlled_document", "trigger", "read_and_understand_allowed", "validity_months")
+# What only a signature or the system fills in.
+OUTCOME = (
+	"trained_by",
+	"trained_on",
+	"assessed_by",
+	"assessed_on",
+	"valid_until",
+	"is_historical",
+	"outcome_reason",
+	"revoked_by",
+	"revoked_on",
+)
 
 
 def require(condition, message: str, exception: type[Exception] = frappe.ValidationError) -> None:
@@ -189,7 +206,11 @@ def reconcile(employees: list[str] | None = None) -> None:
 		for document in sorted(documents):
 			for rev in revisions.get(document, []):
 				held = by_pair.get((employee, rev.name), [])
-				if any(r.docstatus == 0 and r.status in IN_PROGRESS for r in held):
+				# A paper history QA has started is not training until signed: left unsigned, or
+				# started for the wrong person, it must not hold back the training the job needs.
+				if any(
+					r.docstatus == 0 and r.status in IN_PROGRESS and r.trigger != HISTORICAL for r in held
+				):
 					continue
 				competent = [r for r in held if r.docstatus == 1 and r.status == COMPETENT]
 				if any(not r.valid_until or getdate(r.valid_until) > horizon for r in competent):
@@ -352,7 +373,9 @@ def on_matrix_cancel(doc: Document, method: str | None = None) -> None:
 
 
 def before_insert(doc: Document, method: str | None = None) -> None:
-	"""Records are opened by the system; by hand, only QA enters paper history (D-07)."""
+	"""Records are opened by the system; by hand, only QA enters paper history (D-07), on a document
+	the employee's job is trained on. Every way of entering history (`start_history`, the form, the
+	API) comes through here, so each keeps the same rules."""
 	if doc.flags.training:
 		return
 	require(
@@ -363,7 +386,77 @@ def before_insert(doc: Document, method: str | None = None) -> None:
 	require(
 		doc.trigger == HISTORICAL, _("By hand, QA enters only training done before the system (Historical).")
 	)
+	staff = doc.employee and frappe.db.get_value(
+		"Employee", doc.employee, ["designation", "user_id"], as_dict=True
+	)
+	require(staff, _("Employee {0} does not exist.").format(doc.employee))
+	require(
+		frappe.session.user != staff.user_id,
+		_("Nobody records their own training history."),
+		frappe.PermissionError,
+	)
+	# The validity and whether reading is enough come from the job's matrix, as on a record the
+	# system opens: typed by hand, they could make a paper training last for ever.
+	row = staff.designation and matrix_rows([staff.designation]).get(
+		(staff.designation, doc.controlled_document)
+	)
+	require(
+		row,
+		_(
+			"History is entered for what the job is trained on: {0}'s approved matrix does not name {1}."
+		).format(doc.employee, doc.controlled_document),
+	)
+	doc.read_and_understand_allowed = row.read_and_understand_allowed or 0
+	doc.validity_months = row.validity_months or 0
+	for field in OUTCOME:
+		doc.set(field, None)
 	doc.status = OPEN
+	doc.due_date = doc.due_date or today()  # nothing falls due: the training was given long ago
+
+
+@frappe.whitelist(methods=["POST"])
+def start_history(employee: str, controlled_document: str) -> str:
+	"""QA starts the record of a training given on paper before the system (D-07), for an employee
+	and a document their job's approved matrix names, on the revision in effect: the revision
+	the workstation checks (URS-TRN-005). QA then records how and when it was given, attaches the
+	certificate and signs Record History. Returns the draft record's name."""
+	frappe.has_permission(RECORD, "create", throw=True)
+	require(
+		QA_ROLE in roles_of(frappe.session.user),
+		_("Only QA records training history."),
+		frappe.PermissionError,
+	)
+	revision = frappe.db.get_value(
+		"Controlled Document", {"name": controlled_document, "status": "Effective"}, "current_revision"
+	)
+	require(revision, _("{0} has no revision in effect to record training on.").format(controlled_document))
+	# One start at a time for an employee, as in `reconcile`, so the same history is not started twice.
+	staff = frappe.qb.DocType("Employee")
+	frappe.qb.from_(staff).select(staff.name).where(staff.name == employee).for_update().run()
+	for held in frappe.get_all(
+		RECORD,
+		filters={"employee": employee, "document_revision": revision, "docstatus": ["<", 2]},
+		fields=["name", "trigger", "status", "docstatus", "valid_until"],
+	):
+		if held.docstatus == 0 and held.trigger == HISTORICAL and held.status == OPEN:
+			frappe.throw(_("{0} already records this training history; complete it.").format(held.name))
+		if (
+			held.docstatus == 1
+			and held.status == COMPETENT
+			and (not held.valid_until or getdate(held.valid_until) >= getdate(today()))
+		):
+			frappe.throw(_("{0} is already competent on this revision ({1}).").format(employee, held.name))
+	doc = frappe.get_doc(
+		{
+			"doctype": RECORD,
+			"employee": employee,
+			"controlled_document": controlled_document,
+			"document_revision": revision,
+			"trigger": HISTORICAL,
+		}
+	)
+	doc.insert()  # as QA: `before_insert` holds the rules of every hand-entered record
+	return doc.name
 
 
 def validate_record(doc: Document, method: str | None = None) -> None:
@@ -391,6 +484,16 @@ def validate_record(doc: Document, method: str | None = None) -> None:
 	doc.trainee_user = employee.user_id
 	before = None if doc.is_new() else doc.get_doc_before_save()
 	if before and not doc.flags.training:
+		# A record stays what it was opened for: a coordinator who could turn an open record into
+		# Historical would take it out of `reconcile` and let QA sign it complete without training.
+		opened = [f for f in OPENED_WITH if (before.get(f) or None) != (doc.get(f) or None)]
+		require(
+			not opened,
+			_("Set when the record was opened: {0}.").format(
+				", ".join(_(doc.meta.get_label(f)) for f in opened)
+			),
+			frappe.PermissionError,
+		)
 		require(
 			before.status == doc.status, _("The status changes only by a signature."), frappe.PermissionError
 		)
@@ -551,6 +654,20 @@ def record_history(doc: Document, password: str, reason: str | None = None) -> N
 	doc.assessed_by, doc.assessed_on = frappe.session.user, now_datetime()
 	sign(doc, "Verified", "Record History", password, reason)
 	complete(doc, COMPETENT)
+	# The training the system opened on this revision, before the history was entered (at go-live,
+	# say), is no longer needed: closed, so the trainee is not asked to sign for it.
+	for name in frappe.get_all(
+		RECORD,
+		filters={
+			"employee": doc.employee,
+			"document_revision": doc.document_revision,
+			"docstatus": 0,
+			"status": OPEN,
+			"trigger": ["!=", HISTORICAL],
+		},
+		pluck="name",
+	):
+		close(name, WITHDRAWN, _("The training is recorded from paper in {0}.").format(doc.name))
 
 
 def revoke(doc: Document, password: str, reason: str | None = None) -> None:
