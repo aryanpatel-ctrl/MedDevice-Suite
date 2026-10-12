@@ -497,9 +497,15 @@ class TestBuyingWithoutALicence(CustomerLicenceTestCase):
 		self.act(customer, "Exempt From Licence", "Government hospital buying for its own use")
 		self.assertEqual(frappe.db.get_value("Customer", customer, EXEMPT_FIELD), 1)
 		signature = frappe.get_last_doc("Electronic Signature", filters={"reference_name": customer})
-		self.assertEqual((signature.action, signature.signer), ("Exempt From Licence", self.qa))
+		self.assertEqual(
+			(signature.action, signature.meaning, signature.signer),
+			("Exempt From Licence", "Approved", self.qa),
+		)
 		self.submit_order(self.sales_order(customer))
 		self.act(customer, "Require Licence", "Now buys for resale")
+		# Ending the exemption revokes QA's approval of it (11.50(a)(3)).
+		signature = frappe.get_last_doc("Electronic Signature", filters={"reference_name": customer})
+		self.assertEqual((signature.action, signature.meaning), ("Require Licence", "Rejected"))
 		with self.assertRaisesRegex(frappe.ValidationError, "holds no licence verified by QA"):
 			self.submit_order(self.sales_order(customer))
 

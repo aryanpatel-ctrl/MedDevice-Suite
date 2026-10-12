@@ -11,7 +11,17 @@ class AuditEvent(Document):
 
 	Once recorded it can never change: any save after the first, and any delete,
 	is refused for every user, whatever their permissions.
+
+	Nor can one be inserted any other way (21 CFR 11.10(e)). No role may create audit events,
+	but a system manager can grant that on a site, and code can skip permissions: either could
+	add an entry attributing an act to another person. The audit trail marks the event it
+	inserts in the document's flags, which a request cannot set.
 	"""
+
+	def before_insert(self) -> None:
+		# Runs for every insert, even one that skips permissions and validation.
+		if not self.flags.recorded_by_audit_trail:
+			frappe.throw(_("An audit event is recorded only by the audit trail."), frappe.PermissionError)
 
 	def validate(self) -> None:
 		if not self.is_new():

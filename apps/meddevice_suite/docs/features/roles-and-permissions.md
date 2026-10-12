@@ -3,6 +3,7 @@
 Requirements: **URS-CMP-014, URS-CMP-015, URS-CMP-016, URS-CMP-017, URS-CMP-018, URS-CMP-034, URS-CMP-035, URS-CMP-036** (`meddevice_suite/qa/requirements.toml`). Touched by: URS-PLT-008/009 (each job's desk and screens, see the platform document) and URS-CMP-013 (which record types are regulated, `compliance/audit_scope.py`).
 Code: `meddevice_suite/setup/roles.py` (job profiles, permission matrix, separation of administration), `setup/lookups.py` (lookups a job may not search), `public/js/sign_out.js` (clean sign-in page), wired in `meddevice_suite/hooks.py`; applied by `setup/install.py` `apply_configuration`.
 State on 2026-10-10: built, in the server and browser suites that the lead ran green on the current branch (section 8); GitHub CI for the branch still in progress when this document was written.
+Changed 2026-10-12 (foundation review, branch `fix/immutable-records`): a permission row is no longer made by hand on the app's own record types, and none may let anyone write the Electronic Signature or the Audit Event (section 2.2). Tests: `compliance/test_immutable_records.TestPermissionsOnTheAppsRecordTypes` and the edited `compliance/test_quality_settings.test_a_hand_added_permission_does_not_last` — written, **not yet run** (section 8).
 
 ## 1. Feature overview
 
@@ -72,6 +73,8 @@ Nobody has **delete**, **share** or **import** on any regulated record type (URS
 
 `sync_permissions` makes the record type's **Custom DocPerm** rows exactly the declared ones: missing rows are inserted, differing rows updated, extra rows deleted, and an unchanged matrix writes nothing (so migrate records no audit noise). Each change to a Custom DocPerm is itself a regulated change recorded in the audit trail (Custom DocPerm is in `REGULATED_DOCTYPES`).
 
+**The app's own record types** (Quality Settings, Change Request, Electronic Signature, Audit Event and every other DocType this app defines) carry their permissions in their DocType definition. Since 2026-10-12 a **Custom DocPerm** row on one of them is refused as it is made, through Role Permissions Manager or any other code (`refuse_hand_added_permission`, `Custom DocPerm` `before_validate`, which runs even when validation is skipped): *The permissions on <record type> are part of the validated configuration and change only with a release of this app.* Install and migrate are left alone. On the evidence records (Electronic Signature, Audit Event) no row may grant more than select, read, report, export or print, at any time, migrate included: *<record type> records are written only by the system; no role may be given <flags> on them.* Before, a system manager could grant create there and post a signature or an audit event in another person's name until the next migrate. A row written past the check, straight to the database, is still removed on every migrate by `remove_hand_added_permissions`.
+
 `SUPPORTING_PERMISSIONS` adds flags to record types outside the regulated scope that a job cannot work without, keeping ERPNext's own rows (e.g. Stock User and System Manager may *select* an **Account**; Stores and Production may *read* **Stock Settings**; Manufacturing User reads **Sales Order**; the company's letter head is readable by Production, QC, QA and Maintenance).
 
 ### 2.3 Separation of system administration from business roles (URS-CMP-034)
@@ -107,6 +110,7 @@ A link field searches its target record type, which needs at least *select*. `se
 | C8 | URS-CMP-036: every lookup a job's forms use can be searched, apart from the reviewed list; looking up never opens | `setup/lookups.py`, `SUPPORTING_PERMISSIONS` PICK rows | `setup/test_lookups.py` `TestEveryJobCanUseItsForms.test_only_the_reviewed_lookups_stay_closed`, `test_the_lookups_found_closed_in_the_pilot_now_search`, `test_picking_never_opens_the_record`, `test_maintenance_picks_a_task_through_the_forms_own_query`; `screen_sweep.js` searches every open lookup as each job (URS-PLT-009) |
 | C9 | Each job can still do its daily work under least privilege | `DAILY_WORK` table in the test | `TestDailyWork.test_each_job_can_do_its_daily_work`, `test_jobs_do_not_do_each_others_work` |
 | C10 | A job holding create without write only for records its transactions create; a service posts for a job what it never fills in | `CREATED_THROUGH_TRANSACTIONS`, `POSTED_BY_SERVICES`, `fills_in_by_hand` | `TestOwnFormsAreUsable.test_a_job_creates_without_a_form_only_what_its_transactions_create`, `test_a_service_posts_for_a_job_what_the_job_never_fills_in` (URS-PLT-009) |
+| C11 | URS-CMP-015 (2026-10-12): no permission row made by hand on the app's own record types; none ever opens the evidence records to writing; one written past the check removed on migrate | `refuse_hand_added_permission`, `own_doctypes`, `SEE_ONLY`, `remove_hand_added_permissions` | `compliance/test_immutable_records.TestPermissionsOnTheAppsRecordTypes` (4), `compliance/test_quality_settings.test_a_hand_added_permission_does_not_last` — **not yet run** |
 
 **Ambiguous / partial:**
 - URS-CMP-015 "every regulated business record type": the matrix covers the 27 standard ERPNext types; this app's own regulated types are declared in their DocType JSON (section 2.6). The requirement is met as "declared in code", but not through one table.
@@ -131,6 +135,7 @@ Role: System Administrator; a bench shell for step 3.
 2. In the Permission Manager tick **Delete** for QC Inspector on Quality Inspection; save. Expected: saved (the tool itself is Frappe's).
 3. Run `bench --site <site> migrate` (or `bench --site <site> execute meddevice_suite.setup.install.apply_configuration`). Reload the Permission Manager. Expected: the Delete tick is gone; the rows are as in step 1.
 4. As Administrator, open **Compliance › Audit Trail** (or the list `/desk/audit-event`) filtered by *Reference Doctype = Custom DocPerm*. Expected: an *Updated* event for the restored row.
+5. (2026-10-12) In the Permission Manager choose *Quality Settings*, then *Electronic Signature*, and **Add a New Rule** or tick any box. Expected: *The permissions on <record type> are part of the validated configuration and change only with a release of this app.*; on *Electronic Signature* ticking **Create** names the flag: *Electronic Signature records are written only by the system; no role may be given create on them.* Nothing changes.
 Actual result: ____  Pass/Fail: ____
 
 ### RP-03 Nobody deletes, shares or imports a regulated record (C3)
@@ -210,7 +215,7 @@ Data touched: Role, Role Profile, Has Role, Custom DocPerm (configuration); User
 | --- | --- |
 | Declarations | `setup/roles.py`: `NEW_ROLES`, `JOB_PROFILES` (12), `FLAGS` (16 flags set explicitly), `PICK/VIEW/REVIEW/EDIT/ENTER/CORRECT/APPROVE`, `MANAGEMENT`, `oversight()`, `PERMISSIONS` (27 types), `HIGHER_LEVELS`, `SUPPORTING_PERMISSIONS`, `CREATED_THROUGH_TRANSACTIONS`, `POSTED_BY_SERVICES`, `ACCESS_CONTROL`, `SYSTEM_ADMINISTRATION`, `BUSINESS_ROLES` |
 | Apply | `apply_roles()` ← `setup/install.py` `apply_configuration()` ← hooks `after_install`, `after_migrate`; `sync_job_profile`, `declared_rows`, `supporting_rows`, `sync_permissions` (Custom DocPerm rows exact; `frappe.clear_cache(doctype=…)` on change) |
-| Hooks (`hooks.py`) | `User.validate` → `setup.roles.separate_administration`; `User.before_rename` → `compliance.audit.keep_user_id` (module 50) |
+| Hooks (`hooks.py`) | `User.validate` → `setup.roles.separate_administration`; `User.before_rename` → `compliance.audit.keep_user_id` and `User.on_trash` → `compliance.audit.keep_user_with_history` (module 50); `Custom DocPerm.before_validate` → `setup.roles.refuse_hand_added_permission` (2026-10-12) |
 | Desk | `public/js/sign_out.js` (bundle `meddevice_suite.bundle.js`): `redirect_to_login` → `/login` when `logged_out` |
 | Lookups | `setup/lookups.py`: `REVIEWED_CLOSED`, `closed_lookups()`, `job_forms()`, `granted()`; served to the browser by `qa/ui_users.reachable` (`closed_lookups`) |
 | Regulated scope | `compliance/audit_scope.py` `REGULATED_DOCTYPES` (34 incl. the 7 access-control types) |
@@ -243,6 +248,8 @@ Automated results below were executed by the lead on 2026-10-10 on the current b
 | GitHub CI (fresh site) | `.github/workflows/ci.yml` | in progress when this document was written |
 | Manual browser tests RP-01…RP-10 | — | **not executed** (no manual tester session). The automated journey and sweep cover: every job's lists/new forms/lookups open (RP-09 steps 1, 4), Operator logs without Submit and the supervisor submits (RP-06 steps 1, 4), Sales/Purchase not offered Approve (module 48) |
 
+2026-10-12 changes (section 1): tests written without a site and **not yet run**; RP-02 step 5 **not executed**.
+
 Untested: RP-02 step 3 on a real `bench migrate` of a site changed by hand (the test calls `apply_configuration` directly); RP-08 step 2 with a second person; Data Import refusal (RP-03 steps 3–4).
 
 ## 9. Final QA checklist
@@ -259,4 +266,5 @@ Untested: RP-02 step 3 on a real `bench migrate` of a site changed by hand (the 
 | Manual browser cases RP-01…RP-10 | **Not tested** |
 | Role Profile reachable only by address | **Not tested** (section 7) |
 | Hand-edited profile refused on save | Verified (automated, 2026-10-10) |
+| Hand-made permission on the app's own record types refused; evidence records never opened to writing (2026-10-12) | **Not tested** (tests written, not yet run) |
 | CI green on a fresh site for the final commit | **Pending** |

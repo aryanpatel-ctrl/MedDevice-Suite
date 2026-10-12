@@ -6,6 +6,10 @@ the function that checks the act is allowed, signs through `esign.sign` and
 performs the act. The desk's signing dialog can only reach the acts listed
 here, so the list is also the system's register of signed acts.
 
+The declared meaning is the one recorded (21 CFR 11.50(a)(3)): the dialog sends the
+meaning it showed, which must be the declared one, and `esign.sign` refuses to sign a
+declared act with any other, so the dialog, the register and the act cannot drift apart.
+
 The signatures on a record are shown on its form (`onload`) and are available
 to its print formats (`signatures_for_print`), with the signer's name, the date
 and time and the meaning (21 CFR 11.50, URS-CMP-003).
@@ -52,7 +56,7 @@ SIGNING_ACTIONS: dict[tuple[str, str], SignedAct] = {
 	("Document Revision", "Review"): SignedAct("Reviewed", f"{DOCUMENT_CONTROL}.review"),
 	("Document Revision", "Return"): SignedAct("Rejected", f"{DOCUMENT_CONTROL}.return_for_changes"),
 	("Document Revision", "Approve"): SignedAct("Approved", f"{DOCUMENT_CONTROL}.approve"),
-	("Controlled Document", "Withdraw"): SignedAct("Approved", f"{DOCUMENT_CONTROL}.withdraw"),
+	("Controlled Document", "Withdraw"): SignedAct("Withdrawn", f"{DOCUMENT_CONTROL}.withdraw"),
 	# Module 36, change control
 	("Change Request", "Assess"): SignedAct("Reviewed", f"{CHANGE_CONTROL}.assess"),
 	("Change Request", "Approve"): SignedAct("Approved", f"{CHANGE_CONTROL}.approve"),
@@ -81,7 +85,8 @@ SIGNING_ACTIONS: dict[tuple[str, str], SignedAct] = {
 	("Customer Licence", "Reject"): SignedAct("Rejected", f"{CUSTOMER_LICENCE}.reject"),
 	("Customer Licence", "Withdraw"): SignedAct("Rejected", f"{CUSTOMER_LICENCE}.withdraw"),
 	("Customer", "Exempt From Licence"): SignedAct("Approved", f"{CUSTOMER_LICENCE}.exempt_from_licence"),
-	("Customer", "Require Licence"): SignedAct("Approved", f"{CUSTOMER_LICENCE}.require_licence_again"),
+	# Ending an exemption QA approved revokes that approval, signed as a revoked competence is.
+	("Customer", "Require Licence"): SignedAct("Rejected", f"{CUSTOMER_LICENCE}.require_licence_again"),
 	# Module 2, the approval of a bill of materials
 	("BOM", "Approve"): SignedAct("Approved", f"{BOM}.approve"),
 	# Module 8, the approval of equipment
@@ -139,14 +144,37 @@ SIGNING_ACTIONS: dict[tuple[str, str], SignedAct] = {
 
 
 @frappe.whitelist(methods=["POST"])
-def sign_action(doctype: str, name: str, action: str, password: str, reason: str | None = None) -> None:
-	"""Sign `action` on a record, from the signing dialog."""
+def sign_action(
+	doctype: str,
+	name: str,
+	action: str,
+	password: str,
+	reason: str | None = None,
+	meaning: str | None = None,
+) -> None:
+	"""Sign `action` on a record, from the signing dialog.
+
+	`meaning` is the meaning the dialog showed the signer; a page loaded before the declaration
+	changed may show another, and nobody signs under a meaning they were not shown.
+	"""
 	signed_act = SIGNING_ACTIONS.get((doctype, action))
 	if not signed_act:
 		frappe.throw(_("{0} cannot be signed on {1}.").format(action, _(doctype)), frappe.PermissionError)
+	if meaning and meaning != signed_act.meaning:
+		frappe.throw(
+			_("{0} is now signed as {1}, not as {2}. Reload the page and sign again.").format(
+				_(action), _(signed_act.meaning), _(meaning)
+			)
+		)
 	doc = frappe.get_doc(doctype, name)
 	doc.check_permission("read")
 	frappe.get_attr(signed_act.perform)(doc, password=password, reason=(reason or "").strip() or None)
+
+
+def declared_meaning(doctype: str, action: str) -> str | None:
+	"""The meaning a declared signed act is signed with; None for an act not declared here."""
+	signed_act = SIGNING_ACTIONS.get((doctype, action))
+	return signed_act.meaning if signed_act else None
 
 
 @frappe.whitelist()

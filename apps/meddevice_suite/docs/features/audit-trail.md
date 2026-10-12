@@ -3,6 +3,7 @@
 Requirement: **URS-CMP-007, URS-CMP-008, URS-CMP-009, URS-CMP-010, URS-CMP-011, URS-CMP-012, URS-CMP-013, URS-CMP-031** (`meddevice_suite/qa/requirements.toml`). Also touched: URS-CMP-004 (signature chains survive a rename), URS-CMP-014 (QA reviews the evidence), URS-CMP-020/021 (workflow cancel asks a reason).
 Code: `meddevice_suite/compliance/audit.py` (recording and the chain), `compliance/audit_scope.py` (which record types are regulated), `compliance/audit_reason.py` (reason for change), `compliance/audit_timeline.py` (review on the form, verification), `compliance/fingerprint.py`, `compliance/doctype/audit_event/`, `public/js/audit_trail.js`, `public/js/audit_reason.js`, hooks in `meddevice_suite/hooks.py`.
 State on 2026-10-10: built (`fbaba7af` 2026-10-06 onwards; edge cases of the robustness review closed in `31f756ac`, `2ffeb96e`, `9a5d2019` on 2026-10-07), server and browser suites green on the current branch; GitHub CI in progress (section 8).
+Changed 2026-10-12 (foundation review, branch `fix/immutable-records`): an audit event is inserted only by the audit trail; no permission row may open it to writing; a user the trail names is never deleted, only disabled (21 CFR 11.300(b)). Tests: `compliance/test_immutable_records.py` — written, **not yet run** (section 8).
 
 ## 1. Feature overview
 
@@ -63,7 +64,11 @@ Closing the dialog leaves the record unchanged. The reason is staged on the serv
 
 ### 2.4 Permanence (URS-CMP-009, URS-CMP-031)
 
-`AuditEvent.validate` refuses every save after the first (*An audit event cannot be changed.*) and `on_trash` refuses deletion (*An audit event cannot be deleted.*), both permission errors, for every user including Administrator and `ignore_permissions`. The DocType is `in_create`; no role has create/write/delete; `ignore_links_on_delete` lets the audited record itself be deleted (recorded as Deleted) without touching its events. Renaming a User is refused (`audit.keep_user_id`). Who created a record and when (`owner`, `creation`) cannot be changed through the form or the API (verified by `test_approvals.TestAttributionIsPermanent`; enforced by Frappe's save, no app code — section 7).
+`AuditEvent.validate` refuses every save after the first (*An audit event cannot be changed.*) and `on_trash` refuses deletion (*An audit event cannot be deleted.*), both permission errors, for every user including Administrator and `ignore_permissions`. The DocType is `in_create`; no role has create/write/delete; `ignore_links_on_delete` lets the audited record itself be deleted (recorded as Deleted) without touching its events. Renaming a User is refused (`audit.keep_user_id`).
+
+Since 2026-10-12 (foundation review):
+- An audit event cannot be inserted past the audit trail: `AuditEvent.before_insert` refuses one without the mark `audit.record` sets in the record's flags (*An audit event is recorded only by the audit trail.*), which a request cannot set, even with permissions and validation skipped. Before, a system manager could grant create in Role Permissions Manager and add an entry in another person's name; that grant is refused too (`setup/roles.refuse_hand_added_permission`: no row on the Audit Event may grant more than select, read, report, export or print, even on migrate).
+- A user the trail names is never deleted (`audit.keep_user_with_history`, User `on_trash`, which runs before Frappe's link check that `ignore_links_on_delete` would otherwise let pass): one with an event as the user or as the real user acting for someone, one who signed, or one who owns a record of a regulated type (records made before the trail was installed). *<user> has acted on regulated records, so the user ID stays in the audit trail and cannot be deleted. Disable the account instead.* Administrator and Guest are skipped (Frappe never deletes them). Frappe's own `User.on_trash` runs first and signs the user out before the refusal; the rest of the deletion is rolled back. Who created a record and when (`owner`, `creation`) cannot be changed through the form or the API (verified by `test_approvals.TestAttributionIsPermanent`; enforced by Frappe's save, no app code — section 7).
 
 ### 2.5 The chain and its verification (URS-CMP-010)
 
@@ -100,6 +105,7 @@ For users who may read Audit Event (Quality Manager, System Manager) and only on
 | C6 | URS-CMP-012: reviewers search by record/user/action/date, see it on the record, export, cannot change | `audit_timeline.py`, Audit Event permissions, indexes | `TestRecordTimeline` (11), `TestSearchAndExport` (4), `TestQAReviewsTheEvidence` (2), `test_audit.TestReviewStaysFastAtScale`; Cypress `audit_trail.js` "[URS-CMP-012] shows the record's audit trail and opens its full history" |
 | C7 | URS-CMP-013: regulated types declared in code incl. every type this app builds; audited from declaration | `audit_scope.py` | `TestScope` (3), `TestScopeRules` (3) |
 | C8 | URS-CMP-031: creator and creation time never change via form or API | Frappe's save (no app code); covered by test | `compliance/test_approvals.TestAttributionIsPermanent` (2) |
+| C9 | Foundation review 2026-10-12: no event past the audit trail (URS-CMP-009); no hand-made permission on it (URS-CMP-015); a user the trail names is disabled, never deleted (URS-CMP-006, 21 CFR 11.300(b)) | `AuditEvent.before_insert`, `audit.record` flag, `roles.refuse_hand_added_permission`, `audit.keep_user_with_history`/`has_history` | `compliance/test_immutable_records.py`: `TestAuditEventsComeOnlyFromTheTrail` (3), `TestPermissionsOnTheAppsRecordTypes` (4), `TestUserIdsInTheTrailAreNeverDeleted` (6) — **not yet run** |
 
 **Partial / by design:** C1 for derived values on other records (section 2.7). **Ambiguous:** URS-CMP-012 "export" — met by the list export; confirm with the client whether a formatted audit report is expected. **Unverified mechanism:** C8 relies on platform behaviour whose Frappe code path was not located in this review (test passes).
 
@@ -168,6 +174,8 @@ Actual result: ____  Pass/Fail: ____
 1. As QA Manager rename a draft Item (**Menu › Rename**). Expected: Audit Event **Renamed** with *Renamed from A to B* in the timeline; **Verify Integrity** still green.
 2. As System Administrator delete a draft regulated record no role protects (a test DocType on a test site). Expected: Audit Event **Deleted** with a snapshot; the events remain after the record is gone.
 3. Rename a User. Expected: *User IDs are permanent in the audit trail. Create a new account instead of renaming <user>.*
+4. (2026-10-12) As System Administrator delete a demo user who has worked on records. Expected: *<user> has acted on regulated records, so the user ID stays in the audit trail and cannot be deleted. Disable the account instead.*; untick **Enabled** and save: saved. Delete a user just created who has done nothing: deleted.
+5. (2026-10-12) From the browser console: `frappe.xcall("frappe.client.insert", {doc: {doctype: "Audit Event", reference_doctype: "Item", reference_name: "<item>", action: "Updated", user: "qa.manager@demo.example.com"}})`. Expected: *An audit event is recorded only by the audit trail.* In **Role Permissions Manager** › *Audit Event*, adding a rule or ticking **Create**. Expected: refused (module 47, `roles-and-permissions.md`).
 Actual result: ____  Pass/Fail: ____
 
 ### Regression
@@ -192,7 +200,7 @@ Cross-module data: Audit Event (new, one per action), the reason cache (15 minut
 | Scope | `compliance/audit_scope.py`: `REGULATED_DOCTYPES`, `SELF_RECORDING`, `is_regulated(doctype, module)` (`frappe.local.module_app`) |
 | Reason | `compliance/audit_reason.py`: `requires_reason` (whitelist), `stage_reason` (POST), `reason_for`, `saved_around`, `saving`, `records_being_saved` (call-stack walk of `insert`/`_save`/`run_before_save_methods`/`run_post_save_methods`), `reason_used`, `action_finished`, `linked_cancellation`, `take_staged`, `staged_key` (`meddevice_suite:audit_reason:<user>:…`), `clean` (≤1000 chars, no `<`/`>`), `verb`; constants `STAGED_ACTION`, `PERMISSION_FOR`, `STAGE_SECONDS` = 900 |
 | Review | `compliance/audit_timeline.py`: `onload` (sets `__onload.audit_trail`), `verify_record` (whitelist), `timeline_content` (limit 50), `shows_audit_trail`, `describe`, `change_lines`, `shown` (80 chars) |
-| Hooks (`hooks.py`) | `doc_events["*"]`: `before_insert`, `before_change`, `before_cancel`, `before_update_after_submit` (after `approvals.before_update_after_submit`), `onload` (`audit_timeline.onload`), `on_change`, `on_trash`, `after_rename`; `User.before_rename` → `keep_user_id`; `additional_timeline_content["*"]` → `timeline_content`; `ignore_links_on_delete = ["Audit Event"]` |
+| Hooks (`hooks.py`) | `doc_events["*"]`: `before_insert`, `before_change`, `before_cancel`, `before_update_after_submit` (after `approvals.before_update_after_submit`), `onload` (`audit_timeline.onload`), `on_change`, `on_trash`, `after_rename`; `User.before_rename` → `keep_user_id`; `User.on_trash` → `keep_user_with_history` (2026-10-12); `additional_timeline_content["*"]` → `timeline_content`; `ignore_links_on_delete = ["Audit Event"]` |
 | API routes | `POST /api/method/meddevice_suite.compliance.audit_reason.stage_reason` (`doctype`, `name`, `action` ∈ cancel/amend/update_after_submit, `reason`); `GET …audit_reason.requires_reason?doctype=`; `GET …audit_timeline.verify_record?doctype=&name=`; `/api/resource/Audit Event` read-only |
 | Desk | `public/js/audit_reason.js` (wraps `frm.savecancel`, `frm.states.handle_workflow_action`, `frm.save`), `public/js/audit_trail.js` (**View › Audit Trail**, **View › Verify Integrity**); list `/desk/audit-event` in the **Compliance** area (`workspace_sidebar/compliance.json`; Quality Manager and System Manager, `setup/desk.py`) |
 | Chain | event fingerprint = `sha256([previous_hash, reference_doctype, document_name_at_event, action, user, impersonated_by, str(event_at), reason, changes])`; head found by `fingerprint.chain_head("Audit Event", "previous_event", "event_hash", …)` with `FOR UPDATE`; verification walks `event_at asc, creation asc` and recomputes |
@@ -226,6 +234,8 @@ Executed by the lead on 2026-10-10 on the current branch (local test site; CI = 
 | GitHub CI | current branch | in progress |
 | Manual browser tests AT-01…AT-09 | — | **not executed** (no manual tester session); the automated browser tests cover AT-02 steps 1–5, AT-03 (as Administrator on a test DocType), AT-06 step 1, AT-07 step 3's list opening |
 
+2026-10-12 changes (section 1): `compliance/test_immutable_records.py` written without a site and **not yet run**; AT-09 steps 4–5 **not executed**.
+
 Untested: AT-06 steps 2–3 (database tampering; server tests cover the logic), AT-08 (caused-by and status command in the browser; server tests cover the logic), AT-07 as each job in the browser (the screen sweep opens the Audit Event list as QA Manager and System Administrator only), real impersonation.
 
 ## 9. Final QA checklist
@@ -235,6 +245,7 @@ Untested: AT-06 steps 2–3 (database tampering; server tests cover the logic), 
 | Every action recorded once, automatically, with old/new values and child rows; whole record on create/delete | Verified (automated) |
 | User, real user, server time recorded | Verified (automated; impersonation by unit patch only) |
 | Events never edited/deleted, not even by Administrator; user IDs permanent; owner/creation permanent | Verified (automated) |
+| Events never inserted past the trail; no hand-made permission opens them; a user the trail names is disabled, not deleted (2026-10-12) | **Not tested** (tests written, not yet run) |
 | Chain fingerprints; altered, removed and inserted-before-newest entries detected; rename and clock change safe | Verified (automated + browser Verify Integrity) |
 | Reason required for cancel/amend/update after submit on every path; caused-by and command recorded | Verified (automated + browser dialogs) |
 | Reviewers see timeline, Audit Trail, Verify Integrity; search and export; others see nothing | Verified (automated; browser as Administrator) |
