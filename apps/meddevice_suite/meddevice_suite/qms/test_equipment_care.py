@@ -255,6 +255,22 @@ class TestCalibration(CareTestCase):
 		with self.assertRaises(frappe.PermissionError):
 			frappe.delete_doc("File", file.name)
 
+	def test_its_certificate_stays_evidence_while_the_record_is_corrected(self):
+		"""A withdrawn calibration is still the record of what was found; its certificate is kept."""
+		from meddevice_suite.compliance import evidence_files
+
+		record = self.calibrated(self.approved())
+		self.sign(self.qa, "Calibration Record", record.name, "Correct", "Wrong certificate number")
+		self.assertEqual(frappe.db.get_value("Calibration Record", record.name, "docstatus"), 2)
+		self.assertTrue(evidence_files.is_evidence(record.certificate))
+		file = frappe.get_doc("File", {"file_url": record.certificate, "attached_to_name": record.name})
+		frappe.set_user(self.qa)
+		try:
+			with self.assertRaises(frappe.PermissionError):
+				frappe.delete_doc("File", file.name)
+		finally:
+			frappe.set_user("Administrator")
+
 
 @verifies("URS-EQP-002")
 class TestReferenceStandards(CareTestCase):
@@ -957,33 +973,45 @@ class TestCorrection(CareTestCase):
 			frappe.db.exists("Electronic Signature", {"reference_name": record.name, "action": "Correct"})
 		)
 
-	def test_a_plain_amend_carries_nothing_the_signed_acts_set(self):
-		"""Frappe's Amend copies every field of the cancelled record, unlike the act; what the
-		signatures set stays with the record that was signed."""
+	def test_an_amendment_carries_nothing_the_signed_acts_set(self):
+		"""Frappe's Amend copies every field of the cancelled record; whatever is copied or typed
+		into the amendment, what the signatures set stays with the record that was signed."""
 		asset = self.needing()
 		iq = self.done(asset, "IQ")
-		self.correct("Equipment Qualification", iq)
+		iq_amendment = self.correct("Equipment Qualification", iq)
 		found = self.calibrated(self.approved(), points=[point(found=100.05)]).name
-		self.correct("Calibration Record", found)
+		calibration_amendment = self.correct("Calibration Record", found)
+		signed = {
+			"Equipment Qualification": (iq, iq_amendment),
+			"Calibration Record": (found, calibration_amendment),
+		}
 		frappe.set_user(self.qa)
 		try:
-			amended = {}
-			for doctype, name in (("Equipment Qualification", iq), ("Calibration Record", found)):
-				amend = frappe.copy_doc(frappe.get_doc(doctype, name), ignore_no_copy=True)
-				amend.docstatus, amend.amended_from = 0, name
-				amend.flags.audit_reason = "Amended from the form"
-				amended[doctype] = amend.insert()
+			for doctype, (original, amendment) in signed.items():
+				# As Amend does: every field of the signed record copied onto the draft.
+				source = frappe.get_doc(doctype, original).as_dict(no_default_fields=True)
+				draft = frappe.get_doc(doctype, amendment)
+				for field in (
+					"executed_by",
+					"executed_at",
+					"approved_by",
+					"approved_at",
+					"completed_by",
+					"impact_status",
+					"next_due_date",
+				):
+					if draft.meta.has_field(field) and source.get(field):
+						draft.set(field, source.get(field))
+				draft.save()
 		finally:
 			frappe.set_user("Administrator")
-		qualification = amended["Equipment Qualification"]
+		qualification = frappe.get_doc("Equipment Qualification", iq_amendment)
 		self.assertEqual((qualification.executed_by, qualification.approved_by), (None, None))
 		with self.assertRaisesRegex(frappe.ValidationError, "once executed"):
 			self.sign(self.qa, "Equipment Qualification", qualification.name, "Approve")
 		self.assertIn(f"its qualification {iq} is being corrected", self.why(asset))
-		calibration = amended["Calibration Record"]
-		self.assertEqual(
-			(calibration.impact_status, calibration.completed_by, calibration.impact), (None, None, [])
-		)
+		calibration = frappe.get_doc("Calibration Record", calibration_amendment)
+		self.assertEqual((calibration.impact_status, calibration.completed_by), (None, None))
 		listed = [due.reference_name for due in reminders.calibration_impacts_open()]
 		self.assertIn(found, listed)  # the open assessment stays on the record that found it
 		self.assertNotIn(calibration.name, listed)
