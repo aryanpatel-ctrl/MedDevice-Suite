@@ -5,8 +5,9 @@ import frappe
 from frappe import _
 from frappe.utils import date_diff, getdate, today
 
-from meddevice_suite.lot_control.lot_status import HOLD, QUARANTINE, STATUS_FIELD, stock_by_lot
+from meddevice_suite.lot_control.lot_status import HOLD, QUARANTINE, STATUS_FIELD, decided_kinds, stock_by_lot
 from meddevice_suite.lot_control.receipt import origins_of
+from meddevice_suite.lot_control.stores import kind_of
 
 WAITING_FOR = {
 	"no_certificate": "Supplier certificate",
@@ -92,6 +93,8 @@ def execute(filters: dict | None = None) -> tuple[list[dict], list[dict]]:
 		if lot is None:
 			continue
 		status = lot.get(STATUS_FIELD)
+		if kind_of(h.warehouse) not in decided_kinds(status):
+			continue  # rejected at the door, or come back from a customer: not what the release decides
 		since = getdate(lot.mds_status_set_at or lot.creation)
 		data.append(
 			{

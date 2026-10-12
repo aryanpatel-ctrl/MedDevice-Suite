@@ -2,7 +2,7 @@
  "actions": [],
  "autoname": "format:LR-{YYYY}-{#####}",
  "creation": "2026-10-09 09:00:00.000000",
- "description": "QA's signed decision on a lot: release, reject or hold (modules 16 and 17). Decided only by signing; never cancelled or deleted.",
+ "description": "QA's signed decision on a lot: release, reject or hold, or the disposition of goods a customer sent back (modules 16 and 17). Decided only by signing; never cancelled or deleted.",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
@@ -65,6 +65,7 @@
    "fieldname": "quantity",
    "fieldtype": "Float",
    "label": "Quantity in Stock",
+   "description": "The stock the decision acts on: the lot's stock in the store of its status, or for a returns disposition its stock in the Returns store. Stock rejected at the door is not in it.",
    "read_only": 1,
    "no_copy": 1
   },
@@ -112,7 +113,7 @@
    "fieldname": "decision",
    "fieldtype": "Select",
    "label": "Decision",
-   "options": "\nRelease\nReject\nHold",
+   "options": "\nRelease\nReject\nHold\nReturn to Stock\nReject Return",
    "read_only": 1,
    "no_copy": 1,
    "in_list_view": 1,

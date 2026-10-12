@@ -68,7 +68,7 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Meaning",
-   "options": "Authored\nReviewed\nApproved\nRejected\nReleased\nVerified\nTrained\nCompetent\nWithdrawn",
+   "options": "Authored\nReviewed\nApproved\nRejected\nReleased\nVerified\nTrained\nCompetent\nWithdrawn\nHeld",
    "read_only": 1,
    "reqd": 1
   },

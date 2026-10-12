@@ -7,7 +7,7 @@ from frappe.utils import add_days, today
 
 from meddevice_suite.lot_control import stores
 from meddevice_suite.lot_control.expiry import REASON_FIELD
-from meddevice_suite.lot_control.lot_status import APPROVED, REJECTED, set_status
+from meddevice_suite.lot_control.lot_status import APPROVED, REJECTED, holdings_of, move_to_role, set_status
 from meddevice_suite.lot_control.report.lots_taken_out_of_expiry_order.lots_taken_out_of_expiry_order import (
 	execute as exceptions_report,
 )
@@ -122,7 +122,19 @@ class TestExpiredLots(ExpiryTestCase):
 		lot = lot_of(receipt.items[0])
 		set_status(lot, REJECTED, "Rejected for the test")
 		frappe.db.set_value("Batch", lot, "expiry_date", add_days(today(), -1))
+		# Into the rejected store, as QA's rejection moves it: rejected goods go back from there only
+		# (URS-STK-010).
+		move_to_role(frappe.get_doc("Batch", lot), stores.REJECTED, "Rejected for the test", holdings_of(lot))
 		back = make_return_doc("Purchase Receipt", receipt.name)
+		for row in back.items:
+			row.update(
+				{
+					"warehouse": store(stores.REJECTED),
+					"batch_no": lot,
+					"use_serial_batch_fields": 1,
+					"serial_and_batch_bundle": None,
+				}
+			)
 		back.insert()
 		back.submit()
 		self.assertEqual(back.docstatus, 1)

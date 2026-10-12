@@ -12,6 +12,7 @@ const MEANING_TEXT = {
 	Trained: __("I was trained in this, and I understand it."),
 	Competent: __("I have assessed this person and found them competent."),
 	Withdrawn: __("I withdraw this from use."),
+	Held: __("I hold this from use."),
 };
 
 const esign = frappe.provide("meddevice_suite.esign");
