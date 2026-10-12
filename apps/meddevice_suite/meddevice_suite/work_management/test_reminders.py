@@ -533,6 +533,17 @@ class TestNotices(ReminderTestCase):
 			with self.subTest(user=user):
 				self.assertEqual(told_of_escalation(escalated.name).count(user), 1)
 
+	def test_escalated_its_person_is_told_of_the_escalation_not_raised_again(self):
+		name = self.raised((QA_ROLE,), self.requester)
+		reminders.send_notices()
+		frappe.db.set_value("Reminder", name, "status", ESCALATED)  # as the daily run escalates it
+		reminders.send_notices()
+		told = notices(name, self.requester)
+		self.assertEqual(
+			len([subject for subject in told if not subject.startswith("Overdue:")]), 1
+		)  # raised
+		self.assertEqual(told_of_escalation(name).count(self.requester), 1)
+
 	def test_a_notice_that_could_not_be_sent_is_sent_on_the_next_run(self):
 		name = self.raised(("Stock User",))
 		with patch.object(reminders, "enqueue_create_notification", side_effect=RuntimeError("queue down")):
