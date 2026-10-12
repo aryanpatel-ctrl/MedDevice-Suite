@@ -452,8 +452,8 @@ status = "implemented"
 [[requirement]]
 id = "URS-CMP-010"
 module = 50
-title = "Each record's audit entries form a fingerprinted chain, so that an altered entry, and an entry removed or inserted before the newest, is detected by a verification that authorised reviewers can run on the record; the newest entries are protected by the rule that no entry is ever deleted, by access control and by the periodic archives."
-source = "Data integrity (ALCOA+); 21 CFR 11.10(e); daily seal dropped by decision of 2026-10-06; verification on the record and the wording on the newest entries after the robustness review of 2026-10-07"
+title = "Each record's audit entries form a fingerprinted chain, so that an altered entry, and an entry removed or inserted before the newest, is detected by a verification that authorised reviewers can run on the record; the removal of the newest entries is detected by the anchors of URS-CMP-040."
+source = "Data integrity (ALCOA+); 21 CFR 11.10(e); daily seal dropped by decision of 2026-10-06; verification on the record and the wording on the newest entries after the robustness review of 2026-10-07; newest entries anchored, found in the foundation review of 2026-10-12"
 status = "implemented"
 
 [[requirement]]
@@ -482,6 +482,13 @@ id = "URS-CMP-031"
 module = 50
 title = "Who created a regulated record, and when, can never be changed, through the form or the API."
 source = "21 CFR 11.10(e); ALCOA+ attributable; found in the robustness review of 2026-10-07"
+status = "implemented"
+
+[[requirement]]
+id = "URS-CMP-040"
+module = 50
+title = "Every hour, and whenever a reviewer asks, the system anchors the audit trail and the electronic signatures: it records each one's newest entry, that entry's fingerprint and the number of entries, in the database and in a file that the system only ever appends to; anchors are made only this way and cannot be changed or deleted; and the verification reviewers run reports when entries have been removed: an anchored entry is missing or changed, fewer entries remain up to it than were anchored, or an anchor in the file is missing from the database or differs from it."
+source = "21 CFR 11.10(e); data integrity (ALCOA+ complete, enduring); found in the foundation review of 2026-10-12: deleting the newest audit events or signatures left a shorter chain that still verified"
 status = "implemented"
 
 # --- Module 47: roles and permissions (21 CFR 11.10(d), (g)) ---------------

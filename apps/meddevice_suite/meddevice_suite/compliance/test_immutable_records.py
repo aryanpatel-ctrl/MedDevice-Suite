@@ -1,7 +1,7 @@
 """The evidence records are written only by their services, and say what was meant.
 
 Found in the foundation review of 2026-10-12: a signature or an audit event could be
-inserted past its service, a permission granted by hand could open them, a user in the
+inserted past its service (the audit anchors added then are held to the same contract), a permission granted by hand could open them, a user in the
 audit trail could be deleted and the ID reused, two acts were signed with a meaning that
 was not the act's, and a clock set back read as a broken signature chain.
 """
@@ -21,6 +21,7 @@ from frappe.tests import IntegrationTestCase, UnitTestCase
 from frappe.utils import add_days, get_fullname, now_datetime
 
 from meddevice_suite.compliance.audit import event_fingerprint, last_event, record, verify_events
+from meddevice_suite.compliance.audit_scope import SELF_RECORDING
 from meddevice_suite.compliance.esign import (
 	MEANINGS,
 	last_signature,
@@ -37,7 +38,8 @@ from meddevice_suite.compliance.test_signing import SigningTestCase as DialogTes
 from meddevice_suite.qa import verifies
 from meddevice_suite.setup.roles import remove_hand_added_permissions
 
-EVIDENCE = ("Electronic Signature", "Audit Event")
+# Every evidence record type, so that one added later (the audit anchors) is held to the same contract.
+EVIDENCE = tuple(sorted(SELF_RECORDING))
 WRITING = ("create", "write", "delete", "submit", "cancel", "amend", "import", "share")
 
 
@@ -197,6 +199,16 @@ class TestPermissionsOnTheAppsRecordTypes(IntegrationTestCase):
 						):
 							permission_row(parent, **{flag: 1}).insert(ignore_permissions=True)
 						self.assert_no_rows(parent)
+
+	@verifies("URS-CMP-005", "URS-CMP-009", "URS-CMP-040")
+	def test_every_evidence_record_type_is_read_only_for_every_role(self):
+		self.assertIn("Audit Anchor", EVIDENCE)
+		for parent in EVIDENCE:
+			meta = frappe.get_meta(parent)
+			with self.subTest(parent=parent):
+				self.assertTrue(meta.in_create)
+				for rule in meta.permissions:
+					self.assertFalse([flag for flag in WRITING if rule.get(flag)], rule.role)
 
 	def test_no_row_is_added_by_hand_to_the_apps_own_record_types(self):
 		for parent in (*EVIDENCE, "Quality Settings", "Change Request"):

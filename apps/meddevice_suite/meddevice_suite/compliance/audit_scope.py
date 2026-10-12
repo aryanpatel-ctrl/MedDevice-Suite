@@ -69,7 +69,7 @@ REGULATED_DOCTYPES: frozenset[str] = frozenset(
 )
 
 # Compliance records that are the evidence themselves, each with its own chain.
-SELF_RECORDING: frozenset[str] = frozenset({"Audit Event", "Electronic Signature"})
+SELF_RECORDING: frozenset[str] = frozenset({"Audit Event", "Electronic Signature", "Audit Anchor"})
 
 
 def is_regulated(doctype: str, module: str | None) -> bool:

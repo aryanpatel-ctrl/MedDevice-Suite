@@ -141,10 +141,11 @@ RETENTION_SCHEDULE: dict[str, tuple[int, str, tuple[str, ...]]] = {
 			"Print Settings",
 		),
 	),
+	# An anchor is kept as long as the entries it counts: verifying them needs it (URS-CMP-040).
 	"Compliance evidence": (
 		10,
 		EVIDENCE_BASIS,
-		("Audit Event", "Electronic Signature", "Activity Log", "Record Archive"),
+		("Audit Event", "Electronic Signature", "Audit Anchor", "Activity Log", "Record Archive"),
 	),
 }
 

@@ -1,13 +1,14 @@
 # Tamper-evident audit trail (module 50) — feature document and browser test guide
 
-Requirement: **URS-CMP-007, URS-CMP-008, URS-CMP-009, URS-CMP-010, URS-CMP-011, URS-CMP-012, URS-CMP-013, URS-CMP-031** (`meddevice_suite/qa/requirements.toml`). Also touched: URS-CMP-004 (signature chains survive a rename), URS-CMP-014 (QA reviews the evidence), URS-CMP-020/021 (workflow cancel asks a reason).
-Code: `meddevice_suite/compliance/audit.py` (recording and the chain), `compliance/audit_scope.py` (which record types are regulated), `compliance/audit_reason.py` (reason for change), `compliance/audit_timeline.py` (review on the form, verification), `compliance/fingerprint.py`, `compliance/doctype/audit_event/`, `public/js/audit_trail.js`, `public/js/audit_reason.js`, hooks in `meddevice_suite/hooks.py`.
+Requirement: **URS-CMP-007, URS-CMP-008, URS-CMP-009, URS-CMP-010, URS-CMP-011, URS-CMP-012, URS-CMP-013, URS-CMP-031, URS-CMP-040** (`meddevice_suite/qa/requirements.toml`). Also touched: URS-CMP-004 (signature chains survive a rename), URS-CMP-014 (QA reviews the evidence), URS-CMP-020/021 (workflow cancel asks a reason).
+Code: `meddevice_suite/compliance/audit.py` (recording and the chain), `compliance/audit_scope.py` (which record types are regulated), `compliance/audit_reason.py` (reason for change), `compliance/audit_timeline.py` (review on the form, verification), `compliance/fingerprint.py`, `compliance/doctype/audit_event/`, `compliance/audit_anchor.py` and `compliance/doctype/audit_anchor/` (anchors, 2026-10-12), `public/js/audit_trail.js`, `public/js/audit_reason.js`, hooks in `meddevice_suite/hooks.py`.
 State on 2026-10-10: built (`fbaba7af` 2026-10-06 onwards; edge cases of the robustness review closed in `31f756ac`, `2ffeb96e`, `9a5d2019` on 2026-10-07), server and browser suites green on the current branch; GitHub CI in progress (section 8).
 Changed 2026-10-12 (foundation review, branch `fix/immutable-records`): an audit event is inserted only by the audit trail; no permission row may open it to writing; a user the trail names is never deleted, only disabled (21 CFR 11.300(b)). Tests: `compliance/test_immutable_records.py` — written, **not yet run** (section 8).
+Changed 2026-10-12 (foundation review, branch `fix/audit-anchor-and-scope`): removing the newest audit events or signatures is detected by anchors of the whole trail (section 2.8, URS-CMP-040). Tests: `compliance/test_audit_anchor.py` — written, **not yet run** (section 8).
 
 ## 1. Feature overview
 
-**Purpose.** Every create, change, submit, cancel, amend, discard, rename and delete of a regulated record is written automatically as an **Audit Event**: who (and the real user when impersonating), when (server time), which action, which record, and the old and new value of every changed field including child rows; creation and deletion keep the whole record. Cancelling, amending or changing a submitted record needs a reason that goes into the event. Events can never be edited or deleted. Each record's events form a fingerprinted chain that QA can verify from the record; QA reviews, searches and exports the trail but cannot change it.
+**Purpose.** Every create, change, submit, cancel, amend, discard, rename and delete of a regulated record is written automatically as an **Audit Event**: who (and the real user when impersonating), when (server time), which action, which record, and the old and new value of every changed field including child rows; creation and deletion keep the whole record. Cancelling, amending or changing a submitted record needs a reason that goes into the event. Events can never be edited or deleted. Each record's events form a fingerprinted chain that QA can verify from the record, and every hour the head of the whole trail is anchored in the database and in an append-only file, so that removing the newest entries is detected too; QA reviews, searches and exports the trail but cannot change it.
 
 **Why it matters.** 21 CFR 11.10(e) requires a secure, computer-generated, time-stamped audit trail that does not obscure previously recorded information; ISO 13485 4.2.5 requires records to stay legible and retrievable; EU GMP Annex 11 §9 requires the reason for a change. Frappe's own Version log can be deleted and is not fingerprinted; this module replaces it for regulated records.
 
@@ -26,7 +27,7 @@ Changed 2026-10-12 (foundation review, branch `fix/immutable-records`): an audit
 
 ### 2.1 Which records are regulated (URS-CMP-013)
 
-`audit_scope.is_regulated(doctype, module)` is true for (a) the standard record types named in `REGULATED_DOCTYPES` (masters: Item, BOM, Routing, Operation, Workstation, Supplier, Customer, Warehouse, Batch, Quality Inspection Template, Asset, Employee; transactions: Quotation, Material Request, Purchase Order, Purchase Receipt, Quality Inspection, Stock Entry, Stock Reconciliation, Work Order, Job Card, Serial and Batch Bundle, Pick List, Delivery Note, Packing Slip, Asset Maintenance Log, Asset Repair; access control: User, Role, Role Profile, User Permission, Custom DocPerm, System Settings, Stock Settings) and (b) **every DocType whose module belongs to this app**, except the evidence itself (`SELF_RECORDING`: Audit Event, Electronic Signature). Child tables are recorded inside their parent's events. Accounting documents are left to India Compliance's audit trail (by design, documented in the module docstring).
+`audit_scope.is_regulated(doctype, module)` is true for (a) the standard record types named in `REGULATED_DOCTYPES` (masters: Item, BOM, Routing, Operation, Workstation, Supplier, Customer, Warehouse, Batch, Quality Inspection Template, Asset, Employee; transactions: Quotation, Material Request, Purchase Order, Purchase Receipt, Quality Inspection, Stock Entry, Stock Reconciliation, Work Order, Job Card, Serial and Batch Bundle, Pick List, Delivery Note, Packing Slip, Asset Maintenance Log, Asset Repair; access control: User, Role, Role Profile, User Permission, Custom DocPerm, System Settings, Stock Settings) and (b) **every DocType whose module belongs to this app**, except the evidence itself (`SELF_RECORDING`: Audit Event, Electronic Signature, and since 2026-10-12 Audit Anchor). Child tables are recorded inside their parent's events. Accounting documents are left to India Compliance's audit trail (by design, documented in the module docstring).
 
 ### 2.2 What is recorded and when (URS-CMP-007, URS-CMP-008)
 
@@ -74,8 +75,8 @@ Since 2026-10-12 (foundation review):
 
 - **Event Fingerprint** = SHA-256 of the canonical JSON of `[previous event's fingerprint or "", Document Type, Document Name at Event, Action, User, Impersonated By, Date and Time, Reason, Changes]`.
 - **Previous Event** = the record's newest event at recording time, found by the links (the event no other event names as its predecessor) under `FOR UPDATE` (`fingerprint.chain_head`), so a clock set back does not reorder the chain and two writers serialise.
-- `audit.verify_events(doctype, name)` reads the record's events in `event_at, creation` order and reports, per event: *<event>: the event before it is missing*, *<event>: a second event claims <prev> as its predecessor*, *<event>: content does not match its fingerprint*. An empty list means intact. It detects an altered entry, a removed entry, and an entry inserted before the newest; a forged entry appended at the very end with a correct fingerprint is, as the requirement states, protected by no-delete, access control and the periodic archives (module 54), not by this check.
-- `audit_timeline.verify_record` (whitelisted) adds `signatures_intact` from module 49 and refuses non-reviewers with *You cannot review the audit trail of <record type>.*
+- `audit.verify_events(doctype, name)` reads the record's events in `event_at, creation` order and reports, per event: *<event>: the event before it is missing*, *<event>: a second event claims <prev> as its predecessor*, *<event>: content does not match its fingerprint*. An empty list means intact. It detects an altered entry, a removed entry, and an entry inserted before the newest. A record's newest entries removed, or its whole history, leave a shorter chain that still verifies: since 2026-10-12 the anchors detect that (section 2.8). A forged entry appended at the very end with a correct fingerprint is protected by the rule that only the audit trail inserts events (URS-CMP-009), access control and the periodic archives (module 54), not by this check.
+- `audit_timeline.verify_record` (whitelisted) adds `signatures_intact` from module 49 and, since 2026-10-12, `anchors`: what the anchors show about the whole trail (section 2.8); it refuses non-reviewers with *You cannot review the audit trail of <record type>.*
 
 ### 2.6 Review on the record, search and export (URS-CMP-012)
 
@@ -91,7 +92,28 @@ For users who may read Audit Event (Quality Manager, System Manager) and only on
 - Accounting documents (invoices, payments, journal entries) are not in `REGULATED_DOCTYPES` (left to India Compliance).
 - Export is the list's standard export (CSV/Excel of the chosen columns); there is no dedicated audit report with the Changes JSON rendered per field.
 - A forged tail entry is not detectable by verification (section 2.5; accepted in the requirement text).
+- An integrity problem found by the hourly anchoring goes to the Error Log only; no alert reaches QA yet (module 51 would need a new alert).
 - Impersonation is recorded when Frappe's session carries `impersonated_by`; no test logs in through Frappe's real impersonation screen (unit-level patch only).
+
+### 2.8 Anchors: removing the newest entries is detected (URS-CMP-040)
+
+**The gap.** Each record's chain proves that every event follows the one before it. Deleting a record's newest N events (or its whole history) at database level leaves a shorter chain that still verifies; the same holds for a record's electronic signatures. 21 CFR 11.10(e) requires that a change never obscures what was recorded, and ALCOA+ that the record is complete and enduring, so the removal itself must be detectable.
+
+**The design.** An **Audit Anchor** records the head of a whole trail (Audit Event, Electronic Signature) at one moment: the newest entry by `creation`, its fingerprint, the time it was recorded, and the number of entries up to it. Each anchor is fingerprinted with the one before it (`previous_anchor`, `anchor_hash`).
+
+- **When:** every hour (`scheduler_events["hourly"]` → `audit_anchor.anchor_trail`), so at most an hour of entries is ever unanchored, and on request (**Compliance › Audit Anchor › Anchor Now**, `audit_anchor.anchor_now`, POST, Quality Manager and System Manager). A trail with nothing new since its last anchor is not anchored again.
+- **Where, and why twice:** a database-level deletion of audit rows can delete anchor rows with them, so each anchor is (1) an Audit Anchor record, protected as the Audit Event is (only the service inserts, marked in the document's flags; no role may create, write or delete; `validate` and `on_trash` refuse every change and deletion), and (2) a JSON line appended to `sites/<site>/private/files/audit-anchors.jsonl`, which the app opens only with `O_APPEND` and never rewrites, and which Frappe never serves (no File record names it). Removing entries unreported then needs write access to the server's file system as well as the database. The line is written after the transaction commits (`frappe.db.after_commit`), so a rolled-back anchor never reaches the file. Further copies: the site's file backups and the period archives of module 54 (anchors are archived as records). On the production server the file can be made append-only for every user with `chattr +a` (an operating-system control outside the app; recommended, not applied by code).
+- **The count is carried forward:** a new anchor records at least the previous anchor's count plus the entries added since, so an anchor taken after entries were removed keeps reporting them instead of recording the shorter trail as the new truth. An entry whose transaction commits after an anchor with an earlier time is picked up by the next full count.
+- **Verification** (`audit_anchor.verify_trail`, shown under **Verify Integrity** on every record after *Across the whole audit trail:*, and by **Verify Audit Trail** on the Audit Anchor list) compares the newest anchor of each trail, from the database and from the end of the file, with the trail:
+  - *<trail>: entry <name>, the newest when anchor <anchor> was recorded, is missing: the newest entries have been removed.*
+  - *<trail>: entry <name> has changed since anchor <anchor> was recorded.*
+  - *<trail>: <n> of the <count> entries recorded up to anchor <anchor> are missing.*
+  - *Anchor <anchor> of the <trail> is in the anchor file but no longer in the database.* / *Anchor <anchor> differs from its copy in the anchor file.* / *Anchor <anchor>: content does not match its fingerprint.* / *Anchor <anchor>: the anchor before it is missing.*
+  - *The anchor file audit-anchors.jsonl is missing.* (anchors exist in the database) / *The anchor file audit-anchors.jsonl has a damaged line.*
+- The hourly job verifies before it anchors and writes any problem to the **Error Log** (*Audit trail integrity problem*).
+- **Retention:** anchors are compliance evidence, 10 years (`retention.py`), as long as the entries they count.
+- **Not detected:** entries removed after the newest anchor and before the next one (at most an hour); entries removed together with the anchors in the database *and* the lines in the file (needs file-system access; mitigated by backups, archives and `chattr +a`).
+- **Scale:** anchoring and verification read the newest entry and count entries through Frappe's index on `creation`; the file is read from its end in 64 KB blocks only; one extra index `(ledger, creation)` on Audit Anchor.
 
 ## 3. Requirements and acceptance criteria
 
@@ -105,6 +127,7 @@ For users who may read Audit Event (Quality Manager, System Manager) and only on
 | C6 | URS-CMP-012: reviewers search by record/user/action/date, see it on the record, export, cannot change | `audit_timeline.py`, Audit Event permissions, indexes | `TestRecordTimeline` (11), `TestSearchAndExport` (4), `TestQAReviewsTheEvidence` (2), `test_audit.TestReviewStaysFastAtScale`; Cypress `audit_trail.js` "[URS-CMP-012] shows the record's audit trail and opens its full history" |
 | C7 | URS-CMP-013: regulated types declared in code incl. every type this app builds; audited from declaration | `audit_scope.py` | `TestScope` (3), `TestScopeRules` (3) |
 | C8 | URS-CMP-031: creator and creation time never change via form or API | Frappe's save (no app code); covered by test | `compliance/test_approvals.TestAttributionIsPermanent` (2) |
+| C10 | URS-CMP-040: removing the newest entries of the audit trail or the signatures is detected; anchors hourly and on request, in the database and an append-only file; anchors made only by the service, never changed or deleted | `audit_anchor.py`, `AuditAnchor` controller, `hooks.py` hourly job, `audit_timeline.verify_record` (`anchors`), `audit_trail.js`, `audit_anchor_list.js` | `compliance/test_audit_anchor.py`: `TestRemovedEntriesAreDetected` (6, incl. `test_removing_a_records_newest_events_is_detected` deleting the newest events with `frappe.db.delete`), `TestAnchorsAreKeptOutsideTheDatabase` (6), `TestAnchoring` (5), `TestAnchorsArePermanent` (3); `test_immutable_records.TestPermissionsOnTheAppsRecordTypes.test_every_evidence_record_type_is_read_only_for_every_role` — **not yet run** |
 | C9 | Foundation review 2026-10-12: no event past the audit trail (URS-CMP-009); no hand-made permission on it (URS-CMP-015); a user the trail names is disabled, never deleted (URS-CMP-006, 21 CFR 11.300(b)) | `AuditEvent.before_insert`, `audit.record` flag, `roles.refuse_hand_added_permission`, `audit.keep_user_with_history`/`has_history` | `compliance/test_immutable_records.py`: `TestAuditEventsComeOnlyFromTheTrail` (3), `TestPermissionsOnTheAppsRecordTypes` (4), `TestUserIdsInTheTrailAreNeverDeleted` (6) — **not yet run** |
 
 **Partial / by design:** C1 for derived values on other records (section 2.7). **Ambiguous:** URS-CMP-012 "export" — met by the list export; confirm with the client whether a formatted audit report is expected. **Unverified mechanism:** C8 relies on platform behaviour whose Frappe code path was not located in this review (test passes).
@@ -178,6 +201,16 @@ Actual result: ____  Pass/Fail: ____
 5. (2026-10-12) From the browser console: `frappe.xcall("frappe.client.insert", {doc: {doctype: "Audit Event", reference_doctype: "Item", reference_name: "<item>", action: "Updated", user: "qa.manager@demo.example.com"}})`. Expected: *An audit event is recorded only by the audit trail.* In **Role Permissions Manager** › *Audit Event*, adding a rule or ticking **Create**. Expected: refused (module 47, `roles-and-permissions.md`).
 Actual result: ____  Pass/Fail: ____
 
+### AT-10 Removing the newest entries is detected (C10) — 2026-10-12
+Test site only, database access. Role: QA Manager.
+1. **Compliance › Audit Anchor** › **Anchor Now**. Expected: an alert *Audit Event: anchor ANC-…, <n> entries* (and one for Electronic Signature if any signature exists); the list shows the new anchors, read-only, with no **New** button. On the server: `sites/<site>/private/files/audit-anchors.jsonl` ends with the same anchors.
+2. Open a regulated record with several events › **View › Verify Integrity**. Expected: green **Integrity verified**.
+3. Delete the record's newest two rows from `tabAudit Event` (`DELETE … ORDER BY creation DESC LIMIT 2`). **Verify Integrity** again. Expected: red **Integrity problem found** with *Across the whole audit trail:* and *Audit Event: entry <name>, the newest when anchor <anchor> was recorded, is missing: the newest entries have been removed.* and *Audit Event: 2 of the <n> entries recorded up to anchor <anchor> are missing.*; the record's own chain shows no problem.
+4. Also delete the newest row from `tabAudit Anchor`; **Verify Audit Trail** on the Audit Anchor list. Expected: additionally *Anchor <anchor> of the Audit Event is in the anchor file but no longer in the database.*
+5. Console: `frappe.client.delete` / `set_value` on an Audit Anchor. Expected: *An audit anchor cannot be deleted.* / *An audit anchor cannot be changed.* In Role Permissions Manager, give a role **Create** on Audit Anchor. Expected: refused.
+6. As Sales: `frappe.xcall("meddevice_suite.compliance.audit_anchor.anchor_now")`. Expected: permission error.
+Actual result: ____  Pass/Fail: ____  Cleanup: discard the test site.
+
 ### Regression
 - The full journey (`standard_flow.js`) and the approvals journey (`approvals.js`) still run: every record they touch is regulated, so any double or missing event would surface as a failing reason dialog or a failed cancel.
 
@@ -202,9 +235,10 @@ Cross-module data: Audit Event (new, one per action), the reason cache (15 minut
 | Review | `compliance/audit_timeline.py`: `onload` (sets `__onload.audit_trail`), `verify_record` (whitelist), `timeline_content` (limit 50), `shows_audit_trail`, `describe`, `change_lines`, `shown` (80 chars) |
 | Hooks (`hooks.py`) | `doc_events["*"]`: `before_insert`, `before_change`, `before_cancel`, `before_update_after_submit` (after `approvals.before_update_after_submit`), `onload` (`audit_timeline.onload`), `on_change`, `on_trash`, `after_rename`; `User.before_rename` → `keep_user_id`; `User.on_trash` → `keep_user_with_history` (2026-10-12); `additional_timeline_content["*"]` → `timeline_content`; `ignore_links_on_delete = ["Audit Event"]` |
 | API routes | `POST /api/method/meddevice_suite.compliance.audit_reason.stage_reason` (`doctype`, `name`, `action` ∈ cancel/amend/update_after_submit, `reason`); `GET …audit_reason.requires_reason?doctype=`; `GET …audit_timeline.verify_record?doctype=&name=`; `/api/resource/Audit Event` read-only |
-| Desk | `public/js/audit_reason.js` (wraps `frm.savecancel`, `frm.states.handle_workflow_action`, `frm.save`), `public/js/audit_trail.js` (**View › Audit Trail**, **View › Verify Integrity**); list `/desk/audit-event` in the **Compliance** area (`workspace_sidebar/compliance.json`; Quality Manager and System Manager, `setup/desk.py`) |
+| Desk | `public/js/audit_reason.js` (wraps `frm.savecancel`, `frm.states.handle_workflow_action`, `frm.save`), `public/js/audit_trail.js` (**View › Audit Trail**, **View › Verify Integrity**); list `/desk/audit-event`, and since 2026-10-12 `/desk/audit-anchor` (`audit_anchor_list.js`: **Anchor Now**, **Verify Audit Trail**), in the **Compliance** area (`workspace_sidebar/compliance.json`; Quality Manager and System Manager, `setup/desk.py`) |
 | Chain | event fingerprint = `sha256([previous_hash, reference_doctype, document_name_at_event, action, user, impersonated_by, str(event_at), reason, changes])`; head found by `fingerprint.chain_head("Audit Event", "previous_event", "event_hash", …)` with `FOR UPDATE`; verification walks `event_at asc, creation asc` and recomputes |
-| Retention / archive | "Compliance evidence" 10 years (`retention.py`); each record's `audit_events` copied into its archive file; deletions archived from their *Deleted* event (`archive.py`) |
+| Anchors (2026-10-12) | DocType `Audit Anchor` (`ANC-YYYY-######`, `in_create`; System Manager and Quality Manager read/report/export/print only; index `(ledger, creation)`); `compliance/audit_anchor.py`: `anchor_trail` (hourly), `anchor_now` (POST, reviewers), `verify_audit_trail` (reviewers), `anchor_ledger`, `newest_anchor`, `newest_entry`, `count_entries`, `anchor_fingerprint`, `append_to_file` (after commit, `O_APPEND`), `verify_trail`, `check_ledger`, `check_stored`, `check_against_database`, `newest_in_file`; file `sites/<site>/private/files/audit-anchors.jsonl`, one JSON object per line; anchor fingerprint = `sha256([previous anchor's fingerprint, ledger, head_entry, head_fingerprint, str(head_created), entry_count, str(anchored_at)])` |
+| Retention / archive | "Compliance evidence" 10 years (`retention.py`, Audit Anchor included); each record's `audit_events` copied into its archive file; deletions archived from their *Deleted* event (`archive.py`) |
 | Data flow | Frappe save → hooks → `on_change` → `differences(before, after)` → `record()` → lock head → insert Audit Event → `action_finished`; reason: dialog → `stage_reason` → cache → `reason_for` at `before_cancel`/`before_update_after_submit`/`before_insert` → event's Reason |
 
 ## 7. Defects, edge cases and risks
@@ -217,6 +251,7 @@ Cross-module data: Audit Event (new, one per action), the reason cache (15 minut
 - A forged event appended at the tail is not detected by verification (accepted by the requirement; mitigated by no-delete, permissions and archives).
 - The staged reason lives in the cache for 15 minutes per user and record; a reason staged and then abandoned is used by that user's next cancel of the same record within 15 minutes (test `test_staged_reason_is_used_for_the_cancellation_once` shows it is used once; an abandoned one is a known edge).
 - Derived values on other records are not recorded (section 2.7).
+- Anchors (section 2.8): up to an hour of entries is unanchored at any moment; a site restored from a database backup without its files reports *The anchor file … is missing.* until the file is restored with it (restore both together); the hourly job's finding reaches the Error Log, not QA; the file's append-only attribute (`chattr +a`) is an operating-system step for hosting, not applied by the app.
 
 **Unverified in this review:** the Frappe code path that protects `owner`/`creation` (C8, test passes); impersonation through Frappe's real "Impersonate" screen; AT-08 step 2's exact command string on screen.
 
@@ -236,6 +271,8 @@ Executed by the lead on 2026-10-10 on the current branch (local test site; CI = 
 
 2026-10-12 changes (section 1): `compliance/test_immutable_records.py` written without a site and **not yet run**; AT-09 steps 4–5 **not executed**.
 
+2026-10-12, branch `fix/audit-anchor-and-scope`: `compliance/test_audit_anchor.py` (20 tests), the new evidence-contract test and the adapted `test_audit_review` test were written without running a site: **not yet run**; pre-commit and Semgrep only. AT-10 **not executed**; the Anchor Now / Verify Audit Trail buttons have no browser test yet.
+
 Untested: AT-06 steps 2–3 (database tampering; server tests cover the logic), AT-08 (caused-by and status command in the browser; server tests cover the logic), AT-07 as each job in the browser (the screen sweep opens the Audit Event list as QA Manager and System Administrator only), real impersonation.
 
 ## 9. Final QA checklist
@@ -250,6 +287,7 @@ Untested: AT-06 steps 2–3 (database tampering; server tests cover the logic), 
 | Reason required for cancel/amend/update after submit on every path; caused-by and command recorded | Verified (automated + browser dialogs) |
 | Reviewers see timeline, Audit Trail, Verify Integrity; search and export; others see nothing | Verified (automated; browser as Administrator) |
 | Regulated types declared in code incl. every app DocType | Verified (automated) |
+| Removing the newest audit events or signatures detected by anchors (DB + append-only file); anchors permanent (2026-10-12) | **Not tested** (tests written, not yet run) |
 | Derived values on other records | **Not covered** by design (section 2.7) |
 | Manual AT-01…AT-09 | **Not tested** |
 | CI green for the final commit | **Blocked** (in progress) |
