@@ -310,18 +310,20 @@ def renewed(name: str) -> bool:
 	return frappe.db.get_value(DOCTYPE, name, "status") == SUPERSEDED
 
 
-def expiring() -> list[frappe._dict]:
-	"""Verified licences that end within the lead time or have ended, not yet renewed."""
+def expiring(until: object = None) -> list[frappe._dict]:
+	"""Verified licences that end by `until` (within the lead time, unless the reminders say
+	otherwise) or have ended, not yet renewed."""
 	return frappe.get_all(
 		DOCTYPE,
-		filters={"docstatus": 1, "status": VERIFIED, "valid_until": ["<=", lead_day()]},
+		filters={"docstatus": 1, "status": VERIFIED, "valid_until": ["<=", getdate(until or lead_day())]},
 		fields=["name", "licence_type", "licence_number", "valid_until", "expiry_alerted"],
 		order_by="valid_until asc",
 	)
 
 
-def obligations_due() -> list[frappe._dict]:
-	"""Undone obligations of verified licences due within the lead time or overdue."""
+def obligations_due(until: object = None) -> list[frappe._dict]:
+	"""Undone obligations of verified licences due by `until` (within the lead time, unless the
+	reminders say otherwise) or overdue."""
 	licence, line = frappe.qb.DocType(DOCTYPE), frappe.qb.DocType("Regulatory Licence Obligation")
 	return (
 		frappe.qb.from_(licence)
@@ -339,7 +341,7 @@ def obligations_due() -> list[frappe._dict]:
 			(licence.docstatus == 1)
 			& (licence.status == VERIFIED)
 			& line.done_on.isnull()
-			& (line.due_date <= lead_day())
+			& (line.due_date <= getdate(until or lead_day()))
 		)
 		.orderby(line.due_date)
 		.run(as_dict=True)

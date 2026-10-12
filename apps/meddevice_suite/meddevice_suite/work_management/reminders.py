@@ -9,11 +9,20 @@ categories, what makes an item due and what shows it done are declared here, in 
 times are QA's, in Quality Settings. A system reminder is never ticked off by hand: only the work
 in its record completes it, so the list cannot be cleared without the work being done.
 
-Past its due date a reminder is Overdue; overdue for the days QA sets (Quality Settings), it is
-escalated once to QA and Management, and its responsible person told again. The existing alerts
-still tell the responsible jobs as each item falls due (compliance/alerts.py and the modules that
-own the records); this adds the tracking, the overdue state, the escalation and the record of
-completion.
+The lead time decides when a reminder is raised, never when it is settled. A reminder that drops
+out of what its category shows due within the lead time is settled only if the category, read with
+no lead time at all (`whole_horizon`), no longer shows its item either; an item still to be done
+(QA shortened the lead time, say) keeps its reminder open. An item due again after its reminder
+was settled (a lot back from hold) is raised again: a settled reminder never stands in for an open
+one (found in the foundation review of 2026-10-12).
+
+Raised, a reminder tells its responsible person, or, naming none, everyone of its responsible
+jobs, unless the module that owns the record already tells them as the item falls due (its
+alert, declared on the category as `told_by`): one notice per item, from one source. Past its due
+date it is Overdue; overdue for the days QA sets (Quality Settings), it is escalated once to QA
+and Management, and its responsible person told again, for every category. What each reminder's
+people were last told is kept on it (`notified`), so the daily run never tells them twice, and a
+notice that failed is sent on the next run.
 
 QA also plans recurring activities (Reminder Schedule: a management review, an internal audit):
 each occurrence is raised within its lead time, its job is told, it escalates like any other,
@@ -22,6 +31,7 @@ calendar from the due date, not from the day it was done.
 """
 
 from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 
 import frappe
@@ -35,6 +45,7 @@ DOCTYPE = "Reminder"
 SCHEDULE = "Reminder Schedule"
 OPEN, OVERDUE, ESCALATED, COMPLETED = "Open", "Overdue", "Escalated", "Completed"
 STILL_OPEN = (OPEN, OVERDUE, ESCALATED)
+RAISED = "Raised"  # what a reminder's people were told: that it was raised, then that it escalated
 QA_ROLE = "Quality Manager"
 MANAGEMENT = ("Sales Manager", "Purchase Manager", "Stock Manager", "Manufacturing Manager")
 SEES_ALL = frozenset({QA_ROLE, *MANAGEMENT, "System Manager"})
@@ -62,8 +73,27 @@ class Due:
 		)
 
 
-def within(setting: str) -> object:
-	return add_days(today(), quality_settings.value(setting))
+# The furthest day a category is read to when the lead time is set aside (`whole_horizon`).
+WHOLE_HORIZON = "9999-12-31"
+
+
+def within(setting: str | None = None) -> object:
+	"""The last due day a category shows: today plus the lead time QA sets in `setting` (today, with
+	none). Every category reads its lead time through here, so `whole_horizon` can set it aside."""
+	if frappe.flags.reminders_whole_horizon:
+		return getdate(WHOLE_HORIZON)
+	return add_days(today(), quality_settings.value(setting)) if setting else today()
+
+
+@contextmanager
+def whole_horizon() -> Iterator[None]:
+	"""Read the categories with no lead time: every item still to be done, however far off its due
+	date. What a category shows due is always part of what it shows here."""
+	before, frappe.flags.reminders_whole_horizon = frappe.flags.reminders_whole_horizon, True
+	try:
+		yield
+	finally:
+		frappe.flags.reminders_whole_horizon = before
 
 
 def date_text(value) -> str:
@@ -199,7 +229,7 @@ def effectiveness_checks_due() -> Iterator[Due]:
 	"""Each implemented change whose effectiveness check has fallen due, until it is closed."""
 	for row in frappe.get_all(
 		"Change Request",
-		filters={"status": "Implemented", "effectiveness_due_on": ["<=", today()]},
+		filters={"status": "Implemented", "effectiveness_due_on": ["<=", within()]},
 		fields=["name", "effectiveness_due_on"],
 	):
 		yield Due(
@@ -434,7 +464,8 @@ def regulatory_licences_due() -> Iterator[Due]:
 	each obligation due within it or overdue, until QA records it done (module 41)."""
 	from meddevice_suite.qms import regulatory_licence
 
-	for row in regulatory_licence.expiring():
+	until = within("regulatory_licence_warning_days")
+	for row in regulatory_licence.expiring(until):
 		yield Due(
 			"Regulatory Licence",
 			row.name,
@@ -444,7 +475,7 @@ def regulatory_licences_due() -> Iterator[Due]:
 			),
 			(QA_ROLE,),
 		)
-	for row in regulatory_licence.obligations_due():
+	for row in regulatory_licence.obligations_due(until):
 		yield Due(
 			"Regulatory Licence",
 			row.name,
@@ -474,24 +505,56 @@ def dmr_reapprovals_due() -> Iterator[Due]:
 		)
 
 
-# category -> what is due now (module that owns the record)
-CATEGORIES: dict[str, Callable[[], Iterator[Due]]] = {
-	"Lot Expiry": lots_expiring,  # module 18
-	"Supplier Certificate": supplier_certificates_expiring,  # module 4
-	"Customer Licence": customer_licences_expiring,  # module 5
-	"Document Review": document_reviews_due,  # module 30
-	"Change Action": change_actions_due,  # module 36
-	"Effectiveness Check": effectiveness_checks_due,  # module 36
-	"Work Task": work_tasks_due,  # module 59
-	"File Validity": files_ending,  # module 61
-	"Calibration Due": calibrations_due,  # module 38
-	"Maintenance Due": maintenance_due,  # module 38
-	"Requalification Due": requalifications_due,  # module 40
-	"Calibration Impact": calibration_impacts_open,  # module 38
-	"Training Due": training_due,  # module 37
-	"Risk Review": risk_reviews_open,  # module 39
-	"Regulatory Licence": regulatory_licences_due,  # module 41
-	"DMR Re-approval": dmr_reapprovals_due,  # module 31
+@dataclass(frozen=True)
+class Category:
+	"""A kind of reminder: what is due now, and who tells its people as an item falls due.
+
+	`told_by` names the function of the module that owns the record which already tells the
+	reminder's responsible people, once, as the item falls due (its alert); the reminder then sends
+	no notice of its own when raised, so nobody is told the same thing twice. Empty, the reminder
+	tells them. No module alert escalates: escalation is the reminder's, for every category."""
+
+	due: Callable[[], Iterator[Due]]
+	told_by: str = ""
+
+
+# category -> what is due now and who tells it (module that owns the record)
+CATEGORIES: dict[str, Category] = {
+	"Lot Expiry": Category(  # module 18: Lot Expiring Soon, then Lot Expired, to Stores and QA
+		lots_expiring, "meddevice_suite.compliance.alerts.send_expiry_alerts"
+	),
+	"Supplier Certificate": Category(  # module 4: Supplier Certificate Expiring, to QA and Purchase
+		supplier_certificates_expiring,
+		"meddevice_suite.master_data.supplier_approval.send_certificate_alerts",
+	),
+	"Customer Licence": Category(  # module 5: Customer Licence Expiring, to QA and Sales
+		customer_licences_expiring, "meddevice_suite.master_data.customer_licence.send_expiry_alerts"
+	),
+	"Document Review": Category(  # module 30: Document Review Due, to the process owner and QA
+		document_reviews_due, "meddevice_suite.qms.document_control.send_review_alerts"
+	),
+	"Change Action": Category(  # module 36: the action's owner, directly
+		change_actions_due, "meddevice_suite.qms.change_control.alert_action_owner"
+	),
+	"Effectiveness Check": Category(  # module 36: Change Effectiveness Check Due, to QA
+		effectiveness_checks_due, "meddevice_suite.qms.change_control.alert_effectiveness"
+	),
+	"Work Task": Category(work_tasks_due),  # module 59
+	"File Validity": Category(files_ending),  # module 61
+	"Calibration Due": Category(calibrations_due),  # module 38
+	"Maintenance Due": Category(maintenance_due),  # module 38
+	"Requalification Due": Category(requalifications_due),  # module 40
+	"Calibration Impact": Category(  # module 38: Calibration Out of Tolerance, to QA, on completion
+		calibration_impacts_open, "meddevice_suite.qms.calibration.complete"
+	),
+	"Training Due": Category(training_due),  # module 37
+	"Risk Review": Category(risk_reviews_open),  # module 39
+	"Regulatory Licence": Category(  # module 41: Regulatory Licence Expiring, to QA, licences and duties
+		regulatory_licences_due, "meddevice_suite.qms.regulatory_licence.send_expiry_alerts"
+	),
+	"DMR Re-approval": Category(  # module 31: Device Master Record Out of Date, to QA
+		dmr_reapprovals_due, "meddevice_suite.qms.device_master_record.alert"
+	),
 }
 
 
@@ -499,13 +562,14 @@ CATEGORIES: dict[str, Callable[[], Iterator[Due]]] = {
 
 
 def run() -> None:
-	"""Daily: raise and complete the system reminders, raise the recurring ones, mark what is
-	overdue and escalate what has stayed overdue. One category's failure is logged and leaves
-	its reminders as they were; the others go on."""
-	for category, due_now in CATEGORIES.items():
+	"""Daily: raise and settle the system reminders, raise the recurring ones, mark what is
+	overdue, escalate what has stayed overdue, and tell each reminder's people what they have not
+	been told yet. One category's failure is logged and leaves its reminders as they were; the
+	others go on."""
+	for category, kind in CATEGORIES.items():
 		in_step(
 			f"reminders of {category}",
-			lambda category=category, due_now=due_now: track(category, list(due_now())),
+			lambda category=category, due_now=kind.due: track(category, due_now),
 		)
 	for name in frappe.get_all(SCHEDULE, filters={"active": 1}, pluck="name"):
 		in_step(f"recurring reminder {name}", lambda name=name: raise_occurrence(name))
@@ -513,6 +577,7 @@ def run() -> None:
 		DOCTYPE, filters={"status": ["in", STILL_OPEN], "due_date": ["<", today()]}, pluck="name"
 	):
 		in_step(f"reminder {name}", lambda name=name: follow_up(name))
+	send_notices()
 
 
 def in_step(what: str, step: Callable[[], None]) -> None:
@@ -526,28 +591,48 @@ def in_step(what: str, step: Callable[[], None]) -> None:
 		frappe.db.release_savepoint(SAVEPOINT)
 
 
-def track(category: str, due: list[Due]) -> None:
-	"""Raise a reminder for each item newly due; complete the category's open reminders whose item
-	is no longer due, the work being done in its record."""
+def track(category: str, due_now: Callable[[], Iterator[Due]]) -> None:
+	"""Raise a reminder for each item due within its lead time that has no open one; settle the
+	category's open reminders whose record no longer shows their item to be done at all."""
+	due = list(due_now())
 	keys = {item.key(category) for item in due}
-	for item in due:
-		if not frappe.db.exists(DOCTYPE, {"reminder_key": item.key(category)}):
-			make(category, item)
-	for name, reference_doctype, reference_name in frappe.get_all(
+	still_open = frappe.get_all(
 		DOCTYPE,
-		filters={
-			"category": category,
-			"status": ["in", STILL_OPEN],
-			"reminder_key": ["not in", keys or [""]],
-		},
-		fields=["name", "reference_doctype", "reference_name"],
-		as_list=True,
-	):
-		# The work was done, or the record's due date moved (a new reminder then follows it).
-		complete(name, _("{0} {1} no longer shows this due.").format(_(reference_doctype), reference_name))
+		filters={"category": category, "status": ["in", STILL_OPEN]},
+		fields=["name", "reminder_key", "reference_doctype", "reference_name"],
+	)
+	open_keys = {row.reminder_key for row in still_open}
+	for item in due:
+		# Only an open reminder stands for the item: one settled before, its item due again, does not.
+		if item.key(category) not in open_keys:
+			make(category, item)
+			open_keys.add(item.key(category))
+	dropped = [row for row in still_open if row.reminder_key not in keys]
+	if not dropped:
+		return
+	with whole_horizon():
+		pending = {item.key(category): item for item in due_now()}
+	# An item is its key without the due date: still to be done on another day, its date moved.
+	moved_to = {key.rpartition("|")[0]: item.due_date for key, item in pending.items()}
+	for row in dropped:
+		if row.reminder_key in pending:
+			continue  # still to be done, only outside the lead time now: it stays open
+		record = (_(row.reference_doctype), row.reference_name)
+		new_date = moved_to.get(row.reminder_key.rpartition("|")[0])
+		complete(
+			row.name,
+			_("The due date in {0} {1} moved to {2}.").format(*record, date_text(new_date))
+			if new_date
+			else _("{0} {1} no longer shows this due.").format(*record),
+		)
 
 
 def make(category: str, item: Due, schedule: str | None = None) -> frappe.model.document.Document:
+	key = item.key(category)
+	if settled := frappe.db.get_value(DOCTYPE, {"reminder_key": key, "status": COMPLETED}):
+		# The same item and due date, settled before and due again: the settled reminder keeps its
+		# record and gives up the key, which names the one reminder open for the item.
+		update(settled, reminder_key=None)
 	reminder = frappe.get_doc(
 		{
 			"doctype": DOCTYPE,
@@ -561,7 +646,7 @@ def make(category: str, item: Due, schedule: str | None = None) -> frappe.model.
 			"responsible_user": item.user,
 			"raised_on": today(),
 			"status": OVERDUE if getdate(item.due_date) < getdate(today()) else OPEN,
-			"reminder_key": item.key(category),
+			"reminder_key": key,
 		}
 	)
 	reminder.flags.reminder = True
@@ -583,14 +668,74 @@ def complete(name: str, how: str, by: str | None = None) -> None:
 
 
 def follow_up(name: str) -> None:
-	"""A reminder past its due date is Overdue; overdue for the escalation days, escalated once."""
+	"""A reminder past its due date is Overdue; overdue for the escalation days, escalated once
+	(`send_notices` tells the escalation)."""
 	reminder = frappe.get_doc(DOCTYPE, name)
 	days_over = date_diff(today(), reminder.due_date)
 	if reminder.status == OPEN:
 		update(name, status=OVERDUE)
 	if reminder.status != ESCALATED and days_over >= quality_settings.value("reminder_escalation_days"):
 		update(name, status=ESCALATED, escalated_on=now_datetime())
-		frappe.get_doc("Notification", OVERDUE_ALERT).send(frappe.get_doc(DOCTYPE, name))
+
+
+# --- Telling people -------------------------------------------------------------------------------
+
+
+def send_notices() -> None:
+	"""Tell the people of each open reminder what they have not been told yet: that it was raised,
+	that it was escalated. Each reminder on its own, so one that fails is logged and told on the
+	next run, and the others still go."""
+	untold = frappe.get_all(
+		DOCTYPE,
+		filters={"status": ["in", STILL_OPEN], "notified": ["is", "not set"]},
+		pluck="name",
+		order_by="creation asc",
+	)
+	escalation_untold = frappe.get_all(
+		DOCTYPE, filters={"status": ESCALATED, "notified": RAISED}, pluck="name", order_by="creation asc"
+	)
+	for name in untold + escalation_untold:
+		in_step(f"notice of reminder {name}", lambda name=name: notify(name))
+
+
+def notify(name: str) -> None:
+	"""Raised: its responsible person is told, or, naming none, everyone of its responsible jobs,
+	unless its category's module has told them already (`Category.told_by`). Escalated: QA,
+	Management and its responsible person, by the "Reminder Overdue" alert. What was told is
+	recorded on the reminder in the same step, so it is never told twice."""
+	reminder = frappe.get_doc(DOCTYPE, name)
+	kind = CATEGORIES.get(reminder.category)
+	if not reminder.notified and not (kind and kind.told_by):
+		tell_raised(reminder)
+	if reminder.status == ESCALATED and reminder.notified != ESCALATED:
+		frappe.get_doc("Notification", OVERDUE_ALERT).send(reminder)
+	update(name, notified=ESCALATED if reminder.status == ESCALATED else RAISED)
+
+
+def tell_raised(reminder: frappe.model.document.Document) -> None:
+	if reminder.responsible_user:
+		users = [reminder.responsible_user]
+	else:
+		roles = [role for role in (reminder.responsible_roles or "").split("\n") if role]
+		users = sorted({user for role in roles for user in users_with_role(role)})
+	if not users:
+		return
+	if reminder.schedule:
+		details = frappe.db.get_value(SCHEDULE, reminder.schedule, "description") or ""
+	else:
+		details = _("Due on {0}. It is completed by the work in {1} {2}.").format(
+			date_text(reminder.due_date), _(reminder.reference_doctype), reminder.reference_name
+		)
+	enqueue_create_notification(
+		users,
+		{
+			"type": "Alert",
+			"document_type": DOCTYPE,
+			"document_name": reminder.name,
+			"subject": reminder.subject,
+			"email_content": frappe.utils.escape_html(details),
+		},
+	)
 
 
 # --- Recurring reminders QA plans -----------------------------------------------------------------
@@ -601,7 +746,8 @@ def next_after(due, frequency: str):
 
 
 def raise_occurrence(name: str) -> None:
-	"""The schedule's next occurrence, once within its lead time; told to its job."""
+	"""The schedule's next occurrence, once within its lead time; its job is told by
+	`send_notices`."""
 	schedule = frappe.get_doc(SCHEDULE, name)
 	due = getdate(schedule.next_due_date or schedule.first_due_date)
 	if getdate(add_days(due, -cint(schedule.lead_days))) > getdate(today()):
@@ -614,19 +760,8 @@ def raise_occurrence(name: str) -> None:
 		(schedule.responsible_role,),
 	)
 	if frappe.db.exists(DOCTYPE, {"reminder_key": item.key(SCHEDULED)}):
-		return
-	reminder = make(SCHEDULED, item, schedule=schedule.name)
-	for user in users_with_role(schedule.responsible_role):
-		enqueue_create_notification(
-			user,
-			{
-				"type": "Alert",
-				"document_type": DOCTYPE,
-				"document_name": reminder.name,
-				"subject": reminder.subject,
-				"email_content": frappe.utils.escape_html(schedule.description or ""),
-			},
-		)
+		return  # raised already; a completed occurrence keeps its key, so it is never raised again
+	make(SCHEDULED, item, schedule=schedule.name)
 
 
 def users_with_role(role: str) -> list[str]:
