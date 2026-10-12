@@ -97,7 +97,8 @@ doc_events = {
 			"meddevice_suite.master_data.warehouse.guard_stock_ledger_entry",  # module 7: approved stores
 			"meddevice_suite.lot_control.lot_status.guard_stock_ledger_entry",
 			"meddevice_suite.lot_control.expiry.guard_stock_ledger_entry",  # module 18: expiry, FEFO
-		]
+		],
+		"on_submit": "meddevice_suite.lot_control.lot_status.guard_lot_made_on_submit",
 	},
 	"Stock Entry": {
 		# Module 31: a finished good is made only on a work order of it, while its device master

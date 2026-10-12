@@ -210,7 +210,7 @@ def status_of(lots: Iterable[str], lock: bool = False) -> dict[str, str]:
 	batch = frappe.qb.DocType("Batch")
 	query = (
 		frappe.qb.from_(batch)
-		.select(batch.name, batch.field(STATUS_FIELD))
+		.select(batch.name, batch[STATUS_FIELD])
 		.where(batch.name.isin(names))
 		.orderby(batch.name)
 	)
@@ -357,14 +357,32 @@ def lots_of_row(row: Document) -> list[str]:
 def guard_stock_ledger_entry(sle: Document, method: str | None = None) -> None:
 	"""Stock Ledger Entry validate: the one place every movement passes, with its document already
 	stored, held to the stock path rule (URS-STK-005, URS-STK-010) under the lots' row locks; new
-	stock, see guard_new_stock."""
+	stock, see guard_new_stock. A lot the voucher did not name is not known yet: see
+	guard_lot_made_on_submit."""
 	precision = qty_precision()
 	if sle.is_cancelled or not flt(sle.actual_qty, precision):
 		return
 	lots = [sle.batch_no] if sle.batch_no else lots_of_bundle(sle.serial_and_batch_bundle)
 	if not lots:
+		sle.flags.lot_not_named = True
 		return
-	movement = movement_of(sle, inward=flt(sle.actual_qty, precision) > 0)
+	hold_to_stock_path(sle, lots)
+
+
+def guard_lot_made_on_submit(sle: Document, method: str | None = None) -> None:
+	"""Stock Ledger Entry on_submit: a lot the voucher did not name (a new lot made on a receipt or
+	production) gets its bundle in ERPNext's own on_submit, after validate; it is held to the same
+	rule here, so a new lot does not come into an approved store unchecked. Only for such an entry:
+	a named lot was checked at validate, before ERPNext's own stock checks."""
+	if not sle.flags.lot_not_named:
+		return
+	lots = [sle.batch_no] if sle.batch_no else lots_of_bundle(sle.serial_and_batch_bundle)
+	if lots:
+		hold_to_stock_path(sle, lots)
+
+
+def hold_to_stock_path(sle: Document, lots: list[str]) -> None:
+	movement = movement_of(sle, inward=flt(sle.actual_qty, qty_precision()) > 0)
 	if movement is None:
 		return  # stock arriving on a move between stores, checked where it left
 	if movement.source is None:
