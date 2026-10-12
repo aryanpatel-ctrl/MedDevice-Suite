@@ -21,6 +21,13 @@ def audit_events(doctype: str, name: str) -> list[frappe._dict]:
 	)
 
 
+def remove_field_added_by_hand(doctype: str, fieldname: str) -> None:
+	"""The record type's form back to what the app defines: the custom field gone, and the cached
+	form with it."""
+	frappe.db.delete("Custom Field", {"dt": doctype, "fieldname": fieldname})
+	frappe.clear_cache(doctype=doctype)
+
+
 @verifies("URS-CMP-038")
 class TestNobodyConfiguresBySiteHand(IntegrationTestCase):
 	@classmethod
@@ -43,6 +50,9 @@ class TestNobodyConfiguresBySiteHand(IntegrationTestCase):
 				self.assertTrue(frappe.has_permission(doctype, "read", user=self.administrator))
 
 	def test_a_field_added_by_hand_is_refused(self):
+		# Should the refusal ever fail, the field must not outlive the test: adding it alters the
+		# Item table, which commits at once, and every later test and screen would see it.
+		self.addCleanup(remove_field_added_by_hand, "Item", "mds_by_hand")
 		frappe.set_user(self.administrator)
 		with self.assertRaises(frappe.PermissionError):
 			frappe.get_doc(
