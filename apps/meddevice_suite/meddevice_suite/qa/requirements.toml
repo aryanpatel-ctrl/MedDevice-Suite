@@ -387,8 +387,8 @@ status = "implemented"
 [[requirement]]
 id = "URS-CMP-002"
 module = 49
-title = "Each signature records the signer's user ID and full name, the date and time, the action signed and the meaning of the signature (authored, reviewed, approved, rejected, released or verified), plus an optional reason."
-source = "21 CFR 11.50(a); D1, D2 QA Review & Approval (E-Signature)"
+title = "Each signature records the signer's user ID and full name, the date and time, the action signed and the meaning of the signature (authored, reviewed, approved, rejected, released, verified, trained, competent or withdrawn), the meaning being that of the act signed, plus an optional reason."
+source = "21 CFR 11.50(a); D1, D2 QA Review & Approval (E-Signature); withdrawn added and each act's meaning fitted to the act, decided 2026-10-12 (foundation review)"
 status = "implemented"
 
 [[requirement]]
@@ -401,29 +401,29 @@ status = "implemented"
 [[requirement]]
 id = "URS-CMP-004"
 module = 49
-title = "A signature is bound to the exact content of the record at signing and to the previous signature on the same record, so that altering the signed record or any signature is detectable by verification."
-source = "21 CFR 11.70"
+title = "A signature is bound to the exact content of the record at signing and to the previous signature on the same record, so that altering the signed record or any signature is detectable by verification, which follows the links between signatures so that a server clock set back does not read as tampering."
+source = "21 CFR 11.70; verification by links decided 2026-10-12 (foundation review)"
 status = "implemented"
 
 [[requirement]]
 id = "URS-CMP-005"
 module = 49
-title = "Signature records cannot be edited or deleted by any user, including system managers."
-source = "21 CFR 11.70, 11.10(e)"
+title = "Signature records are created only by signing, under the signer's own account, and cannot be edited or deleted by any user, including system managers; no permission to write them can be given."
+source = "21 CFR 11.70, 11.10(e); created only by signing decided 2026-10-12 (foundation review)"
 status = "implemented"
 
 [[requirement]]
 id = "URS-CMP-006"
 module = 49
-title = "Only an identified individual can sign: shared and system accounts (Administrator, Guest) are refused, and the signer must hold the permission the signed action requires on the record."
-source = "21 CFR 11.100(a), 11.10(d), 11.10(g)"
+title = "Only an identified individual can sign: shared and system accounts (Administrator, Guest) are refused, and the signer must hold the permission the signed action requires on the record; a user ID that has signed, acted on regulated records or owns one is never deleted, only disabled, so it is never given to anyone else."
+source = "21 CFR 11.100(a), 11.10(d), 11.10(g), 11.300(b); user IDs kept decided 2026-10-12 (foundation review)"
 status = "implemented"
 
 [[requirement]]
 id = "URS-CMP-030"
 module = 49
-title = "A person signs from the record, in a dialog that names the act and the meaning of the signature and asks for their own password; only the acts declared for that record type can be signed, and only by someone who may open the record."
-source = "21 CFR 11.50, 11.200; design approved 2026-10-07 (document control)"
+title = "A person signs from the record, in a dialog that names the act and the meaning of the signature and asks for their own password; only the acts declared for that record type can be signed, and only by someone who may open the record; the meaning recorded is the act's declared meaning, the one the dialog showed."
+source = "21 CFR 11.50, 11.200; design approved 2026-10-07 (document control); declared meaning enforced decided 2026-10-12 (foundation review)"
 status = "implemented"
 
 # --- Module 50: tamper-evident audit trail (21 CFR 11.10(e); EU GMP Annex 11 §9) ---
@@ -445,8 +445,8 @@ status = "implemented"
 [[requirement]]
 id = "URS-CMP-009"
 module = 50
-title = "Audit entries cannot be edited or deleted by any user, including system managers, and never overwrite or hide earlier entries."
-source = "21 CFR 11.10(e)"
+title = "Audit entries are created only by the audit trail and cannot be edited or deleted by any user, including system managers; no permission to write them can be given; and they never overwrite or hide earlier entries."
+source = "21 CFR 11.10(e); created only by the audit trail decided 2026-10-12 (foundation review)"
 status = "implemented"
 
 [[requirement]]
@@ -495,8 +495,8 @@ status = "implemented"
 [[requirement]]
 id = "URS-CMP-015"
 module = 47
-title = "For every regulated business record type, which roles may read, create, submit, cancel and amend it is declared in code and applied exactly, replacing the platform's default permissions, and any manual change is undone on the next migrate."
-source = "21 CFR 11.10(d), (g); ISO 13485 4.2.4"
+title = "For every regulated business record type, which roles may read, create, submit, cancel and amend it is declared in code and applied exactly, replacing the platform's default permissions, and any manual change is undone on the next migrate; on this app's own record types a permission cannot be changed by hand at all."
+source = "21 CFR 11.10(d), (g); ISO 13485 4.2.4; hand changes on the app's own record types refused decided 2026-10-12 (foundation review)"
 status = "implemented"
 
 [[requirement]]

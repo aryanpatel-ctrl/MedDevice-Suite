@@ -52,7 +52,8 @@ EXPIRY_ALERT = "Customer Licence Expiring"
 SAVEPOINT = "licence_alert"  # a savepoint name has no spaces
 # On a customer: it buys without a licence. Set only by QA's signed decision.
 EXEMPT_FIELD = "mds_buys_without_licence"
-EXEMPT_ACTS = {"Exempt From Licence": 1, "Require Licence": 0}
+# act -> (buys without a licence, meaning): ending an exemption revokes QA's approval of it.
+EXEMPT_ACTS = {"Exempt From Licence": (1, "Approved"), "Require Licence": (0, "Rejected")}
 CUSTOM_FIELDS = {
 	"Customer": [
 		{
@@ -272,7 +273,7 @@ def decide_exemption(doc: Document, act: str, password: str, reason: str | None)
 	frappe.db.get_value("Customer", doc.name, "name", for_update=True)  # one decision at a time
 	doc = frappe.get_doc("Customer", doc.name)
 	doc.check_permission("read")
-	exempt = EXEMPT_ACTS[act]
+	exempt, meaning = EXEMPT_ACTS[act]
 	require(is_qa(), _("Only QA decides which customers buy without a licence."), frappe.PermissionError)
 	require(
 		bool(doc.get(EXEMPT_FIELD)) != bool(exempt),
@@ -282,7 +283,7 @@ def decide_exemption(doc: Document, act: str, password: str, reason: str | None)
 	)
 	require(reason, _("Say why."))
 	doc.set(EXEMPT_FIELD, exempt)
-	sign(doc, "Approved", act, password, reason, permission="read")
+	sign(doc, meaning, act, password, reason, permission="read")
 	doc.flags.customer_licence = True
 	# Only this signed decision sets the field; Sales, who edit the customer, may not.
 	doc.save(ignore_permissions=True)

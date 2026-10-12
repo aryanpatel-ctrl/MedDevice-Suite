@@ -11,6 +11,7 @@ const MEANING_TEXT = {
 	Verified: __("I have verified this."),
 	Trained: __("I was trained in this, and I understand it."),
 	Competent: __("I have assessed this person and found them competent."),
+	Withdrawn: __("I withdraw this from use."),
 };
 
 const esign = frappe.provide("meddevice_suite.esign");
@@ -64,6 +65,8 @@ esign.sign = (frm, action, meaning, { ask_reason = false } = {}) =>
 						action,
 						password,
 						reason: reason || null,
+						// The server refuses a meaning other than the declared one (11.50(a)(3)).
+						meaning,
 					})
 					.then((opened) => {
 						signed = true;

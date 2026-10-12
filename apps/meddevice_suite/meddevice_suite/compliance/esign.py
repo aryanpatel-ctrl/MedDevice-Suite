@@ -10,6 +10,11 @@ accounts (11.100), records name, time and meaning (11.50), and binds the
 signature to the record's exact content and to the record's previous signature
 (11.70). `verify_signatures` and `is_unchanged_since` detect tampering later.
 
+A signature is recorded only here: the Electronic Signature refuses any other insert,
+whatever permissions the caller holds or skips, and one recorded under an account other
+than the signer's. A declared signed act (compliance/signing.py) is signed only with the
+meaning its declaration gives, so the meaning shown in the signing dialog is the one recorded.
+
 A wrong password counts towards the account lockout like a failed login, and is
 written to the login history by a background job, so it stays on record although
 the refused request is rolled back (11.300(d)). It does not end the session:
@@ -30,8 +35,31 @@ from frappe.utils import cint, get_datetime, get_fullname, now_datetime
 from frappe.utils.password import check_password
 
 from meddevice_suite.compliance.fingerprint import chain_head, plain_text, record_content, sha256
+from meddevice_suite.compliance.signing import declared_meaning
 
-MEANINGS = ("Authored", "Reviewed", "Approved", "Rejected", "Released", "Verified", "Trained", "Competent")
+MEANINGS = (
+	"Authored",
+	"Reviewed",
+	"Approved",
+	"Rejected",
+	"Released",
+	"Verified",
+	"Trained",
+	"Competent",
+	"Withdrawn",
+)
+# The fields a signature's fingerprint covers, besides the fingerprint before it.
+FINGERPRINTED = (
+	"reference_doctype",
+	"document_name_at_signing",
+	"action",
+	"meaning",
+	"reason",
+	"signer",
+	"signer_name",
+	"signed_at",
+	"record_hash",
+)
 
 # Accounts that do not identify one person (21 CFR 11.100(a)).
 SHARED_ACCOUNTS = ("Administrator", "Guest")
@@ -159,6 +187,14 @@ def sign(
 		frappe.throw(_("Unknown signature meaning: {0}").format(meaning))
 	if not action:
 		frappe.throw(_("A signature needs the action being signed."))
+	# 11.50(a)(3): the signing dialog shows the declared meaning, so the act records that one.
+	declared = declared_meaning(doc.doctype, action)
+	if declared and meaning != declared:
+		frappe.throw(
+			_("{0} on {1} is signed as {2}, not as {3}.").format(
+				_(action), _(doc.doctype), _(declared), _(meaning)
+			)
+		)
 	plain_text(reason)
 
 	doc.check_permission(permission)
@@ -185,7 +221,9 @@ def sign(
 		}
 	)
 	signature.signature_hash = signature_fingerprint(signature, previous.signature_hash if previous else "")
-	# No role may create signatures directly; this service is the only way in.
+	# No role may create signatures directly; this service is the only way in, and the record
+	# refuses an insert without this mark, which a request cannot set on a document.
+	signature.flags.recorded_by_signing = True
 	signature.insert(ignore_permissions=True)
 	return signature
 
@@ -246,7 +284,7 @@ def record_fingerprint(doc: Document) -> str:
 	return sha256(content)
 
 
-def signature_fingerprint(signature: Document, previous_hash: str) -> str:
+def signature_fingerprint(signature: Document | frappe._dict, previous_hash: str) -> str:
 	# The name as it was at signing: renaming a record rewrites `reference_name`
 	# in every signature, which must not read as tampering.
 	return sha256(
@@ -266,25 +304,36 @@ def signature_fingerprint(signature: Document, previous_hash: str) -> str:
 
 
 def verify_signatures(doctype: str, name: str) -> bool:
-	"""Whether every signature on the record is intact and the chain is unbroken."""
+	"""Whether every signature on the record is intact and the chain is unbroken.
+
+	The chain is followed by its links, as the audit trail's is (`audit.verify_events`), not by
+	time: a server clock set back between two signings orders them wrongly by time, which must not
+	read as tampering. An altered signature, one removed from the chain, one inserted into it and a
+	second one claiming the same place are still detected.
+	"""
 	signatures = frappe.get_all(
 		"Electronic Signature",
 		filters={"reference_doctype": doctype, "reference_name": name},
-		fields=["name"],
-		order_by="signed_at asc, creation asc",
-		pluck="name",
+		fields=["name", *FINGERPRINTED, "previous_signature", "signature_hash"],
 	)
-	previous = None
-	for signature_name in signatures:
-		signature = frappe.get_doc("Electronic Signature", signature_name)
-		expected_previous = previous.name if previous else None
-		previous_hash = previous.signature_hash if previous else ""
-		if signature.previous_signature != expected_previous:
+	by_name = {signature.name: signature for signature in signatures}
+	firsts, followed = 0, set()
+	for signature in signatures:
+		previous = None
+		if signature.previous_signature:
+			previous = by_name.get(signature.previous_signature)
+			# The signature before it is missing, or another signature already follows it.
+			if previous is None or signature.previous_signature in followed:
+				return False
+			followed.add(signature.previous_signature)
+		else:
+			firsts += 1
+		if signature.signature_hash != signature_fingerprint(
+			signature, previous.signature_hash if previous else ""
+		):
 			return False
-		if signature.signature_hash != signature_fingerprint(signature, previous_hash):
-			return False
-		previous = signature
-	return True
+	# One chain: a single first signature, every other one following another.
+	return not signatures or firsts == 1
 
 
 def is_unchanged_since(signature: Document) -> bool:

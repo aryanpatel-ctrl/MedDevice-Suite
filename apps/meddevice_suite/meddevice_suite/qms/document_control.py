@@ -134,7 +134,7 @@ def withdraw(document: Document, password: str, reason: str | None = None) -> No
 	document.status = "Obsolete"
 	document.withdrawn_reason = reason
 	document.next_review_date = None
-	sign(document, "Approved", "Withdraw", password, reason)
+	sign(document, "Withdrawn", "Withdraw", password, reason)
 	if document.current_revision:
 		frappe.get_doc("Document Revision", document.current_revision).db_set("status", "Obsolete")
 	save(document)
