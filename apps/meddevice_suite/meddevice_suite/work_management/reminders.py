@@ -391,10 +391,12 @@ def requalifications_due() -> Iterator[Due]:
 
 
 def calibration_impacts_open() -> Iterator[Due]:
-	"""Each calibration found out of tolerance until QA signs its impact assessment."""
+	"""Each calibration found out of tolerance until QA signs its impact assessment, also once QA
+	has withdrawn it for correction: the assessment stays open on it (plan D-29), and a correction
+	does not complete this reminder. A draft never holds an open assessment (`calibration`)."""
 	for row in frappe.get_all(
 		"Calibration Record",
-		filters={"docstatus": 1, "impact_status": "Open"},
+		filters={"docstatus": ["in", (1, 2)], "impact_status": "Open"},
 		fields=["name", "asset", "performed_on"],
 	):
 		yield Due(

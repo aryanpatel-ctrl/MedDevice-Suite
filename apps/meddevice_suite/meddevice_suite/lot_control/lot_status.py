@@ -1,34 +1,50 @@
-"""Lot status (module 17; URS-STK-004 to URS-STK-007; D2 "Quarantine / Approved Stock",
-D3 "QC Approval / Rejection", D4 3.5 "Accept / Reject / Hold").
+"""Lot status (module 17; URS-STK-004 to URS-STK-007, URS-STK-010; D2 "Quarantine / Approved
+Stock", D3 "QC Approval / Rejection", D4 3.5 "Accept / Reject / Hold"; ISO 13485 7.5.8, 8.3).
 
 Every lot is Quarantine, Approved, Rejected or Hold. A lot is born Quarantine,
 whether a supplier delivered it or a work order made it, and only QA moves it
 on, with a reason and an electronic signature, through a Lot Release (`release`);
 nothing else may write the status, not the form, not the API (`guard_batch`).
 
-Only an Approved lot may be issued, moved to an approved store, picked or
-delivered. The rule is enforced where every stock movement must pass, the
-Stock Ledger Entry, with the document already stored (`guard_stock_ledger_entry`),
-and earlier on the forms that start a movement, so the person is refused before
-they submit (`guard_stock_entry`, `guard_delivery_note`, `guard_pick_list`,
-`guard_work_order`, `guard_purchase_receipt`). What a lot that is not Approved
-may still do: move into the store of its own role, and, once Rejected, go back
-to its supplier or be scrapped (`movement_allowed`).
+Where stock of a lot may go depends on the lot's status and on the kind of store the
+stock sits in (`stores.kind_of`), because one lot can sit in several: a goods receipt
+puts the quantity rejected at the door in the Rejected store under the same lot as the
+accepted quantity in quarantine, and goods a customer sends back come into the Returns
+store whatever the lot's status. One rule, the stock path matrix (`movement_allowed`),
+decides every movement of every voucher type:
+
+- approved stock in an approved store is used as usual, and may be set apart in the
+  hold or rejected store;
+- stock of a lot that is not Approved leaves an approved store only by QA's signed move;
+- stock in the quarantine, hold or returns store leaves only by QA's signed decision;
+- stock in the rejected store, whatever the lot's status, goes back to its supplier, is
+  scrapped or is moved to the returns store; never into usable stock, not by a release;
+- new stock of a lot that is not Approved never comes into an approved store, and goods
+  a customer sends back come only into the returns store (plan D-25);
+- a stock count changes only approved stock in an approved store (plan D-24).
+
+The rule is enforced where every stock movement must pass, the Stock Ledger Entry,
+with the document already stored and the lot row-locked, so a delivery and a hold
+cannot cross (`guard_stock_ledger_entry`), and earlier on the forms that start a
+movement, so the person is refused before they submit (`guard_stock_entry`,
+`guard_sales_document`, `guard_pick_list`, `guard_packing_slip`, `guard_work_order`,
+`guard_purchase_receipt`).
 
 Each status has a store of its own (`stores`): a lot that is not Approved is kept
 there, so ERPNext's expiry-first picking, which looks at one store, only ever
 sees approved lots.
 """
 
-from collections.abc import Iterable
+from collections.abc import Collection, Iterable
+from dataclasses import dataclass
+from datetime import datetime
 
 import frappe
-from erpnext.stock.doctype.batch.batch import get_batch_qty
 from frappe import _
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 from frappe.model.document import Document
-from frappe.query_builder.functions import Sum
-from frappe.utils import flt, now_datetime
+from frappe.query_builder.functions import Max, Sum
+from frappe.utils import cint, flt, get_datetime, now_datetime
 
 from meddevice_suite.compliance.fingerprint import plain_text
 from meddevice_suite.lot_control import stores
@@ -54,7 +70,11 @@ STATUS_FIELDS = (
 )
 TRANSFER_FIELD = "mds_lot_release_transfer"
 MAX_REASON = 1000
-PRECISION = 6
+MATERIAL_TRANSFER, MATERIAL_ISSUE = "Material Transfer", "Material Issue"
+# Documents a customer's goods come back on, when they are a return (plan D-25).
+CUSTOMER_DOCUMENTS = frozenset({"Delivery Note", "Sales Invoice", "POS Invoice"})
+# Documents goods go back to their supplier on, when they are a return.
+SUPPLIER_DOCUMENTS = frozenset({"Purchase Receipt", "Purchase Invoice"})
 
 CUSTOM_FIELDS = {
 	"Batch": [
@@ -135,6 +155,13 @@ HINT = {
 	HOLD: "QA releases or rejects it.",
 	REJECTED: "It can only be returned to its supplier or scrapped.",
 }
+# What stock kept in each kind of role store may still do, whatever its lot's status.
+STORE_HINT = {
+	stores.QUARANTINE: "It leaves only by QA's signed release, hold or rejection.",
+	stores.HOLD: "It leaves only by QA's signed release, after a new inspection, or rejection.",
+	stores.REJECTED: "It can only be returned to its supplier, scrapped or moved to the Returns store.",
+	stores.RETURNS: "It leaves only by QA's signed disposition: back to stock after an inspection, or to the Rejected store.",
+}
 
 
 class LotNotApproved(frappe.ValidationError):
@@ -172,15 +199,30 @@ def guard_batch(doc: Document, method: str | None = None) -> None:
 		)
 
 
-def status_of(lots: Iterable[str]) -> dict[str, str]:
-	"""lot -> status, in one query; a lot made before the status existed counts as Quarantine."""
-	names = [lot for lot in set(lots) if lot]
+def status_of(lots: Iterable[str], lock: bool = False) -> dict[str, str]:
+	"""lot -> status, in one query; a lot made before the status existed counts as Quarantine.
+	`lock` row-locks the lots until the transaction ends, in name order so two documents never wait
+	on each other: a movement then reads the status a decision on the lot may be changing at that
+	moment only once the decision is done, and a hold and a delivery cannot cross."""
+	names = sorted({lot for lot in lots if lot})
 	if not names:
 		return {}
-	rows = frappe.get_all(
-		"Batch", filters={"name": ["in", names]}, fields=["name", STATUS_FIELD], as_list=True
+	batch = frappe.qb.DocType("Batch")
+	query = (
+		frappe.qb.from_(batch)
+		.select(batch.name, batch[STATUS_FIELD])
+		.where(batch.name.isin(names))
+		.orderby(batch.name)
 	)
-	return {name: status or QUARANTINE for name, status in rows}
+	if lock:
+		query = query.for_update()
+	return {name: status or QUARANTINE for name, status in query.run()}
+
+
+def qty_precision() -> int:
+	"""The places stock quantities are compared and moved at: the precision of the stock ledger's
+	own quantity, as ERPNext rounds what it posts, not a fixed number of places."""
+	return frappe.get_precision("Stock Ledger Entry", "actual_qty")
 
 
 def set_status(lot: str, status: str, reason: str, release: str | None = None) -> Document:
@@ -216,41 +258,85 @@ def clean_reason(reason: str | None) -> str:
 # --- Enforcement --------------------------------------------------------------------------------
 
 
-def movement_allowed(
-	status: str,
-	voucher_type: str,
-	purpose: str | None = None,
-	is_return: bool = False,
-	target_role: str | None = None,
-	lot_release_transfer: bool = False,
-) -> bool:
-	"""Whether stock of a lot in `status` may leave a store on this document (URS-STK-005)."""
-	if status == APPROVED or lot_release_transfer:
-		return True
-	# A counted correction by the stock manager, not an issue; audited like every posting.
-	if voucher_type == "Stock Reconciliation":
-		return True
-	if voucher_type == "Stock Entry" and purpose == "Material Transfer":
-		if target_role and target_role == ROLE_FOR_STATUS.get(status):
-			return True  # within the store of its own role
-		if status == REJECTED and target_role == stores.RETURNS:
-			return True
-	if status == REJECTED:
-		if voucher_type == "Stock Entry" and purpose == "Material Issue":
-			return True  # scrapped
-		if voucher_type in ("Purchase Receipt", "Purchase Invoice") and is_return:
-			return True  # back to the supplier
-	return False
+@dataclass(frozen=True)
+class Movement:
+	"""A movement of stock as the stock path rule reads it. A store is named by its kind
+	(`stores.kind_of`): `source` None is stock coming in from outside the stores (a receipt,
+	production, a customer's return), `target` None stock leaving them (issued, consumed, delivered,
+	scrapped, sent back to its supplier)."""
+
+	voucher_type: str
+	source: str | None
+	target: str | None
+	purpose: str | None = None  # a stock entry's purpose
+	is_return: bool = False
+	signed: bool = False  # QA's own transfer, posted by a signed decision (`release`)
 
 
-def refuse(lot: str, status: str, store: str | None) -> None:
-	frappe.throw(
-		_(
+def movement_allowed(status: str, movement: Movement) -> bool:
+	"""Whether stock of a lot in `status` may make `movement` (URS-STK-005, URS-STK-010): the stock
+	path matrix of docs/features/lot-status-control.md section 2.3, the one rule every voucher type
+	is held to, on the form and on the stock ledger."""
+	if movement.source is None:
+		return may_come_in(status, movement)
+	if movement.source == stores.REJECTED:
+		# Rejected goods, at the door or by QA, whatever the lot's status now: never into usable stock,
+		# not even by a release.
+		if movement.voucher_type == "Stock Entry":
+			return (movement.purpose == MATERIAL_ISSUE and movement.target is None) or (
+				movement.purpose == MATERIAL_TRANSFER and movement.target == stores.RETURNS
+			)
+		return movement.voucher_type in SUPPLIER_DOCUMENTS and movement.is_return
+	if movement.signed:
+		return True
+	if movement.voucher_type == "Stock Reconciliation":
+		# A count corrects approved stock only; what QA has not released, or keeps apart, changes only
+		# by its decision or its own path (plan D-24).
+		return status == APPROVED and movement.source == stores.APPROVED
+	if movement.source != stores.APPROVED or status != APPROVED:
+		# Quarantine, hold and returns stock, and a lot not approved wherever it is, leave only by QA's
+		# signed decision.
+		return False
+	# Approved stock is used, moved between approved stores, or set apart for QA to decide.
+	return movement.target in (None, stores.APPROVED, stores.HOLD, stores.REJECTED)
+
+
+def may_come_in(status: str, movement: Movement) -> bool:
+	"""New stock and returns: goods a customer sends back come into the Returns store, whatever the
+	lot's status, for QA to decide (plan D-25); a lot that is not Approved never comes into an
+	approved store, so a material receipt, production or a count cannot put unreleased stock where it
+	is used."""
+	if movement.voucher_type in CUSTOMER_DOCUMENTS and movement.is_return:
+		return movement.target == stores.RETURNS
+	return status == APPROVED or movement.target != stores.APPROVED
+
+
+def refuse(lot: str, status: str, store: str | None, movement: Movement | None = None) -> None:
+	title, message = refusal(lot, status, store, movement)
+	frappe.throw(message, LotNotApproved, title=title)
+
+
+def refusal(lot: str, status: str, store: str | None, movement: Movement | None) -> tuple[str, str]:
+	"""The title and message of a refused movement: why, and what the stock may still do."""
+	if movement and movement.source is None:
+		if movement.voucher_type in CUSTOMER_DOCUMENTS and movement.is_return:
+			return _("Stock returned"), _(
+				"Lot {0} comes back from a customer into {1}; goods a customer sends back go to the Returns store, where QA decides them."
+			).format(lot, store or _("a store"))
+		return _("Lot not approved"), _(
+			"Lot {0} is {1} and cannot come into {2}, an approved store; new stock comes into the Quarantine store until QA releases it."
+		).format(lot, _(status), store or _("an approved store"))
+	if status != APPROVED or not movement:
+		return _("Lot not approved"), _(
 			"Lot {0} is {1} and cannot leave {2}; only an Approved lot can be issued, moved, picked or delivered. {3}"
-		).format(lot, _(status), store or _("its store"), _(HINT.get(status, ""))),
-		LotNotApproved,
-		title=_("Lot not approved"),
-	)
+		).format(lot, _(status), store or _("its store"), _(HINT.get(status, "")))
+	if movement.source != stores.APPROVED:
+		return _("Stock kept apart"), _(
+			"Lot {0} is Approved, but its stock in {1} is kept apart there. {2}"
+		).format(lot, store or _("its store"), _(STORE_HINT.get(movement.source, "")))
+	return _("Stock kept apart"), _(
+		"Lot {0} is Approved and cannot be moved from {1} into the {2} store; only QA's signed decision or a customer's return puts stock there."
+	).format(lot, store or _("its store"), _(movement.target or ""))
 
 
 def lots_of_bundle(bundle: str | None) -> list[str]:
@@ -270,61 +356,113 @@ def lots_of_row(row: Document) -> list[str]:
 
 def guard_stock_ledger_entry(sle: Document, method: str | None = None) -> None:
 	"""Stock Ledger Entry validate: the one place every movement passes, with its document already
-	stored. Outward, only an Approved lot leaves (URS-STK-005); inward, see guard_inward."""
-	if sle.is_cancelled or not flt(sle.actual_qty, PRECISION):
-		return
-	if flt(sle.actual_qty, PRECISION) > 0:
-		guard_inward(sle)
+	stored, held to the stock path rule (URS-STK-005, URS-STK-010) under the lots' row locks; new
+	stock, see guard_new_stock. A lot the voucher did not name is not known yet: see
+	guard_lot_made_on_submit."""
+	precision = qty_precision()
+	if sle.is_cancelled or not flt(sle.actual_qty, precision):
 		return
 	lots = [sle.batch_no] if sle.batch_no else lots_of_bundle(sle.serial_and_batch_bundle)
 	if not lots:
+		sle.flags.lot_not_named = True
 		return
-	statuses = status_of(lots)
-	purpose = is_return = target_role = None
-	if sle.voucher_type == "Stock Entry":
-		purpose, transfer = frappe.db.get_value("Stock Entry", sle.voucher_no, ["purpose", TRANSFER_FIELD])
-		target_role = stores.role_of(
-			frappe.db.get_value("Stock Entry Detail", sle.voucher_detail_no, "t_warehouse")
-		)
-		lot_release_transfer = bool(transfer) and frappe.flags.lot_release_transfer == sle.voucher_no
-	else:
-		is_return = frappe.get_meta(sle.voucher_type).has_field("is_return") and bool(
-			frappe.db.get_value(sle.voucher_type, sle.voucher_no, "is_return")
-		)
-		lot_release_transfer = False
+	hold_to_stock_path(sle, lots)
+
+
+def guard_lot_made_on_submit(sle: Document, method: str | None = None) -> None:
+	"""Stock Ledger Entry on_submit: a lot the voucher did not name (a new lot made on a receipt or
+	production) gets its bundle in ERPNext's own on_submit, after validate; it is held to the same
+	rule here, so a new lot does not come into an approved store unchecked. Only for such an entry:
+	a named lot was checked at validate, before ERPNext's own stock checks."""
+	if not sle.flags.lot_not_named:
+		return
+	lots = [sle.batch_no] if sle.batch_no else lots_of_bundle(sle.serial_and_batch_bundle)
+	if lots:
+		hold_to_stock_path(sle, lots)
+
+
+def hold_to_stock_path(sle: Document, lots: list[str]) -> None:
+	movement = movement_of(sle, inward=flt(sle.actual_qty, qty_precision()) > 0)
+	if movement is None:
+		return  # stock arriving on a move between stores, checked where it left
+	if movement.source is None:
+		guard_new_stock(sle, lots, movement)
+	statuses = status_of(lots, lock=True)
 	for lot in lots:
 		status = statuses.get(lot, QUARANTINE)
-		if not movement_allowed(
-			status, sle.voucher_type, purpose, is_return, target_role, lot_release_transfer
-		):
-			refuse(lot, status, sle.warehouse)
+		if not movement_allowed(status, movement):
+			refuse(lot, status, sle.warehouse, movement)
 
 
-def guard_inward(sle: Document) -> None:
+def movement_of(sle: Document, inward: bool) -> Movement | None:
+	"""The movement a ledger entry is part of; None for the arriving end of a move between stores,
+	whose leaving end carries both stores."""
+	here = stores.kind_of(sle.warehouse)
+	if sle.voucher_type == "Stock Entry":
+		purpose, transfer = frappe.db.get_value(
+			"Stock Entry", sle.voucher_no, ["purpose", TRANSFER_FIELD]
+		) or (
+			None,
+			None,
+		)
+		row = (
+			frappe.db.get_value(
+				"Stock Entry Detail", sle.voucher_detail_no, ["s_warehouse", "t_warehouse"], as_dict=True
+			)
+			if sle.voucher_detail_no
+			else None
+		) or frappe._dict()
+		if inward and row.s_warehouse:
+			return None
+		return Movement(
+			"Stock Entry",
+			source=None if inward else here,
+			target=here if inward else stores.kind_of(row.t_warehouse),
+			purpose=purpose,
+			# Only the release's own transfer, while the release posts it.
+			signed=bool(transfer) and frappe.flags.lot_release_transfer == sle.voucher_no,
+		)
+	is_return = frappe.get_meta(sle.voucher_type).has_field("is_return") and bool(
+		frappe.db.get_value(sle.voucher_type, sle.voucher_no, "is_return")
+	)
+	return Movement(
+		sle.voucher_type,
+		source=None if inward else here,
+		target=here if inward else None,
+		is_return=is_return,
+	)
+
+
+def guard_new_stock(sle: Document, lots: list[str], movement: Movement) -> None:
 	"""Stock comes into a lot only on the document that made it (a goods receipt, a material
-	receipt or production: DFD 3.3 Internal Batch Creation, 4.6 Batch Creation). More stock, a count
-	gain or opening stock comes in as a new lot, inspected and released on its own; added to a lot
-	already in stock, it would take that lot's status without inspection (decided 2026-10-09).
-	A lot moved between stores, and goods coming back on a return, are the same stock."""
+	receipt or production: DFD 3.3 Internal Batch Creation, 4.6 Batch Creation), and on one line of
+	it. More stock, a count gain or opening stock comes in as a new lot, inspected and released on
+	its own; added to a lot already in stock, it would take that lot's status without inspection
+	(decided 2026-10-09). The same new lot on two lines would be two receipts of one lot, each with
+	its own inspection and return, and the lot would be known by one of them only. Goods coming back
+	on a return are the same stock."""
 	from meddevice_suite.lot_control.receipt import origins_of  # receipt builds on this module
 
-	lots = [sle.batch_no] if sle.batch_no else lots_of_bundle(sle.serial_and_batch_bundle)
-	if not lots:
-		return
-	if sle.voucher_type == "Stock Entry" and frappe.db.get_value(
-		"Stock Entry Detail", sle.voucher_detail_no, "s_warehouse"
-	):
-		return  # moved from one store to another
-	if frappe.get_meta(sle.voucher_type).has_field("is_return") and frappe.db.get_value(
-		sle.voucher_type, sle.voucher_no, "is_return"
-	):
+	if movement.is_return:
 		return
 	for lot, origin in origins_of(lots).items():
-		if origin.voucher_no != sle.voucher_no and not counted_back(sle, lot):
+		if origin.voucher_no != sle.voucher_no:
+			if not counted_back(sle, lot):
+				frappe.throw(
+					_("Lot {0} came in on {1} {2}; new stock comes in as a new lot.").format(
+						lot, _(origin.voucher_type), origin.voucher_no
+					),
+					title=_("New lot needed"),
+				)
+		elif (
+			origin.voucher_detail_no
+			and sle.voucher_detail_no
+			and origin.voucher_detail_no != sle.voucher_detail_no
+		):
 			frappe.throw(
-				_("Lot {0} came in on {1} {2}; new stock comes in as a new lot.").format(
-					lot, _(origin.voucher_type), origin.voucher_no
-				),
+				_(
+					"Lot {0} comes in on another line of {1} {2} already; a new lot comes in on one line."
+				).format(lot, _(sle.voucher_type), sle.voucher_no),
 				title=_("New lot needed"),
 			)
 
@@ -371,12 +509,13 @@ def counted_back(sle: Document, lot: str) -> bool:
 				pluck="qty",
 			)
 		)
-	return flt(put_back, PRECISION) <= flt(taken, PRECISION)
+	return flt(put_back, qty_precision()) <= flt(taken, qty_precision())
 
 
 def guard_stock_entry(doc: Document, method: str | None = None) -> None:
-	"""Stock Entry validate: refused on the form, before submit, for the lots already named
-	(URS-STK-005); the lot release's own transfer is marked only by the release."""
+	"""Stock Entry validate: refused on the form, before submit, for the lots already named, by
+	the stock path rule (URS-STK-005, URS-STK-010); the lot release's own transfer is marked only by
+	the release."""
 	if doc.get(TRANSFER_FIELD) and not doc.flags.lot_control:
 		frappe.throw(_("Only a lot release posts a lot release transfer."), frappe.PermissionError)
 	if not doc.flags.lot_control and not (STOCK_POSTING_ROLES & set(frappe.get_roles())):
@@ -384,19 +523,20 @@ def guard_stock_entry(doc: Document, method: str | None = None) -> None:
 			_("Stock is posted by Stores and Production; QA moves a lot through its release."),
 			frappe.PermissionError,
 		)
-	lots_by_row = {row.name: lots_of_row(row) for row in doc.items if row.get("s_warehouse")}
-	statuses = status_of(lot for lots in lots_by_row.values() for lot in lots)
-	for row in doc.items:
-		for lot in lots_by_row.get(row.name, ()):
+	rows = [(row, lots_of_row(row)) for row in doc.items]
+	statuses = status_of(lot for _row, lots in rows for lot in lots)
+	for row, lots in rows:
+		movement = Movement(
+			"Stock Entry",
+			source=stores.kind_of(row.get("s_warehouse")),
+			target=stores.kind_of(row.get("t_warehouse")),
+			purpose=doc.purpose,
+			signed=bool(doc.flags.lot_control),
+		)
+		for lot in lots:
 			status = statuses.get(lot, QUARANTINE)
-			if not movement_allowed(
-				status,
-				"Stock Entry",
-				doc.purpose,
-				target_role=stores.role_of(row.get("t_warehouse")),
-				lot_release_transfer=bool(doc.flags.lot_control),
-			):
-				refuse(lot, status, row.s_warehouse)
+			if not movement_allowed(status, movement):
+				refuse(lot, status, row.get("s_warehouse") or row.get("t_warehouse"), movement)
 
 
 def refuse_cancel_of_release_transfer(doc: Document, method: str | None = None) -> None:
@@ -411,21 +551,48 @@ def refuse_cancel_of_release_transfer(doc: Document, method: str | None = None) 
 		)
 
 
-def guard_delivery_note(doc: Document, method: str | None = None) -> None:
-	"""Delivery Note validate: only Approved lots are delivered (URS-STK-005)."""
-	lots_by_row = {row.name: lots_of_row(row) for row in doc.items}
-	statuses = status_of(lot for lots in lots_by_row.values() for lot in lots)
-	for row in doc.items:
-		for lot in lots_by_row.get(row.name, ()):
+def guard_sales_document(doc: Document, method: str | None = None) -> None:
+	"""Delivery Note, Sales Invoice and POS Invoice validate: a delivery takes only approved stock
+	from an approved store, and goods a customer sends back come into the Returns store, whatever
+	their lot's status, a recall's return of a held lot among them, for QA to decide (URS-STK-005,
+	URS-STK-010; plan D-25). An invoice that moves no stock is not checked."""
+	if doc.doctype != "Delivery Note" and not cint(doc.get("update_stock")):
+		return
+	is_return = bool(doc.get("is_return"))
+	rows = [(row, lots_of_row(row)) for row in doc.items]
+	statuses = status_of(lot for _row, lots in rows for lot in lots)
+	for row, lots in rows:
+		kind = stores.kind_of(row.get("warehouse"))
+		if (
+			is_return
+			and kind
+			and kind != stores.RETURNS
+			and frappe.get_cached_value("Item", row.item_code, "is_stock_item")
+		):
+			frappe.throw(
+				_(
+					"Line {0}: goods a customer sends back come into the Returns store, where QA decides them; {1} is not it."
+				).format(row.idx, row.warehouse),
+				LotNotApproved,
+				title=_("Stock returned"),
+			)
+		movement = Movement(
+			doc.doctype,
+			source=None if is_return else kind,
+			target=kind if is_return else None,
+			is_return=is_return,
+		)
+		for lot in lots:
 			status = statuses.get(lot, QUARANTINE)
-			if not movement_allowed(status, "Delivery Note", is_return=bool(doc.is_return)):
-				refuse(lot, status, row.warehouse)
+			if not movement_allowed(status, movement):
+				refuse(lot, status, row.get("warehouse"), movement)
 
 
 def guard_packing_slip(doc: Document, method: str | None = None) -> None:
-	"""Packing Slip validate: only Approved lots are packed (URS-STK-005). The slip packs a draft
-	delivery note's lines (or the packed items of its product bundles), checked when the note was
-	saved; a lot held since then is caught here."""
+	"""Packing Slip validate: only approved stock in an approved store is packed (URS-STK-005,
+	URS-STK-010). The slip packs a draft delivery note's lines (or the packed items of its product
+	bundles), checked when the note was saved; a lot held since then is caught here. A line not
+	found is held to its lot's status alone."""
 	lines = {}
 	for doctype, field in (("Delivery Note Item", "dn_detail"), ("Packed Item", "pi_detail")):
 		named = [row.get(field) for row in doc.items if row.get(field)]
@@ -435,28 +602,33 @@ def guard_packing_slip(doc: Document, method: str | None = None) -> None:
 			fields=["name", "batch_no", "serial_and_batch_bundle", "warehouse"],
 		):
 			lines[line.name] = line
-	lots_by_row = {}
+	lots_by_row = []
 	for row in doc.items:
 		line = lines.get(row.get("dn_detail")) or lines.get(row.get("pi_detail"))
 		lots = [row.batch_no] if row.get("batch_no") else (lots_of_row(line) if line else [])
-		lots_by_row[row.name] = (lots, line.warehouse if line else None)
-	statuses = status_of(lot for lots, _store in lots_by_row.values() for lot in lots)
-	for lots, warehouse in lots_by_row.values():
+		lots_by_row.append((lots, line.warehouse if line else None))
+	statuses = status_of(lot for lots, _store in lots_by_row for lot in lots)
+	for lots, warehouse in lots_by_row:
+		movement = Movement("Packing Slip", source=stores.kind_of(warehouse) or stores.APPROVED, target=None)
 		for lot in lots:
 			status = statuses.get(lot, QUARANTINE)
-			if status != APPROVED:
-				refuse(lot, status, warehouse)
+			if not movement_allowed(status, movement):
+				refuse(lot, status, warehouse, movement)
 
 
 def guard_pick_list(doc: Document, method: str | None = None) -> None:
-	"""Pick List validate: only Approved lots are picked (URS-STK-005)."""
-	lots_by_row = {row.name: lots_of_row(row) for row in doc.locations}
-	statuses = status_of(lot for lots in lots_by_row.values() for lot in lots)
-	for row in doc.locations:
-		for lot in lots_by_row.get(row.name, ()):
+	"""Pick List validate: only approved stock in an approved store is picked (URS-STK-005,
+	URS-STK-010)."""
+	rows = [(row, lots_of_row(row)) for row in doc.locations]
+	statuses = status_of(lot for _row, lots in rows for lot in lots)
+	for row, lots in rows:
+		movement = Movement(
+			"Pick List", source=stores.kind_of(row.get("warehouse")) or stores.APPROVED, target=None
+		)
+		for lot in lots:
 			status = statuses.get(lot, QUARANTINE)
-			if status != APPROVED:
-				refuse(lot, status, row.warehouse)
+			if not movement_allowed(status, movement):
+				refuse(lot, status, row.warehouse, movement)
 
 
 def guard_work_order(doc: Document, method: str | None = None) -> None:
@@ -515,34 +687,38 @@ def locked(lot: str) -> Document:
 	return frappe.get_doc("Batch", lot)
 
 
-def move_to_role(batch: Document, role: str | None, reason: str) -> Document | None:
-	"""Move all the lot's stock into the store of `role` (None: the item's approved store), one
-	transfer for every store that holds some; nothing is posted when it is already there."""
-	holdings = holdings_of(batch.name)
+def move_to_role(
+	batch: Document, role: str | None, reason: str, holdings: list[frappe._dict]
+) -> Document | None:
+	"""Move `holdings`, the stock of the lot a signed decision acts on, into the store of `role`
+	(None: the item's approved store), one transfer row for every store holding some. Stock already in
+	a store of that kind stays where it is; nothing is posted when all of it is. Never the lot's
+	other stock: the quantity rejected at the door, say, is not the decision's (C1, 2026-10-12)."""
 	if not holdings:
 		return None
-	companies = {frappe.get_cached_value("Warehouse", h["warehouse"], "company") for h in holdings}
+	companies = {frappe.get_cached_value("Warehouse", h.warehouse, "company") for h in holdings}
 	if len(companies) != 1:
 		frappe.throw(
 			_("Lot {0} has stock in more than one company; move it by hand first.").format(batch.name)
 		)
 	company = companies.pop()
-	target = stores.store_for(role, company) if role else approved_store(batch.item, company)
-	rows = [h for h in holdings if h["warehouse"] != target]
+	rows = [h for h in holdings if stores.kind_of(h.warehouse) != (role or stores.APPROVED)]
 	if not rows:
 		return None
+	target = stores.store_for(role, company) if role else approved_store(batch.item, company)
+	precision = frappe.get_precision("Stock Entry Detail", "qty")
 	transfer = frappe.get_doc(
 		{
 			"doctype": "Stock Entry",
-			"stock_entry_type": "Material Transfer",
+			"stock_entry_type": transfer_type(),
 			"company": company,
 			TRANSFER_FIELD: 1,
 			"remarks": clean_reason(reason),
 			"items": [
 				{
 					"item_code": batch.item,
-					"qty": h["qty"],
-					"s_warehouse": h["warehouse"],
+					"qty": flt(h.qty, precision),
+					"s_warehouse": h.warehouse,
 					"t_warehouse": target,
 					"batch_no": batch.name,
 					"use_serial_batch_fields": 1,
@@ -563,9 +739,63 @@ def move_to_role(batch: Document, role: str | None, reason: str) -> Document | N
 	return transfer
 
 
-def holdings_of(lot: str) -> list[dict]:
-	"""Where the lot's stock is: [{warehouse, qty}] for every store holding some."""
-	return [h for h in get_batch_qty(batch_no=lot) if flt(h.get("qty"), PRECISION) > 0]
+def transfer_type() -> str:
+	"""The stock entry type of a plain move between stores, found by its purpose rather than its
+	name, which a site may change; a type that sends stock into transit is not one."""
+	names = frappe.get_all(
+		"Stock Entry Type",
+		filters={"purpose": MATERIAL_TRANSFER, "add_to_transit": 0},
+		pluck="name",
+		order_by="is_standard desc, creation asc",
+		limit=1,
+	)
+	if not names:
+		frappe.throw(_("No stock entry type moves stock between stores; run the site configuration."))
+	return names[0]
+
+
+def holdings_of(lot: str, kinds: Collection[str] | None = None) -> list[frappe._dict]:
+	"""Where the lot's stock is: [{item_code, warehouse, batch_no, qty}] for every store holding
+	some, only stores of `kinds` (`stores.kind_of`) if given. Read from the stock ledger itself, so
+	an expired or disabled lot counts too: ERPNext's batch quantity leaves an expired lot out (unless
+	asked for stock levels) and a disabled one always, and a decision on such a lot must still move
+	its stock (found 2026-10-12). Reserved stock is in the store and counts."""
+	holdings = stock_by_lot(lot=lot)
+	if kinds is None:
+		return holdings
+	return [h for h in holdings if stores.kind_of(h.warehouse) in kinds]
+
+
+def decided_kinds(status: str) -> frozenset[str]:
+	"""The kinds of store a decision on a lot in `status` acts on (C1, 2026-10-12): the store of
+	its status (approved stores for an Approved lot), and for a lot not Approved any approved store
+	still holding some (stock an earlier version let in there, or that the cutover found there).
+	Never the rejected or the returns store for a lot in quarantine or on hold: the quantity rejected
+	at the door and goods a customer sent back are decided on their own paths."""
+	if status == APPROVED:
+		return frozenset({stores.APPROVED})
+	return frozenset({ROLE_FOR_STATUS.get(status, stores.QUARANTINE), stores.APPROVED})
+
+
+def last_arrival(lot: str, warehouses: Collection[str]) -> datetime | None:
+	"""When stock of the lot last came into one of `warehouses`, from the stock ledger (old-style
+	lots on the entry, bundled lots on the bundle's rows): an inspection of goods that came back is
+	one made after they did."""
+	if not warehouses:
+		return None
+	sle = frappe.qb.DocType("Stock Ledger Entry")
+	entry = frappe.qb.DocType("Serial and Batch Entry")
+	arrived = (sle.is_cancelled == 0) & (sle.actual_qty > 0) & sle.warehouse.isin(list(warehouses))
+	plain = frappe.qb.from_(sle).select(Max(sle.creation)).where(arrived & (sle.batch_no == lot))
+	bundled = (
+		frappe.qb.from_(sle)
+		.inner_join(entry)
+		.on(entry.parent == sle.serial_and_batch_bundle)
+		.select(Max(sle.creation))
+		.where(arrived & (entry.batch_no == lot))
+	)
+	times = [get_datetime(row[0]) for query in (plain, bundled) for row in query.run() if row[0]]
+	return max(times) if times else None
 
 
 def approved_store(item: str, company: str) -> str:
@@ -582,7 +812,9 @@ def approved_store(item: str, company: str) -> str:
 # --- Stock by lot and status --------------------------------------------------------------------
 
 
-def stock_by_lot(item: str | None = None, warehouse: str | None = None) -> list[frappe._dict]:
+def stock_by_lot(
+	item: str | None = None, warehouse: str | None = None, lot: str | None = None
+) -> list[frappe._dict]:
 	"""[{item_code, warehouse, batch_no, qty}] for every lot with stock, in two grouped queries
 	(ERPNext keeps old-style lots on the ledger entry and bundled lots on the bundle's rows)."""
 	sle = frappe.qb.DocType("Stock Ledger Entry")
@@ -603,18 +835,22 @@ def stock_by_lot(item: str | None = None, warehouse: str | None = None) -> list[
 		.groupby(sle.item_code, sle.warehouse, entry.batch_no)
 	)
 	totals: dict[tuple[str, str, str], float] = {}
-	for query in (plain, bundled):
+	# Each query with the field its lot is on.
+	for query, lot_field in ((plain, sle.batch_no), (bundled, entry.batch_no)):
 		if item:
 			query = query.where(sle.item_code == item)
 		if warehouse:
 			query = query.where(sle.warehouse == warehouse)
+		if lot:
+			query = query.where(lot_field == lot)
 		for row in query.run(as_dict=True):
 			key = (row.item_code, row.warehouse, row.batch_no)
 			totals[key] = totals.get(key, 0) + flt(row.qty)
+	precision = qty_precision()
 	return [
-		frappe._dict(item_code=i, warehouse=w, batch_no=b, qty=flt(q, PRECISION))
+		frappe._dict(item_code=i, warehouse=w, batch_no=b, qty=flt(q, precision))
 		for (i, w, b), q in sorted(totals.items())
-		if flt(q, PRECISION) > 0
+		if flt(q, precision) > 0
 	]
 
 

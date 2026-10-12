@@ -47,6 +47,7 @@ MEANINGS = (
 	"Trained",
 	"Competent",
 	"Withdrawn",
+	"Held",
 )
 # The fields a signature's fingerprint covers, besides the fingerprint before it.
 FINGERPRINTED = (
