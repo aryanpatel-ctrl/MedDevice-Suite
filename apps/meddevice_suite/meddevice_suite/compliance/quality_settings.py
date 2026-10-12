@@ -133,7 +133,7 @@ def validate(doc: Document) -> None:
 		)
 	from meddevice_suite.qms.change_control import require_approved_change  # it reads these settings
 
-	require_approved_change(request, DOCTYPE, DOCTYPE)
+	require_approved_change(request, DOCTYPE, DOCTYPE, made_in=doc)
 	if used_before(request):
 		frappe.throw(
 			_(

@@ -807,6 +807,36 @@ class TestRevisionUnderChange(RiskTestCase):
 		with self.assertRaisesRegex(frappe.ValidationError, "in progress"):
 			self.revise(file)
 
+	@verifies("URS-QMS-033")
+	def test_a_change_request_revises_the_file_once_and_a_withdrawn_revision_does_not_count(self):
+		file = self.approved().risk_management_file
+		change = approved_change(
+			self.author, self.qa, file, record_type=rm.FILE, change_type="Product or BOM"
+		)
+
+		def start() -> str:
+			frappe.set_user(self.qa)
+			try:
+				return rm.start_revision(file, change_request=change)
+			finally:
+				frappe.set_user("Administrator")
+
+		given_up = start()
+		self.sign_as(self.qa, rm.ASSESSMENT, given_up, "Withdraw", "Started on the wrong analysis")
+		revision = frappe.get_doc(rm.ASSESSMENT, start())  # the withdrawn one spent nothing
+		revision.update(
+			{"summary_of_change": "Hazards reviewed under the change", "reviewer": self.supervisor}
+		)
+		frappe.set_user(self.qa)
+		revision.save()
+		frappe.set_user("Administrator")
+		self.approved(revision)
+
+		with self.assertRaisesRegex(frappe.ValidationError, f"{change} has already changed"):
+			start()
+		row = frappe.get_doc("Change Request", change).affected_records[0]
+		self.assertEqual((row.change_record_type, row.change_record), (rm.ASSESSMENT, revision.name))
+
 	def test_an_open_review_allows_a_revision(self):
 		file = self.approved().risk_management_file
 		review = rm.raise_review(file, rm.COMPLAINT, "Item", self.finished_good())

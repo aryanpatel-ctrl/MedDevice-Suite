@@ -174,6 +174,24 @@ class TestVersionedMasters(VersioningTestCase):
 		with self.assertRaisesRegex(frappe.ValidationError, "name the approved change request"):
 			item.save()
 
+	@verifies("URS-QMS-033")
+	def test_a_request_changes_each_master_it_lists_once(self):
+		"""Found in the foundation review of 2026-10-12: named again, the same approved request
+		authorised a second, unrelated change."""
+		code = self.item_in_use()
+		change = self.change_request_for("Item", code)
+		item = frappe.get_doc("Item", code)
+		item.update({"shelf_life_in_days": 730, CHANGE_REQUEST: change})
+		item.save()
+
+		item = frappe.get_doc("Item", code)
+		item.update({"shelf_life_in_days": 900, CHANGE_REQUEST: change})
+		with self.assertRaisesRegex(frappe.ValidationError, f"{change} has already changed Item {code}"):
+			item.save()
+		self.assertEqual(frappe.db.get_value("Item", code, ["shelf_life_in_days", VERSION]), (730, 2))
+		row = frappe.get_doc("Change Request", change).affected_records[0]
+		self.assertEqual((row.change_record_type, row.change_record), ("Item", code))
+
 	def test_the_version_record_is_set_only_by_a_controlled_change(self):
 		code = self.item_in_use()
 		change = self.change_request_for("Item", code)

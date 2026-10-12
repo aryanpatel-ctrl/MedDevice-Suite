@@ -147,6 +147,8 @@ SYSTEM_MAINTAINED: dict[str, tuple[str, ...]] = {
 	"Risk Assessment": ("status", "docstatus", "superseded_by"),
 	"Risk Management Report": ("status", "docstatus"),
 	"Risk Review": ("docstatus",),
+	# The record each listed record's change was made in, recorded as the change is made (module 36).
+	"Change Request Affected Record": ("change_record_type", "change_record", "changed_on"),
 	"Change Request Action": (
 		"done",
 		"done_on",

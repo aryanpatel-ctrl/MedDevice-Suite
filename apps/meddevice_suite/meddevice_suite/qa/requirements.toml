@@ -819,8 +819,8 @@ status = "implemented"
 [[requirement]]
 id = "URS-QMS-012"
 module = 36
-title = "A change is implemented through the actions approved with it, each with an owner, a due date and, where one exists, the record it changes; no action can be done before approval or changed after it, each is done by its owner or QA with a note, and the change is implemented once every action is done."
-source = "D2 Change Control: Implementation; ISO 13485 7.3.9, 4.2.5; wording clarified 2026-10-10: an action such as training changes no record"
+title = "A change is implemented through the actions approved with it, each with an owner, a due date and, where one exists, the record it changes; no action can be done before approval or changed after it, each is done by its owner or QA with a note, and the change is implemented once every action is done and what it changed is in force."
+source = "D2 Change Control: Implementation; ISO 13485 7.3.9, 4.2.5; wording clarified 2026-10-10: an action such as training changes no record; 'and what it changed is in force' found in the foundation review of 2026-10-12 (URS-QMS-032)"
 status = "implemented"
 
 [[requirement]]
@@ -849,6 +849,20 @@ id = "URS-QMS-016"
 module = 36
 title = "A change request is never deleted or cancelled: the person who raised it can withdraw it with a reason until it is approved, and withdrawn, rejected and closed requests are kept; QA and Management see every request, others only those they raised or have an action on."
 source = "ISO 13485 4.2.5; 21 CFR 11.10(c), (d); withdrawal by the requester decided under the client's instruction of 2026-10-07"
+status = "implemented"
+
+[[requirement]]
+id = "URS-QMS-032"
+module = 36
+title = "A change request becomes Implemented only when everything changed under it is in force: each document revision made under it effective, each risk assessment approved, each record its actions produced approved where it needs QA's approval, and each device master record the change put out of date approved again; until then recording its last action is refused, naming each record not yet in force."
+source = "ISO 13485 7.3.9 (changes verified before implementation), 4.2.4, 4.2.3; found in the foundation review of 2026-10-12"
+status = "implemented"
+
+[[requirement]]
+id = "URS-QMS-033"
+module = 36
+title = "An approved change request authorises one change of each record it lists: the record the change was made in is recorded against the listing once the change is saved, a further change of that record under the same request is refused, a record is listed once, and a change given up before it took effect (a withdrawn risk assessment) leaves the listing unused."
+source = "ISO 13485 7.3.9, 4.2.4 (changes reviewed and approved before implementation); found in the foundation review of 2026-10-12"
 status = "implemented"
 
 # --- Module 39: risk management (ISO 14971:2019) ---------------------------------

@@ -8,7 +8,12 @@ from frappe.utils import today
 
 from meddevice_suite.compliance import quality_settings
 from meddevice_suite.compliance.audit import same
-from meddevice_suite.qms.change_control import IMPACT_AREAS, in_business_job, is_qa
+from meddevice_suite.qms.change_control import (
+	CHANGE_RECORD_FIELDS,
+	IMPACT_AREAS,
+	in_business_job,
+	is_qa,
+)
 
 # What the person who raised the change may edit while it is a draft.
 REQUESTER_FIELDS = frozenset({"title", "change_type", "description", "reason", "affected_records", "actions"})
@@ -73,6 +78,9 @@ class ChangeRequest(Document):
 		for row in self.actions:
 			for field in COMPLETION_FIELDS:
 				row.set(field, 0 if field == "done" else None)
+		for row in self.affected_records:
+			for field in CHANGE_RECORD_FIELDS:
+				row.set(field, None)
 
 	def before_validate(self) -> None:
 		"""A settings record (a single DocType) is named by its type: it has no other name."""
@@ -90,6 +98,12 @@ class ChangeRequest(Document):
 		if any(row.get(field) for row in self.actions for field in COMPLETION_FIELDS):
 			frappe.throw(
 				_("An action is recorded as done only once the change is approved."), frappe.PermissionError
+			)
+		if any(row.get(field) for row in self.affected_records for field in CHANGE_RECORD_FIELDS):
+			# Recorded by change control as each change is made, never typed (qms/change_control.py).
+			frappe.throw(
+				_("The change made to a listed record is recorded only as the change is made."),
+				frappe.PermissionError,
 			)
 		changed = changed_fields(self)
 		user = frappe.session.user

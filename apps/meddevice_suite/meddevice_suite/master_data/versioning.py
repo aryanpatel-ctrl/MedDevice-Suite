@@ -343,13 +343,15 @@ def version_master(doc: Document, method: str | None = None) -> None:
 			title=_("Change control"),
 		)
 	if named:
-		require_approved_change(request, doc.doctype, doc.name)
-	else:  # a variant following its template: the template's request lists the template
-		require_approved_change(request, "Item", doc.variant_of)
+		require_approved_change(request, doc.doctype, doc.name, made_in=doc)
+	else:
+		# A variant following its template: the template's request lists the template, and this is
+		# part of the template's change, which the request has authorised once already.
+		require_approved_change(request, "Item", doc.variant_of, part_of=("Item", doc.variant_of))
 	if doc.doctype == "BOM" and doc.get("is_default") and not before.get("is_default"):
 		# Made the default, it switches the default in force off (ERPNext's manage_default_bom).
 		if displaced := displaced_default(doc):
-			require_approved_change(request, "BOM", displaced)
+			require_approved_change(request, "BOM", displaced, made_in=doc)
 			doc.flags.displaces = (displaced, request)
 	record_change(doc, request)
 
@@ -529,7 +531,7 @@ def guard_new_default_bom(doc: Document, method: str | None = None) -> None:
 			).format(displaced, doc.item),
 			title=_("Change control"),
 		)
-	require_approved_change(request, "BOM", displaced)
+	require_approved_change(request, "BOM", displaced, made_in=doc)
 	doc.flags.displaces = (displaced, request)
 	doc.set(CHANGED_UNDER, request)
 	doc.set(CHANGE_REQUEST, None)
@@ -567,7 +569,7 @@ def guard_cancel(doc: Document, method: str | None = None) -> None:
 			_("{0} is in use: name the approved change request that lists it to cancel it.").format(doc.name),
 			title=_("Change control"),
 		)
-	require_approved_change(request, doc.doctype, doc.name)
+	require_approved_change(request, doc.doctype, doc.name, made_in=doc)
 	doc.set(CHANGED_UNDER, request)
 	doc.set(CHANGE_REQUEST, None)
 
