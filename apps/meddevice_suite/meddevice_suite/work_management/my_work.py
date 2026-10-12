@@ -165,6 +165,24 @@ def lots(user: str, roles: set[str]) -> Iterator[Waiting]:
 			)
 
 
+def customer_returns(user: str, roles: set[str]) -> Iterator[Waiting]:
+	"""Goods a customer sent back, kept in the returns store until QA decides on them: back to stock
+	once inspected, or rejected (URS-STK-010, plan D-25)."""
+	if QA_ROLE not in roles:
+		return
+	from meddevice_suite.lot_control import lot_status, stores
+
+	for store in frappe.get_all(
+		"Warehouse", filters={stores.ROLE_FIELD: stores.RETURNS, "is_group": 0}, pluck="name"
+	):
+		for row in lot_status.stock_by_lot(warehouse=store):
+			yield Waiting(
+				_("Lot {0}: decide on {1} returned to {2}").format(row.batch_no, row.qty, store),
+				"Batch",
+				row.batch_no,
+			)
+
+
 def waiting_for_qa(user: str, roles: set[str]) -> Iterator[Waiting]:
 	"""Masters, supplier decisions, customer and regulatory licences and training matrices in
 	draft, waiting for QA's signature."""
@@ -334,6 +352,7 @@ SOURCES: tuple[Source, ...] = (
 	revisions,
 	change_requests,
 	lots,
+	customer_returns,
 	waiting_for_qa,
 	approvals,
 	device_master_records,
@@ -358,6 +377,8 @@ LISTED_BY: dict[tuple[str, str], Source] = {
 	("Lot Release", "Release"): lots,
 	("Lot Release", "Reject"): lots,
 	("Lot Release", "Hold"): lots,
+	("Lot Release", "Return to Stock"): customer_returns,
+	("Lot Release", "Reject Return"): customer_returns,
 	("Supplier Approval", "Approve"): waiting_for_qa,
 	("Supplier Approval", "Approve Conditionally"): waiting_for_qa,
 	("Supplier Approval", "Not Approve"): waiting_for_qa,
@@ -407,6 +428,11 @@ REMINDED_AS: dict[tuple[str, str], str] = {
 
 # Signed acts nobody waits to do, so no queue lists them, each with the reason.
 NOT_WAITING: dict[tuple[str, str], str] = {
+	# QA withdraws a completed equipment record for correction as it finds the error (module 38);
+	# the amendment it opens is then the performer's, as any draft record.
+	("Calibration Record", "Correct"): "QA corrects a completed record as it finds the error",
+	("Maintenance Record", "Correct"): "QA corrects a completed record as it finds the error",
+	("Equipment Qualification", "Correct"): "QA corrects a completed record as it finds the error",
 	# Signed by the person doing the work as they finish it; the work itself, when it falls due,
 	# is tracked by its reminder (Calibration Due, Maintenance Due, Requalification Due).
 	("Calibration Record", "Complete"): "signed by its performer as the calibration is done",

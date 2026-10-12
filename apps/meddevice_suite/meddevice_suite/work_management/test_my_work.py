@@ -6,6 +6,7 @@ from frappe.utils import today
 
 from meddevice_suite.compliance.signing import SIGNING_ACTIONS, sign_action
 from meddevice_suite.compliance.test_esign import PASSWORD
+from meddevice_suite.lot_control.test_lot_status import LotTestCase, customer_return, deliver, store
 from meddevice_suite.master_data.test_versioning import draft_change
 from meddevice_suite.qa import verifies
 from meddevice_suite.qms import device_master_record as dmr
@@ -329,3 +330,21 @@ class TestTrainingMatrixQueue(TrainingTestCase):
 		self.assertNotIn(key, listed(self.author))  # the Production Supervisor reads it
 		self.sign(self.qa, "Training Matrix", name, "Approve", "Job's documents checked")
 		self.assertNotIn(key, listed(self.qa))
+
+
+@verifies("URS-PLT-017", "URS-STK-010")
+class TestCustomerReturnsQueue(LotTestCase):
+	def test_goods_a_customer_sent_back_wait_on_qa_until_decided(self):
+		lot = self.approved()
+		note = deliver(lot, 3, store("Stores"))
+		customer_return(note, 2)  # into the returns store, for QA to decide
+
+		def waiting(user: str) -> list[tuple[str, str]]:
+			return [
+				(item.doctype, item.name)
+				for item in my_work.waiting_on(user)
+				if (item.doctype, item.name) == ("Batch", lot)
+			]
+
+		self.assertEqual(waiting(self.qa), [("Batch", lot)])
+		self.assertEqual(waiting(self.stores_user), [])
