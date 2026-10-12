@@ -26,7 +26,8 @@ from meddevice_suite.lot_control.lot_status import lots_of_row
 from meddevice_suite.master_data.supplier_approval import check_full_inspection
 
 QC_ROLES = frozenset({"QC Inspector", "Quality Manager"})
-INCOMING = "Incoming"
+INCOMING, OUTGOING = "Incoming", "Outgoing"
+ACCEPTED = "Accepted"
 # Set only by the QC Inspector's verification.
 VERIFICATION_FIELDS = (
 	"mds_certificate_verified",
@@ -265,18 +266,31 @@ def receipt_line_of(lot: str) -> frappe._dict | None:
 
 
 def refuse_existing_lots(doc: Document, method: str | None = None) -> None:
-	"""Purchase Receipt validate: a delivery comes in as a new lot (DFD 3.3 Internal Batch Creation).
-	A line naming a lot that already holds stock would mix a supplier's goods into stock of another
-	origin and its checks; a lot made beforehand without stock (scanned on the receipt, say) is new.
-	The stock ledger refuses it too (lot_status.guard_inward); this says so on the form."""
+	"""Purchase Receipt validate: a delivery comes in as a new lot (DFD 3.3 Internal Batch Creation),
+	on one line. A line naming a lot that already holds stock would mix a supplier's goods into stock
+	of another origin and its checks; a lot made beforehand without stock (scanned on the receipt,
+	say) is new. The same new lot on two lines would be two receipts of one lot, each inspected and
+	returned on its own, while the lot is known by one line only. The stock ledger refuses both too
+	(lot_status.guard_new_stock); this says so on the form."""
 	if doc.is_return:
 		return
-	named = {lot: row.idx for row in doc.items for lot in lots_of_row(row)}
-	for lot, origin in origins_of(list(named)).items():
+	lines: dict[str, list[int]] = {}
+	for row in doc.items:
+		for lot in dict.fromkeys(lots_of_row(row)):
+			lines.setdefault(lot, []).append(row.idx)
+	for lot, idxs in lines.items():
+		if len(idxs) > 1:
+			frappe.throw(
+				_(
+					"Lines {0}: lot {1} is named on more than one line; each line comes in as its own new lot."
+				).format(", ".join(str(idx) for idx in idxs), lot),
+				title=_("New lot needed"),
+			)
+	for lot, origin in origins_of(list(lines)).items():
 		if origin.voucher_no != doc.name:
 			frappe.throw(
 				_("Line {0}: lot {1} came in on {2} {3}; a delivery comes in as a new lot.").format(
-					named[lot], lot, _(origin.voucher_type), origin.voucher_no
+					lines[lot][0], lot, _(origin.voucher_type), origin.voucher_no
 				),
 				title=_("New lot needed"),
 			)
@@ -353,24 +367,31 @@ def guard_incoming_inspection(doc: Document, method: str | None = None) -> None:
 def accepted_inspection(
 	lot: str,
 	after: str | None = None,
-	reference_type: str = "Purchase Receipt",
+	reference_type: str | None = "Purchase Receipt",
 	reference_name: str | None = None,
+	inspection_types: tuple[str, ...] = (INCOMING,),
 ) -> str | None:
-	"""The newest submitted, accepted incoming inspection of the lot on the document that brought
-	it in, made after `after`. Made, not last modified: an older inspection changed after a hold is
-	not a new inspection."""
+	"""The lot's newest submitted inspection on the document that brought it in (any document when
+	`reference_type` is None), made after `after`, if that inspection is accepted. The newest decides,
+	whatever its result: an accepted inspection followed by a rejected one is a rejected lot, not an
+	accepted one (ISO 13485 8.2.6, found 2026-10-12). Made, not last modified: an older inspection
+	changed after a hold is not a new inspection."""
 	filters = {
 		"batch_no": lot,
-		"inspection_type": INCOMING,
-		"reference_type": reference_type,
+		"inspection_type": ["in", list(inspection_types)],
 		"docstatus": 1,
-		"status": "Accepted",
 	}
+	if reference_type:
+		filters["reference_type"] = reference_type
 	if reference_name:
 		filters["reference_name"] = reference_name
 	if after:
 		filters["creation"] = [">", after]
-	rows = frappe.get_all(
-		"Quality Inspection", filters=filters, pluck="name", order_by="creation desc", limit=1
+	newest = frappe.get_all(
+		"Quality Inspection",
+		filters=filters,
+		fields=["name", "status"],
+		order_by="creation desc, name desc",
+		limit=1,
 	)
-	return rows[0] if rows else None
+	return newest[0].name if newest and newest[0].status == ACCEPTED else None

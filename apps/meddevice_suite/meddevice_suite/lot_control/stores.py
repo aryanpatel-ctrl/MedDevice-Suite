@@ -2,10 +2,12 @@
 
 A lot that is not Approved is kept apart from approved stock in a store of its
 own role: Quarantine, Hold, Rejected or Returns. A store with no role is an
-approved store. Each company gets one store of each role, created by
-configuration if it is missing and named after its role (decided under the
-client's instruction of 2026-10-08); the client may rename a store, the role
-stays, so the enforcement in `lot_status` never depends on a store's name.
+approved store. The kind of a store (`kind_of`), its role or approved, is what the
+stock path rule of `lot_status` reads, with the lot's status. Each company gets one
+store of each role, created by configuration if it is missing and named after its
+role (decided under the client's instruction of 2026-10-08); the client may rename
+a store, the role stays, so the enforcement in `lot_status` never depends on a
+store's name.
 
 The role is a declared list on the warehouse rather than ERPNext's free
 Warehouse Type master, so a site cannot invent a fifth kind of store.
@@ -20,6 +22,11 @@ from frappe.utils import flt
 ROLE_FIELD = "mds_store_role"
 QUARANTINE, HOLD, REJECTED, RETURNS = "Quarantine", "Hold", "Rejected", "Returns"
 ROLES = (QUARANTINE, HOLD, REJECTED, RETURNS)
+# ERPNext's company default for the store a customer's return comes back to.
+SALES_RETURN_STORE = "default_warehouse_for_sales_return"
+# The kind of a store without a role: it holds approved stock. With the roles, every kind of store.
+APPROVED = "Approved"
+KINDS = (APPROVED, *ROLES)
 
 CUSTOM_FIELDS = {
 	"Warehouse": [
@@ -49,23 +56,41 @@ def ensure_role_stores(company: str, abbr: str) -> None:
 	for role in ROLES:
 		if frappe.db.exists("Warehouse", {"company": company, ROLE_FIELD: role}):
 			continue
-		name = f"{role} - {abbr}"
-		if frappe.db.exists("Warehouse", name) and not frappe.db.get_value("Warehouse", name, "is_group"):
-			store = frappe.get_doc("Warehouse", name)
-			store.set(ROLE_FIELD, role)
-			# The store named after the role is that store already: its stock does not stop it.
-			store.flags.first_role_by_configuration = True
-			store.save(ignore_permissions=True)  # setup code
-			continue
-		frappe.get_doc(
-			{
-				"doctype": "Warehouse",
-				"warehouse_name": role if not frappe.db.exists("Warehouse", name) else f"{role} Store",
-				"company": company,
-				"parent_warehouse": root_store(company),
-				ROLE_FIELD: role,
-			}
-		).insert(ignore_permissions=True)  # setup code
+		make_role_store(company, abbr, role)
+	returns_by_default(company)
+
+
+def make_role_store(company: str, abbr: str, role: str) -> None:
+	"""The company's store of `role`: the store already named after it takes the role, otherwise
+	a new one is made under the company's root store."""
+	name = f"{role} - {abbr}"
+	if frappe.db.exists("Warehouse", name) and not frappe.db.get_value("Warehouse", name, "is_group"):
+		store = frappe.get_doc("Warehouse", name)
+		store.set(ROLE_FIELD, role)
+		# The store named after the role is that store already: its stock does not stop it.
+		store.flags.first_role_by_configuration = True
+		store.save(ignore_permissions=True)  # setup code
+		return
+	frappe.get_doc(
+		{
+			"doctype": "Warehouse",
+			"warehouse_name": role if not frappe.db.exists("Warehouse", name) else f"{role} Store",
+			"company": company,
+			"parent_warehouse": root_store(company),
+			ROLE_FIELD: role,
+		}
+	).insert(ignore_permissions=True)  # setup code
+
+
+def returns_by_default(company: str) -> None:
+	"""ERPNext's sales return made from a delivery note or an invoice takes the company's default store
+	for sales returns: set to its Returns store, where a customer's goods come back to and wait for QA's
+	decision (plan D-25), so Stores does not have to choose it. Any other store is refused there
+	(`lot_status.movement_allowed`)."""
+	returns = frappe.db.get_value("Warehouse", {"company": company, ROLE_FIELD: RETURNS, "is_group": 0})
+	if returns and frappe.db.get_value("Company", company, SALES_RETURN_STORE) != returns:
+		# Configuration, like the role stores above; the company's own form is not opened for it.
+		frappe.db.set_value("Company", company, SALES_RETURN_STORE, returns, update_modified=False)
 
 
 def stores_for_new_company(doc: Document, method: str | None = None) -> None:
@@ -95,6 +120,12 @@ def role_of(warehouse: str | None) -> str | None:
 	"""The store's role, None for an approved store. A store made after the role field exists
 	holds an empty value rather than none, so the two are read alike on every site."""
 	return (frappe.get_cached_value("Warehouse", warehouse, ROLE_FIELD) or None) if warehouse else None
+
+
+def kind_of(warehouse: str | None) -> str | None:
+	"""What the store holds: its role, or APPROVED for a store without one; None for no store at
+	all, the stock leaving the stores (issued, consumed, delivered, scrapped, sent back)."""
+	return (role_of(warehouse) or APPROVED) if warehouse else None
 
 
 def protect_store_role(doc: Document, method: str | None = None) -> None:

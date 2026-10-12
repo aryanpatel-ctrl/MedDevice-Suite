@@ -386,7 +386,7 @@ class TestSignedApproval(ItemMasterTestCase):
 				"doctype": "Stock Entry",
 				"stock_entry_type": "Material Receipt",
 				"company": company(),
-				"items": [{"item_code": item, "qty": 1, "t_warehouse": store("Stores"), "basic_rate": 1}],
+				"items": [{"item_code": item, "qty": 1, "t_warehouse": store("Quarantine"), "basic_rate": 1}],
 			}
 		).insert().submit()  # in use by its stock
 		# As an item held before the module: a draft, its storage never stated.
@@ -423,7 +423,7 @@ class TestSignedApproval(ItemMasterTestCase):
 				"doctype": "Stock Entry",
 				"stock_entry_type": "Material Receipt",
 				"company": company(),
-				"items": [{"item_code": item, "qty": 1, "t_warehouse": store("Stores"), "basic_rate": 1}],
+				"items": [{"item_code": item, "qty": 1, "t_warehouse": store("Quarantine"), "basic_rate": 1}],
 			}
 		).insert().submit()  # in use by its stock
 		specification = frappe.db.get_value("Item", item, "quality_inspection_template")
@@ -451,7 +451,7 @@ class TestSignedApproval(ItemMasterTestCase):
 				"doctype": "Stock Entry",
 				"stock_entry_type": "Material Receipt",
 				"company": company(),
-				"items": [{"item_code": item, "qty": 1, "t_warehouse": store("Stores"), "basic_rate": 1}],
+				"items": [{"item_code": item, "qty": 1, "t_warehouse": store("Quarantine"), "basic_rate": 1}],
 			}
 		).insert().submit()  # in use by its stock
 		frappe.db.set_value("Item", item, {APPROVAL_STATUS: DRAFT, UNITS_PER_BOX: 0})  # held before
@@ -985,7 +985,7 @@ class TestNotUsedBeforeApproval(ItemMasterTestCase):
 				"doctype": "Stock Entry",
 				"stock_entry_type": "Material Receipt",
 				"company": company(),
-				"items": [{"item_code": item, "qty": 1, "t_warehouse": store("Stores"), "basic_rate": 1}],
+				"items": [{"item_code": item, "qty": 1, "t_warehouse": store("Quarantine"), "basic_rate": 1}],
 			}
 		).insert()
 		entry.submit()
@@ -1052,7 +1052,7 @@ class TestNotUsedBeforeApproval(ItemMasterTestCase):
 				"doctype": "Stock Entry",
 				"stock_entry_type": "Material Receipt",
 				"company": company(),
-				"items": [{"item_code": item, "qty": 1, "t_warehouse": store("Stores"), "basic_rate": 1}],
+				"items": [{"item_code": item, "qty": 1, "t_warehouse": store("Quarantine"), "basic_rate": 1}],
 			}
 		).insert().submit()
 		self.assertEqual(frappe.db.get_value("Bin", {"item_code": item}, "actual_qty"), 1)
