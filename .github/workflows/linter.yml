@@ -10,9 +10,10 @@ on:
 permissions:
   contents: read
 
+# As in ci.yml: only a pull request's own earlier run is cancelled; main always finishes.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   linter:
@@ -27,12 +28,16 @@ jobs:
           cache: pip
       - uses: pre-commit/action@v3.0.0
 
+      # Pinned, so the gate gives the same answer for the same code: a new rule or release is
+      # taken on deliberately, by changing these lines in a pull request.
       - name: Download Semgrep rules
-        run: git clone --depth 1 https://github.com/frappe/semgrep-rules.git frappe-semgrep-rules
+        run: |
+          git clone https://github.com/frappe/semgrep-rules.git frappe-semgrep-rules
+          git -C frappe-semgrep-rules checkout --quiet 81a6e3d47a328249e8ddf04c586e493dd5553002
 
       - name: Run Semgrep rules
         run: |
-          pip install semgrep
+          pip install semgrep==1.176.0
           semgrep ci --config ./frappe-semgrep-rules/rules --config r/python.lang.correctness
 
   deps-vulnerable-check:
@@ -57,5 +62,5 @@ jobs:
 
       - name: Install and run pip-audit
         run: |
-          pip install pip-audit
+          pip install pip-audit==2.10.1
           pip-audit --desc on apps/meddevice_suite

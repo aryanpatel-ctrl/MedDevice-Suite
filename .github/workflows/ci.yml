@@ -9,9 +9,11 @@ on:
 permissions:
   contents: read
 
+# A new push to a pull request replaces its running checks; a run on main always finishes, so
+# every commit on main keeps its test, coverage and traceability evidence.
 concurrency:
-  group: ci-${{ github.event.number || github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.event.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   SITE: test.localhost

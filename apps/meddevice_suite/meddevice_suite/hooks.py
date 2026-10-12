@@ -20,7 +20,7 @@ before_migrate = "meddevice_suite.setup.modules.sync_module_defs"
 after_install = "meddevice_suite.setup.install.apply_configuration"
 after_migrate = "meddevice_suite.setup.install.apply_configuration"
 # Test sites only: the stores the tests move stock through, approved as QA's signed act records it.
-before_tests = "meddevice_suite.qa.site_setup.approve_test_stores"
+before_tests = "meddevice_suite.qa.site_setup.before_tests"
 
 # The built-in Administrator account is not used on a working site (URS-CMP-039): refused at
 # sign-in, before a session is made, and on every request after the session or API key is read.
