@@ -6,7 +6,9 @@ from frappe.tests.classes.context_managers import freeze_time
 from frappe.utils import add_days, getdate, now_datetime, today
 
 from meddevice_suite.compliance.esign import is_unchanged_since
+from meddevice_suite.compliance.evidence_files import is_evidence
 from meddevice_suite.compliance.signing import sign_action
+from meddevice_suite.compliance.test_audit import events_for
 from meddevice_suite.compliance.test_esign import PASSWORD
 from meddevice_suite.lot_control.test_lot_status import company
 from meddevice_suite.master_data import equipment
@@ -19,6 +21,8 @@ from meddevice_suite.setup.test_stock import care_in_date_for_test, work_instruc
 from meddevice_suite.work_management import reminders
 
 IN = {"parameter": "Length 100 mm", "unit": "mm", "nominal": 100, "lower_limit": 99.98, "upper_limit": 100.02}
+# A calibration's impact reminder not yet completed.
+OPEN_IMPACT = {"category": "Calibration Impact", "status": ["!=", "Completed"]}
 
 
 def point(found: float = 100.01, left: float = 100.0) -> dict:
@@ -73,10 +77,11 @@ class CareTestCase(EquipmentTestCase):
 
 	def sign(
 		self, user: str, doctype: str, name: str, act: str, reason: str | None = "Done to procedure"
-	) -> None:
+	) -> str | None:
+		"""Sign the act as the user; the name of a record the act opened."""
 		frappe.set_user(user)
 		try:
-			sign_action(doctype, name, act, PASSWORD, reason)
+			return sign_action(doctype, name, act, PASSWORD, reason)
 		finally:
 			frappe.set_user("Administrator")
 
@@ -90,6 +95,91 @@ class CareTestCase(EquipmentTestCase):
 		name = self.calibration(asset, **values)
 		self.sign(self.maintenance, "Calibration Record", name, "Complete")
 		return frappe.get_doc("Calibration Record", name)
+
+	def maintenance_record(self, asset: str, outcomes=("OK",), **values) -> str:
+		frappe.set_user(self.maintenance)
+		try:
+			return (
+				frappe.get_doc(
+					{
+						"doctype": "Maintenance Record",
+						"asset": asset,
+						"performed_on": today(),
+						"checks": [{"check": f"Check {i}", "outcome": o} for i, o in enumerate(outcomes)],
+						"actions_performed": "Cleaned and lubricated",
+						"downtime_hours": 2,
+						**values,
+					}
+				)
+				.insert()
+				.name
+			)
+		finally:
+			frappe.set_user("Administrator")
+
+	def machine(self) -> str:
+		return self.approved(**{equipment.MAINTENANCE: 1, equipment.MAINTENANCE_DAYS: 90})
+
+	def needing(self, **values) -> str:
+		return self.approved(**{equipment.QUALIFICATION: 1, **values})
+
+	def protocol(self) -> str:
+		return work_instruction_for_test()
+
+	def stage(self, asset: str, stage: str, outcomes=("Pass",), protocol: str | None = None, **values) -> str:
+		frappe.set_user(self.maintenance)
+		try:
+			return (
+				frappe.get_doc(
+					{
+						"doctype": "Equipment Qualification",
+						"asset": asset,
+						"stage": stage,
+						"occasion": "Initial",
+						"protocol": protocol or self.sop(),
+						"performed_on": today(),
+						"tests": [
+							{
+								"test": f"T{i}",
+								"acceptance_criteria": "Within limits",
+								"observed": "Within limits",
+								"outcome": o,
+							}
+							for i, o in enumerate(outcomes)
+						],
+						**values,
+					}
+				)
+				.insert()
+				.name
+			)
+		finally:
+			frappe.set_user("Administrator")
+
+	def sop(self) -> str:
+		title = "Qualification protocol for tests"
+		existing = frappe.db.get_value("Controlled Document", {"title": title, "status": "Effective"})
+		if existing:
+			return existing
+		doc = frappe.get_doc(
+			{
+				"doctype": "Controlled Document",
+				"title": title,
+				"document_type": "SOP",
+				"department": "QA",
+				"process_owner": "Administrator",
+			}
+		)
+		doc.flags.ignore_permissions = True
+		doc.insert()
+		frappe.db.set_value("Controlled Document", doc.name, "status", "Effective")
+		return doc.name
+
+	def done(self, asset: str, stage: str, **values) -> str:
+		name = self.stage(asset, stage, **values)
+		self.sign(self.maintenance, "Equipment Qualification", name, "Execute")
+		self.sign(self.qa, "Equipment Qualification", name, "Approve")
+		return name
 
 
 @verifies("URS-EQP-001")
@@ -164,6 +254,64 @@ class TestCalibration(CareTestCase):
 		frappe.set_user(self.maintenance)
 		with self.assertRaises(frappe.PermissionError):
 			frappe.delete_doc("File", file.name)
+
+	def test_its_certificate_stays_evidence_while_the_record_is_corrected(self):
+		"""A withdrawn calibration is still the record of what was found; its certificate is kept."""
+		from meddevice_suite.compliance import evidence_files
+
+		record = self.calibrated(self.approved())
+		self.sign(self.qa, "Calibration Record", record.name, "Correct", "Wrong certificate number")
+		self.assertEqual(frappe.db.get_value("Calibration Record", record.name, "docstatus"), 2)
+		self.assertTrue(evidence_files.is_evidence(record.certificate))
+		file = frappe.get_doc("File", {"file_url": record.certificate, "attached_to_name": record.name})
+		frappe.set_user(self.qa)
+		try:
+			with self.assertRaises(frappe.PermissionError):
+				frappe.delete_doc("File", file.name)
+		finally:
+			frappe.set_user("Administrator")
+
+	def test_a_certificate_shared_with_another_record_does_not_stop_the_correction(self):
+		"""One laboratory certificate often covers several instruments, and identical files share one
+		address: Frappe's amend checked the signer against whichever file had it, here one only its
+		owner may read, and refused the correction."""
+		record = self.calibrated(self.approved())
+		# The same file, uploaded by Maintenance for another instrument and not yet attached: only its
+		# owner may read it.
+		shared = frappe.copy_doc(
+			frappe.get_doc("File", {"file_url": record.certificate, "attached_to_name": record.name})
+		)
+		shared.update({"attached_to_doctype": None, "attached_to_name": None, "attached_to_field": None})
+		shared.set_new_name()
+		shared.owner = self.maintenance
+		shared.db_insert()  # as Frappe stores an upload; its own insert would rename a file it did not write
+		self.assertEqual(shared.file_url, record.certificate)
+
+		# And a supporting file attached to the record, as the form's attachments do.
+		data_sheet = frappe.get_doc(
+			{
+				"doctype": "File",
+				"file_name": "raw-readings.txt",
+				"content": "Raw readings of the calibration",
+				"is_private": 1,
+				"attached_to_doctype": "Calibration Record",
+				"attached_to_name": record.name,
+			}
+		).insert()
+
+		amendment = self.sign(
+			self.qa, "Calibration Record", record.name, "Correct", "Wrong certificate number"
+		)
+		self.assertEqual(
+			sorted(
+				frappe.get_all(
+					"File",
+					filters={"attached_to_doctype": "Calibration Record", "attached_to_name": amendment},
+					pluck="file_url",
+				)
+			),
+			sorted([record.certificate, data_sheet.file_url]),
+		)
 
 
 @verifies("URS-EQP-002")
@@ -286,30 +434,6 @@ class TestOutOfTolerance(CareTestCase):
 
 @verifies("URS-EQP-004")
 class TestMaintenance(CareTestCase):
-	def maintenance_record(self, asset: str, outcomes=("OK",), **values) -> str:
-		frappe.set_user(self.maintenance)
-		try:
-			return (
-				frappe.get_doc(
-					{
-						"doctype": "Maintenance Record",
-						"asset": asset,
-						"performed_on": today(),
-						"checks": [{"check": f"Check {i}", "outcome": o} for i, o in enumerate(outcomes)],
-						"actions_performed": "Cleaned and lubricated",
-						"downtime_hours": 2,
-						**values,
-					}
-				)
-				.insert()
-				.name
-			)
-		finally:
-			frappe.set_user("Administrator")
-
-	def machine(self) -> str:
-		return self.approved(**{equipment.MAINTENANCE: 1, equipment.MAINTENANCE_DAYS: 90})
-
 	def test_satisfactory_only_when_every_check_is_ok_and_only_then_due_again(self):
 		asset = self.machine()
 		ok = self.maintenance_record(asset)
@@ -560,67 +684,6 @@ class TestRefusedAtTheWorkstation(RoutingTestCase):
 
 @verifies("URS-EQP-010", "URS-EQP-011", "URS-EQP-012")
 class TestQualification(CareTestCase):
-	def needing(self, **values) -> str:
-		return self.approved(**{equipment.QUALIFICATION: 1, **values})
-
-	def protocol(self) -> str:
-		return work_instruction_for_test()
-
-	def stage(self, asset: str, stage: str, outcomes=("Pass",), protocol: str | None = None, **values) -> str:
-		frappe.set_user(self.maintenance)
-		try:
-			return (
-				frappe.get_doc(
-					{
-						"doctype": "Equipment Qualification",
-						"asset": asset,
-						"stage": stage,
-						"occasion": "Initial",
-						"protocol": protocol or self.sop(),
-						"performed_on": today(),
-						"tests": [
-							{
-								"test": f"T{i}",
-								"acceptance_criteria": "Within limits",
-								"observed": "Within limits",
-								"outcome": o,
-							}
-							for i, o in enumerate(outcomes)
-						],
-						**values,
-					}
-				)
-				.insert()
-				.name
-			)
-		finally:
-			frappe.set_user("Administrator")
-
-	def sop(self) -> str:
-		title = "Qualification protocol for tests"
-		existing = frappe.db.get_value("Controlled Document", {"title": title, "status": "Effective"})
-		if existing:
-			return existing
-		doc = frappe.get_doc(
-			{
-				"doctype": "Controlled Document",
-				"title": title,
-				"document_type": "SOP",
-				"department": "QA",
-				"process_owner": "Administrator",
-			}
-		)
-		doc.flags.ignore_permissions = True
-		doc.insert()
-		frappe.db.set_value("Controlled Document", doc.name, "status", "Effective")
-		return doc.name
-
-	def done(self, asset: str, stage: str, **values) -> str:
-		name = self.stage(asset, stage, **values)
-		self.sign(self.maintenance, "Equipment Qualification", name, "Execute")
-		self.sign(self.qa, "Equipment Qualification", name, "Approve")
-		return name
-
 	def test_iq_oq_pq_in_order_make_it_qualified(self):
 		asset = self.needing()
 		self.calibrated(asset)
@@ -810,3 +873,187 @@ class TestScheduleAndRecords(CareTestCase):
 		rows, summary = self.card(asset)
 		self.assertIn("Calibration Record", {row["record_type"] for row in rows})
 		self.assertEqual(summary["Found out of tolerance"], 1)
+
+
+@verifies(
+	"URS-EQP-001", "URS-EQP-003", "URS-EQP-004", "URS-EQP-005", "URS-EQP-008", "URS-EQP-010", "URS-EQP-012"
+)
+class TestCorrection(CareTestCase):
+	"""A completed record is corrected only by QA's signed Correct (decided 2026-10-12, plan D-29)."""
+
+	REASON = "Certificate number mistyped"
+
+	def correct(
+		self, doctype: str, name: str, user: str | None = None, reason: str | None = REASON
+	) -> str | None:
+		return self.sign(user or self.qa, doctype, name, "Correct", reason)
+
+	def why(self, asset: str) -> list[str]:
+		return equipment_care.unfit([asset]).get(asset, [])
+
+	def test_frappes_own_cancel_is_refused_for_each_record_type(self):
+		calibration = self.calibrated(self.approved()).name
+		maintenance = self.maintenance_record(self.machine())
+		self.sign(self.maintenance, "Maintenance Record", maintenance, "Complete")
+		qualification = self.done(self.needing(), "IQ")
+		for doctype, name in (
+			("Calibration Record", calibration),
+			("Maintenance Record", maintenance),
+			("Equipment Qualification", qualification),
+		):
+			with self.subTest(doctype):
+				self.assertFalse(frappe.has_permission(doctype, "cancel", user=self.qa))
+				doc = frappe.get_doc(doctype, name)
+				doc.flags.ignore_permissions = True  # past permissions, as code would
+				doc.flags.audit_reason = self.REASON
+				with self.assertRaisesRegex(frappe.PermissionError, "signing Correct"):
+					doc.cancel()
+				self.assertEqual(frappe.db.get_value(doctype, name, "docstatus"), 1)
+
+	def test_qas_signed_correction_cancels_the_record_and_opens_its_amendment(self):
+		record = self.calibrated(self.approved())
+		amendment = frappe.get_doc("Calibration Record", self.correct("Calibration Record", record.name))
+		record.reload()
+		self.assertEqual(record.docstatus, 2)
+		self.assertEqual(
+			(amendment.docstatus, amendment.amended_from, amendment.asset, amendment.certificate_number),
+			(0, record.name, record.asset, record.certificate_number),
+		)
+		self.assertEqual((amendment.completed_by, amendment.next_due_date), (None, None))
+		signature = frappe.get_last_doc(
+			"Electronic Signature",
+			filters={"reference_doctype": "Calibration Record", "reference_name": record.name},
+		)
+		self.assertEqual(
+			(signature.signer, signature.meaning, signature.action, signature.reason),
+			(self.qa, "Rejected", "Correct", self.REASON),
+		)
+		cancelled = [
+			e.reason for e in events_for("Calibration Record", record.name) if e.action == "Cancelled"
+		]
+		self.assertEqual(cancelled, [self.REASON])
+		self.assertTrue(is_evidence(record.certificate))  # the withdrawn record keeps its certificate
+
+	def test_the_equipment_is_not_fit_until_the_corrected_calibration_is_completed(self):
+		asset = self.approved()
+		self.calibrated(asset)
+		failed = self.calibrated(asset, points=[point(left=100.05)]).name
+		amendment = self.correct("Calibration Record", failed)
+		# Without the failed record the pass before it is the latest: the correction holds it unfit.
+		self.assertIn(f"its calibration {failed} is being corrected", self.why(asset))
+		self.assertFalse(equipment.usable(asset).ok)
+		frappe.set_user(self.maintenance)
+		try:
+			draft = frappe.get_doc("Calibration Record", amendment)
+			draft.points[0].as_left = 100.0  # adjusted again and read within its limits
+			draft.save()
+		finally:
+			frappe.set_user("Administrator")
+		self.assertIn(f"its calibration {failed} is being corrected", self.why(asset))
+		self.sign(self.maintenance, "Calibration Record", amendment, "Complete")
+		self.assertNotIn(asset, equipment_care.unfit([asset]))
+
+	def test_corrected_maintenance_holds_the_machine_until_completed_again(self):
+		machine = self.machine()
+		self.calibrated(machine)
+		done = self.maintenance_record(machine)
+		self.sign(self.maintenance, "Maintenance Record", done, "Complete")
+		self.assertNotIn(machine, equipment_care.unfit([machine]))
+		amendment = self.correct("Maintenance Record", done)
+		self.assertIn(f"its preventive maintenance {done} is being corrected", self.why(machine))
+		self.sign(self.maintenance, "Maintenance Record", amendment, "Complete")
+		self.assertNotIn(machine, equipment_care.unfit([machine]))
+
+	def test_a_corrected_qualification_holds_the_machine_until_approved_again(self):
+		asset = self.needing()
+		self.calibrated(asset)
+		self.done(asset, "IQ")
+		self.done(asset, "OQ")
+		pq = self.done(asset, "PQ")
+		self.assertNotIn(asset, equipment_care.unfit([asset]))
+		amendment = self.correct("Equipment Qualification", pq)
+		self.assertIn(f"its qualification {pq} is being corrected", self.why(asset))
+		self.sign(self.maintenance, "Equipment Qualification", amendment, "Execute")
+		self.assertIn(f"its qualification {pq} is being corrected", self.why(asset))  # not yet approved
+		self.sign(self.qa, "Equipment Qualification", amendment, "Approve")
+		self.assertNotIn(asset, equipment_care.unfit([asset]))
+
+	def test_an_open_impact_assessment_stays_open_and_tracked_after_the_correction(self):
+		record = self.calibrated(self.approved(), points=[point(found=100.05)])
+		reminders.run()
+		self.correct("Calibration Record", record.name)
+		reminders.run()
+		self.assertEqual(
+			frappe.db.get_value("Calibration Record", record.name, ["docstatus", "impact_status"]),
+			(2, "Open"),
+		)
+		# The correction does not complete the reminder: only QA's signed assessment does.
+		self.assertTrue(frappe.db.exists("Reminder", {"reference_name": record.name, **OPEN_IMPACT}))
+		self.sign(
+			self.qa,
+			"Calibration Record",
+			record.name,
+			"Assess: No Product Impact",
+			"Readings were within half the tolerance",
+		)
+		self.assertEqual(
+			frappe.db.get_value("Calibration Record", record.name, ["impact_status", "assessed_by"]),
+			("Assessed", self.qa),
+		)
+		reminders.run()
+		self.assertFalse(frappe.db.exists("Reminder", {"reference_name": record.name, **OPEN_IMPACT}))
+
+	def test_only_qa_corrects_and_always_says_why(self):
+		record = self.calibrated(self.approved())
+		with self.assertRaises(frappe.PermissionError):
+			self.correct("Calibration Record", record.name, user=self.maintenance)
+		for reason in (None, "   "):
+			with self.assertRaisesRegex(frappe.ValidationError, "Say what is to be corrected"):
+				self.correct("Calibration Record", record.name, reason=reason)
+		self.assertEqual(frappe.db.get_value("Calibration Record", record.name, "docstatus"), 1)
+		self.assertFalse(
+			frappe.db.exists("Electronic Signature", {"reference_name": record.name, "action": "Correct"})
+		)
+
+	def test_an_amendment_carries_nothing_the_signed_acts_set(self):
+		"""Frappe's Amend copies every field of the cancelled record; whatever is copied or typed
+		into the amendment, what the signatures set stays with the record that was signed."""
+		asset = self.needing()
+		iq = self.done(asset, "IQ")
+		iq_amendment = self.correct("Equipment Qualification", iq)
+		found = self.calibrated(self.approved(), points=[point(found=100.05)]).name
+		calibration_amendment = self.correct("Calibration Record", found)
+		signed = {
+			"Equipment Qualification": (iq, iq_amendment),
+			"Calibration Record": (found, calibration_amendment),
+		}
+		frappe.set_user(self.qa)
+		try:
+			for doctype, (original, amendment) in signed.items():
+				# As Amend does: every field of the signed record copied onto the draft.
+				source = frappe.get_doc(doctype, original).as_dict(no_default_fields=True)
+				draft = frappe.get_doc(doctype, amendment)
+				for field in (
+					"executed_by",
+					"executed_at",
+					"approved_by",
+					"approved_at",
+					"completed_by",
+					"impact_status",
+					"next_due_date",
+				):
+					if draft.meta.has_field(field) and source.get(field):
+						draft.set(field, source.get(field))
+				draft.save()
+		finally:
+			frappe.set_user("Administrator")
+		qualification = frappe.get_doc("Equipment Qualification", iq_amendment)
+		self.assertEqual((qualification.executed_by, qualification.approved_by), (None, None))
+		with self.assertRaisesRegex(frappe.ValidationError, "once executed"):
+			self.sign(self.qa, "Equipment Qualification", qualification.name, "Approve")
+		self.assertIn(f"its qualification {iq} is being corrected", self.why(asset))
+		calibration = frappe.get_doc("Calibration Record", calibration_amendment)
+		self.assertEqual((calibration.impact_status, calibration.completed_by), (None, None))
+		listed = [due.reference_name for due in reminders.calibration_impacts_open()]
+		self.assertIn(found, listed)  # the open assessment stays on the record that found it
+		self.assertNotIn(calibration.name, listed)
