@@ -74,6 +74,7 @@ RETENTION_SCHEDULE: dict[str, tuple[int, str, tuple[str, ...]]] = {
 			"Risk Assessment",
 			"Risk Management Report",
 			"Risk Review",
+			"Device Master Record",  # module 31
 		),
 	),
 	"Purchasing and supplier records": (

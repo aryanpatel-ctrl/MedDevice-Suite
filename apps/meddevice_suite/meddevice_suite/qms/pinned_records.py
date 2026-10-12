@@ -8,16 +8,19 @@ newer version of such a record, or its withdrawal, means the approved record may
 true, and its owner must look at it again.
 
 - `version_token` says which version of a record is the one in force: a controlled document's
-  current revision, a master's version number (master_data/versioning.py), and for a bill of
-  materials whether it is still submitted, active and the default.
+  current revision, a master's version number (master_data/versioning.py), for a bill of
+  materials whether it is still submitted, active and the default, and for a risk management
+  report whether it is still approved.
 - `in_force` says whether the record may be relied on now: the document is effective, the
   master approved and enabled, the bill submitted (QA's signed approval is its only submit),
-  active and the default.
+  active and the default, the risk management report the one in force of its file.
 - `on_pinned_change` runs when such a record is saved and asks each owner in `PIN_OWNERS` for
   the pins on it; every pin whose version is no longer the one in force, or whose record is no
   longer in force, is handed to the owner's reaction in the same transaction. `sweep` does the
   same for every pin daily, for changes written past the document hooks (a default bill switched
-  off by ERPNext, a database correction).
+  off by ERPNext, a database correction). A record whose change runs no document hook of its own
+  (a risk management report superseded by its file's next report or revision) is handed in by the
+  code that changes it, through `records_changed`.
 
 Each owner registers two functions: which pins it holds, and what it does about those that
 changed. A failing owner is logged and does not hold back the change of the record, nor the
@@ -37,11 +40,13 @@ from meddevice_suite.master_data.versioning import VERSION
 
 CONTROLLED_DOCUMENT, BOM, ITEM = "Controlled Document", "BOM", "Item"
 SPECIFICATION = "Quality Inspection Template"
+# Module 39's report and its file; named here, as risk_management builds on this module.
+RISK_REPORT, RISK_FILE = "Risk Management Report", "Risk Management File"
 # Masters whose version number versioning raises at each controlled change.
 VERSIONED = (ITEM, "Routing", "Operation", SPECIFICATION)
 # Masters approved with master_approval's signed act (module 3).
 MASTER_APPROVED = ("Routing", "Operation")
-PINNABLE = (CONTROLLED_DOCUMENT, BOM, *VERSIONED)
+PINNABLE = (CONTROLLED_DOCUMENT, BOM, *VERSIONED, RISK_REPORT)
 SAVEPOINT = "pinned_records"
 
 
@@ -76,12 +81,17 @@ class PinOwner:
 	react: str
 
 
-# The record types that pin records, and how each reacts. Module 31 adds the device master record.
+# The record types that pin records, and how each reacts.
 PIN_OWNERS: dict[str, PinOwner] = {
 	# Module 39: a review of the risk file when a control changes or is withdrawn (URS-QMS-025).
 	"Risk Management File": PinOwner(
 		pins="meddevice_suite.qms.risk_management.control_pins",
 		react="meddevice_suite.qms.risk_management.controls_changed",
+	),
+	# Module 31: the device master record in force goes out of date (URS-QMS-029).
+	"Device Master Record": PinOwner(
+		pins="meddevice_suite.qms.device_master_record.element_pins",
+		react="meddevice_suite.qms.device_master_record.elements_changed",
 	),
 }
 
@@ -95,26 +105,42 @@ def clean(names: Iterable[str | None]) -> list[str]:
 	return sorted({name for name in names if name})
 
 
-def version_tokens(doctype: str, names: Iterable[str | None]) -> dict[str, str]:
-	"""The version in force of each existing record, in one query."""
+# The columns each record type's version is read from; any other type, its version number.
+TOKEN_COLUMNS: dict[str, tuple[str, ...]] = {
+	CONTROLLED_DOCUMENT: ("current_revision",),
+	BOM: ("is_active", "is_default", "docstatus"),
+	RISK_REPORT: ("status", "docstatus"),
+}
+
+
+def version_tokens(doctype: str, names: Iterable[str | None], lock: bool = False) -> dict[str, str]:
+	"""The version in force of each existing record, in one query; `lock` reads them with row
+	locks held to the end of the transaction, so that none of them changes while what is read is
+	being approved (a device master record's approval, module 31)."""
 	require_pinnable(doctype)
 	names = clean(names)
 	if not names:
 		return {}
+	table = frappe.qb.DocType(doctype)
+	columns = TOKEN_COLUMNS.get(doctype, (VERSION,))
+	query = (
+		frappe.qb.from_(table)
+		.select(table.name, *(table[column] for column in columns))
+		.where(table.name.isin(names))
+	)
+	if lock:
+		query = query.for_update()
+	rows = query.run(as_dict=True)
 	if doctype == CONTROLLED_DOCUMENT:
-		rows = frappe.get_all(doctype, filters={"name": ["in", names]}, fields=["name", "current_revision"])
 		return {row.name: row.current_revision or "" for row in rows}
 	if doctype == BOM:
-		rows = frappe.get_all(
-			doctype,
-			filters={"name": ["in", names]},
-			fields=["name", "is_active", "is_default", "docstatus"],
-		)
 		return {
 			row.name: f"{row.name}|{cint(row.is_active)}|{cint(row.is_default)}|{cint(row.docstatus)}"
 			for row in rows
 		}
-	rows = frappe.get_all(doctype, filters={"name": ["in", names]}, fields=["name", VERSION])
+	if doctype == RISK_REPORT:
+		# An approved report never changes; what moves on is whether it is still approved.
+		return {row.name: f"{row.name}|{row.status}|{cint(row.docstatus)}" for row in rows}
 	return {row.name: str(cint(row.get(VERSION))) for row in rows}
 
 
@@ -142,6 +168,15 @@ def in_force_names(doctype: str, names: Iterable[str | None]) -> set[str]:
 	elif doctype == SPECIFICATION:
 		# A registered specification states its item and stage (module 6).
 		filters.update({"mds_item": ["is", "set"], "mds_stage": ["is", "set"]})
+	elif doctype == RISK_REPORT:
+		# Approved, and the report of a file whose approved revision is in force (module 39).
+		filters.update({"docstatus": 1, "status": "Approved"})
+		current = frappe.get_all(
+			RISK_FILE, filters={"current_report": ["in", names], "status": "In Force"}, pluck="current_report"
+		)
+		filters["name"] = ["in", sorted(set(current))]
+		if not current:
+			return set()
 	return set(frappe.get_all(doctype, filters=filters, pluck="name"))
 
 
@@ -191,6 +226,15 @@ def on_pinned_change(doc: Document, method: str | None = None) -> None:
 	if doc.doctype == BOM and doc.get("item"):
 		names += frappe.get_all(BOM, filters={"item": doc.item, "name": ["!=", doc.name]}, pluck="name")
 	check({doc.doctype: names})
+
+
+def records_changed(doctype: str, names: Iterable[str | None]) -> None:
+	"""Records changed past their own document hooks, by code that knows it changed them: risk
+	management supersedes a report with `db_set` when the file's next report or revision is
+	approved (module 39)."""
+	require_pinnable(doctype)
+	if names := clean(names):
+		check({doctype: names})
 
 
 def sweep() -> None:

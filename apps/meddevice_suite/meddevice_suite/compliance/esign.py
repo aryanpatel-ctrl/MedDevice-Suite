@@ -82,6 +82,9 @@ def apply_lockout() -> None:
 # content(doc) -> dict. An item's approval binds what QA approved (master_data.item_master).
 SIGNED_CONTENT: dict[str, str] = {
 	"Regulatory Licence": "meddevice_suite.qms.regulatory_licence.signed_content",
+	# Module 31: the item, the headings and each element with its pinned version; not the status,
+	# so the signatures stay intact when the record goes out of date or is superseded.
+	"Device Master Record": "meddevice_suite.qms.device_master_record.signed_content",
 	"Item": "meddevice_suite.master_data.item_master.signed_content",
 	"Customer": "meddevice_suite.master_data.customer_licence.customer_signed_content",
 	"BOM": "meddevice_suite.master_data.bom.signed_content",

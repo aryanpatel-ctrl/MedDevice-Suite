@@ -1061,5 +1061,6 @@ class TestPinnedRecords(RiskTestCase):
 			with self.subTest(event=event):
 				self.assertIn(hook, events["BOM"][event])
 		self.assertEqual(
-			set(pinned_records.PINNABLE), {"Controlled Document", "BOM", *pinned_records.VERSIONED}
+			set(pinned_records.PINNABLE),
+			{"Controlled Document", "BOM", *pinned_records.VERSIONED, "Risk Management Report"},
 		)

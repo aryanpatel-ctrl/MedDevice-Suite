@@ -69,6 +69,9 @@ SETTINGS: dict[str, Setting] = {
 	"risk_review_due_days": Setting(30, 1, 180),
 	# Regulatory licences (URS-REG-004), decided 2026-10-11 (plan D-12, D-14)
 	"regulatory_licence_warning_days": Setting(90, 1, 730),
+	# Device master record (URS-QMS-029), decided 2026-10-11: the days QA has to re-approve a record
+	# that has gone out of date
+	"dmr_reapproval_days": Setting(14, 1, 90),
 }
 
 
