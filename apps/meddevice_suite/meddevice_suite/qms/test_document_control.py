@@ -395,6 +395,11 @@ class TestWithdrawal(DocumentControlTestCase):
 
 		document.reload()
 		self.assertEqual((document.status, document.withdrawn_reason), ("Obsolete", "Replaced by SOP-QA-010"))
+		signature = frappe.get_last_doc(
+			"Electronic Signature",
+			filters={"reference_doctype": "Controlled Document", "reference_name": document.name},
+		)
+		self.assertEqual((signature.action, signature.meaning), ("Withdraw", "Withdrawn"))  # 11.50(a)(3)
 		self.assertEqual(frappe.db.get_value("Document Revision", revision.name, "status"), "Obsolete")
 		with self.assertRaises(frappe.ValidationError):
 			self.draft(document, summary="Revising a withdrawn document")

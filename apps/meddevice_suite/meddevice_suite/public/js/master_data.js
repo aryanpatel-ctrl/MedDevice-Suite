@@ -215,10 +215,13 @@ frappe.ui.form.on("Customer", {
 			);
 		}
 		if (frappe.user.has_role("Quality Manager") && !frm.is_dirty()) {
-			const act = licence.exempt ? "Require Licence" : "Exempt From Licence";
+			// Ending an exemption revokes QA's approval of it (compliance/signing.py).
+			const [act, meaning] = licence.exempt
+				? ["Require Licence", "Rejected"]
+				: ["Exempt From Licence", "Approved"];
 			frm.add_custom_button(__(act), () =>
 				// Closing the dialog signs nothing; there is nothing more to do then.
-				esign.sign(frm, act, "Approved", { ask_reason: true }).catch(() => {})
+				esign.sign(frm, act, meaning, { ask_reason: true }).catch(() => {})
 			);
 		}
 	},

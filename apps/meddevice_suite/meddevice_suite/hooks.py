@@ -285,14 +285,20 @@ doc_events = {
 	"User": {
 		"validate": "meddevice_suite.setup.roles.separate_administration",
 		"before_rename": "meddevice_suite.compliance.audit.keep_user_id",
+		# A user ID in the audit trail is disabled, never deleted (21 CFR 11.300(b)). Runs before
+		# the "*" handlers and before Frappe's link check.
+		"on_trash": "meddevice_suite.compliance.audit.keep_user_with_history",
 	},
+	# The app's own record types carry their permissions in their definition (URS-CMP-015).
+	"Custom DocPerm": {"before_validate": "meddevice_suite.setup.roles.refuse_hand_added_permission"},
 }
 
 # A regulated record's audit events in its form timeline, for users who may review them.
 additional_timeline_content = {"*": ["meddevice_suite.compliance.audit_timeline.timeline_content"]}
 
 # A record's audit history must not stop the record itself from being deleted;
-# the deletion is recorded like any other action.
+# the deletion is recorded like any other action. A user is the exception: the User
+# on_trash handler above refuses deleting anyone the audit trail names.
 ignore_links_on_delete = ["Audit Event"]
 
 # Print formats show the signatures on a record: signatures_for_print(doc).

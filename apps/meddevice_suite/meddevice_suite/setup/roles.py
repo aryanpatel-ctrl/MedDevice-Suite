@@ -28,6 +28,7 @@ can be renamed without changing what each job may do.
 import frappe
 from frappe import _
 from frappe.model.document import Document
+from frappe.utils import cint
 
 # Roles ERPNext has no equivalent for.
 NEW_ROLES = ("QC Inspector", "Operator")
@@ -66,6 +67,10 @@ FLAGS = (
 	"if_owner",
 	"mask",
 )
+
+# What a permission row may grant on the evidence records (electronic signatures, audit events),
+# which only their services write: seeing them, never writing, sharing or importing them.
+SEE_ONLY = frozenset({"select", "read", "report", "export", "print", "if_owner", "mask"})
 
 PICK = ("select",)  # choose it in a form; never open it
 VIEW = ("select", "read", "report", "print")
@@ -466,16 +471,52 @@ def apply_roles() -> None:
 
 def remove_hand_added_permissions() -> None:
 	"""The app's own record types carry their permissions in their definition (URS-CMP-015). A
-	row added on a site, through Role Permissions Manager, replaces those in Frappe; it is removed
-	on every migrate, so a hand change does not last."""
-	from meddevice_suite.compliance.audit_scope import APP
-
-	modules = frappe.get_all("Module Def", filters={"app_name": APP}, pluck="name")
-	own = frappe.get_all("DocType", filters={"module": ["in", modules or [""]], "custom": 0}, pluck="name")
+	row added on a site replaces those in Frappe; `refuse_hand_added_permission` refuses one, and
+	any written past it, straight to the database, is removed on every migrate, so it does not last."""
+	own = own_doctypes()
 	for name in frappe.get_all("Custom DocPerm", filters={"parent": ["in", own or [""]]}, pluck="name"):
 		frappe.delete_doc("Custom DocPerm", name, ignore_permissions=True)  # setup code
 	if own:
 		frappe.clear_cache()
+
+
+def own_doctypes() -> list[str]:
+	"""The record types this app defines in code, as opposed to those made on a site."""
+	from meddevice_suite.compliance.audit_scope import APP
+
+	modules = frappe.get_all("Module Def", filters={"app_name": APP}, pluck="name")
+	return frappe.get_all("DocType", filters={"module": ["in", modules or [""]], "custom": 0}, pluck="name")
+
+
+def refuse_hand_added_permission(doc: Document, method: str | None = None) -> None:
+	"""Custom DocPerm before_validate, which runs for every insert and save, validation skipped or
+	not: Role Permissions Manager writes its rows through it.
+
+	A row on one of the app's own record types replaces the permissions its definition declares
+	(URS-CMP-015), so none is made on a site; install and migrate are left alone, and remove any
+	row that got in. On the evidence records no row may let anyone write, at any time: a role
+	allowed to create a signature or an audit event could record one in another person's name.
+	"""
+	from meddevice_suite.compliance.audit_scope import SELF_RECORDING
+
+	if doc.parent in SELF_RECORDING:
+		if granted := sorted(flag for flag in FLAGS if flag not in SEE_ONLY and cint(doc.get(flag))):
+			frappe.throw(
+				_("{0} records are written only by the system; no role may be given {1} on them.").format(
+					_(doc.parent), ", ".join(granted)
+				),
+				frappe.PermissionError,
+			)
+	if frappe.flags.in_install or frappe.flags.in_migrate:
+		return
+	if doc.parent in own_doctypes():
+		frappe.throw(
+			_(
+				"The permissions on {0} are part of the validated configuration and change only with a "
+				"release of this app."
+			).format(_(doc.parent)),
+			frappe.PermissionError,
+		)
 
 
 def sync_job_profile(profile: str, roles: tuple[str, ...]) -> None:

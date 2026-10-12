@@ -34,7 +34,7 @@ frappe.ui.form.on("Controlled Document", {
 			frm.add_custom_button(
 				__("Withdraw"),
 				() =>
-					esign.sign(frm, "Withdraw", "Approved", { ask_reason: true }).catch(() => {}),
+					esign.sign(frm, "Withdraw", "Withdrawn", { ask_reason: true }).catch(() => {}),
 				__("Actions")
 			);
 		}
