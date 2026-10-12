@@ -28,6 +28,9 @@ entries added since, so an anchor taken after entries were removed keeps reporti
 recording the shorter trail as the new truth. An entry whose transaction commits after an anchor
 but carries an earlier time is added by the next full count.
 
+A problem the anchors show alerts QA and the system administrator once (alert, below), whether the
+hourly job finds it or a reviewer's check does, and is kept as an Audit Trail Finding.
+
 Not detected: entries removed after the newest anchor and before the next one (at most an hour of
 entries); removed together with the anchors in the database and the lines in the file.
 
@@ -40,6 +43,7 @@ import os
 from collections.abc import Iterator
 from functools import partial
 from pathlib import Path
+from typing import NamedTuple
 
 import frappe
 from frappe import _
@@ -65,6 +69,31 @@ ANCHORED = (
 	"anchor_hash",
 )
 DATETIMES = frozenset({"head_created", "anchored_at"})
+ANCHOR_FILE = "Anchor file"
+# What a finding is: the options of the Audit Trail Finding's kind.
+ENTRY_MISSING = "Newest entry missing"
+ENTRY_CHANGED = "Newest entry changed"
+ENTRIES_MISSING = "Entries missing"
+ANCHOR_REMOVED = "Anchor removed"
+ANCHOR_DIFFERS = "Anchor differs from the file"
+ANCHOR_ALTERED = "Anchor altered"
+ANCHOR_UNLINKED = "Anchor before it missing"
+FILE_MISSING = "Anchor file missing"
+FILE_DAMAGED = "Anchor file damaged"
+KINDS = (
+	ENTRY_MISSING,
+	ENTRY_CHANGED,
+	ENTRIES_MISSING,
+	ANCHOR_REMOVED,
+	ANCHOR_DIFFERS,
+	ANCHOR_ALTERED,
+	ANCHOR_UNLINKED,
+	FILE_MISSING,
+	FILE_DAMAGED,
+)
+FINDING = "Audit Trail Finding"
+PROBLEM_ALERT = "Audit Trail Problem Found"
+SAVEPOINT = "audit_trail_finding"
 # The file is read from its end in blocks of this size until each trail's newest anchor is found.
 TAIL_BLOCK = 64 << 10
 
@@ -74,11 +103,13 @@ def anchor_file() -> Path:
 
 
 def anchor_trail(trigger: str = SCHEDULED) -> list[Document]:
-	"""Hourly, and on request: anchor each trail that has had entries since its last anchor."""
-	if problems := verify_trail():
-		# The anchors below keep the removed entries counted; this tells the administrator now.
-		frappe.log_error(title=_("Audit trail integrity problem"), message="\n".join(problems))
-	return [anchor for ledger in LEDGERS if (anchor := anchor_ledger(ledger, trigger))]
+	"""Hourly, and on request: anchor each trail that has had entries since its last anchor, and
+	alert what the anchors before showed."""
+	findings = trail_findings()  # the trail as it was found, before this run anchors it
+	anchors = [anchor for ledger in LEDGERS if (anchor := anchor_ledger(ledger, trigger))]
+	# After the anchors: an alert that fails never costs one.
+	alert(findings)
+	return anchors
 
 
 @frappe.whitelist(methods=["POST"])
@@ -97,7 +128,67 @@ def anchor_now() -> list[dict]:
 def verify_audit_trail() -> list[str]:
 	"""For reviewers: what the anchors show about the whole audit trail and the signatures."""
 	frappe.has_permission(DOCTYPE, "read", throw=True)
-	return verify_trail()
+	return checked_trail()
+
+
+def checked_trail() -> list[str]:
+	"""A check a reviewer runs: what the anchors show, each new finding alerted. The finding and its
+	alert are kept when the request is committed: the desk sends these checks as POST requests."""
+	findings = trail_findings()
+	alert(findings)
+	return [finding.message for finding in findings]
+
+
+def what_to_do() -> str:
+	return _(
+		"Treat this as a data-integrity incident: change nothing on the records concerned, find out who "
+		"had access to the database and the server since the anchor named, compare the trail with the "
+		"latest backup and record archive, and record a deviation under QA. Verify Audit Trail on the "
+		"Audit Anchor list shows what is found now."
+	)
+
+
+def alert(findings: list[Finding]) -> None:
+	"""QA and the system administrator are alerted once per finding (21 CFR 11.10(e): a removal must
+	reach someone who acts on it). The Audit Trail Finding recorded with the alert is what keeps the
+	same finding from being alerted again, as the lot expiry alerts keep theirs on the lot. A finding
+	whose alert fails is logged and alerted on the next check instead."""
+	if not findings:
+		return
+	alerted = set(
+		frappe.get_all(
+			FINDING,
+			filters={"finding_key": ["in", [finding.key for finding in findings]]},
+			pluck="finding_key",
+		)
+	)
+	for finding in findings:
+		if finding.key in alerted:
+			continue
+		alerted.add(finding.key)
+		frappe.db.savepoint(SAVEPOINT)
+		try:
+			record = frappe.get_doc(
+				{
+					"doctype": FINDING,
+					"trail": finding.trail,
+					"kind": finding.kind,
+					"subject": finding.subject,
+					"finding": finding.message,
+					"what_to_do": what_to_do(),
+					"finding_key": finding.key,
+					"detected_at": now_datetime(),
+				}
+			)
+			# No role may create findings; this service is the only writer, as for the anchors.
+			record.flags.recorded_by_audit_anchor = True
+			record.insert(ignore_permissions=True)
+			frappe.get_doc("Notification", PROBLEM_ALERT).send(record)
+		except Exception:
+			frappe.db.rollback(save_point=SAVEPOINT)
+			frappe.log_error(title=_("Audit trail problem could not be alerted: {0}").format(finding.kind))
+		else:
+			frappe.db.release_savepoint(SAVEPOINT)
 
 
 def anchor_ledger(ledger: str, trigger: str) -> Document | None:
@@ -225,78 +316,141 @@ def ends_with_newline(path: Path) -> bool:
 		return file.read(1) == b"\n"
 
 
+class Finding(NamedTuple):
+	"""One problem the anchors show. Its key names the problem, not the moment: the same removal
+	found again an hour later, after the next anchor, has the same key and is alerted once."""
+
+	trail: str  # the audit trail, the signatures, or the anchor file
+	kind: str
+	subject: str  # the entry, the anchor, or how many entries are missing
+	message: str
+
+	@property
+	def key(self) -> str:
+		return sha256([self.trail, self.kind, self.subject])
+
+
 def verify_trail() -> list[str]:
 	"""Problems the anchors show in the audit trail and the signatures; empty when none is found."""
+	return [finding.message for finding in trail_findings()]
+
+
+def trail_findings() -> list[Finding]:
 	path = anchor_file()
-	problems: list[str] = []
+	findings: list[Finding] = []
 	filed: dict[str, frappe._dict] = {}
 	if path.exists():
-		filed, problems = newest_in_file(path)
+		filed, findings = newest_in_file(path)
 	elif frappe.get_all(DOCTYPE, limit=1, pluck="name"):
-		problems.append(_("The anchor file {0} is missing.").format(path.name))
+		findings.append(
+			Finding(ANCHOR_FILE, FILE_MISSING, "", _("The anchor file {0} is missing.").format(path.name))
+		)
 
 	for ledger in LEDGERS:
 		anchors = []
 		if stored := newest_anchor(ledger):
-			problems += check_stored(stored)
+			findings += check_stored(stored)
 			anchors.append(stored)
 		if copy := filed.get(ledger):
-			problems += check_against_database(copy)
+			findings += check_against_database(copy)
 			anchors.append(copy)
 		if anchors:
 			# The newer of the two: the file's when the newest anchors were removed from the database.
 			newest = max(anchors, key=lambda anchor: (get_datetime(anchor.anchored_at), anchor.entry_count))
-			problems += check_ledger(ledger, newest)
-	return problems
+			findings += check_ledger(ledger, newest)
+	return findings
 
 
-def check_ledger(ledger: str, anchor: frappe._dict) -> list[str]:
-	problems = []
+def check_ledger(ledger: str, anchor: frappe._dict) -> list[Finding]:
+	findings = []
 	fingerprint = frappe.db.get_value(ledger, anchor.head_entry, LEDGERS[ledger])
 	if fingerprint is None:
-		problems.append(
-			_(
-				"{0}: entry {1}, the newest when anchor {2} was recorded, is missing: the newest entries "
-				"have been removed."
-			).format(_(ledger), anchor.head_entry, anchor_name(anchor))
+		findings.append(
+			Finding(
+				ledger,
+				ENTRY_MISSING,
+				anchor.head_entry,
+				_(
+					"{0}: entry {1}, the newest when anchor {2} was recorded, is missing: the newest "
+					"entries have been removed."
+				).format(_(ledger), anchor.head_entry, anchor_name(anchor)),
+			)
 		)
 	elif fingerprint != anchor.head_fingerprint:
-		problems.append(
-			_("{0}: entry {1} has changed since anchor {2} was recorded.").format(
-				_(ledger), anchor.head_entry, anchor_name(anchor)
+		findings.append(
+			Finding(
+				ledger,
+				ENTRY_CHANGED,
+				anchor.head_entry,
+				_("{0}: entry {1} has changed since anchor {2} was recorded.").format(
+					_(ledger), anchor.head_entry, anchor_name(anchor)
+				),
 			)
 		)
 	present = count_entries(ledger, up_to=anchor.head_created)
-	if present < cint(anchor.entry_count):
-		problems.append(
-			_("{0}: {1} of the {2} entries recorded up to anchor {3} are missing.").format(
-				_(ledger), cint(anchor.entry_count) - present, cint(anchor.entry_count), anchor_name(anchor)
+	if (missing := cint(anchor.entry_count) - present) > 0:
+		# Keyed by how many are missing, which later anchors carry forward: a further removal is a
+		# new finding, the same one found again is not.
+		findings.append(
+			Finding(
+				ledger,
+				ENTRIES_MISSING,
+				str(missing),
+				_("{0}: {1} of the {2} entries recorded up to anchor {3} are missing.").format(
+					_(ledger), missing, cint(anchor.entry_count), anchor_name(anchor)
+				),
 			)
 		)
-	return problems
+	return findings
 
 
-def check_stored(anchor: frappe._dict) -> list[str]:
+def check_stored(anchor: frappe._dict) -> list[Finding]:
 	previous_hash = ""
 	if anchor.previous_anchor:
 		previous_hash = frappe.db.get_value(DOCTYPE, anchor.previous_anchor, "anchor_hash")
 		if previous_hash is None:
-			return [_("Anchor {0}: the anchor before it is missing.").format(anchor.name)]
+			return [
+				Finding(
+					anchor.ledger,
+					ANCHOR_UNLINKED,
+					anchor.name,
+					_("Anchor {0}: the anchor before it is missing.").format(anchor.name),
+				)
+			]
 	if anchor.anchor_hash != anchor_fingerprint(anchor, previous_hash):
-		return [_("Anchor {0}: content does not match its fingerprint.").format(anchor.name)]
+		return [
+			Finding(
+				anchor.ledger,
+				ANCHOR_ALTERED,
+				anchor.name,
+				_("Anchor {0}: content does not match its fingerprint.").format(anchor.name),
+			)
+		]
 	return []
 
 
-def check_against_database(copy: frappe._dict) -> list[str]:
+def check_against_database(copy: frappe._dict) -> list[Finding]:
 	stored = frappe.db.get_value(DOCTYPE, copy.anchor, list(ANCHORED), as_dict=True)
 	if stored is None:
 		return [
-			_("Anchor {0} of the {1} is in the anchor file but no longer in the database.").format(
-				copy.anchor, _(copy.ledger)
+			Finding(
+				copy.ledger,
+				ANCHOR_REMOVED,
+				copy.anchor,
+				_("Anchor {0} of the {1} is in the anchor file but no longer in the database.").format(
+					copy.anchor, _(copy.ledger)
+				),
 			)
 		]
 	if any(plain(field, stored.get(field)) != plain(field, copy.get(field)) for field in ANCHORED):
-		return [_("Anchor {0} differs from its copy in the anchor file.").format(copy.anchor)]
+		return [
+			Finding(
+				copy.ledger,
+				ANCHOR_DIFFERS,
+				copy.anchor,
+				_("Anchor {0} differs from its copy in the anchor file.").format(copy.anchor),
+			)
+		]
 	return []
 
 
@@ -304,7 +458,7 @@ def anchor_name(anchor: frappe._dict) -> str:
 	return anchor.get("anchor") or anchor.name
 
 
-def newest_in_file(path: Path) -> tuple[dict[str, frappe._dict], list[str]]:
+def newest_in_file(path: Path) -> tuple[dict[str, frappe._dict], list[Finding]]:
 	"""The last anchor of each trail in the file, read from its end, and any damaged line met."""
 	newest: dict[str, frappe._dict] = {}
 	damaged = 0
@@ -318,8 +472,8 @@ def newest_in_file(path: Path) -> tuple[dict[str, frappe._dict], list[str]]:
 			damaged += 1
 		elif copy.ledger not in newest:
 			newest[copy.ledger] = copy
-	problems = [_("The anchor file {0} has a damaged line.").format(path.name)] if damaged else []
-	return newest, problems
+	message = _("The anchor file {0} has a damaged line.").format(path.name)
+	return newest, [Finding(ANCHOR_FILE, FILE_DAMAGED, "", message)] if damaged else []
 
 
 def readable(line: str) -> frappe._dict | None:

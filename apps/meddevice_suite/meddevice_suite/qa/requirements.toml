@@ -492,6 +492,13 @@ source = "21 CFR 11.10(e); data integrity (ALCOA+ complete, enduring); found in 
 status = "implemented"
 
 [[requirement]]
+id = "URS-CMP-042"
+module = 50
+title = "A problem the anchors show (entries removed, an anchor removed or changed, the anchor file missing or damaged), whether the hourly check or a reviewer's check finds it, alerts QA and the system administrator once per distinct finding, naming the trail, the missing entry or how many entries are missing, and what to do; each finding alerted is kept and cannot be changed or deleted, and an alert that fails neither stops the anchoring nor is lost: it is sent at the next check."
+source = "21 CFR 11.10(e); data integrity (ALCOA+); decided 2026-10-12 (foundation review): a removal reported only to the Error Log is not acted on"
+status = "implemented"
+
+[[requirement]]
 id = "URS-CMP-041"
 module = 50
 title = "Sales orders are audited; and every standard record type this app hooks into, adds fields to or links to from its own record types is either audited or named, with the reason, on a reviewed list of record types left out of the audit trail."

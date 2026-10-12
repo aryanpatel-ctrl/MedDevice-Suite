@@ -80,8 +80,11 @@ REGULATED_DOCTYPES: frozenset[str] = frozenset(
 	}
 )
 
-# Compliance records that are the evidence themselves, each with its own chain.
-SELF_RECORDING: frozenset[str] = frozenset({"Audit Event", "Electronic Signature", "Audit Anchor"})
+# Compliance records that are the evidence themselves, written only by their services: the audit
+# events and signatures, each with its own chain, and the anchors of those chains and what they found.
+SELF_RECORDING: frozenset[str] = frozenset(
+	{"Audit Event", "Electronic Signature", "Audit Anchor", "Audit Trail Finding"}
+)
 
 # Standard record types this app touches that are not audited here, and why (URS-CMP-041).
 NOT_AUDITED: dict[str, str] = {

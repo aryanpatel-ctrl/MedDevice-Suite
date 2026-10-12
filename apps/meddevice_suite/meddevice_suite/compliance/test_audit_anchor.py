@@ -12,12 +12,17 @@ from unittest.mock import patch
 
 import frappe
 from frappe.client import insert as insert_from_request
+from frappe.email.doctype.notification.notification import Notification
 from frappe.utils import CallbackManager, now_datetime
 
 from meddevice_suite.compliance import audit_anchor
+from meddevice_suite.compliance.alerts import apply_alerts
 from meddevice_suite.compliance.audit import verify_events
 from meddevice_suite.compliance.audit_anchor import (
 	DOCTYPE,
+	ENTRIES_MISSING,
+	ENTRY_MISSING,
+	FINDING,
 	anchor_now,
 	anchor_trail,
 	newest_anchor,
@@ -325,3 +330,133 @@ class TestAnchorsArePermanent(AnchorTestCase):
 		with self.assertRaises(frappe.PermissionError):
 			frappe.delete_doc(DOCTYPE, anchor.name, ignore_permissions=True, force=True)
 		self.assertTrue(frappe.db.exists(DOCTYPE, anchor.name))
+
+
+@verifies("URS-CMP-042")
+class TestProblemsAreAlerted(AnchorTestCase):
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		apply_roles()
+		apply_alerts()
+		cls.qa = user_with_profile("QA Manager")
+
+	def truncated(self, newest: int = 2):
+		"""A record whose newest events were removed after the trail was anchored."""
+		doc = self.history()
+		self.anchor()
+		events = events_for(AUDITED, doc.name)
+		frappe.db.delete("Audit Event", {"name": ["in", [event.name for event in events[-newest:]]]})
+		return doc, events
+
+	def findings(self) -> list[frappe._dict]:
+		return frappe.get_all(FINDING, fields=["name", "trail", "kind", "subject"], order_by="creation asc")
+
+	def alerts_to(self, user: str) -> list[frappe._dict]:
+		return frappe.get_all(
+			"Notification Log",
+			filters={"for_user": user, "document_type": FINDING},
+			fields=["subject", "description", "document_name"],
+		)
+
+	def test_a_removal_alerts_qa_and_the_system_administrator_with_what_to_do(self):
+		_doc, events = self.truncated()
+
+		self.anchor()
+
+		found = {(finding.kind, finding.subject) for finding in self.findings()}
+		self.assertIn((ENTRY_MISSING, events[-1].name), found)
+		self.assertIn((ENTRIES_MISSING, "2"), found)
+		for user in (self.qa, SIGNER):  # Quality Manager; System Manager
+			with self.subTest(user=user):
+				alerts = self.alerts_to(user)
+				self.assertEqual(len(alerts), len(found))
+				self.assertTrue(any("Audit Event" in alert.subject for alert in alerts))
+				self.assertTrue(any(events[-1].name in alert.description for alert in alerts))
+				self.assertTrue(any("2 of the" in alert.description for alert in alerts))
+				self.assertTrue(all("data-integrity incident" in alert.description for alert in alerts))
+
+	def test_the_same_finding_is_not_alerted_again(self):
+		self.truncated()
+		self.anchor()
+		alerted, found = len(self.alerts_to(self.qa)), len(self.findings())
+		self.assertTrue(found)
+
+		self.anchor()  # the next hour: the removal is still there, nothing else has changed
+		self.anchor()
+
+		self.assertEqual(len(self.alerts_to(self.qa)), alerted)
+		self.assertEqual(len(self.findings()), found)
+
+	def test_a_further_removal_is_a_new_finding_and_alerted(self):
+		_doc, events = self.truncated(newest=1)
+		self.anchor()
+		alerted = len(self.alerts_to(self.qa))
+
+		frappe.db.delete("Audit Event", events[-2].name)
+		self.anchor()
+
+		self.assertIn(
+			(ENTRIES_MISSING, "2"), {(finding.kind, finding.subject) for finding in self.findings()}
+		)
+		self.assertGreater(len(self.alerts_to(self.qa)), alerted)
+
+	def test_a_failed_alert_does_not_stop_the_anchor_and_is_sent_at_the_next_check(self):
+		self.truncated()
+
+		with patch.object(Notification, "send", side_effect=frappe.ValidationError("mail server down")):
+			anchors = self.anchor()
+
+		self.assertTrue(anchors)  # the trail was anchored all the same
+		self.assertEqual(self.findings(), [])
+		self.assertTrue(
+			frappe.db.exists(
+				"Error Log", {"method": f"Audit trail problem could not be alerted: {ENTRY_MISSING}"}
+			)
+		)
+		self.anchor()
+		self.assertTrue(self.findings())
+		self.assertTrue(self.alerts_to(self.qa))
+
+	def test_a_reviewers_check_alerts_too(self):
+		doc, _events = self.truncated()
+		frappe.set_user(SIGNER)  # a reviewer who may open the test record
+		verify_record(AUDITED, doc.name)
+		self.assertTrue(self.findings())
+		frappe.set_user(self.qa)
+		verify_audit_trail()  # finds the same again: alerted once
+
+		frappe.set_user("Administrator")
+		self.assertTrue(self.findings())
+		self.assertEqual(len(self.alerts_to(self.qa)), len(self.findings()))
+
+	def test_an_intact_trail_alerts_nobody(self):
+		self.history()
+		self.anchor()
+		self.anchor()
+
+		self.assertEqual(self.findings(), [])
+
+	def test_a_finding_cannot_be_made_changed_or_deleted_by_hand(self):
+		forged = frappe.get_doc(
+			{
+				"doctype": FINDING,
+				"trail": "Audit Event",
+				"kind": ENTRIES_MISSING,
+				"finding": "forged",
+				"what_to_do": "nothing",
+				"finding_key": frappe.generate_hash(length=64),
+				"detected_at": now_datetime(),
+			}
+		)
+		with self.assertRaises(frappe.PermissionError):
+			forged.insert(ignore_permissions=True)
+		self.truncated()
+		self.anchor()
+		finding = frappe.get_doc(FINDING, self.findings()[0].name)
+
+		finding.what_to_do = "ignore it"
+		with self.assertRaises(frappe.PermissionError):
+			finding.save(ignore_permissions=True)
+		with self.assertRaises(frappe.PermissionError):
+			frappe.delete_doc(FINDING, finding.name, ignore_permissions=True, force=True)

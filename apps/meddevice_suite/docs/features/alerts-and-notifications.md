@@ -18,7 +18,7 @@ State on 2026-10-10: built (`a11c586c` 2026-10-06; exact-date and robustness gap
 | QA Manager (`qa.manager@demo.example.com`) | Quality Manager | *Lot Expiring Soon*, *Lot Expired* |
 | Management (`management@demo.example.com`) | Sales Manager, Purchase Manager (+ others) | *Quotation Awaiting Price Approval*, *Purchase Order Awaiting Approval* |
 | Sales (`sales@demo.example.com`), Purchase (`purchase@demo.example.com`) | Sales User / Purchase User | *… Approval Decided* for the records they raised |
-| System Administrator (`system.administrator@demo.example.com`) | System Manager | Sees the alert definitions under **System › Notification**; cannot change them |
+| System Administrator (`system.administrator@demo.example.com`) | System Manager | Sees the alert definitions under **System › Notification**; cannot change them; *Audit Trail Problem Found* (with QA, since 2026-10-12) |
 
 **Prerequisites.** The scheduler runs daily on the site (`bench` scheduler enabled) for the lot alerts; the approval workflows of module 48 are applied (they are, by `bench migrate`). Email delivery needs the site's mail server, which is not part of this module (section 2.6).
 
@@ -66,6 +66,7 @@ Creating a quotation or order alerts nobody; the requester is not alerted by the
 | Document Review Due | QMS | 30 document control |
 | Change Request Awaiting Assessment, Change Request Awaiting Approval, Change Request Awaiting Management Approval, Change Request Decided, Change Effectiveness Check Due | QMS | 36 change control |
 | Supplier Certificate Expiring | Master Data | 4 approved suppliers |
+| Audit Trail Problem Found (2026-10-12; to Quality Manager and System Manager, once per finding) | Compliance | 50 audit trail (`audit-trail.md` section 2.8, URS-CMP-042) |
 
 Each is protected and re-applied exactly like the six above; their content is documented with their own module.
 
