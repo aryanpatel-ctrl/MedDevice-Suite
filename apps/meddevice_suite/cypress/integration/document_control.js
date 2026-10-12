@@ -238,6 +238,7 @@ context("Document control", () => {
 	});
 
 	it("[URS-QMS-034] QA signs the periodic review: still current, next review moved on", () => {
+		as("qa"); // signed in first: a call needs a session's page
 		cy.call("frappe.client.get_value", {
 			doctype: "Document Revision",
 			filters: { name: revision },
