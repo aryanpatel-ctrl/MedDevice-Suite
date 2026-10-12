@@ -11,7 +11,12 @@ from frappe.utils.password import update_password
 from frappe.www.printview import get_rendered_template
 from pypdf import PdfWriter
 
-from meddevice_suite.compliance.esign import SYSTEM_MAINTAINED, is_unchanged_since, verify_signatures
+from meddevice_suite.compliance.esign import (
+	ACT_MAINTAINED,
+	SYSTEM_MAINTAINED,
+	is_unchanged_since,
+	verify_signatures,
+)
 from meddevice_suite.compliance.signing import sign_action
 from meddevice_suite.compliance.test_esign import PASSWORD, reset_lockout
 from meddevice_suite.qa import verifies
@@ -908,7 +913,11 @@ class TestPeriodicReview(DocumentControlTestCase):
 		send_review_alerts()
 		self.assertTrue(frappe.db.get_value("Controlled Document", document.name, "review_alerted_for"))
 		before_the_review_act = ("status", "current_revision", "effective_since", "next_review_date")
-		with patch.dict(SYSTEM_MAINTAINED, {"Controlled Document": before_the_review_act}):
+		# Signed as it was then: no act of the record type left anything out of what it binds.
+		with (
+			patch.dict(SYSTEM_MAINTAINED, {"Controlled Document": before_the_review_act}),
+			patch.dict(ACT_MAINTAINED, {}, clear=True),
+		):
 			self.as_user(self.qa)
 			sign_action("Controlled Document", document.name, "Withdraw", PASSWORD, "Replaced")
 		signature = frappe.get_last_doc(
