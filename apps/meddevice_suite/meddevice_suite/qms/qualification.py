@@ -4,7 +4,9 @@
 Each stage is an Equipment Qualification against an effective protocol (an SOP or a form), with
 its tests, each passed or failed; it passes only when every test passes. Its performer executes it
 with a signature; QA, never the performer, approves it with a signature, which completes it, or
-returns it with a signed reason. An OQ needs an approved, passed IQ before it; a PQ an approved,
+returns it with a signed reason; once approved, it is never deleted and is corrected only by QA's
+signed Correct (plan D-29, `equipment_care.correct`), which cancels it and opens its amendment, to
+be executed and approved again. An OQ needs an approved, passed IQ before it; a PQ an approved,
 passed OQ done on or after that IQ. Equipment that needs qualification is qualified while its
 latest approved IQ, OQ and PQ each passed, in that order, and the PQ is within the requalification
 interval QA set on the equipment, if one is set; after a repair, a PQ done on or after it; after a
@@ -27,6 +29,9 @@ QA_ROLE = "Quality Manager"
 REQUALIFICATION_DAYS = equipment.REQUALIFICATION_DAYS
 # What the performer signs for: changing any of it after execution needs execution again.
 EXECUTED_CONTENT = ("asset", "stage", "occasion", "protocol", "performed_on")
+# Set only by the signed acts. A draft saved through the form or the API keeps what is stored, and a
+# new one, Frappe's Amend among them (it copies them from the cancelled record), holds none.
+SET_BY_ACTS = ("executed_by", "executed_at", "approved_by", "approved_at")
 
 
 def require(condition, message: str, exception: type[Exception] = frappe.ValidationError) -> None:
@@ -79,8 +84,12 @@ def evaluate(doc: Document, method: str | None = None) -> None:
 		)
 	require(doc.tests and all(row.outcome for row in doc.tests), _("Each test is passed or failed."))
 	doc.outcome = "Pass" if all(row.outcome == "Pass" for row in doc.tests) else "Fail"
+	if doc.flags.qualification_signed:
+		return
 	before = None if doc.is_new() else doc.get_doc_before_save()
-	if before and before.executed_by and not doc.flags.qualification_signed and changed_since(before, doc):
+	for field in SET_BY_ACTS:
+		doc.set(field, before.get(field) if before else None)
+	if before and before.executed_by and changed_since(before, doc):
 		doc.executed_by, doc.executed_at = None, None  # what was executed changed: execute it again
 
 

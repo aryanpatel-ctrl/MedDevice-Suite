@@ -30,8 +30,9 @@ EVIDENCE: tuple[tuple[str, str, dict], ...] = (
 	("Customer Licence", "licence_copy", {"docstatus": 1}),
 	# Every version of a file in the important files repository, from the moment it is added (module 61).
 	("Important File Version", "file", {}),
-	# An external laboratory's calibration certificate, once the calibration is completed (module 38).
-	("Calibration Record", "certificate", {"docstatus": 1}),
+	# An external laboratory's calibration certificate, once the calibration is completed (module 38),
+	# and still once QA withdraws it for correction (plan D-29): the cancelled record keeps it.
+	("Calibration Record", "certificate", {"docstatus": ["in", (1, 2)]}),
 	# A training certificate (paper history, or one a trainer gave), once the record is completed (module 37).
 	("Training Record", "certificate", {"docstatus": 1}),
 )
