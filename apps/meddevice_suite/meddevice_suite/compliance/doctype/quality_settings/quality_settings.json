@@ -44,6 +44,8 @@
   "risk_review_due_days",
   "section_regulatory",
   "regulatory_licence_warning_days",
+  "section_device_master_record",
+  "dmr_reapproval_days",
   "section_control",
   "change_request",
   "changed_under",
@@ -333,6 +335,20 @@
    "description": "How many days before a licence expires, or an obligation of it falls due, QA is alerted (1 to 730)."
   },
   {
+   "fieldname": "section_device_master_record",
+   "fieldtype": "Section Break",
+   "label": "Device master record"
+  },
+  {
+   "fieldname": "dmr_reapproval_days",
+   "fieldtype": "Int",
+   "label": "DMR Re-approval Due (days)",
+   "default": "14",
+   "reqd": 1,
+   "non_negative": 1,
+   "description": "How many days QA has to approve a new revision of a device master record that has gone out of date (1 to 90)."
+  },
+  {
    "fieldname": "section_control",
    "fieldtype": "Section Break",
    "label": "Change control"
@@ -371,7 +387,7 @@
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-10-11 21:00:00.000000",
+ "modified": "2026-10-11 22:00:00.000000",
  "modified_by": "Administrator",
  "module": "Compliance",
  "name": "Quality Settings",

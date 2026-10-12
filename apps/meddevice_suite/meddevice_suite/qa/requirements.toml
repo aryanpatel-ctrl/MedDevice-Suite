@@ -916,6 +916,48 @@ title = "A Risk Review is raised once when a control's record gets a new version
 source = "D2 Risk Management: Risk Review; ISO 14971 10.2, 10.3; periodic review every 12 months and 30 days to answer, set in Quality Settings, decided 2026-10-11; complaint and CAPA triggers are raised by modules 43 and 35"
 status = "implemented"
 
+[[requirement]]
+id = "URS-QMS-026"
+module = 31
+title = "Each approved finished good has one device master record in force. Each revision records the ISO 13485 4.2.3 headings (general description and intended use, labelling and instructions for use, product specifications, manufacture with packaging, storage, handling and distribution, measuring and monitoring, installation and servicing, risk management), with the reason for any that does not apply, and pins the item, its default bill of materials and the bills of materials of its sub-assemblies one level down, the routing and each operation and sub-operation with its work instruction, the final specification and the in-process specification when an operation carries an in-process check, at least one Packaging and Labelling document, the documents the author chooses, and the risk management report in force of the risk management file that lists the item: every finished good is listed in one, and the record is not approved without its report in force. The device lifetime (5 years unless QA states another, never shorter than the shelf life) is on the item, under change control, and shown on the record."
+source = "Master plan; flowchart DMR structure; ISO 13485 4.2.3, 7.1; ISO 14971 4.5; 21 CFR 820.181; CDSCO MDR 2017 Device Master File; decided 2026-10-11 (plan D-15): the contents, (plan D-16): the device lifetime, (plan Q7): no further mandatory documents; decided 2026-10-12 (plan D-23): every finished good is in a risk management file whose report is in force before its device master record is approved"
+status = "implemented"
+
+[[requirement]]
+id = "URS-QMS-027"
+module = 31
+title = "The pins are filled from the live records whenever a draft is saved and again at approval; nobody types a version. Signing and approval are refused while a required element is missing, a heading is empty, the item is not approved, or any pinned record is no longer in force, and approval is refused if a pinned record moved on since the author signed."
+source = "21 CFR 820.181; ALCOA+; decided 2026-10-11 (plan D-15)"
+status = "implemented"
+
+[[requirement]]
+id = "URS-QMS-028"
+module = 31
+title = "A revision is drafted by QA or the Production Supervisor, signed by its author, and approved by QA, who is not the author, each with an electronic signature; QA may return it with a signed reason or withdraw it with a signed reason. Approved, it becomes Current and the previous revision Superseded in the same transaction; one revision is in progress and one is Current per item, and nothing is deleted or cancelled."
+source = "ISO 13485 4.2.4, 4.2.5; 21 CFR 11.50, 11.70; decided 2026-10-11 (plan D-15)"
+status = "implemented"
+
+[[requirement]]
+id = "URS-QMS-029"
+module = 31
+title = "A new version of any pinned record, its withdrawal, deactivation or replacement as the default, and a risk management report put in force for the item's file that the record does not pin, make the Current device master record Out of Date in the same transaction, with a daily check as a backstop, showing for each changed element its version now and the change request it was made under; a record already out of date keeps recording later changes, and the next revision is brought up to date after all of them; the signatures stay intact. QA is alerted once, with the item's open work orders to decide on, which the record's form also lists, and a DMR Re-approval reminder, due within the days set in Quality Settings, stays open until a new revision is approved."
+source = "Client decision; ISO 13485 7.3.9; re-approval due in 14 days, set in Quality Settings, decided 2026-10-11; decided 2026-10-12 (plan D-23): the risk management report in force"
+status = "implemented"
+
+[[requirement]]
+id = "URS-QMS-030"
+module = 31
+title = "Only a Current device master record prints as the controlled index with its signatures; any other prints marked not for use."
+source = "ISO 13485 4.2.4"
+status = "implemented"
+
+[[requirement]]
+id = "URS-QMS-031"
+module = 31
+title = "A work order for a finished good is submitted only when the item's device master record is Current, still matches the live records and pins the bill of materials the work order uses; the order keeps the record it was released on. A finished good is made (a Manufacture or Repack stock entry) only on a work order of it, and only while that record is still Current."
+source = "21 CFR 820.181; ISO 13485 7.5.1; decided 2026-10-11 (plan D-15, Q8 accepted)"
+status = "implemented"
+
 # --- Wave 1: lot status and incoming QC (modules 1, 4, 6, 16, 17) ----------------
 # Planned on 2026-10-08 from the Phase 0 gap audit: the diagrams' first quality gate.
 # Each becomes `implemented` only with its passing tests. On 2026-10-08 the client

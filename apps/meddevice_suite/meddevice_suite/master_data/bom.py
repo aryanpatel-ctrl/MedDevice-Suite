@@ -223,6 +223,11 @@ def values_of(doc: Document, fields: tuple[str, ...]) -> dict:
 	return values
 
 
+def default_bom(item: str) -> str | None:
+	"""The item's bill of materials in force: approved by QA (submitted), active and the default."""
+	return frappe.db.get_value("BOM", {"item": item, "docstatus": 1, "is_active": 1, "is_default": 1})
+
+
 def bom_onload(doc: Document, method: str | None = None) -> None:
 	"""BOM onload: whether QA has approved it, or what still stands in the way, for the form."""
 	doc.set_onload(

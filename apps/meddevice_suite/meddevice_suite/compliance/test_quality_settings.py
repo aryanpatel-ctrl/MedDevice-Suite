@@ -86,6 +86,7 @@ class TestValues(QualitySettingsTestCase):
 				"risk_periodic_review_months": 12,
 				"risk_review_due_days": 30,
 				"regulatory_licence_warning_days": 90,
+				"dmr_reapproval_days": 14,
 			},
 		)
 
