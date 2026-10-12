@@ -1,10 +1,10 @@
 # Tamper-evident audit trail (module 50) — feature document and browser test guide
 
-Requirement: **URS-CMP-007, URS-CMP-008, URS-CMP-009, URS-CMP-010, URS-CMP-011, URS-CMP-012, URS-CMP-013, URS-CMP-031, URS-CMP-040** (`meddevice_suite/qa/requirements.toml`). Also touched: URS-CMP-004 (signature chains survive a rename), URS-CMP-014 (QA reviews the evidence), URS-CMP-020/021 (workflow cancel asks a reason).
+Requirement: **URS-CMP-007, URS-CMP-008, URS-CMP-009, URS-CMP-010, URS-CMP-011, URS-CMP-012, URS-CMP-013, URS-CMP-031, URS-CMP-040, URS-CMP-041** (`meddevice_suite/qa/requirements.toml`). Also touched: URS-CMP-004 (signature chains survive a rename), URS-CMP-014 (QA reviews the evidence), URS-CMP-020/021 (workflow cancel asks a reason).
 Code: `meddevice_suite/compliance/audit.py` (recording and the chain), `compliance/audit_scope.py` (which record types are regulated), `compliance/audit_reason.py` (reason for change), `compliance/audit_timeline.py` (review on the form, verification), `compliance/fingerprint.py`, `compliance/doctype/audit_event/`, `compliance/audit_anchor.py` and `compliance/doctype/audit_anchor/` (anchors, 2026-10-12), `public/js/audit_trail.js`, `public/js/audit_reason.js`, hooks in `meddevice_suite/hooks.py`.
 State on 2026-10-10: built (`fbaba7af` 2026-10-06 onwards; edge cases of the robustness review closed in `31f756ac`, `2ffeb96e`, `9a5d2019` on 2026-10-07), server and browser suites green on the current branch; GitHub CI in progress (section 8).
 Changed 2026-10-12 (foundation review, branch `fix/immutable-records`): an audit event is inserted only by the audit trail; no permission row may open it to writing; a user the trail names is never deleted, only disabled (21 CFR 11.300(b)). Tests: `compliance/test_immutable_records.py` — written, **not yet run** (section 8).
-Changed 2026-10-12 (foundation review, branch `fix/audit-anchor-and-scope`): removing the newest audit events or signatures is detected by anchors of the whole trail (section 2.8, URS-CMP-040). Tests: `compliance/test_audit_anchor.py` — written, **not yet run** (section 8).
+Changed 2026-10-12 (foundation review, branch `fix/audit-anchor-and-scope`): removing the newest audit events or signatures is detected by anchors of the whole trail (section 2.8, URS-CMP-040); sales orders and the company are audited, and every standard record type the app works with is audited or on a reviewed list left out (section 2.1, URS-CMP-041). Tests: `compliance/test_audit_anchor.py`, `compliance/test_audit_scope.py` — written, **not yet run** (section 8).
 
 ## 1. Feature overview
 
@@ -25,9 +25,24 @@ Changed 2026-10-12 (foundation review, branch `fix/audit-anchor-and-scope`): rem
 
 ## 2. Detailed functional explanation
 
-### 2.1 Which records are regulated (URS-CMP-013)
+### 2.1 Which records are regulated (URS-CMP-013, URS-CMP-041)
 
 `audit_scope.is_regulated(doctype, module)` is true for (a) the standard record types named in `REGULATED_DOCTYPES` (masters: Item, BOM, Routing, Operation, Workstation, Supplier, Customer, Warehouse, Batch, Quality Inspection Template, Asset, Employee; transactions: Quotation, Material Request, Purchase Order, Purchase Receipt, Quality Inspection, Stock Entry, Stock Reconciliation, Work Order, Job Card, Serial and Batch Bundle, Pick List, Delivery Note, Packing Slip, Asset Maintenance Log, Asset Repair; access control: User, Role, Role Profile, User Permission, Custom DocPerm, System Settings, Stock Settings) and (b) **every DocType whose module belongs to this app**, except the evidence itself (`SELF_RECORDING`: Audit Event, Electronic Signature, and since 2026-10-12 Audit Anchor). Child tables are recorded inside their parent's events. Accounting documents are left to India Compliance's audit trail (by design, documented in the module docstring).
+
+Since 2026-10-12 (URS-CMP-041) **Sales Order** is regulated (the order end of order → dispatch → lot traceability, ISO 13485 7.2.2, 7.5.9: customer, items, quantities, delivery dates and the delivery status ERPNext sets as it is delivered), with its own permission matrix (`setup/roles.py`; Sales User CORRECT, Sales Manager APPROVE, Stores and Accounts VIEW) and a 10-year retention under *Sales records*; cancelling, amending or changing a submitted order now needs a reason, and ERPNext's **Update Items** asks for it first (`audit_reason.js` wraps `erpnext.utils.update_child_items`). **Company** is audited as configuration (the legal manufacturer's name and the stores and accounts every record takes).
+
+The scope is no longer only a hand list: `compliance/test_audit_scope.py` collects every standard record type the app hooks into (`doc_events`, `has_permission`, `permission_query_conditions` in `hooks.py`), adds `mds_` fields to, or links to from its own record types (child tables count as their parents), and fails unless each is in `REGULATED_DOCTYPES` or in `audit_scope.NOT_AUDITED` with its reason. `NOT_AUDITED` holds only record types the app actually touches (a stale entry fails too):
+
+| Left out | Why |
+| --- | --- |
+| Sales Invoice, POS Invoice, Purchase Invoice | accounting documents; India Compliance's audit trail keeps them (Companies Act) |
+| Stock Ledger Entry | posted by ERPNext from a submitted stock transaction, which is audited with its lines; nobody enters or edits one |
+| Asset Maintenance, Supplier Scorecard | refused by this app (signed maintenance records; Supplier Rating) |
+| BOM Update Log | replacing a bill is refused (`versioning.refuse_bom_replace`); a cost update changes costs only |
+| Log Settings | its one regulated value (login history kept) cannot be shortened and is restored on migrate |
+| File | the attachment register; the record it belongs to is audited and evidence files are protected |
+| Desktop Layout | a person's desk arrangement; the desk areas are code |
+| DocType | names which record type an entry refers to; record types change only with releases |
 
 ### 2.2 What is recorded and when (URS-CMP-007, URS-CMP-008)
 
@@ -128,6 +143,7 @@ For users who may read Audit Event (Quality Manager, System Manager) and only on
 | C7 | URS-CMP-013: regulated types declared in code incl. every type this app builds; audited from declaration | `audit_scope.py` | `TestScope` (3), `TestScopeRules` (3) |
 | C8 | URS-CMP-031: creator and creation time never change via form or API | Frappe's save (no app code); covered by test | `compliance/test_approvals.TestAttributionIsPermanent` (2) |
 | C10 | URS-CMP-040: removing the newest entries of the audit trail or the signatures is detected; anchors hourly and on request, in the database and an append-only file; anchors made only by the service, never changed or deleted | `audit_anchor.py`, `AuditAnchor` controller, `hooks.py` hourly job, `audit_timeline.verify_record` (`anchors`), `audit_trail.js`, `audit_anchor_list.js` | `compliance/test_audit_anchor.py`: `TestRemovedEntriesAreDetected` (6, incl. `test_removing_a_records_newest_events_is_detected` deleting the newest events with `frappe.db.delete`), `TestAnchorsAreKeptOutsideTheDatabase` (6), `TestAnchoring` (5), `TestAnchorsArePermanent` (3); `test_immutable_records.TestPermissionsOnTheAppsRecordTypes.test_every_evidence_record_type_is_read_only_for_every_role` — **not yet run** |
+| C11 | URS-CMP-041: sales orders audited; every standard record type the app hooks, extends or links to is audited or on the reviewed exclusion list | `audit_scope.REGULATED_DOCTYPES` (+ Sales Order, Company), `audit_scope.NOT_AUDITED`, `roles.py` Sales Order matrix, `retention.py`, `audit_reason.js` (Update Items) | `compliance/test_audit_scope.py`: `TestScopeIsComplete` (3), `TestSalesOrdersAreAudited` (2) — **not yet run**; adapted: `test_item_master.test_update_items_on_a_submitted_order_takes_no_draft_item` (stages a reason), `test_audit_review.test_a_reviewer_verifies_an_intact_record` (`anchors: []`) |
 | C9 | Foundation review 2026-10-12: no event past the audit trail (URS-CMP-009); no hand-made permission on it (URS-CMP-015); a user the trail names is disabled, never deleted (URS-CMP-006, 21 CFR 11.300(b)) | `AuditEvent.before_insert`, `audit.record` flag, `roles.refuse_hand_added_permission`, `audit.keep_user_with_history`/`has_history` | `compliance/test_immutable_records.py`: `TestAuditEventsComeOnlyFromTheTrail` (3), `TestPermissionsOnTheAppsRecordTypes` (4), `TestUserIdsInTheTrailAreNeverDeleted` (6) — **not yet run** |
 
 **Partial / by design:** C1 for derived values on other records (section 2.7). **Ambiguous:** URS-CMP-012 "export" — met by the list export; confirm with the client whether a formatted audit report is expected. **Unverified mechanism:** C8 relies on platform behaviour whose Frappe code path was not located in this review (test passes).
@@ -211,6 +227,14 @@ Test site only, database access. Role: QA Manager.
 6. As Sales: `frappe.xcall("meddevice_suite.compliance.audit_anchor.anchor_now")`. Expected: permission error.
 Actual result: ____  Pass/Fail: ____  Cleanup: discard the test site.
 
+### AT-11 Sales orders are audited (C11) — 2026-10-12
+Role: Sales (`sales@demo.example.com`), QA Manager reviews.
+1. As Sales make a Sales Order for a licensed customer, **Save**, **Submit**. As QA open it › timeline. Expected: **Submitted by Sales**, **Created by Sales**; **View › Audit Trail** and **Verify Integrity** present.
+2. As Sales on the submitted order › **Update Items**. Expected: first the dialog **Reason for changing <name>**; after **Continue** ERPNext's Update Items dialog; after **Update** the order saves and its audit trail shows *Updated after submission* with the reason.
+3. As Sales **Cancel**. Expected: **Reason for cancelling <name>**; the Cancelled event carries the reason.
+4. As Sales try **Menu › Delete** on a draft order. Expected: not offered / refused (no role deletes a regulated record).
+Actual result: ____  Pass/Fail: ____
+
 ### Regression
 - The full journey (`standard_flow.js`) and the approvals journey (`approvals.js`) still run: every record they touch is regulated, so any double or missing event would surface as a failing reason dialog or a failed cancel.
 
@@ -252,6 +276,7 @@ Cross-module data: Audit Event (new, one per action), the reason cache (15 minut
 - The staged reason lives in the cache for 15 minutes per user and record; a reason staged and then abandoned is used by that user's next cancel of the same record within 15 minutes (test `test_staged_reason_is_used_for_the_cancellation_once` shows it is used once; an abandoned one is a known edge).
 - Derived values on other records are not recorded (section 2.7).
 - Anchors (section 2.8): up to an hour of entries is unanchored at any moment; a site restored from a database backup without its files reports *The anchor file … is missing.* until the file is restored with it (restore both together); the hourly job's finding reaches the Error Log, not QA; the file's append-only attribute (`chattr +a`) is an operating-system step for hosting, not applied by the app.
+- Sales Order newly audited (2026-10-12): every cancel, amend and Update Items on a submitted order now needs a reason; the Update Items reason dialog wraps an ERPNext function (`erpnext.utils.update_child_items`) and is re-checked on each ERPNext upgrade.
 
 **Unverified in this review:** the Frappe code path that protects `owner`/`creation` (C8, test passes); impersonation through Frappe's real "Impersonate" screen; AT-08 step 2's exact command string on screen.
 
@@ -271,7 +296,7 @@ Executed by the lead on 2026-10-10 on the current branch (local test site; CI = 
 
 2026-10-12 changes (section 1): `compliance/test_immutable_records.py` written without a site and **not yet run**; AT-09 steps 4–5 **not executed**.
 
-2026-10-12, branch `fix/audit-anchor-and-scope`: `compliance/test_audit_anchor.py` (20 tests), the new evidence-contract test and the adapted `test_audit_review` test were written without running a site: **not yet run**; pre-commit and Semgrep only. AT-10 **not executed**; the Anchor Now / Verify Audit Trail buttons have no browser test yet.
+2026-10-12, branch `fix/audit-anchor-and-scope`: `compliance/test_audit_anchor.py` (20 tests), `compliance/test_audit_scope.py` (5), the new evidence-contract test and the two adapted tests were written without running a site: **not yet run**; pre-commit and Semgrep only. AT-10 and AT-11 **not executed**; the Anchor Now / Verify Audit Trail buttons and the Update Items reason dialog have no browser test yet.
 
 Untested: AT-06 steps 2–3 (database tampering; server tests cover the logic), AT-08 (caused-by and status command in the browser; server tests cover the logic), AT-07 as each job in the browser (the screen sweep opens the Audit Event list as QA Manager and System Administrator only), real impersonation.
 
@@ -288,6 +313,7 @@ Untested: AT-06 steps 2–3 (database tampering; server tests cover the logic), 
 | Reviewers see timeline, Audit Trail, Verify Integrity; search and export; others see nothing | Verified (automated; browser as Administrator) |
 | Regulated types declared in code incl. every app DocType | Verified (automated) |
 | Removing the newest audit events or signatures detected by anchors (DB + append-only file); anchors permanent (2026-10-12) | **Not tested** (tests written, not yet run) |
+| Sales orders audited; every standard record type the app touches audited or excluded with a reason (2026-10-12) | **Not tested** (tests written, not yet run) |
 | Derived values on other records | **Not covered** by design (section 2.7) |
 | Manual AT-01…AT-09 | **Not tested** |
 | CI green for the final commit | **Blocked** (in progress) |

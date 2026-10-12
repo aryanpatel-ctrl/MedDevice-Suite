@@ -52,7 +52,8 @@ RETENTION_SCHEDULE: dict[str, tuple[int, str, tuple[str, ...]]] = {
 		),
 	),
 	# Review of the customer's requirements before committing to supply (ISO 13485 7.2.2).
-	"Sales records": (10, QUALITY_BASIS, ("Quotation",)),
+	# and the order taken, the start of a lot's trail to the customer (ISO 13485 7.2.2, 7.5.9).
+	"Sales records": (10, QUALITY_BASIS, ("Quotation", "Sales Order")),
 	"Quality system records": (
 		10,
 		QUALITY_BASIS,
@@ -139,6 +140,7 @@ RETENTION_SCHEDULE: dict[str, tuple[int, str, tuple[str, ...]]] = {
 			"Buying Settings",
 			"Selling Settings",
 			"Print Settings",
+			"Company",
 		),
 	),
 	# An anchor is kept as long as the entries it counts: verifying them needs it (URS-CMP-040).

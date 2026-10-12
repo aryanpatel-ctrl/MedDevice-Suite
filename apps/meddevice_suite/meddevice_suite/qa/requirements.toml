@@ -491,6 +491,13 @@ title = "Every hour, and whenever a reviewer asks, the system anchors the audit 
 source = "21 CFR 11.10(e); data integrity (ALCOA+ complete, enduring); found in the foundation review of 2026-10-12: deleting the newest audit events or signatures left a shorter chain that still verified"
 status = "implemented"
 
+[[requirement]]
+id = "URS-CMP-041"
+module = 50
+title = "Sales orders are audited; and every standard record type this app hooks into, adds fields to or links to from its own record types is either audited or named, with the reason, on a reviewed list of record types left out of the audit trail."
+source = "21 CFR 11.10(e); ISO 13485 7.2.2, 7.5.9 (order to dispatch to lot traceability); found in the foundation review of 2026-10-12: sales orders were not audited and nothing kept the scope complete"
+status = "implemented"
+
 # --- Module 47: roles and permissions (21 CFR 11.10(d), (g)) ---------------
 [[requirement]]
 id = "URS-CMP-014"

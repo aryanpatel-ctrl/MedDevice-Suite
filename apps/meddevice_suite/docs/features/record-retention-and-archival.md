@@ -29,7 +29,7 @@ State on 2026-10-10: built (`28536c94`, `9d5eeb26` 2026-10-06; scale, damage and
 | Category | Years | Basis | Record types |
 | --- | --- | --- | --- |
 | Device and production records | 10 | ISO 13485 4.2.5; 21 CFR 820; EU MDR Art. 10(8); CDSCO MDR 2017 | Item, BOM, Routing, Operation, Workstation, Warehouse, Batch, Quality Inspection Template, Quality Inspection, Lot Release, Work Order, Job Card, Stock Entry, Stock Reconciliation, Serial and Batch Bundle, Pick List |
-| Sales records | 10 | same | Quotation |
+| Sales records | 10 | same | Quotation, Sales Order (since 2026-10-12) |
 | Quality system records | 10 | same | Controlled Document, Document Revision, Change Request |
 | Purchasing and supplier records | 10 | same | Supplier, Supplier Approval, Material Request, Purchase Order, Purchase Receipt |
 | Distribution records | 10 | same | Customer, Delivery Note, Packing Slip |
@@ -108,7 +108,7 @@ Site: pilot (`pilot.localhost`) or a test site with a running worker and schedul
 
 ### RA-01 Retention Schedule report (C1, C2)
 Role: QA Manager.
-1. Open **Compliance › Retention Schedule**. Expected: a table with columns **Category**, **Record type**, **Kept for (years)**, **Counted from**, **Legal basis**; every row shows 10 years and *The date the record was made*; categories as in section 2.1; *Audit Event*, *Electronic Signature*, *Audit Anchor*, *Activity Log*, *Record Archive* under *Compliance evidence*.
+1. Open **Compliance › Retention Schedule**. Expected: a table with columns **Category**, **Record type**, **Kept for (years)**, **Counted from**, **Legal basis**; every row shows 10 years and *The date the record was made*; categories as in section 2.1; *Audit Event*, *Electronic Signature*, *Audit Anchor*, *Activity Log*, *Record Archive* under *Compliance evidence*; *Company* under *System configuration records*; *Sales Order* under *Sales records*.
 2. Click a **Record type** link (e.g. *Supplier Approval*). Expected: opens the DocType record (read-only for QA) — or a permission refusal if QA may not read DocType; note which.
 3. As Sales (`sales@demo.example.com`) visit `/desk/query-report/Retention Schedule`. Expected: refused plainly.
 Actual result: ____  Pass/Fail: ____  Evidence: screenshot of step 1.
