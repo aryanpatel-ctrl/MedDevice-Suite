@@ -18,6 +18,7 @@
   "section_track",
   "raised_on",
   "escalated_on",
+  "notified",
   "column_break_track",
   "completed_on",
   "completed_by",
@@ -132,6 +133,15 @@
    "no_copy": 1
   },
   {
+   "fieldname": "notified",
+   "fieldtype": "Select",
+   "label": "People Told Of",
+   "options": "\nRaised\nEscalated",
+   "description": "What the reminder's people were last told: that it was raised, or that it was escalated. Each is told once.",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
    "fieldname": "column_break_track",
    "fieldtype": "Column Break"
   },
@@ -169,7 +179,7 @@
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-10-11 22:00:00.000000",
+ "modified": "2026-10-12 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Work Management",
  "name": "Reminder",

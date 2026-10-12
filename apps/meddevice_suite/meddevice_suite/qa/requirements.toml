@@ -1136,8 +1136,8 @@ status = "implemented"
 [[requirement]]
 id = "URS-PLT-014"
 module = 60
-title = "Every item the system alerts on as falling due (a lot's expiry, a supplier's certificate, a customer's licence, a document's review, a change action, a change's effectiveness check) is tracked as a reminder from the day it falls within its lead time until its own record shows the work done, which alone completes it, recording when; past its due date it is overdue, and overdue for the days QA sets in Quality Settings (7 until changed) it is escalated once to QA and Management and its responsible person; each job sees the reminders of its jobs and its own, QA and Management all; a reminder is never made, changed or deleted by hand."
-source = "DFD 9C Reminders / Next Due (C3 generate, C4 notify, C5 track and escalate, C6 mark completed), D11 Task, Approval & Reminders; master plan section 8 (calibration, maintenance, training, document review, CAPA, certificate, batch and vendor certificate due dates) and section 10 (escalation when overdue); decided 2026-10-11: a system reminder is completed only by the work in its record"
+title = "Every item the system alerts on as falling due (a lot's expiry, a supplier's certificate, a customer's licence, a document's review, a change action, a change's effectiveness check) is tracked as a reminder from the day it falls within its lead time until its own record shows the work done, which alone completes it, recording when; a reminder whose item its record still shows to be done stays open, whatever the lead time is changed to, and an item due again after its reminder was completed is raised again on the next run; past its due date it is overdue, and overdue for the days QA sets in Quality Settings (7 until changed) it is escalated once to QA and Management and its responsible person; each job sees the reminders of its jobs and its own, QA and Management all; a reminder is never made, changed or deleted by hand."
+source = "DFD 9C Reminders / Next Due (C3 generate, C4 notify, C5 track and escalate, C6 mark completed), D11 Task, Approval & Reminders; master plan section 8 (calibration, maintenance, training, document review, CAPA, certificate, batch and vendor certificate due dates) and section 10 (escalation when overdue); decided 2026-10-11: a system reminder is completed only by the work in its record; found in the foundation review of 2026-10-12: a reminder was completed when its item only left the lead time, and a completed reminder kept its item from being raised again"
 status = "implemented"
 
 [[requirement]]
@@ -1145,6 +1145,13 @@ id = "URS-PLT-015"
 module = 60
 title = "QA plans recurring activities, each with what is to be done, the responsible job, its first due date, a frequency (weekly, monthly, quarterly, half-yearly or yearly) and how many days before it is raised; the system raises each occurrence within that time and tells the responsible job; an occurrence is overdue and escalated as any reminder; a person of the responsible job, or QA, completes it saying what was done, and the next occurrence follows the calendar from the due date; a plan is never deleted, only made inactive."
 source = "DFD 9C Reminders / Next Due (C1 define reminder category, C2 set due date or frequency); master plan section 8; decided 2026-10-11: the next occurrence follows the calendar, not the day the last was done"
+status = "implemented"
+
+[[requirement]]
+id = "URS-PLT-020"
+module = 60
+title = "When a reminder is raised, its responsible person is told, or, when it names none, everyone holding its responsible jobs; when it is escalated, QA, Management and its responsible person are told; each is told of each once, however often the daily run repeats, and a notice that could not be sent is sent on the next run."
+source = "DFD 9C Reminders / Next Due (C4 notify users, C5 track and escalate); master plan section 10 (escalation when overdue); found in the foundation review of 2026-10-12: a system reminder told nobody when it was raised"
 status = "implemented"
 
 [[requirement]]
