@@ -188,6 +188,8 @@ class TestAnchorsAreKeptOutsideTheDatabase(AnchorTestCase):
 		self.assertGreater(len(after.splitlines()), len(before.splitlines()))
 
 	def test_an_anchor_removed_from_the_database_is_reported_from_the_file(self):
+		self.history()
+		self.anchor()  # an older anchor, left in the database
 		doc = self.history()
 		self.anchor()
 		anchored = newest_anchor("Audit Event")
@@ -382,11 +384,19 @@ class TestProblemsAreAlerted(AnchorTestCase):
 		alerted, found = len(self.alerts_to(self.qa)), len(self.findings())
 		self.assertTrue(found)
 
+		failed = frappe.db.count(
+			"Error Log", {"method": ["like", "Audit trail problem could not be alerted%"]}
+		)
 		self.anchor()  # the next hour: the removal is still there, nothing else has changed
 		self.anchor()
 
 		self.assertEqual(len(self.alerts_to(self.qa)), alerted)
 		self.assertEqual(len(self.findings()), found)
+		# Known already, it is not even tried again (and refused as a duplicate, every hour).
+		self.assertEqual(
+			frappe.db.count("Error Log", {"method": ["like", "Audit trail problem could not be alerted%"]}),
+			failed,
+		)
 
 	def test_a_further_removal_is_a_new_finding_and_alerted(self):
 		_doc, events = self.truncated(newest=1)
