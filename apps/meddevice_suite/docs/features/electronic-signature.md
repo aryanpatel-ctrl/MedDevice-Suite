@@ -27,7 +27,7 @@ Only the signing service writes an Electronic Signature; no role has create, wri
 
 ### 2.1 The signing dialog (URS-CMP-030, URS-CMP-001)
 
-A signed act is offered as a button on the record's form by the module that owns it (verified labels: Supplier Approval **Approve** / **Approve Conditionally** / **Not Approve**; Lot Release **Release** / **Reject** / **Hold**; Document Revision **Sign as Author** / **Sign as Reviewer** / **Approve**; Controlled Document **Withdraw**; Change Request acts per `qms/doctype/change_request/change_request.js`). Each button calls `meddevice_suite.esign.sign(frm, action, meaning, {ask_reason})` in `public/js/esign.js`, which opens the dialog:
+A signed act is offered as a button on the record's form by the module that owns it (verified labels: Supplier Approval **Approve** / **Approve Conditionally** / **Not Approve**; Lot Release **Release** / **Reject** / **Hold** / **Return to Stock** / **Reject Return**; Document Revision **Sign as Author** / **Sign as Reviewer** / **Approve**; Controlled Document **Withdraw**; Change Request acts per `qms/doctype/change_request/change_request.js`). Each button calls `meddevice_suite.esign.sign(frm, action, meaning, {ask_reason})` in `public/js/esign.js`, which opens the dialog:
 
 | Element | Label / text on screen |
 | --- | --- |
@@ -84,7 +84,7 @@ For printouts the Jinja method `signatures_for_print(doc)` is registered in `hoo
 | Document Revision | Author / Review / Return / Approve | Authored / Reviewed / Rejected / Approved |
 | Controlled Document | Withdraw | Approved |
 | Change Request | Assess / Approve / Return / Reject / Verify Effective / Verify Not Effective | Reviewed / Approved / Rejected / Rejected / Verified / Verified |
-| Lot Release | Release / Reject / Hold | Released / Rejected / Approved |
+| Lot Release | Release / Reject / Hold / Return to Stock / Reject Return | Released / Rejected / Held / Released / Rejected |
 | Supplier Approval | Approve / Approve Conditionally / Not Approve | Approved / Approved / Rejected |
 
 ### 2.7 What is intended but not implemented

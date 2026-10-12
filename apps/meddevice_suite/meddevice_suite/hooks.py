@@ -110,15 +110,23 @@ doc_events = {
 	"Delivery Note": {
 		# Module 5: delivered only to a customer with a verified licence valid on its date.
 		"before_validate": "meddevice_suite.master_data.customer_licence.guard_delivery_note",
-		"validate": "meddevice_suite.lot_control.lot_status.guard_delivery_note",
+		# Module 17: approved stock delivered; a customer's return comes into the Returns store.
+		"validate": "meddevice_suite.lot_control.lot_status.guard_sales_document",
 	},
 	# Customer licences (module 5): sold only to customers QA has verified a licence of.
 	"Sales Order": {
 		"before_validate": "meddevice_suite.master_data.customer_licence.guard_sales_order",
 		"before_update_after_submit": "meddevice_suite.master_data.customer_licence.guard_order_update",
 	},
-	"Sales Invoice": {"before_validate": "meddevice_suite.master_data.customer_licence.guard_sales_invoice"},
-	"POS Invoice": {"before_validate": "meddevice_suite.master_data.customer_licence.guard_sales_invoice"},
+	# Module 17, on an invoice that moves stock: as on a delivery note.
+	"Sales Invoice": {
+		"before_validate": "meddevice_suite.master_data.customer_licence.guard_sales_invoice",
+		"validate": "meddevice_suite.lot_control.lot_status.guard_sales_document",
+	},
+	"POS Invoice": {
+		"before_validate": "meddevice_suite.master_data.customer_licence.guard_sales_invoice",
+		"validate": "meddevice_suite.lot_control.lot_status.guard_sales_document",
+	},
 	"Customer": {
 		"onload": "meddevice_suite.master_data.customer_licence.customer_onload",
 		"validate": "meddevice_suite.master_data.customer_licence.guard_customer",

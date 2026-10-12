@@ -21,8 +21,9 @@ const TIMEOUT = 20000; // the longest a page or an action may take
 const QUIET_MS = 300; // no request in flight for this long: the page has finished
 const RELOAD_DELAY_MS = 1000; // the desk reloads a form this long after the server changes it
 
-// ERPNext's refusal of a move that would take a lot below zero (serial_and_batch_bundle.py).
-const NEGATIVE_LOT = /Batch No \S+ of an Item \S+ has negative stock/;
+// The refusal of a move of approved stock out of a store it is kept apart in (lot_status.py).
+const KEPT_APART =
+	/is Approved, but its stock in .* is kept apart there\. It leaves only by QA's signed release/;
 
 let password;
 let users;
@@ -950,21 +951,18 @@ context("The standard flow, through the screens of each job", { retries: 0 }, ()
 		no_problems("QA releases the lots");
 	});
 
-	it("[URS-PLT-007] [URS-STK-003] Stores cannot move the released lots out of quarantine again, for none is left", () => {
+	it("[URS-PLT-007] [URS-STK-010] Stores cannot move the released lots out of quarantine again: only QA's signed decision moves stock out of quarantine", () => {
 		sign_in("Stores");
-		// The same lots again: quarantine holds none of them any more.
+		// The same lots again, Approved now: stock in the quarantine store leaves only by QA's decision.
 		open_form("Purchase Receipt", made.receipt);
 		from_menu("Create", "Make Stock Entry");
 		form_is("Stock Entry", (doc) => doc.__islocal && doc.purpose === "Material Transfer");
 		settle();
 		fill("to_warehouse", data.stores.approved, "Link");
-		save(); // a draft moves nothing; the stock is checked when it is submitted
-		expect_refusal(NEGATIVE_LOT);
-		primary_action().should("contain", "Submit").click();
-		open_dialog().should("contain", "Permanently Submit");
-		cy.get(".modal.show .btn-primary").contains("Yes").click();
-		refused_with(NEGATIVE_LOT);
-		cy.window().should((win) => expect(current(win).docstatus).to.equal(0));
+		expect_refusal(KEPT_APART);
+		primary_action().should("contain", "Save").click();
+		refused_with(KEPT_APART);
+		cy.window().should((win) => expect(current(win).__islocal, "nothing was saved").to.be.ok);
 		cy.then(() =>
 			cy.call("frappe.client.get_list", {
 				doctype: "Stock Entry",

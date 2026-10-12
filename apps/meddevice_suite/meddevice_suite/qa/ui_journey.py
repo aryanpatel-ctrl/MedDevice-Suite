@@ -32,7 +32,15 @@ from frappe import _
 from frappe.utils import add_days, today
 from frappe.utils.password import update_password
 
-from meddevice_suite.lot_control.lot_status import APPROVED, REJECTED, set_status, stock_by_lot
+from meddevice_suite.lot_control import stores
+from meddevice_suite.lot_control.lot_status import (
+	APPROVED,
+	REJECTED,
+	holdings_of,
+	move_to_role,
+	set_status,
+	stock_by_lot,
+)
 from meddevice_suite.master_data import item_master
 from meddevice_suite.pilot.demo import (
 	BOM_QUANTITY,
@@ -280,10 +288,13 @@ def ensure_masters(
 
 def write_off_leftover_stock() -> None:
 	"""Scrap whatever stock of the journey's items an earlier run left in any store: each
-	leftover lot is rejected first, because only a rejected lot can be scrapped (module 17)."""
+	leftover lot is rejected and its stock moved to the Rejected store first, as QA's rejection
+	moves it, because stock is scrapped only from there (module 17)."""
+	reason = "Browser test: leftover of an earlier run, scrapped"
+	for lot in {row.batch_no for item in journey_items() for row in stock_by_lot(item)}:
+		set_status(lot, REJECTED, reason)
+		move_to_role(frappe.get_doc("Batch", lot), stores.REJECTED, reason, holdings_of(lot))
 	leftovers = [row for item in journey_items() for row in stock_by_lot(item)]
-	for lot in {row.batch_no for row in leftovers}:
-		set_status(lot, REJECTED, "Browser test: leftover of an earlier run, scrapped")
 	if leftovers:
 		post_stock_entry(
 			"Material Issue",
@@ -323,10 +334,11 @@ def put_later_expiring_lots() -> dict[str, str]:
 				"use_serial_batch_fields": 1,
 			}
 		)
-	post_stock_entry("Material Receipt", rows)
-	# Stock that was already in an approved store before the run is approved stock.
+	# Stock that was already in an approved store before the run is approved stock; only an approved
+	# lot comes into an approved store (module 17), so the lots are approved before they come in.
 	for lot in lots.values():
 		set_status(lot, APPROVED, "Browser test: approved stock already in store before the run")
+	post_stock_entry("Material Receipt", rows)
 	return lots
 
 

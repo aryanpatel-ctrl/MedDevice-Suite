@@ -28,9 +28,9 @@ from frappe.utils import flt, getdate
 from meddevice_suite.lot_control import stores
 from meddevice_suite.lot_control.lot_status import (
 	APPROVED,
-	PRECISION,
 	TRANSFER_FIELD,
 	lots_of_bundle,
+	qty_precision,
 	status_of,
 )
 
@@ -75,7 +75,7 @@ def apply_expiry_fields() -> None:
 
 def guard_stock_ledger_entry(sle: Document, method: str | None = None) -> None:
 	"""Stock Ledger Entry validate: what leaves a store is not expired and goes first by expiry."""
-	if sle.is_cancelled or flt(sle.actual_qty, PRECISION) >= 0:
+	if sle.is_cancelled or flt(sle.actual_qty, qty_precision()) >= 0:
 		return
 	lots = [sle.batch_no] if sle.batch_no else lots_of_bundle(sle.serial_and_batch_bundle)
 	if not lots:
@@ -167,6 +167,7 @@ def earlier_lot_left(sle: Document, lot: str, expiry_date) -> frappe._dict | Non
 		return None
 	statuses = status_of([row.batch_no for row in candidates])
 	taken = taken_by_document(sle)
+	precision = qty_precision()
 	for row in candidates:
 		if statuses.get(row.batch_no) != APPROVED:
 			continue
@@ -176,9 +177,9 @@ def earlier_lot_left(sle: Document, lot: str, expiry_date) -> frappe._dict | Non
 				warehouse=sle.warehouse,
 				ignore_voucher_nos=[sle.voucher_no],
 			),
-			PRECISION,
+			precision,
 		)
-		if flt(elsewhere - taken.get(row.batch_no, 0), PRECISION) > 0:
+		if flt(elsewhere - taken.get(row.batch_no, 0), precision) > 0:
 			return row
 	return None
 

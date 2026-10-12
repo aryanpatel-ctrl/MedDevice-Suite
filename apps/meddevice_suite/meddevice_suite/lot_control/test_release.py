@@ -15,6 +15,7 @@ from meddevice_suite.lot_control.lot_status import (
 	QUARANTINE,
 	REJECTED,
 	STATUS_FIELD,
+	LotNotApproved,
 	set_status,
 	status_of,
 )
@@ -538,7 +539,7 @@ class TestTheSignedDecision(ReleaseTestCase):
 		record.run_method("onload")
 		self.assertEqual(
 			record.get_onload("lot"),
-			{"status": QUARANTINE, "from_supplier": False, "certificate_verified": False},
+			{"status": QUARANTINE, "from_supplier": False, "certificate_verified": False, "returned": 0},
 		)
 		# A role that could create the record but is not QA is still refused before insert.
 		frappe.set_user(self.qc)
@@ -892,3 +893,201 @@ class TestWhereALotCameFrom(ReleaseTestCase):
 		reconciliation.submit()
 		with self.assertRaisesRegex(frappe.ValidationError, "only stock received on a goods receipt"):
 			self.decide(lot.name, "Release", "found in a count")
+
+
+@verifies("URS-QC-003", "URS-STK-010")
+class TestADecisionActsOnTheStockOfItsStatus(ReleaseTestCase):
+	"""A goods receipt puts the quantity rejected at the door in the Rejected store under the same lot
+	as the accepted quantity in quarantine. QA's decision is on the accepted quantity only; the
+	rejected units go back or are scrapped by Stores (found 2026-10-12: a release moved them into
+	approved stock, and a rejection failed on ERPNext's return checks)."""
+
+	def received_with_a_door_rejection(
+		self, accepted: float = 6, rejected: float = 2
+	) -> tuple[Document, str]:
+		frappe.set_user("Administrator")
+		receipt = purchase_receive(ITEM, accepted, submit=False)
+		lot = (
+			frappe.get_doc(
+				{"doctype": "Batch", "item": ITEM, "batch_id": f"DOOR-{frappe.generate_hash(length=6)}"}
+			)
+			.insert()
+			.name
+		)
+		receipt.items[0].update(
+			{
+				"received_qty": accepted + rejected,
+				"rejected_qty": rejected,
+				"rejected_warehouse": store(stores.REJECTED),
+				"batch_no": lot,
+				"use_serial_batch_fields": 1,
+				"mds_supplier_lot_no": "SUP-4711",
+				"mds_certificate": certificate(receipt.name),
+			}
+		)
+		receipt.save()
+		receipt.submit()
+		self.assertEqual(
+			(qty_in(lot, store(stores.QUARANTINE)), qty_in(lot, store(stores.REJECTED))), (accepted, rejected)
+		)
+		return frappe.get_doc("Purchase Receipt", receipt.name), lot
+
+	def test_release_leaves_the_units_rejected_at_the_door_in_the_rejected_store(self):
+		receipt, lot = self.received_with_a_door_rejection()
+		self.verified(receipt)
+		self.inspected(receipt, lot)
+
+		decision = self.decide(lot, "Release", "accepted quantity inspected")
+
+		self.assertEqual(decision.quantity, 6)
+		moved = frappe.get_doc("Stock Entry", decision.stock_entry)
+		self.assertEqual(
+			[(row.s_warehouse, row.t_warehouse, row.qty) for row in moved.items],
+			[(store(stores.QUARANTINE), store("Stores"), 6)],
+		)
+		self.assertEqual((qty_in(lot, store("Stores")), qty_in(lot, store(stores.REJECTED))), (6, 2))
+		frappe.set_user(self.stores_user)
+		with self.assertRaises(LotNotApproved):  # the lot is Approved; its rejected units stay rejected
+			stock_entry(
+				"Material Transfer",
+				[
+					{
+						"item_code": ITEM,
+						"qty": 2,
+						"s_warehouse": store(stores.REJECTED),
+						"t_warehouse": store("Stores"),
+						"batch_no": lot,
+						"use_serial_batch_fields": 1,
+					}
+				],
+			)
+
+	def test_reject_returns_the_accepted_quantity_and_stores_scraps_the_rest(self):
+		receipt, lot = self.received_with_a_door_rejection()
+		self.verified(receipt)
+		self.inspected(receipt, lot, accept=False)
+
+		decision = self.decide(lot, "Reject", "Dimension out of limits")
+
+		self.assertEqual((decision.quantity, qty_in(lot, store(stores.REJECTED))), (6, 8))
+		back = frappe.get_doc("Purchase Receipt", decision.supplier_return)
+		self.assertEqual(
+			[
+				(row.batch_no, row.qty, row.received_qty, row.rejected_qty, row.warehouse)
+				for row in back.items
+			],
+			[(lot, -6, -6, 0, store(stores.REJECTED))],
+		)
+		frappe.set_user("Administrator")
+		back.submit()  # ERPNext's return checks: received = accepted + rejected, no more than accepted
+		self.assertEqual(qty_in(lot, store(stores.REJECTED)), 2)
+		frappe.set_user(self.stores_user)
+		stock_entry(
+			"Material Issue",
+			[
+				{
+					"item_code": ITEM,
+					"qty": 2,
+					"s_warehouse": store(stores.REJECTED),
+					"batch_no": lot,
+					"use_serial_batch_fields": 1,
+				}
+			],
+		)
+		self.assertEqual(qty_in(lot, store(stores.REJECTED)), 0)
+
+	def test_stores_returns_the_units_rejected_at_the_door_while_the_lot_waits_in_quarantine(self):
+		from erpnext.stock.doctype.purchase_receipt.purchase_receipt import (
+			make_purchase_return_against_rejected_warehouse,
+		)
+
+		receipt, lot = self.received_with_a_door_rejection()
+		back = make_purchase_return_against_rejected_warehouse(receipt.name)
+		for row in back.items:
+			row.update(
+				{
+					"warehouse": store(stores.REJECTED),
+					"batch_no": lot,
+					"use_serial_batch_fields": 1,
+					"serial_and_batch_bundle": None,
+				}
+			)
+		back.insert()
+		back.submit()
+
+		self.assertEqual(status_of([lot])[lot], QUARANTINE)
+		self.assertEqual((qty_in(lot, store(stores.REJECTED)), qty_in(lot, store(stores.QUARANTINE))), (0, 6))
+		self.verified(receipt)
+		self.inspected(receipt, lot)
+		self.assertEqual(self.decide(lot, "Release", "accepted quantity inspected").quantity, 6)
+
+
+@verifies("URS-QC-003")
+class TestTheDecisionRestsOnTheLotAsItIsWhenSigned(ReleaseTestCase):
+	def test_a_draft_made_before_a_hold_is_not_released_without_a_new_inspection(self):
+		"""What the draft read when it was made is read again when QA signs (found 2026-10-12: a
+		draft made before a hold skipped the new inspection the hold requires)."""
+		receipt, lot = self.ready()
+		stale = self.record(lot)  # drafted while the lot was in quarantine
+		self.decide(lot, "Hold", "label unreadable")
+
+		frappe.set_user(self.qa)
+		with self.assertRaisesRegex(frappe.ValidationError, "made after it was put on hold"):
+			sign_action("Lot Release", stale.name, "Release", PASSWORD, "signed on the old draft")
+		self.assertEqual(status_of([lot])[lot], HOLD)
+		self.inspected(receipt, lot)
+		frappe.set_user(self.qa)
+		sign_action("Lot Release", stale.name, "Release", PASSWORD, "retested and accepted")
+
+		signed = frappe.get_doc("Lot Release", stale.name)
+		self.assertEqual((signed.lot_status_before, signed.quantity), (HOLD, 6))
+		self.assertTrue(signed.held_since)
+		self.assertEqual(status_of([lot])[lot], APPROVED)
+
+	def test_a_newer_rejected_inspection_overrules_an_older_accepted_one(self):
+		receipt, lot = self.ready()
+		self.inspected(receipt, lot, accept=False)  # inspected again, and rejected
+
+		self.assertIsNone(accepted_inspection(lot))
+		with self.assertRaisesRegex(frappe.ValidationError, "no accepted incoming inspection"):
+			self.decide(lot, "Release", "the first inspection passed")
+		self.assertEqual(status_of([lot])[lot], QUARANTINE)
+
+	def test_hold_is_signed_as_held(self):
+		_receipt, lot = self.ready()
+
+		held = self.decide(lot, "Hold", "label unreadable")
+
+		self.assertEqual(
+			frappe.get_all(
+				"Electronic Signature",
+				filters={"reference_doctype": "Lot Release", "reference_name": held.name},
+				pluck="meaning",
+			),
+			["Held"],
+		)
+		self.assertTrue(verify_signatures("Lot Release", held.name))
+
+
+@verifies("URS-QC-001", "URS-STK-004")
+class TestOneLotOneReceiptLine(ReleaseTestCase):
+	def test_the_same_new_lot_on_two_lines_is_refused(self):
+		frappe.set_user("Administrator")
+		receipt = purchase_receive(ITEM, 2, submit=False)
+		scanned = frappe.get_doc(
+			{"doctype": "Batch", "item": ITEM, "batch_id": f"TWICE-{frappe.generate_hash(length=6)}"}
+		).insert()
+		receipt.items[0].update({"batch_no": scanned.name, "use_serial_batch_fields": 1})
+		receipt.append(
+			"items",
+			{
+				"item_code": ITEM,
+				"qty": 1,
+				"rate": 10,
+				"warehouse": store(stores.QUARANTINE),
+				"batch_no": scanned.name,
+				"use_serial_batch_fields": 1,
+			},
+		)
+		with self.assertRaisesRegex(frappe.ValidationError, "named on more than one line"):
+			receipt.save()

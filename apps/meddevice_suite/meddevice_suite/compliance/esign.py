@@ -31,7 +31,17 @@ from frappe.utils.password import check_password
 
 from meddevice_suite.compliance.fingerprint import chain_head, plain_text, record_content, sha256
 
-MEANINGS = ("Authored", "Reviewed", "Approved", "Rejected", "Released", "Verified", "Trained", "Competent")
+MEANINGS = (
+	"Authored",
+	"Reviewed",
+	"Approved",
+	"Rejected",
+	"Released",
+	"Verified",
+	"Trained",
+	"Competent",
+	"Held",
+)
 
 # Accounts that do not identify one person (21 CFR 11.100(a)).
 SHARED_ACCOUNTS = ("Administrator", "Guest")

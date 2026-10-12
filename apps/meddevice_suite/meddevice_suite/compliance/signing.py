@@ -62,10 +62,12 @@ SIGNING_ACTIONS: dict[tuple[str, str], SignedAct] = {
 	("Change Request", "Verify Not Effective"): SignedAct(
 		"Verified", f"{CHANGE_CONTROL}.verify_not_effective"
 	),
-	# Modules 16 and 17, the decision on a lot
+	# Modules 16 and 17, the decision on a lot, and on goods a customer sent back (plan D-25)
 	("Lot Release", "Release"): SignedAct("Released", f"{LOT_RELEASE}.release"),
 	("Lot Release", "Reject"): SignedAct("Rejected", f"{LOT_RELEASE}.reject"),
-	("Lot Release", "Hold"): SignedAct("Approved", f"{LOT_RELEASE}.hold"),
+	("Lot Release", "Hold"): SignedAct("Held", f"{LOT_RELEASE}.hold"),
+	("Lot Release", "Return to Stock"): SignedAct("Released", f"{LOT_RELEASE}.return_to_stock"),
+	("Lot Release", "Reject Return"): SignedAct("Rejected", f"{LOT_RELEASE}.reject_return"),
 	# Module 4, the decision on a supplier
 	("Supplier Approval", "Approve"): SignedAct("Approved", f"{SUPPLIER_APPROVAL}.approve"),
 	("Supplier Approval", "Approve Conditionally"): SignedAct(

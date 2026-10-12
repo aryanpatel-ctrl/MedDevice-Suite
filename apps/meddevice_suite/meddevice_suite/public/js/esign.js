@@ -11,6 +11,7 @@ const MEANING_TEXT = {
 	Verified: __("I have verified this."),
 	Trained: __("I was trained in this, and I understand it."),
 	Competent: __("I have assessed this person and found them competent."),
+	Held: __("I hold this from use."),
 };
 
 const esign = frappe.provide("meddevice_suite.esign");
