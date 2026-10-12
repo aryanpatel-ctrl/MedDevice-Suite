@@ -73,11 +73,13 @@ function with_reason(frm, action, name) {
 function wrap_update_items() {
 	const update_child_items = window.erpnext?.utils?.update_child_items;
 	if (!update_child_items || update_child_items.mds_reason_for_change) return;
-	const wrapped = (opts) =>
-		with_reason(opts.frm, "update_after_submit", opts.frm.doc.name).then(
-			() => update_child_items(opts),
+	// A function, not an arrow: ERPNext's keeps its rows on `this` (erpnext.utils).
+	const wrapped = function (opts) {
+		return with_reason(opts.frm, "update_after_submit", opts.frm.doc.name).then(
+			() => update_child_items.call(this, opts),
 			() => {}
 		);
+	};
 	wrapped.mds_reason_for_change = true;
 	window.erpnext.utils.update_child_items = wrapped;
 }
