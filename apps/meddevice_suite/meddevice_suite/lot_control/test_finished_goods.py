@@ -42,7 +42,7 @@ EXPECTED: dict[tuple[str, str | None], str] = {
 	(STOCK_ENTRY, "Disassemble"): NEVER,
 	(STOCK_ENTRY, "Receive from Customer"): NEVER,
 	(STOCK_ENTRY, "Subcontracting Return"): NEVER,
-	(STOCK_RECONCILIATION, None): OPENING,
+	(STOCK_RECONCILIATION, None): NEVER,  # a new lot never; a count of a lot in stock is counted_back's
 	("Purchase Receipt", None): NEVER,
 	("Purchase Invoice", None): NEVER,
 	("Subcontracting Receipt", None): NEVER,
@@ -207,21 +207,24 @@ class TestFinishedGoodsComeFromProduction(ReleaseTestCase):
 					frappe.get_hooks("doc_events")[doctype]["validate"],
 				)
 
-	def test_a_count_brings_a_new_lot_of_a_finished_good_in_only_as_opening_stock(self):
+	def test_a_count_never_brings_a_new_lot_of_a_finished_good_in_not_even_as_opening_stock(self):
 		frappe.set_user("Administrator")
 		approve_for_test(FINISHED_ITEM)
 		new_lot = frappe.get_doc({"doctype": "Batch", "item": FINISHED_ITEM}).insert().name
 
-		with self.assertRaises(FinishedGoodNotProduced) as refused:
-			finished_goods.guard_document(self.count(new_lot))
-		self.assertIn("Opening Stock", str(refused.exception))
+		for purpose in ("Stock Reconciliation", "Opening Stock"):
+			count = self.count(new_lot)
+			count.purpose = purpose
+			with self.subTest(purpose=purpose), self.assertRaises(FinishedGoodNotProduced) as refused:
+				finished_goods.guard_document(count)
+			# Pointed to the path QA inspects and releases (decided 2026-10-09).
+			self.assertIn("material receipt with Is Opening set to Yes", str(refused.exception))
 		with self.assertRaises(FinishedGoodNotProduced):
 			finished_goods.guard_stock_ledger_entry(
 				self.ledger_entry(STOCK_RECONCILIATION, "SR-NOT-STORED", new_lot)
 			)
-		opening = as_opening_stock(self.count(new_lot))  # at migration
-		self.assertEqual(opening.purpose, "Opening Stock")
-		finished_goods.guard_document(opening)
+		with self.assertRaises(frappe.ValidationError):
+			as_opening_stock(self.count(new_lot))  # opening stock is a material receipt only
 
 	def test_a_count_of_a_finished_lot_already_in_stock_is_left_to_the_count_rule(self):
 		frappe.set_user("Administrator")

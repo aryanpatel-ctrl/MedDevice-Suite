@@ -10,16 +10,19 @@ have none of that record behind it.
 One rule answers, for every voucher type and stock entry purpose that can post stock, whether stock
 of a finished good may come in on it (`may_enter`, from the declarations in `WAYS_IN`): from
 production, moved between stores, or a customer's goods coming back, yes; opening stock at migration
-on a material receipt (ERPNext's Is Opening = Yes) or a stock reconciliation of purpose Opening
-Stock, yes; a goods receipt, a purchase invoice, a subcontractor's receipt, a material receipt or a
-stock reconciliation that is not opening stock, no. A path not declared is refused, so a voucher
+on a material receipt (ERPNext's Is Opening = Yes), yes; a goods receipt, a purchase invoice, a
+subcontractor's receipt, a material receipt that is not opening stock, and a stock reconciliation
+that brings a new lot in, of whatever purpose, no. A path not declared is refused, so a voucher
 type ERPNext adds is classified before it is trusted. The rule is held on the forms that bring stock
 in, before they are submitted (`guard_document`), and at the stock ledger, which every posting
 passes whatever made it (`guard_stock_ledger_entry`), as the lot status rules are (`lot_status`). A
 stock count of a lot already in stock is not new stock and is left to `lot_status.counted_back`.
 
-Opening stock (`as_opening_stock`) still comes in as new lots in Quarantine, inspected and released
-by QA (modules 16, 17).
+Opening stock comes in only as a material receipt (`as_opening_stock`), the path QA inspects and
+releases: opening stock is loaded as material receipts and inspected on them (decided 2026-10-09,
+DFD 3.1-3.5). It comes in as new lots in Quarantine (modules 16, 17). A stock reconciliation of
+purpose Opening Stock would bring a lot in that QA's release does not take, so it never brings a
+finished lot in.
 """
 
 import frappe
@@ -34,7 +37,6 @@ from meddevice_suite.master_data.item_master import FINISHED_GOOD, ITEM_TYPE
 STOCK_ENTRY, STOCK_RECONCILIATION = "Stock Entry", "Stock Reconciliation"
 MATERIAL_RECEIPT = "Material Receipt"
 OPENING = "Yes"  # ERPNext's Is Opening on a stock entry
-OPENING_STOCK = "Opening Stock"  # ERPNext's purpose of a stock reconciliation at migration
 
 # How stock of a finished good may come in on a voucher.
 PRODUCED = "made by production"
@@ -65,8 +67,9 @@ WAYS_IN: dict[tuple[str, str | None], str] = {
 	# Subcontracting for a customer (their material in, their goods back): not in the DFD.
 	(STOCK_ENTRY, "Receive from Customer"): NEVER,
 	(STOCK_ENTRY, "Subcontracting Return"): NEVER,
-	# A new lot only at migration; a count of a lot in stock is not new stock (lot_status.counted_back).
-	(STOCK_RECONCILIATION, None): OPENING_ONLY,
+	# Never a new lot, Opening Stock included: opening stock comes in on a material receipt, which QA
+	# inspects and releases. A count of a lot in stock is not new stock (lot_status.counted_back).
+	(STOCK_RECONCILIATION, None): NEVER,
 	# Bought in, or made by another plant: trading, not in the DFD.
 	("Purchase Receipt", None): NEVER,
 	("Purchase Invoice", None): NEVER,
@@ -115,16 +118,13 @@ def may_enter(
 
 
 def way_in(voucher_type: str, values: Document | frappe._dict) -> tuple[str | None, bool, bool]:
-	"""(stock entry or reconciliation purpose, whether opening stock, whether a return) of a voucher,
-	from the voucher itself or its stored values."""
-	purpose = values.get("purpose")
+	"""(stock entry purpose, whether opening stock, whether a return) of a voucher, from the voucher
+	itself or its stored values."""
 	if voucher_type == STOCK_ENTRY:
-		purpose = purpose or frappe.db.get_value(
+		purpose = values.get("purpose") or frappe.db.get_value(
 			"Stock Entry Type", values.get("stock_entry_type"), "purpose"
 		)
 		return purpose, values.get("is_opening") == OPENING, False
-	if voucher_type == STOCK_RECONCILIATION:
-		return purpose, purpose == OPENING_STOCK, False
 	return None, False, bool(values.get("is_return"))
 
 
@@ -197,7 +197,7 @@ def is_new(lots: list[str], origins: dict[str, frappe._dict], voucher_no: str | 
 def refuse(items: list[str], voucher_type: str) -> None:
 	frappe.throw(
 		_(
-			"{0}: a finished good comes into stock only from production, on its work order's manufacture entry, not on a {1}. Only opening stock at migration comes in otherwise: a material receipt with Is Opening set to Yes, or a stock reconciliation of purpose Opening Stock."
+			"{0}: a finished good comes into stock only from production, on its work order's manufacture entry, not on a {1}. Only opening stock at migration comes in otherwise, on a material receipt with Is Opening set to Yes, which QA inspects and releases."
 		).format(", ".join(items), _(voucher_type)),
 		FinishedGoodNotProduced,
 		title=_("Finished goods come from production"),
@@ -205,15 +205,13 @@ def refuse(items: list[str], voucher_type: str) -> None:
 
 
 def as_opening_stock(doc: Document) -> Document:
-	"""Make a material receipt or a stock reconciliation opening stock at migration: Is Opening = Yes,
-	or the purpose Opening Stock, with the difference posted to the company's temporary opening
-	account, as ERPNext requires of an opening entry (an expense account would put the opening value
-	in the profit and loss)."""
+	"""Make a material receipt opening stock at migration: Is Opening = Yes, with each line's difference
+	posted to the company's temporary opening account, as ERPNext requires of an opening entry (an
+	expense account would put the opening value in the profit and loss). Opening stock comes in on a
+	material receipt only, the path QA inspects and releases."""
+	if doc.doctype != STOCK_ENTRY:
+		frappe.throw(_("Opening stock comes in on a material receipt with Is Opening set to Yes."))
 	account = opening_account(doc.company)
-	if doc.doctype == STOCK_RECONCILIATION:
-		doc.purpose = OPENING_STOCK
-		doc.expense_account = account
-		return doc
 	doc.is_opening = OPENING
 	for row in doc.items:
 		row.expense_account = account
