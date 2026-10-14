@@ -60,7 +60,12 @@ doc_events = {
 			"meddevice_suite.compliance.audit_timeline.onload",
 			"meddevice_suite.compliance.signing.onload",
 		],
-		"on_change": "meddevice_suite.compliance.audit.on_change",
+		"on_change": [
+			"meddevice_suite.compliance.audit.on_change",
+			# Change control (module 36): a change made under a request is recorded on it once the
+			# save that makes it has gone through; returns at once for any other save.
+			"meddevice_suite.qms.change_control.record_changes_made",
+		],
 		"on_trash": "meddevice_suite.compliance.audit.on_trash",
 		"before_rename": "meddevice_suite.master_data.versioning.refuse_rename_in_use",
 		"after_rename": "meddevice_suite.compliance.audit.after_rename",

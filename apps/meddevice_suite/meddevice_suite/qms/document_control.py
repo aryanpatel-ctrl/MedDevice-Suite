@@ -15,6 +15,9 @@ author, then moves on only through signed acts (21 CFR Part 11):
 - outside QA, people see only effective revisions, and the drafts they author or
   review, so a superseded or withdrawn revision is not used by mistake;
 - nothing is ever deleted; a document is withdrawn, with a signature and a reason;
+- each effective document is reviewed every review period (ISO 13485 4.2.4 b): QA either starts a
+  new revision or signs that the effective revision is still current (`review_document`), which
+  moves the next review a review period on without changing the document or the revision;
 - a revision is submitted and changed after submission only by these acts, never
   by Frappe's own Submit or an API call; its file cannot be deleted, made public
   or replaced once it is fingerprinted (`compliance.evidence_files`).
@@ -33,6 +36,7 @@ from frappe.utils import add_days, add_years, getdate, nowdate, today
 from meddevice_suite.compliance import quality_settings
 from meddevice_suite.compliance.esign import sign
 from meddevice_suite.qms import training
+from meddevice_suite.work_management import reminders
 
 QA_ROLE = "Quality Manager"
 IN_PROGRESS = ("Draft", "In Review", "Awaiting Approval", "Approved")
@@ -139,6 +143,49 @@ def withdraw(document: Document, password: str, reason: str | None = None) -> No
 		frappe.get_doc("Document Revision", document.current_revision).db_set("status", "Obsolete")
 	save(document)
 	training.on_document_change(document.name)  # nobody is trained on it any more (module 37)
+
+
+def review_document(document: Document, password: str, reason: str | None = None) -> None:
+	"""Signed act, the periodic review (ISO 13485 4.2.4 b): QA, who approves the document's
+	revisions, records that its effective revision was reviewed and is still current. Nothing in the
+	document or the revision changes; its next review falls one review period from today, which
+	settles the review due (module 60). A revision in progress is the review's other outcome, the
+	document being updated; it settles the review when it takes effect."""
+	require(
+		is_qa(),
+		_("Only QA, who approves its revisions, reviews {0}.").format(document.name),
+		frappe.PermissionError,
+	)
+	# Held until the request ends, so no revision is started or takes effect while this holds.
+	lock_document(document.name)
+	document = frappe.get_doc("Controlled Document", document.name)
+	require(
+		document.status == "Effective" and document.current_revision,
+		_("Only a document in effect is reviewed; {0} is {1}.").format(document.name, _(document.status)),
+	)
+	in_progress = frappe.db.get_value(
+		"Document Revision", {"controlled_document": document.name, "status": ["in", IN_PROGRESS]}, "name"
+	)
+	require(
+		not in_progress,
+		_("Revision {0} of {1} is in progress; the review is settled when it takes effect.").format(
+			in_progress, document.name
+		),
+	)
+	require(reason, _("Say what the review found."))
+	revision = frappe.db.get_value("Document Revision", document.current_revision, "revision")
+	document.next_review_date = add_years(today(), document.review_period_years)
+	# The signature holds who reviewed it, when and what was found; the audit trail the date it moved.
+	sign(document, "Reviewed", "Review", password, reason)
+	save(document)
+	reminders.settle(
+		"Document Review",
+		"Controlled Document",
+		document.name,
+		_("Reviewed, still current: revision {0}").format(revision),
+		by=frappe.session.user,
+		still_due_on=document.next_review_date,
+	)
 
 
 # --- Taking effect ----------------------------------------------------------------------

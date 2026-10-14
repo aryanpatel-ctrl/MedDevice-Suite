@@ -15,7 +15,15 @@ through the acts below; those marked ✍ are electronic signatures (21 CFR Part 
   people, and never by the person who raised it; QA, or Management for a Major change awaiting
   it, can return the change to the person who raised it or reject it, with a reason;
 - the actions are part of what is approved: once approved they are only completed, each by its
-  owner or QA with a note, and the change is implemented when every one is done;
+  owner or QA with a note, and the change is implemented when every one is done and what it
+  changed is in force (`not_in_force`): a revision effective, a risk assessment approved, an item
+  or other master QA approves approved, and each device master record the change put out of date
+  approved again (found in the foundation review of 2026-10-12);
+- an approved request authorises the change of each record it lists, once (ISO 13485 7.3.9,
+  4.2.4): the record the change is made in is recorded against the listing once the change is
+  saved (`require_approved_change`, `record_changes_made`), and the request authorises no further
+  change of that record; a change abandoned before it took effect (a withdrawn risk assessment)
+  leaves the listing unspent (found in the foundation review of 2026-10-12);
 - QA closes the change with a signed effectiveness check, on or after its check date;
 - nothing is deleted or cancelled; until it is approved, the person who raised it may withdraw it;
 - a new revision of an effective controlled document needs an approved change request that
@@ -62,6 +70,17 @@ AFFECTED_TYPES = (
 	"Regulatory Licence",  # a licence or registration the change must be notified under (URS-REG-006)
 )
 RESULT_TYPES = (*AFFECTED_TYPES, "Document Revision")
+
+# On each listed record: the record its change was made in and when (a document's revision, a
+# risk file's assessment, a master itself). Set only by `record_changes_made`.
+CHANGE_RECORD_TYPE, CHANGE_RECORD, CHANGED_ON = "change_record_type", "change_record", "changed_on"
+CHANGE_RECORD_FIELDS = (CHANGE_RECORD_TYPE, CHANGE_RECORD, CHANGED_ON)
+# Pending on the record being saved: (change request, listed type, listed name) of each change the
+# save makes under a request, recorded once the save has gone through.
+PENDING_FLAG = "changes_under_request"
+# A record a change was started in that was given up before it took effect; the listing it spent
+# is free again (module 39: a withdrawn assessment no longer holds the change request back).
+ABANDONED: dict[str, tuple[str, ...]] = {"Risk Assessment": ("Withdrawn",)}
 
 IMPACT_AREAS = (
 	"impact_product_quality",
@@ -120,6 +139,7 @@ def submit_for_assessment(name: str) -> None:
 		doc.affected_records or doc.change_type == "System",
 		_("List the records the change affects."),
 	)
+	check_listing(doc)
 	doc.status = "Under Assessment"
 	save(doc)
 	alert(AWAITING_ASSESSMENT, doc)
@@ -153,6 +173,7 @@ def assess(doc: Document, password: str, reason: str | None = None) -> None:
 	require(not missing, _("Record the impact on: {0}.").format(", ".join(missing)))
 	require((doc.impact_summary or "").strip(), _("Summarise the assessment."))
 	require(doc.classification in ("Minor", "Major"), _("Classify the change as Minor or Major."))
+	check_listing(doc)  # QA may have completed the records while assessing
 	require(
 		doc.impact_regulatory != "Yes" or doc.classification == "Major",
 		_("A change that needs regulatory notification is a Major change."),
@@ -308,6 +329,15 @@ def complete_action(
 		}
 	)
 	if all(each.done for each in doc.actions):
+		# Implemented means the change is in use: nothing it changed may still wait for its approval
+		# or its effective date (found in the foundation review of 2026-10-12).
+		pending = not_in_force(doc)
+		require(
+			not pending,
+			_(
+				"{0} is implemented once what it changed is in force. Not yet in force: {1}. Record action {2} as done once it is."
+			).format(doc.name, "; ".join(pending), row.idx),
+		)
 		doc.status = "Implemented"
 		doc.implemented_on = today()
 		doc.effectiveness_due_on = add_days(doc.implemented_on, cint(doc.effectiveness_check_days))
@@ -315,7 +345,116 @@ def complete_action(
 	save(doc)
 
 
-# --- Document control ------------------------------------------------------------------------
+# --- In force ------------------------------------------------------------------------------------
+
+
+def in_force_rules() -> dict[str, tuple[str, tuple]]:
+	"""When a record that carries a change, or that an action produced, is in force: the field that
+	says so and the values that do. Any other record type takes effect as it is saved: a supplier, a
+	customer, a specification, Quality Settings or a licence has no approval of its own, and its new
+	version is in effect from the save (master_data/versioning.py)."""
+	# The masters' modules build on this one (versioning names a change request).
+	from meddevice_suite.master_data import equipment, item_master, master_approval
+
+	approved_master = (master_approval.APPROVAL_STATUS, (master_approval.APPROVED,))
+	return {
+		# A superseded revision took effect before a later one replaced it.
+		"Document Revision": ("status", ("Effective", "Superseded")),
+		"Controlled Document": ("status", ("Effective",)),
+		"Risk Assessment": ("status", ("Approved", "Superseded")),
+		"Risk Management File": ("status", ("In Force",)),
+		"Item": (item_master.APPROVAL_STATUS, (item_master.APPROVED,)),
+		"Routing": approved_master,
+		"Operation": approved_master,
+		"Workstation": approved_master,
+		"Warehouse": approved_master,
+		"Asset": (equipment.APPROVAL_STATUS, (equipment.APPROVED,)),
+		# QA's signed approval is its submit; one cancelled under the change was taken out of force.
+		"BOM": ("docstatus", (1, 2)),
+	}
+
+
+def not_in_force(doc: Document) -> list[str]:
+	"""What the change made that is not in force yet, each in words: the records its changes were
+	made in (a revision approved for a later date, an assessment not yet approved), the records its
+	actions produced (an item QA has not approved), and each device master record the change put out
+	of date that QA has not approved again (module 31). A change given up before it took effect is
+	not counted."""
+	made = [
+		(row.get(CHANGE_RECORD_TYPE), row.get(CHANGE_RECORD))
+		for row in doc.get("affected_records") or []
+		if row.get(CHANGE_RECORD)
+	]
+	made += [
+		(row.result_doctype, row.result_name)
+		for row in doc.get("actions") or []
+		if row.result_doctype and row.result_name
+	]
+	given_up = abandoned(made)
+	rules = in_force_rules()
+	by_type: dict[str, list[str]] = {}
+	for doctype, name in dict.fromkeys(made):
+		if doctype in rules and (doctype, name) not in given_up:
+			by_type.setdefault(doctype, []).append(name)
+	pending = []
+	for doctype, names in by_type.items():
+		field, in_force_values = rules[doctype]
+		for row in frappe.get_all(doctype, filters={"name": ["in", names]}, fields=["name", field]):
+			if row.get(field) not in in_force_values:
+				state = _("Draft") if field == "docstatus" else _(row.get(field) or "Draft")
+				pending.append(_("{0} {1} ({2})").format(_(doctype), row.name, state))
+	pending += [
+		_("Device Master Record {0} (out of date with this change; QA approves its next revision)").format(
+			name
+		)
+		for name in records_out_of_date_by(doc.name)
+	]
+	return pending
+
+
+def records_out_of_date_by(change_request: str) -> list[str]:
+	"""The device master records out of date because an element of theirs changed under the request
+	(module 31 records the request on each changed element)."""
+	from meddevice_suite.qms import device_master_record  # module 31 builds on this one
+
+	parents = frappe.get_all(
+		"Device Master Record Element",
+		filters={
+			"parenttype": device_master_record.DOCTYPE,
+			"stale": 1,
+			"current_changed_under": change_request,
+		},
+		pluck="parent",
+	)
+	if not parents:
+		return []
+	return frappe.get_all(
+		device_master_record.DOCTYPE,
+		filters={
+			"name": ["in", sorted(set(parents))],
+			"docstatus": 1,
+			"status": device_master_record.OUT_OF_DATE,
+		},
+		pluck="name",
+		order_by="name asc",
+	)
+
+
+def abandoned(records: list[tuple[str, str]]) -> set[tuple[str, str]]:
+	"""Of the records, those given up before they took effect: one query per type that can be."""
+	given_up = set()
+	for doctype, statuses in ABANDONED.items():
+		if names := sorted({name for record_type, name in records if record_type == doctype}):
+			given_up |= {
+				(doctype, name)
+				for name in frappe.get_all(
+					doctype, filters={"name": ["in", names], "status": ["in", statuses]}, pluck="name"
+				)
+			}
+	return given_up
+
+
+# --- Changes made under an approved request --------------------------------------------------
 
 
 def require_change_for_revision(revision: Document, document: Document) -> None:
@@ -327,28 +466,109 @@ def require_change_for_revision(revision: Document, document: Document) -> None:
 		revision.change_request,
 		_("{0} is in effect: name the approved change request for this revision.").format(document.name),
 	)
-	require_approved_change(revision.change_request, "Controlled Document", document.name)
+	require_approved_change(revision.change_request, "Controlled Document", document.name, made_in=revision)
 
 
-def require_approved_change(change_request: str, doctype: str, name: str) -> None:
-	"""The change request is approved for implementation and lists the record it changes."""
-	status = frappe.db.get_value(DOCTYPE, change_request, "status")
+def require_approved_change(
+	change_request: str,
+	doctype: str,
+	name: str,
+	made_in: Document | None = None,
+	part_of: tuple[str, str] | None = None,
+) -> None:
+	"""The change request is approved for implementation, lists the record it changes, and has not
+	authorised a change of that record already: an approved request authorises the changes it lists,
+	once each (ISO 13485 7.3.9, 4.2.4; found in the foundation review of 2026-10-12).
+
+	`made_in` is the record being saved that makes the change (a document's revision, a risk file's
+	assessment, the master itself): once its save has gone through, the change is recorded against
+	the listing (`record_changes_made`), so a save refused after this check spends nothing.
+	`part_of` names the record of a change already recorded that this one is part of (a variant
+	taking on its template's change, under the template's request), which the listing allows."""
+	# Locked to the end of the transaction: two changes naming the request at once are checked one
+	# after the other, the second seeing the first recorded.
+	status = frappe.db.get_value(DOCTYPE, change_request, "status", for_update=True)
 	require(
 		status == "Approved",
 		_("Change request {0} is not approved for implementation.").format(change_request),
 	)
-	require(
-		frappe.db.exists(
-			"Change Request Affected Record",
-			{
-				"parent": change_request,
-				"parenttype": DOCTYPE,
-				"reference_doctype": doctype,
-				"reference_name": name,
-			},
-		),
-		_("Change request {0} does not list {1}.").format(change_request, name),
+	listing = listing_of(change_request, doctype, name)
+	require(listing, _("Change request {0} does not list {1}.").format(change_request, name))
+	made = (listing.get(CHANGE_RECORD_TYPE), listing.get(CHANGE_RECORD))
+	if listing.get(CHANGE_RECORD) and made != part_of and made not in abandoned([made]):
+		described = record_label(doctype, name)
+		if made != (doctype, name):
+			described = _("{0} (in {1} {2})").format(described, _(made[0]), made[1])
+		frappe.throw(
+			_(
+				"Change request {0} has already changed {1}; each change has its own approved change request."
+			).format(change_request, described),
+			title=_("Change control"),
+		)
+	if made_in is not None:
+		pending = made_in.flags.get(PENDING_FLAG) or []
+		made_in.flags[PENDING_FLAG] = [*pending, (change_request, doctype, name)]
+
+
+def listing_of(change_request: str, doctype: str, name: str) -> frappe._dict | None:
+	"""The request's row listing the record; a record listed twice (allowed before 2026-10-12) is
+	one listing, its first row."""
+	rows = frappe.get_all(
+		"Change Request Affected Record",
+		filters={
+			"parent": change_request,
+			"parenttype": DOCTYPE,
+			"reference_doctype": doctype,
+			"reference_name": name,
+		},
+		fields=["name", *CHANGE_RECORD_FIELDS],
+		order_by="idx asc",
+		limit=1,
 	)
+	return rows[0] if rows else None
+
+
+def record_label(doctype: str, name: str) -> str:
+	# A settings record is named by its type; "Quality Settings Quality Settings" says it twice.
+	return _(doctype) if doctype == name else f"{_(doctype)} {name}"
+
+
+def record_changes_made(doc: Document, method: str | None = None) -> None:
+	"""on_change of every record (hooks "*"): each change `require_approved_change` allowed in this
+	save is recorded on its request, against the record that made it, now that the save has gone
+	through."""
+	pending = doc.flags.pop(PENDING_FLAG, None)
+	for change_request, doctype, name in dict.fromkeys(pending or []):
+		record_change(change_request, doctype, name, doc.doctype, doc.name)
+
+
+def record_change(
+	change_request: str,
+	doctype: str,
+	name: str,
+	made_in_type: str,
+	made_in: str,
+	reason: str | None = None,
+) -> None:
+	"""A documented system process: the listing of `doctype` `name` is spent by the change made in
+	`made_in_type` `made_in`. Saved as an update after submission with the system's reason, so the
+	audit trail records it; the signatures do not bind it (compliance.esign.SYSTEM_MAINTAINED)."""
+	request = frappe.get_doc(DOCTYPE, change_request)
+	row = next(
+		(
+			row
+			for row in request.affected_records
+			if (row.reference_doctype, row.reference_name) == (doctype, name)
+		),
+		None,
+	)
+	if row is None or (row.get(CHANGE_RECORD_TYPE), row.get(CHANGE_RECORD)) == (made_in_type, made_in):
+		return
+	row.update({CHANGE_RECORD_TYPE: made_in_type, CHANGE_RECORD: made_in, CHANGED_ON: now_datetime()})
+	request.flags.audit_reason = reason or _("{0} changed in {1} {2}").format(
+		record_label(doctype, name), _(made_in_type), made_in
+	)
+	save(request)
 
 
 @frappe.whitelist()
@@ -357,24 +577,36 @@ def approved_changes_for(
 	doctype: str, txt: str, searchfield: str, start: int, page_len: int, filters: dict
 ) -> list[tuple[str, str]]:
 	"""The lookup of a form that changes a record under change control: approved change requests
-	that list the record, among those the person may see. A document revision names its document
-	(`controlled_document`); a master names itself (`reference_doctype`, `reference_name`)."""
+	that list the record and have not changed it yet, among those the person may see. A document
+	revision names its document (`controlled_document`); a master names itself (`reference_doctype`,
+	`reference_name`)."""
 	filters = filters or {}
 	record_type, document = (
 		("Controlled Document", filters.get("controlled_document"))
 		if filters.get("controlled_document")
 		else (filters.get("reference_doctype"), filters.get("reference_name"))
 	)
-	listing = frappe.get_all(
+	if not document:
+		return []
+	first_rows: dict[str, frappe._dict] = {}
+	for row in frappe.get_all(
 		"Change Request Affected Record",
 		filters={
 			"parenttype": DOCTYPE,
 			"reference_doctype": record_type,
 			"reference_name": document,
 		},
-		pluck="parent",
-	)
-	if not document or not listing:
+		fields=["parent", *CHANGE_RECORD_FIELDS],
+		order_by="idx asc",
+	):
+		first_rows.setdefault(row.parent, row)  # a record listed twice is one listing, its first row
+	given_up = abandoned([(row.change_record_type, row.change_record) for row in first_rows.values()])
+	listing = [
+		parent
+		for parent, row in first_rows.items()
+		if not row.change_record or (row.change_record_type, row.change_record) in given_up
+	]
+	if not listing:
 		return []
 	return frappe.get_list(
 		DOCTYPE,
@@ -509,6 +741,19 @@ def require_decider(doc: Document) -> None:
 	)
 
 
+def check_listing(doc: Document) -> None:
+	"""Each record is listed once: the request authorises one change of each record it lists, and a
+	second row would authorise a second change."""
+	seen = set()
+	for row in doc.get("affected_records") or []:
+		key = (row.reference_doctype, row.reference_name)
+		require(
+			key not in seen,
+			_("{0} is listed twice; list each record once.").format(record_label(*key)),
+		)
+		seen.add(key)
+
+
 def check_plan(doc: Document) -> None:
 	"""The actions approved with a change: at least one, each owned by an active person, due no
 	earlier than today."""
@@ -543,7 +788,25 @@ def locked(name: str) -> Document:
 def save(doc: Document) -> None:
 	# The act has made its own checks; the controller's edit rules are for people editing the form.
 	doc.flags.change_control = True
+	require_linked_records_exist(doc)
+	# A record the change cancelled (a bill of materials, an equipment record) stays listed and named
+	# as where the change was made; Frappe refuses any link to a cancelled document, which would stop
+	# every later act on the request. Its links were checked just above, for existence only.
+	doc.flags.ignore_links = True
 	doc.save(ignore_permissions=True)
+
+
+def require_linked_records_exist(doc: Document) -> None:
+	"""Frappe's own link check on the request and its rows, every record it names to exist,
+	cancelled or not."""
+	missing = list(doc.get_invalid_links()[0])
+	for row in doc.get_all_children():
+		missing.extend(row.get_invalid_links(is_submittable=doc.meta.is_submittable)[0])
+	if missing:
+		frappe.throw(
+			_("Could not find {0}").format(", ".join(message for _field, _name, message in missing)),
+			frappe.LinkValidationError,
+		)
 
 
 def require(condition, message: str, exception: type[Exception] = frappe.ValidationError) -> None:

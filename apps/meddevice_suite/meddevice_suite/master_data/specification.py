@@ -315,7 +315,7 @@ def guard_template(doc: Document, method: str | None = None) -> None:
 				).format(doc.name),
 				title=_("Change control"),
 			)
-		require_approved_change(request, DOCTYPE, doc.name)
+		require_approved_change(request, DOCTYPE, doc.name, made_in=doc)
 		doc.mds_changed_under = request
 		raise_version(doc)  # URS-MST-001
 

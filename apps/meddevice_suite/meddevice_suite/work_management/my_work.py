@@ -424,6 +424,8 @@ REMINDED_AS: dict[tuple[str, str], str] = {
 	("Training Record", "Competent"): "Training Due",
 	("Training Record", "Not Competent"): "Training Due",
 	("Risk Review", "Close: No Change"): "Risk Review",
+	# The periodic review falls due as its reminder (module 30); QA signs it as still current.
+	("Controlled Document", "Review"): "Document Review",
 }
 
 # Signed acts nobody waits to do, so no queue lists them, each with the reason.

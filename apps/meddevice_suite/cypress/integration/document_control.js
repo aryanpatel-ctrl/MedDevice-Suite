@@ -71,6 +71,25 @@ function sign(button) {
 	cy.get(".modal:visible .btn-primary").contains("Sign").click();
 }
 
+// A signed act that asks for a reason: the reason first, then the password, each taken by the
+// dialog before the next, as a person fills it in.
+function sign_with_reason(button, reason) {
+	cy.get(`.page-container:visible button[data-label="${encodeURIComponent(button)}"]`).click();
+	signing_dialog_open();
+	cy.get('.modal.show textarea[data-fieldname="reason"]').type(reason);
+	cy.window()
+		.its("cur_dialog")
+		.should((dialog) => expect(dialog.get_value("reason")).to.equal(reason));
+	cy.get('.modal.show input[data-fieldname="password"]').click().type(PASSWORD, { log: false });
+	cy.window()
+		.its("cur_dialog")
+		.should((dialog) => {
+			expect(dialog.get_value("reason")).to.equal(reason);
+			expect(dialog.get_value("password")).to.equal(PASSWORD);
+		});
+	cy.get(".modal:visible .btn-primary").contains("Sign").click();
+}
+
 function status_is(status) {
 	cy.window().its("cur_frm.doc.status").should("eq", status);
 }
@@ -216,6 +235,39 @@ context("Document control", () => {
 			.and("contain", email("reviewer"))
 			.and("contain", email("qa"))
 			.and("contain", "Approved");
+	});
+
+	it("[URS-QMS-034] QA signs the periodic review: still current, next review moved on", () => {
+		as("qa"); // signed in first: a call needs a session's page
+		cy.call("frappe.client.get_value", {
+			doctype: "Document Revision",
+			filters: { name: revision },
+			fieldname: "controlled_document",
+		}).then((r) => {
+			const document = r.message.controlled_document;
+			as("author");
+			cy.visit(`/desk/controlled-document/${document}`);
+			cy.window().its("cur_frm.doc.name").should("eq", document);
+			offered("Review: Still Current", false); // the process owner does not approve it
+
+			as("qa");
+			cy.visit(`/desk/controlled-document/${document}`);
+			cy.window().its("cur_frm.doc.name").should("eq", document);
+			sign_with_reason(
+				"Review: Still Current",
+				"Read against current practice; still correct"
+			);
+			cy.window().should((win) => {
+				const doc = win.cur_frm.doc;
+				const today = win.frappe.datetime.get_today();
+				expect(doc.status).to.equal("Effective");
+				expect(doc.current_revision).to.equal(revision);
+				expect(doc.next_review_date).to.equal(win.frappe.datetime.add_months(today, 24));
+			});
+			cy.get(".page-container:visible .mds-signatures")
+				.should("contain", "Reviewed")
+				.and("contain", "Read against current practice; still correct");
+		});
 	});
 
 	it("[URS-QMS-006] QA withdraws the document with a signature and a reason", () => {

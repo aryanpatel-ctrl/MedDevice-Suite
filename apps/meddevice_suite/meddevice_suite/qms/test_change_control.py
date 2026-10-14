@@ -1,3 +1,4 @@
+import re
 from unittest.mock import patch
 
 import frappe
@@ -22,6 +23,7 @@ from meddevice_suite.qms.change_control import (
 	submit_for_assessment,
 	withdraw,
 )
+from meddevice_suite.qms.document_control import make_effective
 from meddevice_suite.setup.roles import BUSINESS_ROLES, apply_roles
 from meddevice_suite.setup.test_roles import user_with_profile
 
@@ -212,6 +214,67 @@ class ChangeControlTestCase(IntegrationTestCase):
 			self.as_user(row.action_owner)
 			complete_action(doc.name, row.name, f"{row.description}: done")
 		return frappe.get_doc(DOCTYPE, doc.name)
+
+	def effective_document(self) -> str:
+		from meddevice_suite.qms.test_document_control import private_file
+
+		self.as_user(self.qa)
+		document = frappe.get_doc(
+			{
+				"doctype": "Controlled Document",
+				"title": "Release of finished goods",
+				"document_type": "SOP",
+				"department": "QC",
+				"process_owner": self.requester,
+			}
+		).insert()
+		reviewer = self.stores
+		self.as_user(self.requester)
+		revision = frappe.get_doc(
+			{
+				"doctype": "Document Revision",
+				"controlled_document": document.name,
+				"file": private_file(),
+				"reviewer": reviewer,
+			}
+		).insert()
+		self.as_user(self.requester)
+		sign_action("Document Revision", revision.name, "Author", PASSWORD)
+		self.as_user(reviewer)
+		sign_action("Document Revision", revision.name, "Review", PASSWORD)
+		self.as_user(self.qa)
+		sign_action("Document Revision", revision.name, "Approve", PASSWORD)
+		return document.name
+
+	def new_revision(self, document: str, change_request: str | None = None):
+		from meddevice_suite.qms.test_document_control import private_file
+
+		self.as_user(self.requester)
+		return frappe.get_doc(
+			{
+				"doctype": "Document Revision",
+				"controlled_document": document,
+				"file": private_file("Revision 01"),
+				"reviewer": self.stores,
+				"summary_of_change": "Hardness check added",
+				"change_request": change_request,
+			}
+		).insert()
+
+	def approve_revision(self, revision, effective_date: str | None = None) -> str:
+		"""Its author (the requester) and reviewer (stores) sign it, and QA approves it, for a later
+		date if given; returns its status."""
+		self.as_user(self.requester)
+		sign_action("Document Revision", revision.name, "Author", PASSWORD)
+		self.as_user(self.stores)
+		sign_action("Document Revision", revision.name, "Review", PASSWORD)
+		self.as_user(self.qa)
+		if effective_date:
+			signed = frappe.get_doc("Document Revision", revision.name)
+			signed.effective_date = effective_date
+			signed.save()
+		sign_action("Document Revision", revision.name, "Approve", PASSWORD)
+		return frappe.db.get_value("Document Revision", revision.name, "status")
 
 	def signatures(self, name: str) -> list[tuple[str, str, str]]:
 		return [
@@ -750,52 +813,6 @@ class TestEffectivenessCheck(ChangeControlTestCase):
 
 @verifies("URS-QMS-014")
 class TestRevisionsUnderChangeControl(ChangeControlTestCase):
-	def effective_document(self) -> str:
-		from meddevice_suite.qms.test_document_control import private_file
-
-		self.as_user(self.qa)
-		document = frappe.get_doc(
-			{
-				"doctype": "Controlled Document",
-				"title": "Release of finished goods",
-				"document_type": "SOP",
-				"department": "QC",
-				"process_owner": self.requester,
-			}
-		).insert()
-		reviewer = self.stores
-		self.as_user(self.requester)
-		revision = frappe.get_doc(
-			{
-				"doctype": "Document Revision",
-				"controlled_document": document.name,
-				"file": private_file(),
-				"reviewer": reviewer,
-			}
-		).insert()
-		self.as_user(self.requester)
-		sign_action("Document Revision", revision.name, "Author", PASSWORD)
-		self.as_user(reviewer)
-		sign_action("Document Revision", revision.name, "Review", PASSWORD)
-		self.as_user(self.qa)
-		sign_action("Document Revision", revision.name, "Approve", PASSWORD)
-		return document.name
-
-	def new_revision(self, document: str, change_request: str | None = None):
-		from meddevice_suite.qms.test_document_control import private_file
-
-		self.as_user(self.requester)
-		return frappe.get_doc(
-			{
-				"doctype": "Document Revision",
-				"controlled_document": document,
-				"file": private_file("Revision 01"),
-				"reviewer": self.stores,
-				"summary_of_change": "Hardness check added",
-				"change_request": change_request,
-			}
-		).insert()
-
 	def test_a_new_revision_of_a_document_in_effect_needs_an_approved_change(self):
 		document = self.effective_document()
 		with self.assertRaisesRegex(frappe.ValidationError, "name the approved change request"):
@@ -1152,3 +1169,193 @@ class TestRiskReviews(ChangeControlTestCase):
 		self.assertEqual(
 			self.act(self.qa, doc.name, "Verify Effective", "Hardness checked on three lots").status, "Closed"
 		)
+
+
+@verifies("URS-QMS-032")
+class TestImplementedOnlyOnceInForce(ChangeControlTestCase):
+	"""Found in the foundation review of 2026-10-12: the last action could be recorded, and the change
+	implemented, while the revision it made still waited for its effective date."""
+
+	def only_action(self, change: str) -> str:
+		return frappe.get_doc(DOCTYPE, change).actions[0].name
+
+	def test_a_revision_approved_for_a_later_date_holds_the_change_back(self):
+		document = self.effective_document()
+		change = approved_change(self.requester, self.qa, document)
+		revision = self.new_revision(document, change)
+		self.assertEqual(self.approve_revision(revision, add_days(today(), 10)), "Approved")
+
+		self.as_user(self.requester)
+		with self.assertRaisesRegex(
+			frappe.ValidationError,
+			re.escape(f"Not yet in force: Document Revision {revision.name} (Approved)"),
+		):
+			complete_action(change, self.only_action(change), "Revision 01 issued")
+		self.assertEqual(frappe.db.get_value(DOCTYPE, change, "status"), "Approved")
+		self.assertFalse(frappe.db.get_value("Change Request Action", self.only_action(change), "done"))
+
+		self.as_user("Administrator")
+		make_effective(revision.name)  # its effective date has come (the daily run)
+		self.as_user(self.requester)
+		complete_action(change, self.only_action(change), "Revision 01 issued")
+		self.assertEqual(frappe.db.get_value(DOCTYPE, change, "status"), "Implemented")
+
+	def test_a_revision_still_in_review_holds_the_change_back(self):
+		document = self.effective_document()
+		change = approved_change(self.requester, self.qa, document)
+		revision = self.new_revision(document, change)
+
+		self.as_user(self.requester)
+		with self.assertRaisesRegex(frappe.ValidationError, re.escape(f"{revision.name} (Draft)")):
+			complete_action(change, self.only_action(change), "Revision drafted")
+
+	def test_a_resulting_record_not_in_force_holds_the_change_back(self):
+		# The class's document was registered and never took effect.
+		change = approved_change(self.requester, self.qa, self.document)
+
+		self.as_user(self.requester)
+		with self.assertRaisesRegex(
+			frappe.ValidationError, re.escape(f"Controlled Document {self.document} (Draft)")
+		):
+			complete_action(
+				change, self.only_action(change), "Procedure written", "Controlled Document", self.document
+			)
+
+	def test_a_change_that_made_nothing_new_is_implemented_as_before(self):
+		self.assertEqual(self.implemented().status, "Implemented")
+
+	def test_every_record_type_held_back_has_a_rule_that_exists(self):
+		for doctype, (field, _values) in change_control.in_force_rules().items():
+			with self.subTest(doctype=doctype):
+				self.assertTrue(doctype in RESULT_TYPES or doctype == "Risk Assessment")
+				self.assertTrue(field == "docstatus" or frappe.get_meta(doctype).has_field(field))
+
+
+@verifies("URS-QMS-033")
+class TestEachListedRecordChangedOnce(ChangeControlTestCase):
+	"""Found in the foundation review of 2026-10-12: one approved request authorised any number of
+	changes of the records it listed."""
+
+	def test_a_second_revision_under_the_same_request_is_refused(self):
+		document = self.effective_document()
+		change = approved_change(self.requester, self.qa, document)
+		first = self.new_revision(document, change)
+		self.assertEqual(self.approve_revision(first), "Effective")
+
+		with self.assertRaisesRegex(frappe.ValidationError, f"{change} has already changed"):
+			self.new_revision(document, change)
+		self.assertEqual(
+			self.new_revision(document, approved_change(self.requester, self.qa, document)).revision, "02"
+		)
+
+	def test_the_request_records_the_record_each_change_was_made_in(self):
+		document = self.effective_document()
+		change = approved_change(self.requester, self.qa, document)
+		revision = self.new_revision(document, change)
+
+		row = frappe.get_doc(DOCTYPE, change).affected_records[0]
+		self.assertEqual(
+			(row.change_record_type, row.change_record, bool(row.changed_on)),
+			("Document Revision", revision.name, True),
+		)
+		reasons = frappe.get_all(
+			"Audit Event", filters={"reference_doctype": DOCTYPE, "reference_name": change}, pluck="reason"
+		)
+		self.assertIn(f"Controlled Document {document} changed in Document Revision {revision.name}", reasons)
+
+	def test_a_refused_change_spends_nothing(self):
+		document = self.effective_document()
+		change = approved_change(self.requester, self.qa, document)
+		# Refused after the request was checked, later in the same save.
+		with (
+			patch(
+				"meddevice_suite.qms.doctype.document_revision.document_revision.DocumentRevision.validate",
+				side_effect=frappe.ValidationError("refused later in the save"),
+			),
+			self.assertRaisesRegex(frappe.ValidationError, "refused later in the save"),
+		):
+			self.new_revision(document, change)
+
+		self.assertFalse(frappe.get_doc(DOCTYPE, change).affected_records[0].change_record)
+		self.assertEqual(self.new_revision(document, change).change_request, change)
+
+	def test_the_revision_form_no_longer_offers_a_spent_request(self):
+		document = self.effective_document()
+		change = approved_change(self.requester, self.qa, document)
+
+		def offered() -> list[str]:
+			self.as_user(self.requester)
+			return [
+				name
+				for name, _title in approved_changes_for(
+					doctype=DOCTYPE,
+					txt="",
+					searchfield="name",
+					start=0,
+					page_len=20,
+					filters={"controlled_document": document},
+				)
+			]
+
+		self.assertEqual(offered(), [change])
+		self.new_revision(document, change)
+		self.assertEqual(offered(), [])
+
+	def test_recording_the_change_keeps_what_was_signed(self):
+		document = self.effective_document()
+		change = approved_change(self.requester, self.qa, document)
+		self.new_revision(document, change)
+
+		approval = frappe.get_last_doc(
+			"Electronic Signature",
+			filters={"reference_doctype": DOCTYPE, "reference_name": change, "action": "Approve"},
+		)
+		self.assertTrue(is_unchanged_since(approval))
+		self.assertTrue(verify_signatures(DOCTYPE, change))
+
+	def test_a_change_made_before_the_fix_is_recorded_by_the_migration(self):
+		from meddevice_suite.patches.v0_1.record_changes_made_under_approved_requests import (
+			REASON,
+			execute,
+		)
+
+		document = self.effective_document()
+		change = approved_change(self.requester, self.qa, document)
+		revision = self.new_revision(document, change)
+		# As a site upgraded from before the fix holds it: the change made, its listing not recorded.
+		listing = frappe.get_doc(DOCTYPE, change).affected_records[0].name
+		frappe.db.set_value(
+			"Change Request Affected Record", listing, dict.fromkeys(change_control.CHANGE_RECORD_FIELDS)
+		)
+
+		self.as_user("Administrator")
+		execute()
+		execute()  # running again changes nothing
+
+		row = frappe.get_doc(DOCTYPE, change).affected_records[0]
+		self.assertEqual((row.change_record_type, row.change_record), ("Document Revision", revision.name))
+		reasons = frappe.get_all(
+			"Audit Event", filters={"reference_doctype": DOCTYPE, "reference_name": change}, pluck="reason"
+		)
+		self.assertEqual(reasons.count(REASON), 1)
+
+	def test_a_record_is_listed_once(self):
+		listed = {"reference_doctype": "Controlled Document", "reference_name": self.document}
+		doc = self.raise_change(affected_records=[listed, listed])
+
+		with self.assertRaisesRegex(frappe.ValidationError, "listed twice"):
+			submit_for_assessment(doc.name)
+
+	def test_nobody_types_the_change_a_record_was_made_in(self):
+		typed = {"change_record_type": "Controlled Document", "change_record": self.document}
+		doc = self.raise_change()
+		doc.affected_records[0].update(typed)
+		with self.assertRaises(frappe.PermissionError):
+			doc.save()
+		# Nor does a new request arrive with one.
+		arrived = self.raise_change(
+			affected_records=[
+				{"reference_doctype": "Controlled Document", "reference_name": self.document, **typed}
+			]
+		)
+		self.assertFalse(arrived.affected_records[0].change_record)
