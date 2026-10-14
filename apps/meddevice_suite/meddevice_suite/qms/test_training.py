@@ -240,6 +240,25 @@ class TestNeedsOpen(TrainingTestCase):
 		finally:
 			frappe.set_user("Administrator")
 
+	def test_a_paper_history_left_unsigned_does_not_hold_back_the_training(self):
+		document, _r = self.sop()
+		job = self.job_with(document)
+		emp, _user = self.operator(job)
+		frappe.set_user(self.qa)
+		try:
+			history = training.start_history(emp, document.name)
+		finally:
+			frappe.set_user("Administrator")
+		# Away from the job and back: the system's record is withdrawn, then needed again.
+		for moved_to in (designation(), job):
+			staff = frappe.get_doc("Employee", emp)
+			staff.designation = moved_to
+			staff.save(ignore_permissions=True)
+		self.assertEqual(
+			sorted((r.name == history, r.trigger) for r in records(emp, status="Open")),
+			[(False, "New Assignment"), (True, "Historical")],
+		)
+
 	def test_a_withdrawn_document_closes_its_open_records(self):
 		document, _r = self.sop()
 		emp, _user = self.operator(self.job_with(document))
@@ -416,7 +435,7 @@ class TestSignedCompletion(TrainingTestCase):
 
 	def test_qa_alone_enters_paper_history_with_a_private_certificate(self):
 		document, revision = self.sop()
-		emp, user = self.operator(designation())
+		emp, user = self.operator(self.job_with(document))
 
 		def history(by: str, certificate: str | None) -> str:
 			frappe.set_user(by)
@@ -452,6 +471,129 @@ class TestSignedCompletion(TrainingTestCase):
 		self.assertEqual((doc.docstatus, doc.status, doc.is_historical), (1, "Competent", 1))
 		with self.assertRaisesRegex(frappe.ValidationError, "is not open"):
 			self.sign(user, RECORD, name, "Trained")
+
+	def start_history(self, by: str, emp: str, document: str) -> str:
+		frappe.set_user(by)
+		try:
+			return training.start_history(emp, document)
+		finally:
+			frappe.set_user("Administrator")
+
+	def test_qa_starts_paper_history_from_the_list_and_no_other_job_can(self):
+		document, revision = self.sop()
+		emp, user = self.operator(self.job_with(document, months=12))
+		opened = self.open_record(emp)  # by the system, before the history was entered (go-live)
+		for outsider in (person("HR User"), person("Manufacturing User"), user, self.reviewer):
+			with self.subTest(outsider=outsider), self.assertRaises(frappe.PermissionError):
+				self.start_history(outsider, emp, document.name)
+		qa_employee = employee(frappe.db.get_value("Employee", emp, "designation"), person("Quality Manager"))
+		with self.assertRaisesRegex(frappe.PermissionError, "their own training history"):
+			self.start_history(
+				frappe.db.get_value("Employee", qa_employee, "user_id"), qa_employee, document.name
+			)
+
+		name = self.start_history(self.qa, emp, document.name)
+		doc = frappe.get_doc(RECORD, name)
+		self.assertEqual(
+			(doc.docstatus, doc.status, doc.trigger, doc.document_revision, doc.validity_months, doc.owner),
+			(0, "Open", "Historical", revision.name, 12, self.qa),
+		)
+		with self.assertRaisesRegex(frappe.ValidationError, "already records this training history"):
+			self.start_history(self.qa, emp, document.name)
+
+		frappe.set_user(self.qa)
+		try:
+			doc.update(
+				{
+					"training_method": "Instructor-led",
+					"training_date": add_days(today(), -200),
+					"trainer": "Paper training file",
+					"certificate": private_file("Training certificate"),
+				}
+			)
+			doc.save()
+		finally:
+			frappe.set_user("Administrator")
+		self.sign(self.qa, RECORD, name, "Record History", "From the paper training file")
+		doc = frappe.get_doc(RECORD, name)
+		self.assertEqual((doc.docstatus, doc.status, doc.is_historical), (1, "Competent", 1))
+		self.assertEqual(getdate(doc.valid_until), getdate(add_months(add_days(today(), -200), 12)))
+		# The training the system had opened is covered now: the trainee is not asked to sign it.
+		self.assertEqual(frappe.db.get_value(RECORD, opened, "status"), "Withdrawn")
+		self.assertEqual(records(emp, status="Open"), [])
+		with self.assertRaisesRegex(frappe.ValidationError, "already competent"):
+			self.start_history(self.qa, emp, document.name)
+
+	@verifies("URS-TRN-001")
+	def test_why_a_record_exists_and_what_its_matrix_sets_cannot_be_forged(self):
+		document, revision = self.sop()
+		emp, _user = self.operator(self.job_with(document, months=12))
+		opened = self.open_record(emp)
+		# The coordinator, who keeps records, cannot turn the system's record into paper history.
+		coordinator = person("HR User")
+		someone_else, _other_user = self.operator(designation())
+		for field, forged in (("trigger", "Historical"), ("validity_months", 0), ("employee", someone_else)):
+			frappe.set_user(coordinator)
+			try:
+				doc = frappe.get_doc(RECORD, opened)
+				doc.set(field, forged)
+				with self.subTest(field=field), self.assertRaisesRegex(frappe.PermissionError, "Set when"):
+					doc.save()
+			finally:
+				frappe.set_user("Administrator")
+
+		def by_hand(**values) -> str:
+			frappe.set_user(self.qa)
+			try:
+				return (
+					frappe.get_doc(
+						{
+							"doctype": RECORD,
+							"employee": emp,
+							"controlled_document": document.name,
+							"document_revision": revision.name,
+							"due_date": today(),
+							**values,
+						}
+					)
+					.insert()
+					.name
+				)
+			finally:
+				frappe.set_user("Administrator")
+
+		for trigger in ("New Assignment", "New Revision", "Refresher", "Retraining", None):
+			with self.subTest(trigger=trigger), self.assertRaisesRegex(frappe.ValidationError, "Historical"):
+				by_hand(trigger=trigger)
+		other, other_revision = self.sop()
+		with self.assertRaisesRegex(frappe.ValidationError, "does not name"):
+			by_hand(
+				trigger="Historical", controlled_document=other.name, document_revision=other_revision.name
+			)
+
+		# What the matrix sets, and what only signatures fill in, are the system's, whatever is sent.
+		name = by_hand(
+			trigger="Historical",
+			validity_months=0,
+			read_and_understand_allowed=1,
+			valid_until=add_days(today(), 3650),
+			assessed_by=self.qa,
+			is_historical=1,
+			status="Competent",
+		)
+		doc = frappe.get_doc(RECORD, name)
+		self.assertEqual(
+			(doc.validity_months, doc.read_and_understand_allowed, doc.valid_until, doc.assessed_by),
+			(12, 0, None, None),
+		)
+		self.assertEqual((doc.status, doc.is_historical), ("Open", 0))
+		frappe.set_user(self.qa)
+		try:
+			doc.trigger = "New Assignment"  # back into the system's records, unsigned
+			with self.assertRaisesRegex(frappe.PermissionError, "Set when"):
+				doc.save()
+		finally:
+			frappe.set_user("Administrator")
 
 	def test_people_see_their_own_records_and_the_jobs_that_manage_training_all(self):
 		document, _r = self.sop()
@@ -698,7 +840,7 @@ class TestJobCardGate(TrainingTestCase, RoutingTestCase):
 
 	def test_paper_history_on_the_revision_in_effect_counts(self):
 		ws, op, instruction, revision = self.line()
-		emp, _user = self.operator(designation())
+		emp, _user = self.operator(self.job_with(instruction))
 		frappe.set_user(self.qa)
 		try:
 			name = (

@@ -134,13 +134,13 @@ Role: QA Manager. Preconditions: a saved draft **Supplier Approval** with one it
 Actual result: ____  Pass/Fail: ____  Evidence: screenshots of steps 2, 3, 4.
 
 ### ES-02 Wrong password: nothing recorded, no sign-out, counted as a failed login (C1)
-Role: QA Manager. Preconditions: another draft Supplier Approval; System Administrator knows System Settings › *Allow Consecutive Login Attempts* (set it to 3 on a test site for step 5).
+Role: QA Manager. Preconditions: another draft Supplier Approval; for step 5, *Wrong Passwords Before Lockout* = 3 in Quality Settings (`quality-settings.md`, QS-02); System Settings › *Allow Consecutive Login Attempts* then shows 2 and cannot be edited by hand.
 1. Click **Approve**, reason `x`, a wrong password, **Sign**. Expected: red message *Incorrect password. The signature was not recorded.*; dialog stays open with the password cleared; you are still signed in; record still a draft.
 2. Close the dialog. Expected: no Electronic Signature for the record (check the list filtered by Document).
 3. As System Administrator open **Users › Activity Log** (`/desk/activity-log`). Expected: an entry for the QA user, status *Failed*, subject *Electronic signature refused, wrong password: Approve on Supplier Approval <name>*.
 4. As QA Manager sign again with the correct password. Expected: signed (the counter resets).
-5. On a new draft, enter a wrong password 4 times (limit 3). Expected: each attempt is refused with *Incorrect password. The signature was not recorded.*; after the fourth the account is locked, so the **correct** password is now refused with Frappe's lockout message (a security error, wording from Frappe) until *Allow Login After Fail* seconds pass; logging in from another browser fails likewise; no signature exists for the record.
-Actual result: ____  Pass/Fail: ____  Cleanup: restore the System Settings values; wait out or reset the lockout.
+5. On a new draft, enter a wrong password 3 times. Expected: each attempt is refused with *Incorrect password. The signature was not recorded.*; after the third the account is locked, so the **correct** password is now refused with Frappe's lockout message (a security error, wording from Frappe) until *Allow Login After Fail* seconds pass; logging in from another browser fails likewise; no signature exists for the record.
+Actual result: ____  Pass/Fail: ____  Cleanup: restore *Wrong Passwords Before Lockout* under a change request; wait out or reset the lockout.
 
 ### ES-03 Required fields and refused reasons (C2)
 Role: QA Manager.

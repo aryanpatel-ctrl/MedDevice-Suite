@@ -390,6 +390,35 @@ def prepare_training(password: str) -> dict:
 
 
 @frappe.whitelist(methods=["POST"])
+def prepare_training_history(password: str) -> dict:
+	"""A work instruction the operator was trained on, on paper, before the system: QA adds it to
+	the Operator's job matrix with a signature and the system opens the operator's record, as at
+	go-live; the browser then has QA enter the paper history (module 37). Returns {"employee",
+	"document", "opened"}: the record the system opened, which the history replaces."""
+	from meddevice_suite.pilot.documents import ensure_work_instruction
+	from meddevice_suite.pilot.training import ensure_matrix, ensure_operator
+	from meddevice_suite.qms import training
+
+	ensure_test_site()
+	if frappe.session.user != "Administrator":
+		frappe.throw(_("The browser journey is prepared only by the Administrator."), frappe.PermissionError)
+	act_as = lambda profile: acting_as(email_for(profile))  # noqa: E731
+	instruction = ensure_work_instruction(
+		f"Work instruction: browser paper history {frappe.generate_hash(length=6)}",
+		act_as,
+		email_for,
+		password,
+	)
+	employee = ensure_operator(COMPANY, email_for("Operator"))
+	ensure_matrix({instruction}, act_as, password)
+	training.reconcile([employee])
+	opened = frappe.db.get_value(
+		training.RECORD, {"employee": employee, "controlled_document": instruction, "status": training.OPEN}
+	)
+	return {"employee": employee, "document": instruction, "opened": opened}
+
+
+@frappe.whitelist(methods=["POST"])
 def prepare_risk_management(password: str) -> dict:
 	"""A risk management file with a draft risk assessment, for the browser to sign on the forms
 	(module 39): a policy in force (QA reviews it, Management approves it), an effective plan, a
