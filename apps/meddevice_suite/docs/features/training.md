@@ -1,7 +1,7 @@
 # Training and competence (module 37) — feature document and browser test guide
 
 Requirements: **URS-TRN-001 to URS-TRN-006** (`meddevice_suite/qa/requirements.toml`). Builds on document control (module 30), e-signature (49), evidence files (54), reminders (60), routing (module 3).
-Code: `meddevice_suite/qms/training.py`; records *Training Matrix* (with *Training Matrix Item*) and *Training Record*; report *Training Status*; reminder *Training Due*; `pilot/training.py` (demo operator); hooks in `meddevice_suite/hooks.py`.
+Code: `meddevice_suite/qms/training.py`; records *Training Matrix* (with *Training Matrix Item*) and *Training Record* (form `training_record.js`, list `training_record_list.js`); report *Training Status*; reminder *Training Due*; `pilot/training.py` (demo operator); hooks in `meddevice_suite/hooks.py`.
 DFD trace: D2 Training (training records, expiry alerts, QMS linkage); production stage 3 ("trained operator"). Decisions: plan section 16, D-07 to D-10 and D-17 to D-19 (2026-10-11). HRMS is not used. Training is built here on ERPNext's Employee and Designation.
 
 ## 1. Feature overview
@@ -12,7 +12,7 @@ DFD trace: D2 Training (training records, expiry alerts, QMS linkage); productio
 
 | Job profile | Here |
 | --- | --- |
-| QA Manager | Approves each job's training matrix (signed); enters paper history (signed); revokes a competence (signed); assesses |
+| QA Manager | Approves each job's training matrix (signed); starts and enters paper history from the Training Record list (signed); revokes a competence (signed); assesses |
 | Training Coordinator (HR User) | Drafts matrices; plans each training (method, date, trainer, assessor, assessment) |
 | Production Supervisor | Assesses (signed Competent / Not Competent) |
 | Every employee with an account | Signs that they were trained, or read and understood; sees only their own records |
@@ -29,7 +29,15 @@ DFD trace: D2 Training (training records, expiry alerts, QMS linkage); productio
   3. The **named assessor** signs **Competent** or **Not Competent** with a reason. The assessor holds the Production Supervisor or QA role and is never the trainee.
   4. Where the matrix allows reading, *Read and Understand* plus the trainee's signature completes the record without an assessor.
   5. A Not Competent assessment opens a *Retraining* record.
-- **Paper history:** only QA enters a *Historical* record. It needs the training date, the method and a private certificate, which becomes evidence, and QA's **Record History** signature. Nobody enters their own history.
+- **Paper history** (training given on paper before the system, D-07): only QA enters it, and nobody enters their own.
+  1. On the **Training Record** list, QA clicks **Add Training Record**. This opens **Record Training History** (only QA sees the button: only QA may create). QA picks the **Employee** and the **Document**, then clicks **Start**.
+  2. The system opens a draft record with *Why = Historical* on the document's **revision in effect**, the one the workstation checks. The document must be on the employee's job's approved matrix. The validity and whether reading is enough are copied from that matrix row, as on every record the system opens. *Why*, the employee, the document and these values cannot be changed afterwards, by anyone, by hand.
+  3. On the form, QA enters the method and the training date, attaches the certificate (private; it becomes evidence) and saves.
+  4. QA uses **Record History** and signs with a reason. The record is completed as *Competent*, *Entered From Paper* is ticked, and it is valid from the training date for the row's validity.
+  5. Any training the system had opened for the same employee and revision (at go-live, say) is closed as *Withdrawn*, so the trainee is not asked to sign for it.
+  - The same history cannot be started twice, nor for someone already competent on that revision.
+  - A history left unsigned does not hold back the training the job needs: the system still opens its own record.
+  - A new form (`/desk/training-record/new`) is also a history record. Every way in (the list, the form, the API) is checked by the same server rule.
 - **Validity and refresher:** a record is valid until the end of its row's validity, and has no end where the row sets none. A *Refresher* opens when the end falls within *Training Refresher Opens* (30 days, Quality Settings), due on that day.
 - **Revoke** (D-18): QA signs **Revoke** with a reason, for example after a nonconformity. The person is refused for that work and a *Retraining* record opens.
 - **Never deleted or cancelled.** Status changes only through these acts or the system. A completed record changes only by revocation.
@@ -42,8 +50,8 @@ DFD trace: D2 Training (training records, expiry alerts, QMS linkage); productio
 
 | # | Requirement | Verification (`qms/test_training.py`) |
 | --- | --- | --- |
-| T1 | TRN-001 needs open and close: matrix approval, new employee, other jobs and inactive none, revision to take effect, superseded, job change, leaver, no duplicate or manual open, withdrawn document, failure repaired daily | `TestNeedsOpen.*` |
-| T2 | TRN-002 trainee then assessor; only the trainee, only on their account; assessor named, with the role, never the trainee; assessor named before signing; wrong password; reading only where allowed; Not Competent with a reason; never edited, cancelled or deleted; plan fixed; QA history with certificate; own records only | `TestSignedCompletion.*` |
+| T1 | TRN-001 needs open and close: matrix approval, new employee, other jobs and inactive none, revision to take effect, superseded, job change, leaver, no duplicate or manual open, an unsigned paper history holds nothing back, withdrawn document, failure repaired daily; why a record exists and what its matrix sets cannot be forged | `TestNeedsOpen.*`, `TestSignedCompletion.test_why_a_record_exists_and_what_its_matrix_sets_cannot_be_forged` |
+| T2 | TRN-002 trainee then assessor; only the trainee, only on their account; assessor named, with the role, never the trainee; assessor named before signing; wrong password; reading only where allowed; Not Competent with a reason; never edited, cancelled or deleted; plan fixed; QA history with certificate; QA alone starts history from the list, never their own, not twice, and it replaces the system's open record; own records only | `TestSignedCompletion.*`; browser: `cypress/integration/training.js` |
 | T3 | TRN-003 validity, refresher once within the warning days, setting, reminders | `TestValidityAndRefresher.*` |
 | T4 | TRN-004 QA approval by signature, one per job, cancel and amend, no duplicates | `TestMatrixApproval.*` |
 | T5 | TRN-005 competent accepted; untrained, unassessed, unnamed, previous revision, expired, inactive refused; history counts; unvalidated save; finished time not judged; ERPNext's method; every ERPNext time-log path | `TestJobCardGate.*` |
@@ -68,7 +76,15 @@ As an untrained operator, log time on a job card of that operation. Expected: *w
 Issue a new revision of the work instruction with a later effective date. Expected: each operator gets an open record due on that date, and their current competence still works until then.
 
 ### TR-05 Paper history and revocation (QA)
-Create a Training Record with *Why = Historical*, attach the certificate, then **Record History** and sign. Then **Revoke Competence** with a reason. Expected: the operator is refused, and a Retraining record opens.
+1. As QA open **Quality › Training Record** and click **Add Training Record**. Expected: the **Record Training History** dialog.
+2. Pick an operator and a work instruction on their job's matrix, then click **Start**. Expected: a draft record, *Why = Historical*, *Status = Open*, on the revision in effect; *Valid For (months)* as the matrix row says.
+3. Set **Method**, **Trained On** (a past date) and **Trainer**, attach the certificate as a private file, and **Save**.
+4. Use **Record History**, give a reason, and sign. Expected: *Competent*, *Entered From Paper* ticked. The operator's open record on the same revision is now *Withdrawn*.
+5. Use **Start** again for the same operator and document. Expected: *… is already competent on this revision*.
+6. As the Training Coordinator or the operator: no **Add Training Record** button; calling the service is refused.
+7. As QA, **Revoke Competence** with a reason. Expected: the operator is refused at the workstation, and a Retraining record opens.
+
+Automated: steps 1–4 as QA in `cypress/integration/training.js`.
 
 ## 5. End-to-end business workflow
 Document approved (module 30) → QA's matrix says who needs it → records open → trained, assessed and signed → operator works (production stage 3) → new revision, refresher, or revocation → retrained.
@@ -78,6 +94,7 @@ Document approved (module 30) → QA's matrix says who needs it → records open
 | Layer | Item |
 | --- | --- |
 | Rule | `training.reconcile` (`needed`, `revisions_to_train`), `reconcile_safely`, `daily` |
+| Service | `training.start_history(employee, controlled_document)` (whitelisted, POST): QA starts a paper history; the rules of every hand-entered record are in `training.before_insert` |
 | Signed acts | Training Matrix: Approve (Approved). Training Record: Trained (Trained), Competent (Competent), Not Competent (Rejected), Record History (Verified), Revoke (Rejected) |
 | New signature meanings | *Trained*, *Competent* (module 49) |
 | Gate | `training.guard_job_card` (Job Card before_validate, before_update_after_submit), `refuse_new_operators` (from `equipment_care.make_time_log`) |
@@ -88,7 +105,9 @@ Document approved (module 30) → QA's matrix says who needs it → records open
 
 ## 7. Defects, edge cases and risks
 - When a revision takes effect without prior training, every operator on it is refused at once. Approve with a future effective date (records open at approval).
-- Paper history must be entered before go-live, or the gate refuses everyone (D-07 migration).
+- Paper history must be entered before go-live, or the gate refuses everyone (D-07 migration). Approve each job's matrix first: history is entered only for documents the job's approved matrix names.
+- A history started by mistake cannot be deleted (records never are). It stays an unsigned draft, sends no reminder, and does not stand in for the training the job needs.
+- History is entered on the revision in effect. Training on an earlier revision does not count at the workstation, whatever the paper says.
 - Every revision is trained, even when its change request says there is no training impact (decided 2026-10-11, D-20). Use a future effective date for minor changes, and a matrix row that allows reading where appropriate.
 - An ERPNext upgrade could add a new way to log time; `test_every_whitelisted_time_log_path_is_guarded` fails until it is reviewed.
 - Records open only for employees with a job. An employee without a designation needs no training and cannot pass the gate.
@@ -104,4 +123,6 @@ See the pull request.
 | Trainee and assessor signatures; history; revocation | Verified (automated) |
 | Gate on every time-log path | Verified (automated) |
 | Pilot and browser journey use a trained operator | Verified (automated) |
+| Paper history started from the list; its reason and matrix values not forgeable | Server tests written; **not yet run** |
+| QA records paper history on screen (`cypress/integration/training.js`) | Browser test written; **not yet run** |
 | Manual TR-01…TR-05 | **Not tested** |
