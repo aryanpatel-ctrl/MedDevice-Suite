@@ -1,19 +1,37 @@
+import re
+
 import frappe
 
+from meddevice_suite.compliance.esign import SigningRefused, is_unchanged_since, verify_signatures
+from meddevice_suite.compliance.signing import sign_action, signing_actions
+from meddevice_suite.compliance.test_esign import PASSWORD, reset_lockout
 from meddevice_suite.lot_control.test_lot_status import lot_item
 from meddevice_suite.lot_control.test_release import ITEM, ReleaseTestCase
+from meddevice_suite.master_data import master_approval
+from meddevice_suite.master_data.master_approval import (
+	APPROVAL_STATUS,
+	APPROVED,
+	APPROVED_AT,
+	APPROVED_BY,
+	DRAFT,
+)
 from meddevice_suite.master_data.specification import (
 	DOCTYPE,
 	FINAL,
+	IN_PROCESS,
 	INCOMING,
+	TEST_METHOD,
 	check_against_specification,
 	choose_specification,
 	specification_for,
 	specification_for_inspection,
 )
+from meddevice_suite.master_data.test_routing import document
 from meddevice_suite.pilot.inspection import APPEARANCE, DIMENSION, readings_for
 from meddevice_suite.qa import verifies
 from meddevice_suite.qms.test_change_control import approved_change, signer
+
+REFUSED = (frappe.ValidationError, frappe.PermissionError)
 
 OTHER_ITEM = "MDS-SPEC-OTHER"
 
@@ -81,6 +99,45 @@ class SpecificationTestCase(ReleaseTestCase):
 		receipt, lot = self.received()
 		self.verified(receipt)
 		return receipt, lot
+
+	def inspected_against(self, name: str) -> None:
+		"""As if inspected against it: a submitted inspection names it. The inspection is made against
+		the approved specification of the lot's item and pointed at `name` afterwards."""
+		receipt, lot = self.verified_lot()
+		inspection = self.inspection(receipt, lot)
+		inspection.insert()
+		inspection.submit()
+		frappe.db.set_value(
+			"Quality Inspection", inspection.name, "quality_inspection_template", name, update_modified=False
+		)
+		frappe.set_user(self.qa)
+
+	def draft_specification(self, stage: str = FINAL, test_method: str | None = "SOP", **values) -> str:
+		"""A new item's specification for the stage, made by QA, naming an effective test method of the
+		type `test_method` (none when None)."""
+		frappe.set_user("Administrator")
+		item = new_item()
+		method = document(test_method) if test_method else None
+		frappe.set_user(self.qa)
+		doc = template(f"MDS SPEC APPROVAL {item}", item, stage=stage)
+		doc.update({TEST_METHOD: method, **values})
+		return doc.insert().name
+
+	def approve(
+		self, name: str, user: str | None = None, reason: str = "Parameters, limits and test method checked"
+	) -> None:
+		"""QA's signed approval, as the form's Approve button sends it; back to QA afterwards."""
+		frappe.set_user(user or self.qa)
+		try:
+			sign_action(DOCTYPE, name, "Approve", PASSWORD, reason)
+		finally:
+			frappe.set_user(self.qa)
+
+	def widened(self, name: str, **values):
+		spec = frappe.get_doc(DOCTYPE, name)
+		next(r for r in spec.item_quality_inspection_parameter if r.specification == DIMENSION).max_value = 3
+		spec.update(values)
+		return spec
 
 
 @verifies("URS-MST-002")
@@ -223,22 +280,8 @@ class TestChangeControl(SpecificationTestCase):
 		spec = frappe.get_doc(DOCTYPE, name)
 		spec.update({"mds_item": item, "mds_stage": "In Process", "mds_sample_size": 3})
 		spec.save()
-		# As if inspected against: a submitted inspection names it.
-		receipt, lot = self.verified_lot()
-		inspection = self.inspection(receipt, lot)
-		inspection.insert()
-		inspection.submit()
-		frappe.db.set_value(
-			"Quality Inspection", inspection.name, "quality_inspection_template", name, update_modified=False
-		)
-		frappe.set_user(self.qa)
+		self.inspected_against(name)
 		return name
-
-	def widened(self, name: str, **values):
-		spec = frappe.get_doc(DOCTYPE, name)
-		next(r for r in spec.item_quality_inspection_parameter if r.specification == DIMENSION).max_value = 3
-		spec.update(values)
-		return spec
 
 	def test_a_specification_not_yet_used_changes_freely(self):
 		frappe.set_user("Administrator")
@@ -335,3 +378,254 @@ class TestChangeControl(SpecificationTestCase):
 		with self.assertRaises((frappe.PermissionError, frappe.LinkExistsError)):
 			frappe.delete_doc(DOCTYPE, name)
 		self.assertTrue(frappe.db.exists(DOCTYPE, name))
+
+
+# --- QA's signed approval (URS-MST-014, plan D-33) ------------------------------------------------
+
+
+@verifies("URS-MST-014")
+class TestApproval(SpecificationTestCase):
+	def test_a_new_specification_is_a_draft_that_qa_approves_with_a_signature(self):
+		name = self.draft_specification()
+		self.assertEqual(frappe.db.get_value(DOCTYPE, name, APPROVAL_STATUS), DRAFT)
+		self.approve(name, reason="Limits and test method checked against the drawing")
+		self.assertEqual(
+			frappe.db.get_value(DOCTYPE, name, [APPROVAL_STATUS, APPROVED_BY]), (APPROVED, self.qa)
+		)
+		self.assertTrue(frappe.db.get_value(DOCTYPE, name, APPROVED_AT))
+		signature = frappe.get_last_doc(
+			"Electronic Signature", filters={"reference_doctype": DOCTYPE, "reference_name": name}
+		)
+		self.assertEqual(
+			(signature.meaning, signature.action, signature.signer, signature.reason),
+			("Approved", "Approve", self.qa, "Limits and test method checked against the drawing"),
+		)
+		self.assertTrue(verify_signatures(DOCTYPE, name))
+		self.assertTrue(is_unchanged_since(signature))
+
+	def test_only_qa_approves_with_password_and_reason_and_once(self):
+		name = self.draft_specification()
+		for user in (self.qc, self.requester):
+			with self.subTest(user=user), self.assertRaises(REFUSED):
+				self.approve(name, user=user)
+		frappe.set_user(self.qa)
+		with self.assertRaises(SigningRefused):
+			sign_action(DOCTYPE, name, "Approve", "not the password", "Checked")
+		frappe.set_user("Administrator")
+		reset_lockout(self.qa)
+		frappe.set_user(self.qa)
+		with self.assertRaisesRegex(frappe.ValidationError, "Say why"):
+			sign_action(DOCTYPE, name, "Approve", PASSWORD, " ")
+		self.assertEqual(frappe.db.get_value(DOCTYPE, name, APPROVAL_STATUS), DRAFT)
+		self.approve(name)
+		with self.assertRaisesRegex(frappe.ValidationError, "approved already"):
+			self.approve(name)
+
+	def test_the_approval_is_given_only_by_the_signed_act(self):
+		name = self.draft_specification()
+		doc = frappe.get_doc(DOCTYPE, name)
+		doc.set(APPROVAL_STATUS, APPROVED)
+		with self.assertRaisesRegex(frappe.PermissionError, "only by QA's signed approval"):
+			doc.save()
+		with self.assertRaises(frappe.PermissionError):
+			frappe.client.set_value(DOCTYPE, name, APPROVED_BY, self.qa)
+		made = self.draft_specification(**{APPROVAL_STATUS: APPROVED, APPROVED_BY: self.qa})
+		self.assertEqual(frappe.db.get_value(DOCTYPE, made, [APPROVAL_STATUS, APPROVED_BY]), (DRAFT, None))
+		self.approve(made)
+		frappe.set_user("Administrator")
+		other = new_item()
+		frappe.set_user(self.qa)
+		copy = frappe.copy_doc(frappe.get_doc(DOCTYPE, made))  # as the form's Duplicate
+		copy.update({"quality_inspection_template_name": f"MDS SPEC COPY {other}", "mds_item": other})
+		copy.insert()
+		self.assertEqual(copy.get(APPROVAL_STATUS), DRAFT)
+
+	def test_an_inspection_is_made_only_against_an_approved_specification(self):
+		name = self.draft_specification(stage=FINAL)
+		item = frappe.db.get_value(DOCTYPE, name, "mds_item")
+		outgoing = frappe.get_doc(
+			{"doctype": "Quality Inspection", "inspection_type": "Outgoing", "item_code": item}
+		)
+		with self.assertRaisesRegex(
+			frappe.ValidationError, f"Specification {re.escape(name)} of {item} is in draft"
+		):
+			choose_specification(outgoing)
+		self.approve(name)
+		choose_specification(outgoing)
+		self.assertEqual(outgoing.quality_inspection_template, name)
+		# The lot's own specification in draft again, as a change leaves it: the inspection is refused.
+		frappe.db.set_value(DOCTYPE, self.template, APPROVAL_STATUS, DRAFT)
+		self.addCleanup(frappe.db.set_value, DOCTYPE, self.template, APPROVAL_STATUS, APPROVED)
+		receipt, lot = self.verified_lot()
+		with self.assertRaisesRegex(
+			frappe.ValidationError, f"Specification {re.escape(self.template)} .* is in draft"
+		):
+			self.inspection(receipt, lot).insert()
+
+	def test_a_change_returns_an_approved_specification_to_draft(self):
+		name = self.draft_specification()
+		self.approve(name)
+		signature = frappe.get_last_doc(
+			"Electronic Signature", filters={"reference_doctype": DOCTYPE, "reference_name": name}
+		)
+		frappe.get_doc(DOCTYPE, name).save()  # saved unchanged: still approved
+		self.assertEqual(frappe.db.get_value(DOCTYPE, name, APPROVAL_STATUS), APPROVED)
+		for label, change in (
+			("a limit", lambda spec: self.widened(name)),
+			("the test method", lambda spec: spec.set(TEST_METHOD, document("Work Instruction")) or spec),
+			("the sample size", lambda spec: spec.set("mds_sample_size", 8) or spec),
+		):
+			with self.subTest(changed=label):
+				change(frappe.get_doc(DOCTYPE, name)).save()
+				self.assertEqual(
+					frappe.db.get_value(DOCTYPE, name, [APPROVAL_STATUS, APPROVED_BY, APPROVED_AT]),
+					(DRAFT, None, None),
+				)
+				self.assertFalse(is_unchanged_since(signature))  # what QA signed is no longer what it says
+				self.approve(name)
+
+	def test_a_change_of_a_specification_in_use_needs_its_request_and_returns_it_to_draft(self):
+		name = self.draft_specification(stage=IN_PROCESS)
+		self.approve(name)
+		self.inspected_against(name)
+		with self.assertRaisesRegex(frappe.ValidationError, "name the approved change request"):
+			self.widened(name).save()
+		self.assertEqual(frappe.db.get_value(DOCTYPE, name, APPROVAL_STATUS), APPROVED)
+		change = approved_change(self.requester, self.qa, name, DOCTYPE, "Product or BOM")
+		self.widened(name, mds_change_request=change).save()
+		self.assertEqual(
+			frappe.db.get_value(DOCTYPE, name, [APPROVAL_STATUS, "mds_changed_under", "mds_version"]),
+			(DRAFT, change, 2),
+		)
+		self.approve(name)  # what it says now, approved anew
+		self.assertEqual(frappe.db.get_value(DOCTYPE, name, APPROVAL_STATUS), APPROVED)
+
+	def test_naming_the_test_method_for_the_first_time_needs_no_request(self):
+		"""A specification approved by migration (in use before the rule, plan D-33) names no test
+		method; QA names it once without a change request, and approves it again with it."""
+		name = self.draft_specification(stage=IN_PROCESS, test_method=None)
+		self.inspected_against(name)
+		frappe.db.set_value(DOCTYPE, name, APPROVAL_STATUS, APPROVED)  # as the migration leaves it
+		spec = frappe.get_doc(DOCTYPE, name)
+		spec.set(TEST_METHOD, document("SOP"))
+		spec.save()
+		self.assertEqual(frappe.db.get_value(DOCTYPE, name, [APPROVAL_STATUS, "mds_version"]), (DRAFT, 1))
+		self.approve(name)
+		spec = frappe.get_doc(DOCTYPE, name)
+		spec.set(TEST_METHOD, document("SOP"))  # another one: a change of what QA approved
+		with self.assertRaisesRegex(frappe.ValidationError, "name the approved change request"):
+			spec.save()
+
+	def test_the_form_shows_the_approval_or_what_stands_in_its_way(self):
+		name = self.draft_specification(test_method=None)
+		doc = frappe.get_doc(DOCTYPE, name)
+		doc.run_method("onload")
+		shown = doc.get_onload().master_approval
+		self.assertFalse(shown["approved"])
+		self.assertIn("its test method", shown["missing"])
+		frappe.db.set_value(DOCTYPE, name, TEST_METHOD, document("SOP"))
+		self.approve(name)
+		doc = frappe.get_doc(DOCTYPE, name)
+		doc.run_method("onload")
+		self.assertEqual(
+			(doc.get_onload().master_approval["approved"], doc.get_onload().master_approval["by_migration"]),
+			(True, False),
+		)
+		frappe.db.set_value(DOCTYPE, name, APPROVED_BY, None)  # as the migration leaves it
+		doc = frappe.get_doc(DOCTYPE, name)
+		doc.run_method("onload")
+		self.assertTrue(doc.get_onload().master_approval["by_migration"])
+
+	def test_qa_is_offered_the_approval_and_a_draft_waits_on_qa(self):
+		from meddevice_suite.work_management.my_work import waiting_on
+
+		self.assertEqual(signing_actions(DOCTYPE), {"Approve": "Approved"})
+		name = self.draft_specification()
+		self.assertIn((DOCTYPE, name), {(row.doctype, row.name) for row in waiting_on(self.qa)})
+		self.assertNotIn((DOCTYPE, name), {(row.doctype, row.name) for row in waiting_on(self.qc)})
+		self.approve(name)
+		self.assertNotIn((DOCTYPE, name), {(row.doctype, row.name) for row in waiting_on(self.qa)})
+
+
+@verifies("URS-MST-014")
+class TestApprovalByMigration(SpecificationTestCase):
+	def test_a_specification_already_inspected_against_is_approved_by_migration_and_no_other(self):
+		from meddevice_suite.patches.v0_1 import approve_specifications_in_use as patch
+
+		in_use = self.draft_specification(stage=IN_PROCESS, test_method=None)
+		self.inspected_against(in_use)
+		unused = self.draft_specification(stage=FINAL)
+		frappe.set_user("Administrator")
+		loose = template(f"MDS SPEC LOOSE MIGRATION {frappe.generate_hash(length=6)}", None).insert().name
+		self.inspected_against(loose)  # a template that is no specification is never inspected against now
+		approved_by_qa = frappe.db.get_value(DOCTYPE, self.template, [APPROVAL_STATUS, APPROVED_BY])
+
+		frappe.set_user("Administrator")
+		patch.execute()
+
+		self.assertEqual(
+			frappe.db.get_value(DOCTYPE, in_use, [APPROVAL_STATUS, APPROVED_BY]), (APPROVED, None)
+		)
+		self.assertTrue(frappe.db.get_value(DOCTYPE, in_use, APPROVED_AT))
+		self.assertTrue(
+			frappe.db.exists(
+				"Audit Event",
+				{"reference_doctype": DOCTYPE, "reference_name": in_use, "reason": patch.REASON},
+			)
+		)
+		for name in (unused, loose):
+			with self.subTest(name=name):
+				self.assertEqual(frappe.db.get_value(DOCTYPE, name, APPROVAL_STATUS), DRAFT)
+		self.assertEqual(
+			frappe.db.get_value(DOCTYPE, self.template, [APPROVAL_STATUS, APPROVED_BY]), approved_by_qa
+		)
+
+		# Changed since, it is in draft again; the migration run again leaves it there.
+		frappe.db.set_value(DOCTYPE, in_use, APPROVAL_STATUS, DRAFT)
+		patch.execute()
+		self.assertEqual(frappe.db.get_value(DOCTYPE, in_use, APPROVAL_STATUS), DRAFT)
+
+
+# --- The test method (URS-MST-015, plan D-34) ------------------------------------------------------
+
+
+@verifies("URS-MST-015")
+class TestTestMethod(SpecificationTestCase):
+	def test_a_specification_is_approved_only_with_its_test_method_in_effect(self):
+		for lacks, method in (
+			("its test method", None),
+			("a test method as its document", "Form"),
+			("its test method in effect", "SOP:Draft"),
+			("its test method in effect", "SOP:Obsolete"),
+		):
+			with self.subTest(lacks=lacks, method=method):
+				name = self.draft_specification(test_method=None)
+				if method:
+					document_type, _sep, status = method.partition(":")
+					frappe.db.set_value(
+						DOCTYPE, name, TEST_METHOD, document(document_type, status or "Effective")
+					)
+				with self.assertRaisesRegex(
+					frappe.ValidationError, f"cannot be approved yet; it lacks .*{lacks}"
+				):
+					self.approve(name)
+				self.assertFalse(master_approval.approved(DOCTYPE, name))
+		for document_type in ("SOP", "Work Instruction", "External Document"):
+			with self.subTest(accepted=document_type):
+				name = self.draft_specification(test_method=document_type)
+				self.approve(name)
+				self.assertTrue(master_approval.approved(DOCTYPE, name))
+
+	def test_no_inspection_is_made_against_a_specification_whose_test_method_is_withdrawn(self):
+		before = frappe.db.get_value(DOCTYPE, self.template, TEST_METHOD)
+		method = document("SOP")
+		frappe.db.set_value(DOCTYPE, self.template, TEST_METHOD, method)
+		self.addCleanup(frappe.db.set_value, DOCTYPE, self.template, TEST_METHOD, before)
+		frappe.db.set_value(
+			"Controlled Document", method, "status", "Obsolete"
+		)  # as its withdrawal leaves it
+		receipt, lot = self.verified_lot()
+		with self.assertRaisesRegex(
+			frappe.ValidationError, f"test method {method} .* is no longer in effect"
+		):
+			self.inspection(receipt, lot).insert()

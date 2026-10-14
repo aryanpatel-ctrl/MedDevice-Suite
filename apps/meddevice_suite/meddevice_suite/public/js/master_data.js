@@ -268,19 +268,23 @@ frappe.ui.form.on("Asset", {
 	},
 });
 
-// Routings, operations and workstations (module 3): the form says whether QA has approved it, or
-// what approval still needs, and QA approves it with a signature (master_data/routing.py).
-for (const doctype of ["Operation", "Workstation", "Routing", "Warehouse"]) {
+// Routings, operations and workstations (module 3), stores (module 7) and specifications (module 6,
+// plan D-33): the form says whether QA has approved it, or what approval still needs, and QA
+// approves it with a signature (master_data/master_approval.py).
+for (const doctype of [
+	"Operation",
+	"Workstation",
+	"Routing",
+	"Warehouse",
+	"Quality Inspection Template",
+]) {
 	frappe.ui.form.on(doctype, {
 		refresh(frm) {
 			if (frm.is_new()) return;
 			const approval = frm.doc.__onload?.master_approval;
 			if (!approval) return;
 			if (approval.approved) {
-				frm.dashboard.set_headline_alert(
-					__("Approved by QA; what was approved changes under change control."),
-					"green"
-				);
+				frm.dashboard.set_headline_alert(approved_text(frm, approval), "green");
 				return;
 			}
 			if (approval.missing.length) {
@@ -307,6 +311,42 @@ for (const doctype of ["Operation", "Workstation", "Routing", "Warehouse"]) {
 					.removeClass("btn-default")
 					.addClass("btn-primary");
 			}
+		},
+	});
+}
+
+function approved_text(frm, approval) {
+	if (frm.doctype !== "Quality Inspection Template") {
+		return __("Approved by QA; what was approved changes under change control.");
+	}
+	// A specification's approval stands for what it says (master_data/specification.py).
+	if (approval.by_migration) {
+		return __(
+			"Approved by migration: it was in use before QA approved specifications. A change returns it to draft until QA approves it with a signature."
+		);
+	}
+	return __(
+		"Approved by QA; inspections are made against it. A change returns it to draft until QA approves it again."
+	);
+}
+
+// Masters linked with the controlled documents that define them (plan D-34): the lookup offers the
+// documents of the types that can, not yet withdrawn (master_data/defining_documents.py; the server
+// checks the type and that the document is in effect when QA approves the master).
+for (const [doctype, fieldname, types] of [
+	[
+		"Quality Inspection Template",
+		"mds_test_method",
+		["SOP", "Work Instruction", "External Document"],
+	],
+	["Item", "mds_specification_document", ["Specification"]],
+	["Operation", "mds_work_instruction", ["Work Instruction"]],
+]) {
+	frappe.ui.form.on(doctype, {
+		setup(frm) {
+			frm.set_query(fieldname, () => ({
+				filters: { document_type: ["in", types], status: ["!=", "Obsolete"] },
+			}));
 		},
 	});
 }

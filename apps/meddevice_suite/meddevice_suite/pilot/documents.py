@@ -4,7 +4,10 @@ and the browser journey's test site.
 Made as the system makes them: the Production Supervisor authors a work instruction, the QC
 Inspector reviews it and QA approves it, each with a signature, so it is in effect; QA then
 approves the workstations, the operations (each naming its work instruction) and the routing with
-signatures (master_data/routing.py). Everything is made only if missing.
+signatures (master_data/routing.py). The documents that define the other masters are issued the
+same way (plan D-34): the test method each specification names, before QA approves it with a
+signature (module 6, plan D-33), and the specification of each purchased material and finished
+good, before QA approves the item (module 1). Everything is made only if missing.
 """
 
 from collections.abc import Callable
@@ -13,7 +16,7 @@ from io import BytesIO
 
 import frappe
 
-from meddevice_suite.master_data import master_approval, routing
+from meddevice_suite.master_data import item_master, master_approval, routing, specification
 
 AUTHOR, REVIEWER, APPROVER = "Production Supervisor", "QC Inspector", "QA Manager"
 DEPARTMENT = "PRD"
@@ -154,3 +157,60 @@ def approve_production_masters(
 				routing.approve(
 					frappe.get_doc(doctype, name), password=password, reason="Checked for the demo"
 				)
+
+
+# --- The documents that define the other masters (plan D-34) ---------------------------------
+
+TEST_METHOD_TYPE = "SOP"  # a standard test procedure, written by the plant
+SPECIFICATION_TYPE = "Specification"
+
+
+def approve_specification(
+	name: str,
+	act_as: Callable[[str], AbstractContextManager],
+	user_of: Callable[[str], str],
+	password: str,
+) -> None:
+	"""QA's signed approval of a demo specification (module 6, plan D-33), naming first, if it names
+	none, the test method of its stage, issued through document control."""
+	if master_approval.approved(specification.DOCTYPE, name):
+		return
+	if not frappe.db.get_value(specification.DOCTYPE, name, specification.TEST_METHOD):
+		stage = frappe.db.get_value(specification.DOCTYPE, name, "mds_stage")
+		method = ensure_work_instruction(
+			f"{stage} inspection test method (demo)", act_as, user_of, password, TEST_METHOD_TYPE
+		)
+		doc = frappe.get_doc(specification.DOCTYPE, name)
+		doc.set(specification.TEST_METHOD, method)
+		doc.save(ignore_permissions=True)  # demo loader: the test method named once, its first issue
+	with act_as(APPROVER):
+		specification.approve(
+			frappe.get_doc(specification.DOCTYPE, name),
+			password=password,
+			reason="Parameters, limits, sampling and test method checked (demo)",
+		)
+
+
+def ensure_specification_document(
+	item: str,
+	act_as: Callable[[str], AbstractContextManager],
+	user_of: Callable[[str], str],
+	password: str,
+) -> None:
+	"""The specification that defines a demo item QA has not approved yet, issued through document
+	control and named on the item (module 1, plan D-34), for the item types that need one."""
+	values = frappe.db.get_value(
+		"Item", item, [item_master.ITEM_TYPE, item_master.SPECIFICATION_DOCUMENT], as_dict=True
+	)
+	if (
+		values.get(item_master.ITEM_TYPE) not in item_master.DEFINED_BY_DOCUMENT
+		or values.get(item_master.SPECIFICATION_DOCUMENT)
+		or item_master.approved(item)
+	):
+		return
+	document = ensure_work_instruction(
+		f"Specification: {item} (demo)", act_as, user_of, password, SPECIFICATION_TYPE
+	)
+	doc = frappe.get_doc("Item", item)
+	doc.set(item_master.SPECIFICATION_DOCUMENT, document)
+	doc.save(ignore_permissions=True)  # demo loader, while the item is in draft

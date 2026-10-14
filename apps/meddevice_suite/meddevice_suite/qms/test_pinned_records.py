@@ -111,6 +111,11 @@ class TestPinnedRecords(DeviceMasterRecordTestCase):
 		loose = template(f"Loose template {frappe.generate_hash(length=6)}", None).insert()
 		frappe.set_user("Administrator")
 		self.assertFalse(pinned_records.in_force("Quality Inspection Template", loose.name))
+		# A specification in draft, new or changed since QA approved it, is not relied on (plan D-33).
+		frappe.db.set_value(
+			"Quality Inspection Template", p.final, master_approval.APPROVAL_STATUS, master_approval.DRAFT
+		)
+		self.assertFalse(pinned_records.in_force("Quality Inspection Template", p.final))
 
 		self.sign_as(self.qa, "Controlled Document", p.labelling, "Withdraw", "Replaced")
 		self.assertFalse(pinned_records.in_force("Controlled Document", p.labelling))

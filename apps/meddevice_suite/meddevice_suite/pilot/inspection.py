@@ -3,7 +3,10 @@ in-process specification, and one measuring instrument, for the pilot site and t
 
 Parameter values are demo values marked as such; the client's specifications replace
 them as data under document control (decided 2026-10-08: ISO 20696 for Foley catheters,
-ISO 8669-2 for urine bags, ISO 2859-1 sampling). Everything is created only if missing.
+ISO 8669-2 for urine bags, ISO 2859-1 sampling). Everything is created only if missing. QA
+approves each specification through the caller's `approve` (plan D-33): with a signature on the
+pilot and in the browser journey (pilot/documents.py), as the signed act records it in other
+modules' tests (setup/test_stock.py).
 """
 
 from collections.abc import Callable
@@ -13,7 +16,7 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import today
 
-from meddevice_suite.master_data import equipment, item_master
+from meddevice_suite.master_data import equipment, item_master, master_approval
 
 INSTRUMENT_ITEM = "INST-CALIPER"
 INSTRUMENT_NAME = "Digital Caliper (Demo)"
@@ -73,14 +76,22 @@ def parameter_rows(group: str) -> list[dict]:
 	return rows
 
 
-def ensure_in_process_specification(item: str) -> str:
+def ensure_in_process_specification(item: str, approve: Callable[[str], None] | None = None) -> str:
 	"""The product's demo in-process specification (module 6): the checks the operations of its
 	routing carry, which its device master record names (module 31); returns its name. A product
-	that has one keeps it."""
-	if existing := frappe.db.get_value(
+	that has one keeps it. `approve` is QA's signed approval of it (plan D-33), given when it is
+	not approved yet; without it the specification is left as it is."""
+	name = frappe.db.get_value(
 		"Quality Inspection Template", {"mds_item": item, "mds_stage": IN_PROCESS_STAGE}
-	):
-		return existing
+	)
+	if not name:
+		name = new_in_process_specification(item)
+	if approve and not master_approval.approved("Quality Inspection Template", name):
+		approve(name)
+	return name
+
+
+def new_in_process_specification(item: str) -> str:
 	return (
 		frappe.get_doc(
 			{
@@ -97,9 +108,11 @@ def ensure_in_process_specification(item: str) -> str:
 	)
 
 
-def ensure_inspection_template(item: str, group: str) -> str:
+def ensure_inspection_template(item: str, group: str, approve: Callable[[str], None] | None = None) -> str:
 	"""The item's demo specification (module 6), set on the item; returns its name. A template
-	made before specifications were controlled is completed once, as its first issue."""
+	made before specifications were controlled is completed once, as its first issue. `approve` is
+	QA's signed approval of it (plan D-33), given when it is not approved yet; without it the
+	specification is left as it is."""
 	name = f"{item} IQC (Demo)"
 	rows = parameter_rows(group)
 	stated = {"mds_item": item, "mds_stage": STAGES[group], "mds_sample_size": SAMPLE_SIZE}
@@ -128,6 +141,8 @@ def ensure_inspection_template(item: str, group: str) -> str:
 		doc.quality_inspection_template = name
 		doc.inspection_required_before_purchase = incoming
 		doc.save(ignore_permissions=True)  # demo loader
+	if approve and not master_approval.approved("Quality Inspection Template", name):
+		approve(name)
 	return name
 
 

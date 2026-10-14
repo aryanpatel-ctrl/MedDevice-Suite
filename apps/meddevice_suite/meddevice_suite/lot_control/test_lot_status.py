@@ -31,6 +31,7 @@ from meddevice_suite.setup.install import apply_configuration
 from meddevice_suite.setup.test_stock import (
 	approve_equipment_for_test,
 	approve_for_test,
+	approve_specification_for_test,
 	licensed_for_test,
 	stock_item,
 	submit_bom_for_test,
@@ -255,7 +256,8 @@ class LotTestCase(IntegrationTestCase):
 		from meddevice_suite.pilot.inspection import ensure_inspection_masters, ensure_inspection_template
 
 		cls.instrument = ensure_inspection_masters(company(), approve_for_test, approve_equipment_for_test)
-		cls.template = ensure_inspection_template(RAW, "Raw Material")
+		# Module 6 (plan D-33): inspected only against a specification QA has approved.
+		cls.template = ensure_inspection_template(RAW, "Raw Material", approve_specification_for_test)
 
 	def tearDown(self):
 		frappe.set_user("Administrator")
@@ -776,7 +778,8 @@ class TestTheDecisionMovesTheStock(LotTestCase):
 		)
 		from meddevice_suite.pilot.inspection import ensure_inspection_template
 
-		ensure_inspection_template(code, "Raw Material")  # inspected first, so the store is what is checked
+		# Inspected first, against its approved specification, so the store is what is checked.
+		ensure_inspection_template(code, "Raw Material", approve_specification_for_test)
 		lot = receive(code, 1, store(stores.QUARANTINE))
 		with self.assertRaises(frappe.ValidationError) as refused:
 			self.decide(lot, "Release", "accepted")

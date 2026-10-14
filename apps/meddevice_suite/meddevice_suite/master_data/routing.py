@@ -23,10 +23,13 @@ from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 from frappe.model.document import Document
 
 from meddevice_suite.master_data import master_approval
+from meddevice_suite.master_data.defining_documents import DefiningDocument, document_missing
 from meddevice_suite.master_data.master_approval import unapproved
 
 WORK_INSTRUCTION, IN_PROCESS_CHECK = "mds_work_instruction", "mds_in_process_check"
 WORK_INSTRUCTION_TYPE = "Work Instruction"
+# The document an operation is done by (plan D-34: masters linked with Document Control).
+WORK_INSTRUCTION_DOCUMENT = DefiningDocument(WORK_INSTRUCTION, (WORK_INSTRUCTION_TYPE,), "work instruction")
 CUSTOM_FIELDS = {
 	"Operation": [
 		{
@@ -60,28 +63,7 @@ def apply_routing_fields() -> None:
 
 
 def operation_missing(doc: Document) -> list[str]:
-	missing = []
-	document = (
-		frappe.db.get_value(
-			"Controlled Document", doc.get(WORK_INSTRUCTION), ["document_type", "status"], as_dict=True
-		)
-		if doc.get(WORK_INSTRUCTION)
-		else None
-	)
-	if not document:
-		missing.append(_("its work instruction"))
-	elif document.document_type != WORK_INSTRUCTION_TYPE:
-		missing.append(
-			_("a work instruction as its document ({0} is a {1})").format(
-				doc.get(WORK_INSTRUCTION), _(document.document_type)
-			)
-		)
-	elif document.status != "Effective":
-		missing.append(
-			_("its work instruction in effect ({0} is {1})").format(
-				doc.get(WORK_INSTRUCTION), _(document.status).lower()
-			)
-		)
+	missing = document_missing(doc, WORK_INSTRUCTION_DOCUMENT)
 	if doc.get(IN_PROCESS_CHECK) not in ("Yes", "No"):
 		missing.append(_("whether it carries an in-process check"))
 	if doc.get("workstation") and unapproved("Workstation", [doc.workstation]):

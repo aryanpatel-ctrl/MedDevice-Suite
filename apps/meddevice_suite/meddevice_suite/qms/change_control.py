@@ -350,8 +350,9 @@ def complete_action(
 
 def in_force_rules() -> dict[str, tuple[str, tuple]]:
 	"""When a record that carries a change, or that an action produced, is in force: the field that
-	says so and the values that do. Any other record type takes effect as it is saved: a supplier, a
-	customer, a specification, Quality Settings or a licence has no approval of its own, and its new
+	says so and the values that do. A specification changed under the request is in force once QA
+	has approved it again (plan D-33). Any other record type takes effect as it is saved: a
+	supplier, a customer, Quality Settings or a licence has no approval of its own, and its new
 	version is in effect from the save (master_data/versioning.py)."""
 	# The masters' modules build on this one (versioning names a change request).
 	from meddevice_suite.master_data import equipment, item_master, master_approval
@@ -368,6 +369,7 @@ def in_force_rules() -> dict[str, tuple[str, tuple]]:
 		"Operation": approved_master,
 		"Workstation": approved_master,
 		"Warehouse": approved_master,
+		"Quality Inspection Template": approved_master,
 		"Asset": (equipment.APPROVAL_STATUS, (equipment.APPROVED,)),
 		# QA's signed approval is its submit; one cancelled under the change was taken out of force.
 		"BOM": ("docstatus", (1, 2)),

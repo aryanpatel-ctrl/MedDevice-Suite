@@ -43,6 +43,7 @@ CUSTOMER_LICENCE = "meddevice_suite.master_data.customer_licence"
 BOM = "meddevice_suite.master_data.bom"
 EQUIPMENT = "meddevice_suite.master_data.equipment"
 ROUTING = "meddevice_suite.master_data.routing"
+SPECIFICATION = "meddevice_suite.master_data.specification"
 WAREHOUSE = "meddevice_suite.master_data.warehouse"
 WORK_TASK = "meddevice_suite.work_management.work_task"
 CALIBRATION = "meddevice_suite.qms.calibration"
@@ -102,6 +103,8 @@ SIGNING_ACTIONS: dict[tuple[str, str], SignedAct] = {
 	("Operation", "Approve"): SignedAct("Approved", f"{ROUTING}.approve"),
 	("Workstation", "Approve"): SignedAct("Approved", f"{ROUTING}.approve"),
 	("Routing", "Approve"): SignedAct("Approved", f"{ROUTING}.approve"),
+	# Module 6, the approval of a specification (plan D-33)
+	("Quality Inspection Template", "Approve"): SignedAct("Approved", f"{SPECIFICATION}.approve"),
 	# Module 7, the approval of a store
 	("Warehouse", "Approve"): SignedAct("Approved", f"{WAREHOUSE}.approve"),
 	("Work Task", "Approve"): SignedAct("Approved", f"{WORK_TASK}.approve"),

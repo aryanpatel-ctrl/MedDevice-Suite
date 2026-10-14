@@ -1,14 +1,16 @@
 // Item master (module 1) on the screen, as QA and Stores: a draft item is used in no record,
-// QA approves it on its form with a signature, and from then on it is used
-// (meddevice_suite/master_data/item_master.py).
+// QA approves it on its form with a signature, and from then on it is used; a finished good names
+// the controlled document that defines it (plan D-34) (meddevice_suite/master_data/item_master.py).
 const PASSWORD = "Im7!qRt2#vXw9pLz"; // test users on the test site only
 const QA = "cy.item.qa@job-profiles.example.com";
 const STORES = "cy.item.stores@job-profiles.example.com";
 const FORM = ".page-container:visible";
+const DOCUMENT = "its material or product specification"; // as the form lists it while missing
 
 let item; // a new draft item each run: an approval is never undone
 let finished_good; // a draft finished good still lacking its device data
 let stores; // the approved store of the test company
+let specification_document; // a Specification in effect, issued through document control
 
 function as_user(user) {
 	// Leaves the previous person's page first (as in standard_flow.js).
@@ -85,6 +87,15 @@ function setup() {
 		filters: { warehouse_name: "Stores" },
 		fieldname: "name",
 	}).then((r) => (stores = r.message.name));
+	// Issued by the job users of the run, with their signatures (module 30).
+	cy.call("meddevice_suite.qa.ui_users.prepare_job_users")
+		.then(({ message }) =>
+			cy.call("meddevice_suite.qa.ui_journey.prepare_effective_document", {
+				password: message.password,
+				document_type: "Specification",
+			})
+		)
+		.then(({ message }) => (specification_document = message));
 	const suffix = Date.now().toString(36).toUpperCase();
 	// A sub-assembly: lot-tracked with its shelf life and storage, inspected later in the process.
 	cy.insert_doc("Item", {
@@ -136,10 +147,27 @@ context("Item master", () => {
 			.should("contain", "Not yet approved by QA")
 			.and("contain", "device class")
 			.and("contain", "UDI device identifier")
-			.and("contain", "final specification");
+			.and("contain", "final specification")
+			.and("contain", DOCUMENT);
 		cy.get(`${FORM} button[data-label="${encodeURIComponent("Approve Item")}"]`).should(
 			"not.exist"
 		);
+	});
+
+	it("[URS-MST-016] QA names the document that defines the finished good on its form", () => {
+		as_user(QA);
+		open_item(finished_good);
+		headline().should("contain", DOCUMENT);
+		cy.window().then((win) =>
+			win.cur_frm.set_value("mds_specification_document", specification_document)
+		);
+		cy.window()
+			.its("cur_frm.doc.mds_specification_document")
+			.should("eq", specification_document);
+		cy.window().then((win) => win.cur_frm.save());
+		cy.window().should((win) => expect(win.cur_frm.is_dirty(), "saved").to.equal(false));
+		open_item(finished_good); // loaded again, with what its approval now needs
+		headline().should("contain", "Not yet approved by QA").and("not.contain", DOCUMENT);
 	});
 
 	it("[URS-MST-003] QA approves the item on its form with a signature", () => {
