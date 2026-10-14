@@ -29,13 +29,13 @@ State on 2026-10-10: built (`28536c94`, `9d5eeb26` 2026-10-06; scale, damage and
 | Category | Years | Basis | Record types |
 | --- | --- | --- | --- |
 | Device and production records | 10 | ISO 13485 4.2.5; 21 CFR 820; EU MDR Art. 10(8); CDSCO MDR 2017 | Item, BOM, Routing, Operation, Workstation, Warehouse, Batch, Quality Inspection Template, Quality Inspection, Lot Release, Work Order, Job Card, Stock Entry, Stock Reconciliation, Serial and Batch Bundle, Pick List |
-| Sales records | 10 | same | Quotation |
+| Sales records | 10 | same | Quotation, Sales Order (since 2026-10-12) |
 | Quality system records | 10 | same | Controlled Document, Document Revision, Change Request |
 | Purchasing and supplier records | 10 | same | Supplier, Supplier Approval, Material Request, Purchase Order, Purchase Receipt |
 | Distribution records | 10 | same | Customer, Delivery Note, Packing Slip |
 | Equipment and personnel records | 10 | same | Asset, Asset Maintenance Log, Asset Repair, Employee |
 | Access control and system settings records | 10 | 21 CFR 11.10(d), (e), (g) | User, Role, Role Profile, User Permission, Custom DocPerm, System Settings, Stock Settings |
-| Compliance evidence | 10 | 21 CFR 11.10(c), (e); 11.70 | Audit Event, Electronic Signature, Activity Log, Record Archive |
+| Compliance evidence | 10 | 21 CFR 11.10(c), (e); 11.70 | Audit Event, Electronic Signature, Audit Anchor (since 2026-10-12: kept as long as the entries it counts, which verifying them needs), Activity Log, Record Archive |
 
 The schedule must cover every regulated record type (module 50's `REGULATED_DOCTYPES`), every non-child DocType this app defines, the evidence and the login history, each once; the test `test_every_regulated_record_type_and_the_evidence_is_scheduled_once` fails the build when a new DocType is added without a retention class. Nothing is ever deleted at the end of the period: no role may delete a regulated record (module 47) and the compliance records refuse deletion, so the period is the minimum the records stay retrievable.
 
@@ -108,7 +108,7 @@ Site: pilot (`pilot.localhost`) or a test site with a running worker and schedul
 
 ### RA-01 Retention Schedule report (C1, C2)
 Role: QA Manager.
-1. Open **Compliance › Retention Schedule**. Expected: a table with columns **Category**, **Record type**, **Kept for (years)**, **Counted from**, **Legal basis**; every row shows 10 years and *The date the record was made*; categories as in section 2.1; *Audit Event*, *Electronic Signature*, *Activity Log*, *Record Archive* under *Compliance evidence*.
+1. Open **Compliance › Retention Schedule**. Expected: a table with columns **Category**, **Record type**, **Kept for (years)**, **Counted from**, **Legal basis**; every row shows 10 years and *The date the record was made*; categories as in section 2.1; *Audit Event*, *Electronic Signature*, *Audit Anchor*, *Activity Log*, *Record Archive* under *Compliance evidence*; *Company* under *System configuration records*; *Sales Order* under *Sales records*.
 2. Click a **Record type** link (e.g. *Supplier Approval*). Expected: opens the DocType record (read-only for QA) — or a permission refusal if QA may not read DocType; note which.
 3. As Sales (`sales@demo.example.com`) visit `/desk/query-report/Retention Schedule`. Expected: refused plainly.
 Actual result: ____  Pass/Fail: ____  Evidence: screenshot of step 1.

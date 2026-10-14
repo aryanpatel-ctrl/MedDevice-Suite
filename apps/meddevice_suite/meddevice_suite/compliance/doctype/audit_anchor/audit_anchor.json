@@ -1,0 +1,136 @@
+{
+ "actions": [],
+ "autoname": "format:ANC-{YYYY}-{######}",
+ "creation": "2026-10-12 12:00:00.000000",
+ "description": "The newest entry and the number of entries of the audit trail or of the electronic signatures at one moment, also kept in an append-only file, so that removed entries are detected. Recorded every hour and on request; never edited or deleted.",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "ledger",
+  "head_entry",
+  "head_fingerprint",
+  "head_created",
+  "column_break_count",
+  "entry_count",
+  "anchored_at",
+  "trigger",
+  "section_integrity",
+  "previous_anchor",
+  "anchor_hash"
+ ],
+ "fields": [
+  {
+   "fieldname": "ledger",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Trail",
+   "options": "Audit Event\nElectronic Signature",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "description": "The trail's newest entry when the anchor was recorded.",
+   "fieldname": "head_entry",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Newest Entry",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "head_fingerprint",
+   "fieldtype": "Data",
+   "label": "Newest Entry Fingerprint",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "head_created",
+   "fieldtype": "Datetime",
+   "label": "Newest Entry Recorded At",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_count",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "How many entries the trail held up to its newest entry; never fewer than the anchor before it counted.",
+   "fieldname": "entry_count",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Entries",
+   "non_negative": 1,
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "anchored_at",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Anchored At",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "trigger",
+   "fieldtype": "Select",
+   "label": "Recorded",
+   "options": "Scheduled\nOn request",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "section_integrity",
+   "fieldtype": "Section Break",
+   "label": "Integrity"
+  },
+  {
+   "fieldname": "previous_anchor",
+   "fieldtype": "Link",
+   "label": "Previous Anchor",
+   "options": "Audit Anchor",
+   "read_only": 1
+  },
+  {
+   "fieldname": "anchor_hash",
+   "fieldtype": "Data",
+   "label": "Anchor Fingerprint",
+   "read_only": 1,
+   "reqd": 1,
+   "unique": 1
+  }
+ ],
+ "in_create": 1,
+ "links": [],
+ "modified": "2026-10-12 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Compliance",
+ "name": "Audit Anchor",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager"
+  },
+  {
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Quality Manager"
+  }
+ ],
+ "read_only": 0,
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

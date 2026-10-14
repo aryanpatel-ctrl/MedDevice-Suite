@@ -49,6 +49,7 @@ ALERTS: dict[str, str] = {
 	"Calibration Out of Tolerance": "QMS",  # calibration (module 38)
 	"Regulatory Licence Expiring": "QMS",  # regulatory licences (module 41)
 	"Device Master Record Out of Date": "QMS",  # device master record (module 31)
+	"Audit Trail Problem Found": MODULE,  # removed audit entries found by the anchors (URS-CMP-042)
 }
 # On the lot: the last expiry alert it has had. Bookkeeping of this module only.
 ALERT_FIELD = "mds_expiry_alert"
