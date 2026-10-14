@@ -3,15 +3,23 @@ plan D-28, decided 2026-10-14; DFD 4.6 Batch Creation; ISO 13485 7.5.1, 7.5.8, 7
 
 A finished good is made on a work order released on its Current device master record (modules 19,
 31), and its lot comes into stock on that order's manufacture entry, with the materials it consumed
-and the checks made on the way behind it. A material receipt would bring a finished lot into stock
-with none of that, so a material receipt of a finished good is refused, on the form before it is
-submitted (`guard_stock_entry`) and at the stock ledger, which every posting passes whatever made it
-(`guard_stock_ledger_entry`), as the lot status rules are (`lot_status`).
+and the checks made on the way behind it. The plant makes its own finished goods: one bought in
+would be trading, which is not in the DFD, and one received or counted into stock by hand would
+have none of that record behind it.
 
-The one exception is opening stock at migration, ERPNext's Is Opening = Yes on the stock entry:
-finished goods already in the plant's stores when the system goes live were made before it and come
-in once that way (`as_opening_stock`). They still come in as new lots in Quarantine, inspected on
-that entry and released by QA, as any material receipt is (modules 16, 17).
+One rule answers, for every voucher type and stock entry purpose that can post stock, whether stock
+of a finished good may come in on it (`may_enter`, from the declarations in `WAYS_IN`): from
+production, moved between stores, or a customer's goods coming back, yes; opening stock at migration
+on a material receipt (ERPNext's Is Opening = Yes) or a stock reconciliation of purpose Opening
+Stock, yes; a goods receipt, a purchase invoice, a subcontractor's receipt, a material receipt or a
+stock reconciliation that is not opening stock, no. A path not declared is refused, so a voucher
+type ERPNext adds is classified before it is trusted. The rule is held on the forms that bring stock
+in, before they are submitted (`guard_document`), and at the stock ledger, which every posting
+passes whatever made it (`guard_stock_ledger_entry`), as the lot status rules are (`lot_status`). A
+stock count of a lot already in stock is not new stock and is left to `lot_status.counted_back`.
+
+Opening stock (`as_opening_stock`) still comes in as new lots in Quarantine, inspected and released
+by QA (modules 16, 17).
 """
 
 import frappe
@@ -19,72 +27,197 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import flt
 
-from meddevice_suite.lot_control.lot_status import qty_precision
+from meddevice_suite.lot_control.lot_status import lots_of_bundle, lots_of_row, qty_precision
+from meddevice_suite.lot_control.receipt import origins_of
 from meddevice_suite.master_data.item_master import FINISHED_GOOD, ITEM_TYPE
 
+STOCK_ENTRY, STOCK_RECONCILIATION = "Stock Entry", "Stock Reconciliation"
 MATERIAL_RECEIPT = "Material Receipt"
 OPENING = "Yes"  # ERPNext's Is Opening on a stock entry
+OPENING_STOCK = "Opening Stock"  # ERPNext's purpose of a stock reconciliation at migration
+
+# How stock of a finished good may come in on a voucher.
+PRODUCED = "made by production"
+MOVED = "moved from another store"
+RETURNED = "a customer's goods coming back, when a return"
+OPENING_ONLY = "opening stock at migration only"
+NEVER = "never"
+NO_STOCK_IN = "brings no stock in"
+ALLOWED = frozenset({PRODUCED, MOVED})
+
+# (voucher type, stock entry purpose) -> how a finished good may come in on it. Every stock entry
+# purpose and every record type that is a stock voucher in ERPNext is declared (the tests hold this to
+# ERPNext's own lists); one not declared is refused.
+WAYS_IN: dict[tuple[str, str | None], str] = {
+	(STOCK_ENTRY, "Manufacture"): PRODUCED,
+	# A finished good is made on a repack only on a work order of it too (qms.device_master_record).
+	(STOCK_ENTRY, "Repack"): PRODUCED,
+	(STOCK_ENTRY, MATERIAL_RECEIPT): OPENING_ONLY,
+	(STOCK_ENTRY, "Material Transfer"): MOVED,
+	(STOCK_ENTRY, "Material Transfer for Manufacture"): MOVED,
+	(STOCK_ENTRY, "Send to Subcontractor"): MOVED,
+	(STOCK_ENTRY, "Material Issue"): NO_STOCK_IN,
+	(STOCK_ENTRY, "Material Consumption for Manufacture"): NO_STOCK_IN,
+	(STOCK_ENTRY, "Return Raw Material to Customer"): NO_STOCK_IN,
+	(STOCK_ENTRY, "Subcontracting Delivery"): NO_STOCK_IN,
+	# Taking a product apart makes its parts, never a finished good.
+	(STOCK_ENTRY, "Disassemble"): NEVER,
+	# Subcontracting for a customer (their material in, their goods back): not in the DFD.
+	(STOCK_ENTRY, "Receive from Customer"): NEVER,
+	(STOCK_ENTRY, "Subcontracting Return"): NEVER,
+	# A new lot only at migration; a count of a lot in stock is not new stock (lot_status.counted_back).
+	(STOCK_RECONCILIATION, None): OPENING_ONLY,
+	# Bought in, or made by another plant: trading, not in the DFD.
+	("Purchase Receipt", None): NEVER,
+	("Purchase Invoice", None): NEVER,
+	("Subcontracting Receipt", None): NEVER,
+	("Asset Capitalization", None): NEVER,
+	# Goods a customer sends back are the same stock, into the Returns store (plan D-25).
+	("Delivery Note", None): RETURNED,
+	("Sales Invoice", None): RETURNED,
+	("POS Invoice", None): RETURNED,
+	# ERPNext stock controllers that post no stock.
+	**dict.fromkeys(
+		(
+			(doctype, None)
+			for doctype in (
+				"Lead",
+				"Quotation",
+				"Sales Order",
+				"Supplier Quotation",
+				"Request for Quotation",
+				"Purchase Order",
+				"Material Request",
+				"Subcontracting Order",
+				"Subcontracting Inward Order",
+				"Serial No",
+			)
+		),
+		NO_STOCK_IN,
+	),
+}
 
 
 class FinishedGoodNotProduced(frappe.ValidationError):
-	"""A finished good was refused on a material receipt that is not opening stock."""
+	"""Stock of a finished good was refused on a voucher that does not bring finished goods in."""
 
 
-def guard_stock_entry(doc: Document, method: str | None = None) -> None:
-	"""Stock Entry validate: a material receipt names no finished good, unless it is opening stock."""
-	purpose = doc.get("purpose") or frappe.db.get_value(
-		"Stock Entry Type", doc.get("stock_entry_type"), "purpose"
-	)
-	if purpose != MATERIAL_RECEIPT or doc.get("is_opening") == OPENING:
+def may_enter(
+	voucher_type: str, purpose: str | None = None, opening: bool = False, is_return: bool = False
+) -> bool:
+	"""May stock of a finished good come into the stores on this voucher (URS-STK-013)?"""
+	way = WAYS_IN.get((voucher_type, purpose if voucher_type == STOCK_ENTRY else None))
+	if way == OPENING_ONLY:
+		return opening
+	if way == RETURNED:
+		return is_return
+	return way in ALLOWED
+
+
+def way_in(voucher_type: str, values: Document | frappe._dict) -> tuple[str | None, bool, bool]:
+	"""(stock entry or reconciliation purpose, whether opening stock, whether a return) of a voucher,
+	from the voucher itself or its stored values."""
+	purpose = values.get("purpose")
+	if voucher_type == STOCK_ENTRY:
+		purpose = purpose or frappe.db.get_value(
+			"Stock Entry Type", values.get("stock_entry_type"), "purpose"
+		)
+		return purpose, values.get("is_opening") == OPENING, False
+	if voucher_type == STOCK_RECONCILIATION:
+		return purpose, purpose == OPENING_STOCK, False
+	return None, False, bool(values.get("is_return"))
+
+
+def guard_document(doc: Document, method: str | None = None) -> None:
+	"""Stock Entry, Purchase Receipt and Stock Reconciliation validate: refused on the form, before
+	submit, when a finished good would come in on it."""
+	purpose, opening, is_return = way_in(doc.doctype, doc)
+	if may_enter(doc.doctype, purpose, opening, is_return):
 		return
-	received = sorted({row.item_code for row in doc.get("items") or [] if row.get("item_code")})
+	coming_in = sorted({row.item_code for row in rows_bringing_stock_in(doc) if row.get("item_code")})
 	finished = frappe.get_all(
 		"Item",
-		filters={"name": ["in", received or [""]], ITEM_TYPE: FINISHED_GOOD},
+		filters={"name": ["in", coming_in or [""]], ITEM_TYPE: FINISHED_GOOD},
 		pluck="name",
 		order_by="name asc",
 	)
 	if finished:
-		refuse(finished)
+		refuse(finished, doc.doctype)
+
+
+def rows_bringing_stock_in(doc: Document) -> list[Document]:
+	"""The lines of a document that bring stock into a store: a stock entry's lines into one; every
+	line of a goods receipt that is not a return; a count's lines of a lot not yet in stock, or of no
+	lot named, which come in as a new lot."""
+	if doc.doctype == STOCK_ENTRY:
+		return [row for row in doc.items if row.get("t_warehouse")]
+	if doc.get("is_return"):
+		return []
+	if doc.doctype != STOCK_RECONCILIATION:
+		return list(doc.items)
+	rows = [(row, lots_of_row(row)) for row in doc.items]
+	origins = origins_of(sorted({lot for _row, lots in rows for lot in lots}))
+	return [row for row, lots in rows if is_new(lots, origins, doc.name)]
 
 
 def guard_stock_ledger_entry(sle: Document, method: str | None = None) -> None:
-	"""Stock Ledger Entry validate: no finished good comes in on a material receipt that is not opening
-	stock, whatever posted it."""
+	"""Stock Ledger Entry validate: no stock of a finished good comes in on a voucher that does not
+	bring finished goods in, whatever posted it. A cancelled posting's reversal undoes, it does not
+	bring stock in."""
 	if (
-		sle.voucher_type != "Stock Entry"
-		or sle.is_cancelled
+		sle.is_cancelled
 		or flt(sle.actual_qty, qty_precision()) <= 0
 		or frappe.get_cached_value("Item", sle.item_code, ITEM_TYPE) != FINISHED_GOOD
 	):
 		return
-	purpose, is_opening = frappe.db.get_value("Stock Entry", sle.voucher_no, ["purpose", "is_opening"]) or (
-		None,
-		None,
-	)
-	if purpose == MATERIAL_RECEIPT and is_opening != OPENING:
-		refuse([sle.item_code])
+	meta = frappe.get_meta(sle.voucher_type)
+	fields = [
+		field for field in ("purpose", "stock_entry_type", "is_opening", "is_return") if meta.has_field(field)
+	]
+	values = (
+		frappe.db.get_value(sle.voucher_type, sle.voucher_no, fields, as_dict=True) if fields else None
+	) or frappe._dict()
+	if sle.voucher_type == STOCK_RECONCILIATION and not brings_new_lot(sle):
+		return  # a count of a lot in stock (lot_status.counted_back)
+	if not may_enter(sle.voucher_type, *way_in(sle.voucher_type, values)):
+		refuse([sle.item_code], sle.voucher_type)
 
 
-def refuse(items: list[str]) -> None:
+def brings_new_lot(sle: Document) -> bool:
+	lots = [sle.batch_no] if sle.batch_no else lots_of_bundle(sle.serial_and_batch_bundle)
+	return is_new(lots, origins_of(lots), sle.voucher_no)
+
+
+def is_new(lots: list[str], origins: dict[str, frappe._dict], voucher_no: str | None) -> bool:
+	"""Whether a line brings a lot into stock for the first time: no lot named yet (one is made for
+	it), or a lot that no other document brought in."""
+	return not lots or any(lot not in origins or origins[lot].voucher_no == voucher_no for lot in lots)
+
+
+def refuse(items: list[str], voucher_type: str) -> None:
 	frappe.throw(
 		_(
-			"{0}: a finished good comes into stock only from production, on its work order's manufacture entry. Only opening stock at migration is received on a material receipt, with Is Opening set to Yes."
-		).format(", ".join(items)),
+			"{0}: a finished good comes into stock only from production, on its work order's manufacture entry, not on a {1}. Only opening stock at migration comes in otherwise: a material receipt with Is Opening set to Yes, or a stock reconciliation of purpose Opening Stock."
+		).format(", ".join(items), _(voucher_type)),
 		FinishedGoodNotProduced,
 		title=_("Finished goods come from production"),
 	)
 
 
-def as_opening_stock(entry: Document) -> Document:
-	"""Make a material receipt opening stock at migration: Is Opening = Yes, with each line's
-	difference posted to the company's temporary opening account, as ERPNext requires of an opening
-	entry (an expense account would put the opening value in the profit and loss)."""
-	account = opening_account(entry.company)
-	entry.is_opening = OPENING
-	for row in entry.items:
+def as_opening_stock(doc: Document) -> Document:
+	"""Make a material receipt or a stock reconciliation opening stock at migration: Is Opening = Yes,
+	or the purpose Opening Stock, with the difference posted to the company's temporary opening
+	account, as ERPNext requires of an opening entry (an expense account would put the opening value
+	in the profit and loss)."""
+	account = opening_account(doc.company)
+	if doc.doctype == STOCK_RECONCILIATION:
+		doc.purpose = OPENING_STOCK
+		doc.expense_account = account
+		return doc
+	doc.is_opening = OPENING
+	for row in doc.items:
 		row.expense_account = account
-	return entry
+	return doc
 
 
 def opening_account(company: str) -> str:

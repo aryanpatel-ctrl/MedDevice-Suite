@@ -1040,7 +1040,7 @@ status = "implemented"
 [[requirement]]
 id = "URS-STK-013"
 module = 17
-title = "A finished good comes into stock only from production, on its work order's manufacture entry: a material receipt of a finished good is refused on the form and at the stock ledger, unless it is opening stock at migration (Is Opening = Yes), which comes in as a Quarantine lot inspected on that entry and released by QA."
+title = "A finished good comes into stock only from production, on its work order's manufacture entry, or as opening stock at migration, by one rule for every voucher type, on the form and at the stock ledger: a material receipt that is not opening stock (Is Opening = Yes), a goods receipt, and a stock reconciliation that brings a new lot in other than as Opening Stock are refused; opening stock comes in as a Quarantine lot, inspected and released by QA."
 source = "D4 4.6 Batch Creation; ISO 13485 7.5.1, 7.5.8, 7.5.9; URS-STK-004, URS-QMS-031; foundation hardening plan D-28, decided 2026-10-14"
 status = "implemented"
 

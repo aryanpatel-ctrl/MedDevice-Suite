@@ -115,9 +115,9 @@ doc_events = {
 		# record is Current (before_validate runs even when validation is skipped).
 		"before_validate": "meddevice_suite.qms.device_master_record.guard_stock_entry",
 		"validate": [
-			# Plan D-28, first: a finished good on a material receipt is refused for what it is, before
-			# the lot status rules say where its lot may go.
-			"meddevice_suite.lot_control.finished_goods.guard_stock_entry",
+			# Plan D-28, first: a finished good that may not come in on it is refused for what it is,
+			# before the lot status rules say where its lot may go.
+			"meddevice_suite.lot_control.finished_goods.guard_document",
 			"meddevice_suite.lot_control.lot_status.guard_stock_entry",
 		],
 		"before_submit": "meddevice_suite.qms.device_master_record.guard_stock_entry",
@@ -149,6 +149,8 @@ doc_events = {
 		"before_rename": "meddevice_suite.master_data.customer_licence.guard_customer_rename",
 	},
 	"Pick List": {"validate": "meddevice_suite.lot_control.lot_status.guard_pick_list"},
+	# Plan D-28: a count brings a new lot of a finished good in only as opening stock at migration.
+	"Stock Reconciliation": {"validate": "meddevice_suite.lot_control.finished_goods.guard_document"},
 	"Packing Slip": {"validate": "meddevice_suite.lot_control.lot_status.guard_packing_slip"},
 	"Work Order": {
 		# Module 2: only from an approved, active bill of its own product; module 3: only on approved
@@ -215,6 +217,8 @@ doc_events = {
 	"Employee": {"on_update": "meddevice_suite.qms.training.on_employee_update"},
 	"Purchase Receipt": {
 		"validate": [
+			# Plan D-28: a finished good is made by the plant, never bought in.
+			"meddevice_suite.lot_control.finished_goods.guard_document",
 			"meddevice_suite.lot_control.lot_status.guard_purchase_receipt",
 			"meddevice_suite.lot_control.receipt.protect_certificate",
 			"meddevice_suite.lot_control.receipt.refuse_existing_lots",
