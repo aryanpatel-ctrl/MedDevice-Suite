@@ -85,7 +85,10 @@ doc_events = {
 			"meddevice_suite.compliance.alerts.reset_expiry_alert",
 			"meddevice_suite.setup.stock.refuse_negative_stock",
 			"meddevice_suite.lot_control.lot_status.guard_batch",
-		]
+			# Module 18 (plan H6): a lot's dates are fixed once it has stock; QA corrects them signed.
+			"meddevice_suite.lot_control.lot_dates.guard_batch",
+		],
+		"onload": "meddevice_suite.lot_control.lot_dates.batch_onload",
 	},
 	# Lot status (module 17): only an Approved lot leaves a store; each status has its store.
 	"Warehouse": {

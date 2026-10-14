@@ -94,6 +94,9 @@ SIGNED_CONTENT: dict[str, str] = {
 	"Workstation": "meddevice_suite.master_data.master_approval.signed_content",
 	"Routing": "meddevice_suite.master_data.master_approval.signed_content",
 	"Warehouse": "meddevice_suite.master_data.master_approval.signed_content",
+	# Module 18: a correction of a lot's dates binds the lot and the dates QA approved; its quantity
+	# and status move on with the stock and QA's decisions.
+	"Batch": "meddevice_suite.lot_control.lot_dates.signed_content",
 }
 
 SYSTEM_MAINTAINED: dict[str, tuple[str, ...]] = {

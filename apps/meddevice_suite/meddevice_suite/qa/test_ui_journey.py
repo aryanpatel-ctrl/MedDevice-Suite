@@ -4,6 +4,8 @@ import frappe
 from frappe.tests import IntegrationTestCase
 from frappe.utils import add_days, getdate, today
 
+from meddevice_suite.lot_control.lot_dates import has_stock_history
+from meddevice_suite.lot_control.lot_status import holdings_of
 from meddevice_suite.master_data.test_supplier_approval import approved_for
 from meddevice_suite.qa import verifies
 from meddevice_suite.qa.ui_journey import (
@@ -22,6 +24,7 @@ from meddevice_suite.qa.ui_journey import (
 	lots_of,
 	post_stock_entry,
 	prepare_journey,
+	prepare_lot_dates,
 	store,
 )
 from meddevice_suite.qa.ui_users import prepare_job_users
@@ -234,3 +237,16 @@ class TestBrowserJourney(IntegrationTestCase):
 		frappe.set_user(prepare_job_users()["users"]["Operator"])  # no access to stock entries
 		with self.assertRaises(frappe.PermissionError):
 			lots_of("Stock Entry", receipt)
+
+	def test_prepares_a_lot_with_stock_whose_dates_qa_corrects_in_the_browser(self):
+		prepare_journey(self.password)
+
+		prepared = prepare_lot_dates()
+
+		lot = prepared["lot"]
+		self.assertEqual([(row.warehouse, row.qty) for row in holdings_of(lot)], [(store("Quarantine"), 1)])
+		self.assertTrue(has_stock_history(lot))  # its dates are fixed: the browser corrects them
+		self.assertEqual(prepared["expiry_date"], str(frappe.db.get_value("Batch", lot, "expiry_date")))
+		frappe.set_user(prepare_job_users()["users"]["Stores"])
+		with self.assertRaises(frappe.PermissionError):
+			prepare_lot_dates()

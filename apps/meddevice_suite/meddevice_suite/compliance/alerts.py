@@ -78,27 +78,27 @@ def apply_alerts() -> None:
 	frappe.db.add_index("Batch", ["expiry_date"])
 
 
-def send_expiry_alerts() -> None:
-	"""Daily: alert each lot with stock once as its expiry approaches, and once when expired."""
+def send_expiry_alerts(lots: list[str] | None = None) -> None:
+	"""Daily: alert each lot with stock once as its expiry approaches, and once when expired. Given
+	`lots`, only those, at once: a lot whose expiry date QA has just corrected (lot_control.lot_dates)
+	is alerted by the same rule without waiting for the next run."""
 	soon = add_days(today(), quality_settings.value("lot_expiry_warning_days"))
 	for alert, expiry, already in (
 		(EXPIRED, ["<", today()], [EXPIRED]),
 		(EXPIRING_SOON, ["between", [today(), soon]], [EXPIRING_SOON, EXPIRED]),
 	):
+		filters = [
+			# Frappe compares a missing date as the earliest one: a lot without one never expires.
+			["expiry_date", "is", "set"],
+			["expiry_date", *expiry],
+			[ALERT_FIELD, "not in", already],
+			["batch_qty", ">", 0],
+			["disabled", "=", 0],
+		]
+		if lots is not None:
+			filters.append(["name", "in", lots or [""]])
 		notification = frappe.get_doc("Notification", alert)
-		for lot in frappe.get_all(
-			"Batch",
-			filters=[
-				# Frappe compares a missing date as the earliest one: a lot without one never expires.
-				["expiry_date", "is", "set"],
-				["expiry_date", *expiry],
-				[ALERT_FIELD, "not in", already],
-				["batch_qty", ">", 0],
-				["disabled", "=", 0],
-			],
-			pluck="name",
-			order_by="expiry_date asc",
-		):
+		for lot in frappe.get_all("Batch", filters=filters, pluck="name", order_by="expiry_date asc"):
 			send(notification, lot, alert)
 
 

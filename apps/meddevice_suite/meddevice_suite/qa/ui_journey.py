@@ -29,6 +29,7 @@ from contextlib import contextmanager
 
 import frappe
 from frappe import _
+from frappe.model.document import Document
 from frappe.utils import add_days, today
 from frappe.utils.password import update_password
 
@@ -342,13 +343,14 @@ def put_later_expiring_lots() -> dict[str, str]:
 	return lots
 
 
-def post_stock_entry(purpose: str, rows: list[dict]) -> None:
+def post_stock_entry(purpose: str, rows: list[dict]) -> Document:
 	entry = frappe.get_doc(
 		{"doctype": "Stock Entry", "stock_entry_type": purpose, "company": COMPANY, "items": rows}
 	)
 	# test-site set-up by the Administrator, checked by the caller
 	entry.insert(ignore_permissions=True)
 	entry.submit()
+	return entry
 
 
 # Any signed-in user may ask: the answer describes only a record the user may read.
@@ -633,6 +635,38 @@ def approved_change_request(record_type: str, record: str, password: str) -> str
 			reason="Approved (browser test)",
 		)
 	return request.name
+
+
+@frappe.whitelist(methods=["POST"])
+def prepare_lot_dates() -> dict:
+	"""A new lot of one of the journey's materials with stock in the Quarantine store, for the browser
+	to show its dates fixed and to correct them as QA with a signature (module 18, plan H6). Run after
+	prepare_journey, which approves the material; the next prepare_journey writes the lot off with
+	the rest of what a run left. Returns {"lot", "manufacturing_date", "expiry_date"}."""
+	from meddevice_suite.pilot.flow import lot_of
+
+	ensure_test_site()
+	if frappe.session.user != "Administrator":
+		frappe.throw(_("The browser journey is prepared only by the Administrator."), frappe.PermissionError)
+	material = "UIJ-RM-POUCH"
+	entry = post_stock_entry(
+		"Material Receipt",
+		[
+			{
+				"item_code": material,
+				"t_warehouse": store(QUARANTINE),
+				"qty": 1,
+				"basic_rate": RAW_MATERIALS[material][4],
+			}
+		],
+	)
+	lot = lot_of(frappe.get_doc("Stock Entry", entry.name).items[0])
+	dates = frappe.db.get_value("Batch", lot, ["manufacturing_date", "expiry_date"], as_dict=True)
+	return {
+		"lot": lot,
+		"manufacturing_date": str(dates.manufacturing_date),
+		"expiry_date": str(dates.expiry_date),
+	}
 
 
 @frappe.whitelist(methods=["POST"])

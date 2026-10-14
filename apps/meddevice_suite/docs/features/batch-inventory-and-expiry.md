@@ -1,8 +1,9 @@
 # Batch inventory, expiry, FEFO picking and putaway (module 18) — feature document and browser test guide
 
-Requirements: **URS-STK-001, URS-STK-002, URS-STK-003**, and since 2026-10-11 **URS-STK-008** (expired lots) and **URS-STK-009** (first expiry, first out for lots named by hand) (`meddevice_suite/qa/requirements.toml`; code `lot_control/expiry.py`, report *Lots Taken Out of Expiry Order*). Also touched: URS-CMP-027 (lot expiry alerts, module 51: the alert is the only expiry-driven behaviour this app adds), URS-STK-004/005 (a lot's status and store, module 17, which keep expiry-first picking to approved stock), URS-PLT-007 (the journey that proves expiry-first issue and delivery).
+Requirements: **URS-STK-001, URS-STK-002, URS-STK-003**, and since 2026-10-11 **URS-STK-008** (expired lots) and **URS-STK-009** (first expiry, first out for lots named by hand) (`meddevice_suite/qa/requirements.toml`; code `lot_control/expiry.py`, report *Lots Taken Out of Expiry Order*), and since 2026-10-14 **URS-STK-011** (a lot's dates are fixed once it has stock) and **URS-STK-012** (QA's signed *Correct Dates*) (code `lot_control/lot_dates.py`; foundation hardening plan H6, decided 2026-10-14). Also touched: URS-CMP-027 (lot expiry alerts, module 51: the alert is the only expiry-driven behaviour this app adds), URS-STK-004/005 (a lot's status and store, module 17, which keep expiry-first picking to approved stock), URS-PLT-007 (the journey that proves expiry-first issue and delivery).
 Code: `meddevice_suite/setup/stock.py` (locked Stock Settings, negative-stock refusal), `compliance/alerts.py` with `compliance/notification/lot_expiring_soon/` and `lot_expired/` (expiry alerts), hooks in `meddevice_suite/hooks.py`; the lot stores and status that putaway relies on in `lot_control/lot_status.py` and `lot_control/stores.py`; test fixtures `qa/ui_journey.py`, `pilot/demo.py`, `pilot/flow.py`. Module approach in the register: **ready** (standard ERPNext, configured by this app), so most behaviour here is ERPNext's, pinned and locked by configuration.
 State on 2026-10-10: configured since the Phase 0/1 baseline (commits d4b2b3b6, 02c5f213, a11c586c) and reused by modules 16 and 17; server and browser suites green locally on the complete code; GitHub CI on this branch was in progress when this document was written (section 8).
+Revised 2026-10-14 (branch `fix/lot-dates-and-finished-goods-receipt`): a lot's manufacturing and expiry dates are fixed from its first stock posting and corrected only by QA's signed act *Correct Dates* (section 2.5b). The tests of this revision are written but **not yet run** (section 8).
 
 ## 1. Feature overview
 
@@ -86,11 +87,23 @@ Both are checked on the stock ledger entry, after the store and lot-status check
 - **Exception:** the document states its **FEFO Exception Reason** (for example, the customer asked for one lot); a blank reason is none. The reason stays on the document and in its audit trail, and **Stock › Lots Taken Out of Expiry Order** (also in Quality) lists every such document for QA.
 - Decided 2026-10-11 by the project, on the instruction to decide by the standard flow (to be confirmed with the client): an expired lot never goes to use; FEFO is enforced with a stated reason as the only exception, since a customer may ask for one lot and FEFO protects shelf life rather than the product's conformity.
 
+### 2.5b A lot's dates are fixed once it has stock; QA's Correct Dates (URS-STK-011, URS-STK-012, since 2026-10-14)
+
+The expiry date is what first expiry, first out and the refusal of an expired lot read (2.5a), what the expiry alerts and reminders follow, and what the label and the certificate carry. ERPNext lets anyone who may write a lot (here QA's Item Manager) change it at any time, so a lot could be made to look fresh, or taken out of expiry order, by editing it. Foundation hardening plan H6, decided 2026-10-14:
+
+- **Before the lot has stock** its dates are what ERPNext sets on the receipt or the work order (manufacturing date = posting date, expiry = manufacturing date + shelf life) and may be edited, as the lot is being made. A lot named on a draft receipt has no stock yet.
+- **From its first stock posting** (a stock ledger entry, or a submitted or cancelled Serial and Batch Bundle naming it; a submitted goods receipt is one) the **Manufacturing Date** and **Expiry Date** cannot be changed on the form (both read-only) or through the API, by anyone, even after the stock is used up or counted (`lot_dates.guard_batch`): *Lot L has stock, so its manufacturing and expiry dates can no longer be edited; QA corrects a wrong date with the signed act Correct Dates, giving the reason.* (title *Lot dates fixed*). Cancelled postings count: the dates were in force while that stock was on the books, and the records made then carry them.
+- **Correct Dates** (button on the lot's form, QA only, once the dates are fixed): one signing dialog asks for the new **Manufacturing Date** and **Expiry Date** (filled with the lot's own), the **Reason** and the password. A date left blank stays as it is. Refused: anyone but QA (*Only QA corrects the dates of a lot.*), no reason (*Give the reason; it is kept on the lot and in the audit trail.*), a manufacturing date after today, an expiry before the manufacturing date, dates the lot already has (*… there is nothing to correct.*). The signature's meaning is **Approved**: QA approves a change to the lot's controlled data and answers for it, as it approves a master; *Verified* is the check of another person's record against its source, and the lot stays in use, so nothing is rejected or withdrawn. The signature binds the lot's item and the dates QA approved, not its quantity or status (`signed_content`), so a later change of the dates shows as a change since signing.
+- The lot then shows **Date Correction**: *Dates Corrected By*, *Dates Corrected At*, *Reason for Date Correction* (set only by the act; typed in, or sent with a new lot, they are refused or cleared). The audit trail records the old and new dates with that reason; the signature appears at the top of the form.
+- **A corrected expiry takes effect at once.** The stock ledger reads the expiry date when the lot next moves, so a lot corrected to a date already past is refused for use from that moment and leaves its store only to be kept apart (2.5a); the expiry alert (2.4) for it is sent in the same act rather than at the next daily run, so Stores moves it to the hold store and QA decides it. The code holds no lot automatically today, for an expired lot or a corrected one: holding is QA's signed decision (module 17).
+
+The shelf life on the item is not a lot's date: it is controlled with the item (module 1, change control) and only sets a new lot's expiry.
+
 ### 2.6 What is intended but not implemented / outside this feature
 
 - **Putaway Rule / bin locations.** Not used; stores are the only locations.
 - **Forcing lot control per item.** Nothing refuses a stock item without Has Batch No; the demo loader sets it on every item and the item master is QA's (module 1, Item Manager).
-- **Supplier's own expiry date.** ERPNext sets the lot's expiry from the shelf life; if the supplier's certificate states an earlier date, QA (Item Manager) corrects **Expiry Date** on the lot, which is audited and re-arms the alert. There is no field for it on the receipt line.
+- **Supplier's own expiry date.** ERPNext sets the lot's expiry from the shelf life; if the supplier's certificate states an earlier date, QA corrects it with the signed **Correct Dates** once the lot has stock (2.5b), which is audited and re-arms the alert. There is no field for it on the receipt line.
 
 ## 3. Requirements and acceptance criteria
 
@@ -99,6 +112,8 @@ Both are checked on the stock ledger entry, after the store and lot-status check
 > **URS-STK-003** Stock can never go below zero, for any item or lot.
 > **URS-STK-008** A lot whose expiry date has passed is never issued, sent to production, consumed or delivered, from any document, the form or the API; it leaves its store only into the hold, rejected or returns store, by QA's own decision, back to its supplier, or as counted.
 > **URS-STK-009** When stock goes to production or to a customer, the lot that expires first goes first: a lot is refused while an earlier-expiring Approved lot of the same item that has not expired would still be in the same store after the document, unless the document states its FEFO exception reason, which is kept with it and in its audit trail and listed for QA; moving stock from one store to another is not held to it.
+> **URS-STK-011** Once a lot has any stock posted, or is named on a submitted receipt, its manufacturing and expiry dates cannot be changed on its form or through the API, even after its stock is used up or counted; before then they stay editable as the receipt or work order sets them.
+> **URS-STK-012** Only QA corrects the dates of a lot that has stock, by the signed act Correct Dates, entering the new dates and a reason with the signature; the lot shows who corrected it, when and why, the audit trail records the old and new dates with the reason, and a corrected expiry date takes effect at once: a lot corrected to a date already past is refused for use and kept apart as any expired lot, and is alerted as expired at once.
 
 | # | Acceptance criterion | Implementation | Automated verification |
 | --- | --- | --- | --- |
@@ -111,6 +126,8 @@ Both are checked on the stock ledger entry, after the store and lot-status check
 | C7 | Expiry alerts: 30 days, once, catch-up, expired, changed date, no stock / disabled / undated excluded, one failure does not stop the rest, daily, indexed | `send_expiry_alerts`, `reset_expiry_alert` | `compliance/test_alerts.py` `TestLotExpiryAlerts.*` (12 tests, URS-CMP-027) |
 | C9 | An expired lot is never issued, sent to production, moved to a usable store or delivered; it goes to the hold store, back to its supplier, or is counted; a lot expiring today is usable | `expiry.guard_stock_ledger_entry` | `lot_control/test_expiry.py` `TestExpiredLots.*` (URS-STK-008) |
 | C10 | A later-expiring lot named by hand is refused while an earlier Approved, unexpired lot stays in the store after the document; a stated reason lets it through and is reported; expired, unapproved and other stores' lots do not count; undated lots go last; moves between stores are not uses | `expiry.guard_stock_ledger_entry`, report *Lots Taken Out of Expiry Order* | `lot_control/test_expiry.py` `TestFirstExpiryFirstOut.*` (URS-STK-009) |
+| C11 | A lot's dates are editable before it has stock (a draft receipt naming it too) and fixed from its first posting, on the form and the API, after a count too; the form shows them read-only and offers QA the correction; the correction fields are the act's alone | `lot_dates.guard_batch`, `has_stock_history`, `batch_onload`; `public/js/lot_control.js` | `lot_control/test_lot_dates.py` `TestLotDatesFixedOnceInStock.*` (URS-STK-011); browser: `cypress/integration/lot_dates.js` "[URS-STK-011] the dates of a lot with stock are shown fixed, and a change through the API is refused" |
+| C12 | QA alone corrects the dates with a signature (Approved) and a reason; the signature binds the dates; old and new dates and the reason in the audit trail; a date not given stays; impossible dates and unknown values refused; a corrected past expiry is refused for use at once, may be kept apart, and is alerted at once | `lot_dates.correct_dates`, `signed_content`, `compliance/signing.py` (`SignedAct.inputs`), `compliance/alerts.send_expiry_alerts(lots)` | `lot_control/test_lot_dates.py` `TestCorrectDates.*` (URS-STK-012); browser: `lot_dates.js` "[URS-STK-012] QA corrects the dates on the lot's form with a signature, giving the reason" |
 | C8 | Putaway: receipts into Quarantine, release to the approved default store, finished lot into Quarantine | module 17 | `lot_control/test_lot_status.py` `test_goods_are_received_into_the_quarantine_store_whatever_store_was_named`, `TestTheDecisionMovesTheStock.test_release_moves_the_stock_to_the_approved_store_and_approves_the_lot`, `test_a_work_order_draws_from_an_approved_store_and_finishes_into_quarantine` |
 
 **Partial / ambiguous (client to decide):**
@@ -167,7 +184,7 @@ Preconditions: two Approved lots of FC-2W-SIL-16 in `Finished Goods - <abbr>`: a
 Actual result: ____  Pass/Fail: ____
 
 ### BI-06a An expired lot is not used (C9)
-Preconditions: an Approved lot whose Expiry Date QA set to yesterday, in `Stores - <abbr>`.
+Preconditions: an Approved lot in `Stores - <abbr>` whose Expiry Date QA corrected to yesterday with **Correct Dates** (BI-11).
 1. As Stores: Material Issue naming it. Expected: refused, *Lot … expired on …; move it to the hold store*.
 2. Material Transfer of it to `Finished Goods - <abbr>`. Expected: refused. 3. Material Transfer of it to `Hold - <abbr>`. Expected: allowed.
 Actual result: ____  Pass/Fail: ____
@@ -176,7 +193,7 @@ Actual result: ____  Pass/Fail: ____
 Preconditions: a lot of RM-SILICONE with stock and Expiry Date = today + 10 (QA sets it); a second with Expiry Date = yesterday; a third with stock 0.
 1. As System Administrator run `bench --site <site> execute meddevice_suite.compliance.alerts.send_expiry_alerts` (or wait for the nightly scheduler). Expected: Stores and QA Manager each see one bell notification *Lot <first> expires on <date>* and one *Lot <second> has expired with stock remaining*; nothing for the empty lot; Sales sees nothing; each alerted lot shows **Expiry Alert Sent** = *Lot Expiring Soon* / *Lot Expired*.
 2. Run it again. Expected: no new notifications.
-3. As QA: change the first lot's Expiry Date to today + 20; run the job. Expected: a second *expires on* notification for it.
+3. As QA: correct the first lot's Expiry Date to today + 20 with **Correct Dates** (BI-11). Expected: a second *expires on* notification for it at once, without running the job.
 4. As System Administrator: **System › Notification › Lot Expiring Soon**, untick Enabled; Save. Expected: refused *The alert Lot Expiring Soon is part of the validated configuration and cannot be changed here.*
 Actual result: ____  Pass/Fail: ____
 
@@ -190,7 +207,7 @@ Actual result: ____  Pass/Fail: ____
 ### BI-09 Lists, reports and permissions
 1. As Stores: **Stock › Batch No** list, filter Item = RM-SILICONE, sort by Expiry Date. Expected: lots with Expiry Date and Lot Status.
 2. As Stores: open a lot, try to change Expiry Date. Expected: no write permission (Stock User creates lots through transactions only; QA corrects).
-3. As QA: change a lot's Expiry Date (give the reason the audit trail asks for). Expected: saved; **Audit Trail** shows the change; **Expiry Alert Sent** cleared.
+3. As QA: open a lot that has stock. Expected: Manufacturing Date and Expiry Date read-only; a **Correct Dates** button (BI-11). On a lot with no stock yet the dates are editable.
 4. As **Sales**: `/desk/query-report/Stock by Lot Status`. Expected: opens (Sales User is among the report's roles).
 Actual result: ____  Pass/Fail: ____
 
@@ -202,12 +219,22 @@ Role: Stores, then QA. Preconditions: the Material Issue of BI-05 step 1.
 4. As QA: open L-NEW. Expected: Batch Quantity equals the report's quantity; Lot Status, Status Set By/At/Reason and Latest Decision from the release.
 Actual result: ____  Pass/Fail: ____
 
+### BI-11 A lot's dates are fixed once it has stock; QA corrects them signed (C11, C12)
+Preconditions: a lot of RM-SILICONE received (any store), so it has stock; a lot made by hand with no stock (**Stock › Batch No › New**, as QA).
+1. As QA: open the lot with no stock; change its Expiry Date; Save. Expected: saved.
+2. Open the lot with stock. Expected: Manufacturing Date and Expiry Date read-only. Through the API (`frappe.client.set_value` on Batch, `expiry_date`): refused *Lot L has stock, so its manufacturing and expiry dates can no longer be edited; QA corrects a wrong date with the signed act Correct Dates, giving the reason.*
+3. As Stores and as QC Inspector: open it. Expected: no **Correct Dates** button.
+4. As QA: **Correct Dates**. Expected: the dialog *Sign: Correct Dates* with the meaning *Approved*, the lot's two dates filled in, Reason and password. Leave the reason empty: refused. Set an expiry before the manufacturing date: refused. Set Expiry Date = today + 400, reason *Supplier's certificate gives a later expiry*, sign. Expected: the form shows the new date, **Date Correction** with you, the time and the reason, and the signature at the top (Approved, Correct Dates).
+5. **Audit Trail** of the lot. Expected: an *Updated* event under QA with Expiry Date old → new and Reason for Date Correction.
+6. On an Approved lot in `Stores - <abbr>`: **Correct Dates** with Manufacturing Date = 400 days ago and Expiry Date = yesterday. Expected: at once, as Stores, a bell notification *Lot L has expired with stock remaining*; a Material Issue of it refused (BI-06a); a Material Transfer of it to `Hold - <abbr>` allowed.
+Actual result: ____  Pass/Fail: ____
+
 ### Regression
 - Modules 16 and 17 guides LR-06 and LS-02 to LS-06 still pass; the full journey passes (receipt with expiry → release → expiry-first issue → finished lot with expiry → release → expiry-first delivery).
 
 ## 5. End-to-end business workflow
 
-1. **Stores** receives 10 Kg RM-SILICONE on 2026-10-10 → lot `RM-SILICONE-26-10-0001`, Expiry Date 2028-10-09 (730 days), Quarantine. A second delivery on 2026-10-20 → lot `-0002`, Expiry Date 2028-10-19. QA notes the supplier's certificate gives the second lot an earlier retest date and sets its Expiry Date to 2027-10-19 (audited).
+1. **Stores** receives 10 Kg RM-SILICONE on 2026-10-10 → lot `RM-SILICONE-26-10-0001`, Expiry Date 2028-10-09 (730 days), Quarantine. A second delivery on 2026-10-20 → lot `-0002`, Expiry Date 2028-10-19. QA notes the supplier's certificate gives the second lot an earlier retest date and corrects its Expiry Date to 2027-10-19 with the signed **Correct Dates**, giving the certificate as the reason (audited; the lot's dates are fixed since its receipt).
 2. **QC** inspects, **QA** releases both (modules 16, 17) → both Approved in `Stores - <abbr>`.
 3. **Production** starts a work order for 100 FC-2W-SIL-16 → the Material Transfer for Manufacture takes 1.4 Kg from lot `-0002` (expires first), although `-0001` arrived earlier. The finished lot `FC-2W-SIL-16-26-10-0001` gets Expiry Date = today + 1825 days and waits in Quarantine; QA releases it to `Finished Goods - <abbr>`.
 4. **Stores** delivers 100 to City Hospital (Demo) → the earliest-expiring finished lot is delivered.
@@ -221,9 +248,10 @@ Cross-module data changes: Stock Settings (locked), Item (batch and shelf-life f
 | Layer | Item |
 | --- | --- |
 | Configuration | `setup/stock.py` `STOCK_SETTINGS` (6 fields), `apply_stock_settings()` (called by `setup/install.py apply_configuration`, which runs `after_install` and `after_migrate`), `protect_stock_settings` (Stock Settings `validate`; passes when `flags.declared_by_code`, `in_install` or `in_migrate`), `refuse_negative_stock` (Item and Batch `validate`; `NEGATIVE_STOCK_SWITCH`) |
-| Custom fields | Batch: `mds_expiry_alert` *Expiry Alert Sent* (Select; `compliance/alerts.py` `CUSTOM_FIELDS`, `apply_alerts()`); index `Batch(expiry_date)` added by `apply_alerts` |
+| Custom fields | Batch: `mds_expiry_alert` *Expiry Alert Sent* (Select; `compliance/alerts.py` `CUSTOM_FIELDS`, `apply_alerts()`); index `Batch(expiry_date)` added by `apply_alerts`; section *Date Correction* with `mds_dates_corrected_by`, `mds_dates_corrected_at`, `mds_dates_correction_reason` (read-only, no copy; `lot_control/lot_dates.py` `CUSTOM_FIELDS`, `apply_lot_dates_fields()`) |
+| Signed act | `("Batch", "Correct Dates")` → `lot_dates.correct_dates`, meaning *Approved*, inputs `manufacturing_date`, `expiry_date` (`compliance/signing.py` `SIGNING_ACTIONS`; `SignedAct.inputs`, `sign_action(values=…)`, which refuses a value the act does not take); signed content `lot_dates.signed_content` (`compliance/esign.py` `SIGNED_CONTENT`); My Work: `NOT_WAITING` (QA corrects as it finds the error); form button `public/js/lot_control.js` with `esign.sign(…, { fields })` (`public/js/esign.js`) |
 | Alerts | Notifications `Lot Expiring Soon`, `Lot Expired` (`compliance/notification/<name>/<name>.json`, document type Batch, channel System Notification, recipients by role Stock User and Quality Manager), registered in `ALERTS`; `send_expiry_alerts()`, `send()`, `reset_expiry_alert` (Batch `validate`), `protect` (Notification `before_validate`, `on_trash`); the Quality Settings lead time (URS-PLT-012) = 30 |
-| Hooks (`hooks.py`) | Item `validate`: `setup.stock.refuse_negative_stock`; Batch `validate`: `compliance.alerts.reset_expiry_alert`, `setup.stock.refuse_negative_stock`, `lot_control.lot_status.guard_batch`; Stock Settings `validate`: `setup.stock.protect_stock_settings`; Notification `before_validate` / `on_trash`: `compliance.alerts.protect`; `scheduler_events.daily`: `compliance.alerts.send_expiry_alerts` |
+| Hooks (`hooks.py`) | Item `validate`: `setup.stock.refuse_negative_stock`; Batch `validate`: `compliance.alerts.reset_expiry_alert`, `setup.stock.refuse_negative_stock`, `lot_control.lot_status.guard_batch`, `lot_control.lot_dates.guard_batch`; Batch `onload`: `lot_control.lot_dates.batch_onload` (`dates_fixed`); Stock Settings `validate`: `setup.stock.protect_stock_settings`; Notification `before_validate` / `on_trash`: `compliance.alerts.protect`; `scheduler_events.daily`: `compliance.alerts.send_expiry_alerts` |
 | ERPNext behaviour relied on (`apps/erpnext`, read-only) | `stock/doctype/batch/batch.py` sets `expiry_date` = manufacturing/posting date + `shelf_life_in_days`; `stock/doctype/serial_and_batch_bundle/serial_and_batch_bundle.py` `get_auto_batch_nos` orders by `expiry_date` when `based_on == "Expiry"` and keeps `expiry_date >= today` or unset; `stock/doctype/pick_list/pick_list.py` reads the same setting; `stock/doctype/stock_entry/stock_entry.py` `validate_batch` refuses an expired lot on manufacture-type entries; `stock/stock_ledger.py` `NegativeStockError` |
 | Permissions (`setup/roles.py`) | Item: Item Manager EDIT, others VIEW; Batch: Item Manager EDIT, Stock User and Manufacturing User VIEW + create; Stock Settings: Frappe's own (`ACCESS_CONTROL`), read for Stock User and Manufacturing User (`SUPPORTING_PERMISSIONS`); Stock Settings and Batch are regulated and audited (`audit_scope.py`); Batch in *Device and production records*, 10 years (`retention.py`) |
 | Desk | Stock sidebar keeps Batch No, Serial and Batch Bundle, Stock Ledger, Stock Balance, Batch-Wise Balance History, Batch Item Expiry Status, Serial No and Batch Traceability, Stock Settings (`setup/sidebars.py`); Putaway Rule is not listed |
@@ -241,6 +269,7 @@ Cross-module data changes: Stock Settings (locked), Item (batch and shelf-life f
 - **Apply Putaway Rule** on a receipt or stock entry: ERPNext would re-assign warehouses in its own validate; module 17's `guard_purchase_receipt` runs in the hooks' validate afterwards and sets the Quarantine store, so the rule should have no effect on receipts. Not tested; no Putaway Rules exist in the demo data (BI-08 step 4).
 - A lot's expiry is the posting date + shelf life; the supplier's own expiry or retest date is not captured at receipt and depends on QA correcting the lot (section 2.6).
 - Alert timing when the scheduler is off for more than 30 days: alerted on the first run after, possibly as *expired* only — by design (URS-CMP-027).
+- **Lot dates (2026-10-14).** The dates are fixed by the lot's posting history, not its quantity: a lot whose stock is used up keeps them fixed. Code writing the date straight to the database (`frappe.db.set_value`) passes the rule; only test fixtures do so. ERPNext fills an empty expiry from the manufacturing date on any save when the item has a shelf life; a lot with stock and no expiry (item changed to carry expiry after the lot) would get one on its next save, which the rule does not refuse because it is ERPNext's own derivation. Correct Dates sends a date left blank as "keep", so it cannot clear a date.
 - `send_expiry_alerts` reads `batch_qty` on the Batch, which ERPNext maintains from stock postings; a lot whose `batch_qty` is stale (direct SQL) would be mis-alerted. ERPNext's own bookkeeping; not this app's.
 
 **Unverified in this document:** ERPNext's exact negative-stock wording on the desk (the journey matches the pattern *Batch No … of an Item … has negative stock*); whether ERPNext's batch selector on a receipt line offers an existing lot at all (the server refuses it either way, BI-02 step 2). (The sidebar entry *Batch No* → Batch and the Stock Settings label *Item Naming By* were verified in ERPNext's `workspace_sidebar/stock.json` and `stock_settings.json`.)
@@ -259,6 +288,8 @@ Executed by the lead on 2026-10-10 on the current branch, local test site `test.
 | CI (fresh site) | GitHub Actions on this branch | **in progress** when this document was written |
 | Manual browser tests BI-01…BI-09 | — | **not executed** (no manual tester session); the automated journey covers BI-02 step 1, BI-04 (as the refused second transfer out of quarantine), BI-05 step 2, BI-06 step 1 and BI-08 steps 1–3 |
 
+Revision of 2026-10-14 (lot dates, H6): `lot_control/test_lot_dates.py` (`TestLotDatesFixedOnceInStock`, 7 tests; `TestCorrectDates`, 8 tests), `qa/test_ui_journey.py` `test_prepares_a_lot_with_stock_whose_dates_qa_corrects_in_the_browser`, `cypress/integration/lot_dates.js` (2 steps): written, **not yet run** (the lead runs them).
+
 Untested: BI-07 on the real nightly scheduler (the job is called directly in tests); email delivery; BI-05 step 4 and BI-08 step 4 (open points); the client's real shelf lives and supplier expiry dates.
 
 ## 9. Final QA checklist
@@ -273,5 +304,6 @@ Untested: BI-07 on the real nightly scheduler (the job is called directly in tes
 | Expiry alerts: 30 days, once, catch-up, expired, re-armed on a changed date, locked configuration | Verified (automated, job called directly); nightly scheduler **Not tested** |
 | Putaway: Quarantine on receipt and manufacture, approved default store on release, Hold / Rejected stores | Verified (automated + journey) |
 | Apply Putaway Rule has no effect on receipts | **Not tested** |
-| Manual BI-01…BI-09 | **Not tested** |
+| A lot's dates fixed once it has stock; QA's signed Correct Dates with reason, audit trail and expiry handled at once (URS-STK-011, URS-STK-012) | Written, **not yet run** (server + browser) |
+| Manual BI-01…BI-11 | **Not tested** |
 | CI green on a fresh site for the final commit | **Blocked** (in progress) |

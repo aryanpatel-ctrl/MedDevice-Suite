@@ -6,7 +6,9 @@ the function that checks the act is allowed, signs through `esign.sign` and
 performs the act. The desk's signing dialog can only reach the acts listed
 here, so the list is also the system's register of signed acts. An act that
 opens a new record (a correction opens its amendment) returns its name, for
-the form to open it.
+the form to open it. An act that takes values the signer enters with it (the
+corrected dates of a lot) declares them, and the dialog sends those and no
+others, so what is signed is what the signer typed in the same dialog.
 
 The declared meaning is the one recorded (21 CFR 11.50(a)(3)): the dialog sends the
 meaning it showed, which must be the declared one, and `esign.sign` refuses to sign a
@@ -29,9 +31,11 @@ from meddevice_suite.compliance.audit_scope import is_regulated
 @dataclass(frozen=True)
 class SignedAct:
 	meaning: str  # one of esign.MEANINGS
-	# dotted path of perform(doc, password, reason) -> None, or the name of a record the act opened:
-	# checks, signs, acts
+	# dotted path of perform(doc, password, reason, **inputs) -> None, or the name of a record the act
+	# opened: checks, signs, acts
 	perform: str
+	# The values the signer enters with the act besides the reason, passed to perform by name.
+	inputs: tuple[str, ...] = ()
 
 
 DOCUMENT_CONTROL = "meddevice_suite.qms.document_control"
@@ -53,6 +57,7 @@ TRAINING = "meddevice_suite.qms.training"
 RISK = "meddevice_suite.qms.risk_management"
 REGULATORY_LICENCE = "meddevice_suite.qms.regulatory_licence"
 DEVICE_MASTER_RECORD = "meddevice_suite.qms.device_master_record"
+LOT_DATES = "meddevice_suite.lot_control.lot_dates"
 
 # (record type, act) -> the signed act. Each module adds the acts it signs.
 SIGNING_ACTIONS: dict[tuple[str, str], SignedAct] = {
@@ -79,6 +84,13 @@ SIGNING_ACTIONS: dict[tuple[str, str], SignedAct] = {
 	("Lot Release", "Hold"): SignedAct("Held", f"{LOT_RELEASE}.hold"),
 	("Lot Release", "Return to Stock"): SignedAct("Released", f"{LOT_RELEASE}.return_to_stock"),
 	("Lot Release", "Reject Return"): SignedAct("Rejected", f"{LOT_RELEASE}.reject_return"),
+	# Module 18 (foundation hardening plan H6): QA corrects the dates of a lot that has stock, entering
+	# them with the act. "Approved": QA approves a change to the lot's controlled data and answers for
+	# it, as it approves a master; "Verified" is a check of another person's record against its source,
+	# and the lot stays in use, so nothing is rejected or withdrawn.
+	("Batch", "Correct Dates"): SignedAct(
+		"Approved", f"{LOT_DATES}.correct_dates", inputs=("manufacturing_date", "expiry_date")
+	),
 	# Module 4, the decision on a supplier
 	("Supplier Approval", "Approve"): SignedAct("Approved", f"{SUPPLIER_APPROVAL}.approve"),
 	("Supplier Approval", "Approve Conditionally"): SignedAct(
@@ -164,11 +176,14 @@ def sign_action(
 	password: str,
 	reason: str | None = None,
 	meaning: str | None = None,
+	values: str | dict | None = None,
 ) -> str | None:
 	"""Sign `action` on a record, from the signing dialog; the name of a record the act opened.
 
 	`meaning` is the meaning the dialog showed the signer; a page loaded before the declaration
-	changed may show another, and nobody signs under a meaning they were not shown.
+	changed may show another, and nobody signs under a meaning they were not shown. `values` are what
+	the signer entered with an act that declares inputs; a value the act does not take is refused
+	rather than dropped, so nothing the signer typed is silently left out of what was signed.
 	"""
 	signed_act = SIGNING_ACTIONS.get((doctype, action))
 	if not signed_act:
@@ -179,9 +194,19 @@ def sign_action(
 				_(action), _(signed_act.meaning), _(meaning)
 			)
 		)
+	values = frappe.parse_json(values) if values else {}
+	if not isinstance(values, dict):
+		frappe.throw(_("The values entered with {0} are not readable.").format(_(action)))
+	if unknown := sorted(set(values) - set(signed_act.inputs)):
+		frappe.throw(_("{0} takes no {1}.").format(_(action), ", ".join(unknown)))
 	doc = frappe.get_doc(doctype, name)
 	doc.check_permission("read")
-	return frappe.get_attr(signed_act.perform)(doc, password=password, reason=(reason or "").strip() or None)
+	return frappe.get_attr(signed_act.perform)(
+		doc,
+		password=password,
+		reason=(reason or "").strip() or None,
+		**{field: values.get(field) for field in signed_act.inputs},
+	)
 
 
 def declared_meaning(doctype: str, action: str) -> str | None:
