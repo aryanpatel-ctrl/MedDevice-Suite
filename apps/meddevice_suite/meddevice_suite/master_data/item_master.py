@@ -11,11 +11,16 @@ approved change request (module MST-001 counts an approved item as in use).
 What QA checks before approving is the item's type and what the type demands. A raw
 material, packaging item, sub-assembly or finished good is lot-tracked, with a shelf life
 and a storage condition. A purchased material or packaging item requires incoming
-inspection and has its incoming specification (module 6). A finished good has its final
-specification and its regulatory and label data: sterile or not, device class, pack sizes
-and the UDI device identifier, a GTIN no other item carries, and its lifetime (plan D-16). A template item (one with
-variants) is never approved itself: each variant is approved on its own, with its own
-identifier, and a template's controlled changes reach its variants in use (MST-001).
+inspection and has its incoming specification (module 6), approved by QA (plan D-33). A
+finished good has its final specification, approved by QA, and its regulatory and label data:
+sterile or not, device class, pack sizes and the UDI device identifier, a GTIN no other item
+carries, and its lifetime (plan D-16). A template item (one with variants) is never approved
+itself: each variant is approved on its own, with its own identifier, and a template's
+controlled changes reach its variants in use (MST-001). A purchased
+material, a packaging item and a finished good name the controlled document that defines them, in
+effect when QA approves them (plan D-34, master_data/defining_documents.py); an item approved
+before that rule keeps its approval, is given its document once without a change request, and is
+held to the rule at its next approval.
 
 Items a site held before this module stay in draft: nothing is approved by migration. The
 types follow the client's master-data template of 2026-10-09, with Equipment added for the
@@ -35,6 +40,7 @@ from frappe.utils import cint, flt, now_datetime
 
 from meddevice_suite.compliance.audit import same
 from meddevice_suite.compliance.esign import sign
+from meddevice_suite.master_data.defining_documents import DefiningDocument, document_missing
 
 ITEM_TYPE = "mds_item_type"
 APPROVAL_STATUS, APPROVED_BY, APPROVED_AT = "mds_approval_status", "mds_approved_by", "mds_approved_at"
@@ -61,6 +67,20 @@ DEVICE_CLASSES = ("A", "B", "C", "D", "Not a device")
 GTIN_LENGTHS = (8, 12, 13, 14)
 INCOMING, FINAL = "Incoming", "Final"
 QA_ROLE = "Quality Manager"
+SPECIFICATION_DOCUMENT = "mds_specification_document"
+# Plan D-34: the items a document defines. What the plant buys is bought to its material
+# specification (ISO 13485 7.4.2), and what it sells is made to its product specification or
+# drawing (ISO 13485 4.2.3, the medical device file). A sub-assembly is defined by the finished
+# good's documents and by its own bill of materials and routing, each approved with the work
+# instruction of every operation; a consumable, a spare part and the equipment behind an asset do
+# not become part of the product (the equipment has its own master, module 8).
+DEFINED_BY_DOCUMENT = (*PURCHASED_TYPES, FINISHED_GOOD)
+SPECIFICATION_DOCUMENT_LINK = DefiningDocument(
+	SPECIFICATION_DOCUMENT,
+	("Specification",),
+	"material or product specification",
+	required_when=(ITEM_TYPE, DEFINED_BY_DOCUMENT),
+)
 
 APPROVAL_FIELDS = (APPROVAL_STATUS, APPROVED_BY, APPROVED_AT)
 # What a product, a label or a regulatory record depends on: controlled from approval (MST-001).
@@ -75,6 +95,7 @@ CONTROLLED_FIELDS = (
 	BOXES_PER_CARTON,
 	UDI_DI,
 	DEVICE_LIFETIME,
+	SPECIFICATION_DOCUMENT,
 )
 
 # Record types that name an item without putting it to use: the item's own setup, its prices
@@ -241,6 +262,15 @@ CUSTOM_FIELDS = {
 			"depends_on": f'eval:doc.{ITEM_TYPE}=="{FINISHED_GOOD}"',
 			"description": "How long the device is expected to stay safe and effective in use; its records are kept at least this long plus two years.",
 		},
+		{
+			"fieldname": SPECIFICATION_DOCUMENT,
+			"label": "Specification Document",
+			"fieldtype": "Link",
+			"options": "Controlled Document",
+			"insert_after": "quality_inspection_template",
+			"depends_on": f"eval:{list(DEFINED_BY_DOCUMENT)}.includes(doc.{ITEM_TYPE}) || doc.{SPECIFICATION_DOCUMENT}",
+			"description": "The controlled document that defines the item: its material specification if it is bought, its product specification or drawing if it is a finished good. In effect when QA approves the item.",
+		},
 	],
 }
 
@@ -327,6 +357,19 @@ def specification_of(item: str, stage: str) -> str | None:
 	return specification_for(item, stage)
 
 
+def specification_missing(item: str, stage: str) -> list[str]:
+	"""The item's specification for the stage, registered and approved by QA (plan D-33)."""
+	from meddevice_suite.master_data import master_approval
+	from meddevice_suite.master_data.specification import DOCTYPE
+
+	specification = specification_of(item, stage)
+	if not specification:
+		return [_("its {0} specification (module 6)").format(_(stage).lower())]
+	if not master_approval.approved(DOCTYPE, specification):
+		return [_("its {0} specification {1} approved by QA").format(_(stage).lower(), specification)]
+	return []
+
+
 def missing_for_approval(doc: Document) -> list[str]:
 	"""What the item still lacks for QA to approve it, in words the form shows."""
 	item_type = doc.get(ITEM_TYPE)
@@ -345,8 +388,7 @@ def missing_for_approval(doc: Document) -> list[str]:
 	if item_type in PURCHASED_TYPES:
 		if not doc.get("inspection_required_before_purchase"):
 			missing.append(_("incoming inspection (Inspection Required before Purchase)"))
-		if not specification_of(doc.name, INCOMING):
-			missing.append(_("its incoming specification (module 6)"))
+		missing += specification_missing(doc.name, INCOMING)
 	if item_type == FINISHED_GOOD:
 		if doc.get(STERILE) not in STERILE_OPTIONS:
 			missing.append(_("whether it is supplied sterile"))
@@ -358,9 +400,8 @@ def missing_for_approval(doc: Document) -> list[str]:
 			missing.append(_("its UDI device identifier (a GTIN)"))
 		if doc.meta.get_field(DEVICE_LIFETIME) and cint(doc.get(DEVICE_LIFETIME)) <= 0:
 			missing.append(_("its device lifetime"))
-		if not specification_of(doc.name, FINAL):
-			missing.append(_("its final specification (module 6)"))
-	return missing
+		missing += specification_missing(doc.name, FINAL)
+	return [*missing, *document_missing(doc, SPECIFICATION_DOCUMENT_LINK)]
 
 
 # --- The item's own rules (Item validate) -------------------------------------------------------
@@ -506,7 +547,12 @@ def signed_content(doc: Document) -> dict:
 		VERSION,
 		EFFECTIVE_FROM,
 	)
-	content = {field: doc.get(field) for field in fields if field != DEVICE_LIFETIME}
+	content = {
+		field: doc.get(field) for field in fields if field not in (DEVICE_LIFETIME, SPECIFICATION_DOCUMENT)
+	}
+	if doc.get(SPECIFICATION_DOCUMENT):
+		# Added with plan D-34: bound once named, so that an approval signed before it still verifies.
+		content[SPECIFICATION_DOCUMENT] = doc.get(SPECIFICATION_DOCUMENT)
 	if cint(doc.get(DEVICE_LIFETIME)) != DEFAULT_LIFETIME_YEARS:
 		# Added with plan D-16, its column holding the default for every item made before it: an
 		# approval signed before it still verifies. Any other lifetime is bound, 0 too, so that a

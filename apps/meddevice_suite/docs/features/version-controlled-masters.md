@@ -48,6 +48,8 @@ Nobody sets Version, Version Effective From or Last Changed Under by hand (refus
 
 Fields not in the list (descriptions, notes, contacts, addresses, costing fields of a BOM that ERPNext allows to change after submit) change freely and do not raise the version.
 
+Plan D-34 (2026-10-14): an item's **Specification Document** is a controlled field too (`item_master.CONTROLLED_FIELDS`); an item approved before it existed is given it once without a request (`LINKED_ONCE_FIELDS`), and a change of it afterwards needs one. A specification's test method is controlled by module 6 the same way, and any change of what QA approved returns the specification to draft (plan D-33, `docs/features/controlled-specifications.md`).
+
 ### 2.3 A controlled change
 
 On save (desk, API, Data Import, bulk edit) of a master in use with a controlled field changed:

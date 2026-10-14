@@ -184,8 +184,8 @@ def customer_returns(user: str, roles: set[str]) -> Iterator[Waiting]:
 
 
 def waiting_for_qa(user: str, roles: set[str]) -> Iterator[Waiting]:
-	"""Masters, supplier decisions, customer and regulatory licences and training matrices in
-	draft, waiting for QA's signature."""
+	"""Masters (specifications among them), supplier decisions, customer and regulatory licences and
+	training matrices in draft, waiting for QA's signature."""
 	if QA_ROLE not in roles:
 		return
 	from meddevice_suite.master_data import equipment, item_master, master_approval
@@ -213,6 +213,12 @@ def waiting_for_qa(user: str, roles: set[str]) -> Iterator[Waiting]:
 			"Warehouse",
 			{master_approval.APPROVAL_STATUS: master_approval.DRAFT, "is_group": 0, "disabled": 0},
 			_("Approve the store"),
+		),
+		# Module 6 (plan D-33): a specification, new or changed; a template naming no item is not one.
+		(
+			"Quality Inspection Template",
+			{master_approval.APPROVAL_STATUS: master_approval.DRAFT, "mds_item": ["is", "set"]},
+			_("Approve the specification"),
 		),
 		("Supplier Approval", {"docstatus": 0}, _("Decide the supplier")),
 		("Customer Licence", {"docstatus": 0, "status": ["in", ["", None]]}, _("Verify the licence")),
@@ -391,6 +397,7 @@ LISTED_BY: dict[tuple[str, str], Source] = {
 	("Workstation", "Approve"): waiting_for_qa,
 	("Routing", "Approve"): waiting_for_qa,
 	("Warehouse", "Approve"): waiting_for_qa,
+	("Quality Inspection Template", "Approve"): waiting_for_qa,
 	("Work Task", "Approve"): tasks,
 	("Work Task", "Return"): tasks,
 	("Equipment Qualification", "Approve"): qualifications,

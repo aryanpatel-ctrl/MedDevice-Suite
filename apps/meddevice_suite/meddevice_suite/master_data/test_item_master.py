@@ -1,5 +1,7 @@
-"""Item master (module 1): tests derived from URS-MST-003 to URS-MST-006, each rule tried on every
-way a record can be made (the matrix in docs/features/item-master.md, section 3)."""
+"""Item master (module 1): tests derived from URS-MST-003 to URS-MST-006 and URS-MST-016, each rule
+tried on every way a record can be made (the matrix in docs/features/item-master.md, section 3)."""
+
+import re
 
 import frappe
 from frappe.model.workflow import apply_workflow
@@ -25,6 +27,7 @@ from meddevice_suite.master_data.item_master import (
 	PACKAGING,
 	RAW_MATERIAL,
 	SETUP_TYPES,
+	SPECIFICATION_DOCUMENT,
 	STERILE,
 	STORAGE_CONDITION,
 	SUB_ASSEMBLY,
@@ -33,6 +36,7 @@ from meddevice_suite.master_data.item_master import (
 	item_fields_of,
 	valid_gtin,
 )
+from meddevice_suite.master_data.test_routing import document
 from meddevice_suite.master_data.versioning import CHANGE_REQUEST, VERSION
 from meddevice_suite.pilot.inspection import ensure_inspection_masters, ensure_inspection_template
 from meddevice_suite.qa import verifies
@@ -41,7 +45,10 @@ from meddevice_suite.qms.test_document_control import signer
 from meddevice_suite.setup.install import apply_configuration
 from meddevice_suite.setup.test_stock import (
 	approve_equipment_for_test,
+	approve_for_test,
+	approve_specification_for_test,
 	licensed_for_test,
+	specification_document_for_test,
 	submit_bom_for_test,
 )
 
@@ -98,10 +105,15 @@ def new_item(item_type: str = RAW_MATERIAL, **values) -> frappe.model.document.D
 
 
 def with_specification(doc) -> frappe.model.document.Document:
-	"""The specification the item's type is inspected against (module 6), set on the item."""
+	"""The specification the item's type is inspected against (module 6), approved by QA (plan
+	D-33), set on the item, and the controlled document that defines the item, in effect (plan
+	D-34)."""
 	group = "Products" if doc.get(ITEM_TYPE) == FINISHED_GOOD else "Raw Material"
-	ensure_inspection_template(doc.name, group)
-	return frappe.get_doc("Item", doc.name)
+	ensure_inspection_template(doc.name, group, approve_specification_for_test)
+	item = frappe.get_doc("Item", doc.name)
+	item.set(SPECIFICATION_DOCUMENT, specification_document_for_test())
+	item.save()
+	return item
 
 
 class ItemMasterTestCase(IntegrationTestCase):
@@ -1327,6 +1339,26 @@ class TestInspectionBeforeApproval(ItemMasterTestCase):
 		with self.assertRaisesRegex(frappe.ValidationError, "final specification"):
 			sign_action("Item", doc.name, "Approve", PASSWORD, "Checked")
 
+	def test_its_specification_is_one_qa_has_approved(self):
+		"""Plan D-33: the item is approved with the specification QA approved, not a draft one."""
+		for item_type, group, stage in (
+			(RAW_MATERIAL, "Raw Material", "incoming"),
+			(FINISHED_GOOD, "Products", "final"),
+		):
+			with self.subTest(item_type=item_type):
+				doc = new_item(item_type, **{SPECIFICATION_DOCUMENT: specification_document_for_test()})
+				specification = ensure_inspection_template(doc.name, group)  # registered, still in draft
+				frappe.set_user(self.qa)
+				with self.assertRaisesRegex(
+					frappe.ValidationError,
+					f"its {stage} specification {re.escape(specification)} approved by QA",
+				):
+					sign_action("Item", doc.name, "Approve", PASSWORD, "Checked")
+				frappe.set_user("Administrator")
+				approve_specification_for_test(specification)
+				self.approve_as_qa(doc.name)
+				self.assertEqual(frappe.db.get_value("Item", doc.name, APPROVAL_STATUS), APPROVED)
+
 	def test_a_sub_assembly_needs_no_specification_of_its_own(self):
 		doc = new_item(SUB_ASSEMBLY)
 		self.approve_as_qa(doc.name)
@@ -1349,6 +1381,84 @@ class TestInspectionBeforeApproval(ItemMasterTestCase):
 		doc.update({"inspection_required_before_purchase": 0, CHANGE_REQUEST: change})
 		with self.assertRaisesRegex(frappe.ValidationError, "cannot lose incoming inspection"):
 			doc.save()
+
+
+# --- URS-MST-016: the document that defines the item (plan D-34) -----------------------------------
+
+
+@verifies("URS-MST-016")
+class TestDefiningDocument(ItemMasterTestCase):
+	def test_a_purchased_material_and_a_finished_good_are_approved_only_with_their_document_in_effect(self):
+		for item_type in (RAW_MATERIAL, PACKAGING, FINISHED_GOOD):
+			for lacks, document_type, status in (
+				("its material or product specification", None, None),
+				("a material or product specification as its document", "SOP", "Effective"),
+				("its material or product specification in effect", "Specification", "Draft"),
+				("its material or product specification in effect", "Specification", "Obsolete"),
+			):
+				with self.subTest(item_type=item_type, lacks=lacks, status=status):
+					doc = with_specification(new_item(item_type))
+					doc.set(
+						SPECIFICATION_DOCUMENT, document(document_type, status) if document_type else None
+					)
+					doc.save()
+					frappe.set_user(self.qa)
+					with self.assertRaisesRegex(
+						frappe.ValidationError, f"cannot be approved yet; it lacks .*{lacks}"
+					):
+						sign_action("Item", doc.name, "Approve", PASSWORD, "Checked")
+					frappe.set_user("Administrator")
+					self.assertEqual(frappe.db.get_value("Item", doc.name, APPROVAL_STATUS), DRAFT)
+			with self.subTest(item_type=item_type, document="in effect"):
+				self.assertEqual(
+					frappe.db.get_value("Item", self.approved_item(item_type), APPROVAL_STATUS), APPROVED
+				)
+
+	def test_other_types_need_none_but_a_document_they_name_is_in_effect(self):
+		self.assertEqual(
+			frappe.db.get_value("Item", self.approved_item(SUB_ASSEMBLY), APPROVAL_STATUS), APPROVED
+		)
+		doc = new_item(SUB_ASSEMBLY, **{SPECIFICATION_DOCUMENT: document("Specification", "Draft")})
+		frappe.set_user(self.qa)
+		with self.assertRaisesRegex(
+			frappe.ValidationError, "its material or product specification in effect"
+		):
+			sign_action("Item", doc.name, "Approve", PASSWORD, "Checked")
+
+	def test_an_item_approved_before_the_rule_keeps_its_approval_and_is_given_its_document_once(self):
+		doc = with_specification(new_item())
+		doc.set(SPECIFICATION_DOCUMENT, None)
+		doc.save()
+		approve_for_test(doc.name)  # approved before the rule, as such an item was
+		doc = frappe.get_doc("Item", doc.name)
+		doc.description = "Approved before plan D-34"
+		doc.save()  # its approval stands; the rule applies at its next approval
+		self.assertEqual(frappe.db.get_value("Item", doc.name, APPROVAL_STATUS), APPROVED)
+		doc = frappe.get_doc("Item", doc.name)
+		doc.set(SPECIFICATION_DOCUMENT, specification_document_for_test())
+		doc.save()  # its first link: no change request
+		self.assertEqual(
+			frappe.db.get_value("Item", doc.name, [APPROVAL_STATUS, VERSION]),
+			(APPROVED, 1),
+		)
+		doc = frappe.get_doc("Item", doc.name)
+		doc.set(SPECIFICATION_DOCUMENT, document("Specification"))  # another one: a change
+		with self.assertRaisesRegex(frappe.ValidationError, "is in use"):
+			doc.save()
+
+	def test_the_signature_binds_the_document_once_named(self):
+		"""An approval signed before the rule, without the document, still verifies; one named is bound."""
+		doc = new_item(SUB_ASSEMBLY)
+		self.assertNotIn(SPECIFICATION_DOCUMENT, item_master.signed_content(doc))
+		doc.set(SPECIFICATION_DOCUMENT, specification_document_for_test())
+		self.assertEqual(
+			item_master.signed_content(doc)[SPECIFICATION_DOCUMENT], doc.get(SPECIFICATION_DOCUMENT)
+		)
+
+	def test_the_form_says_the_document_is_needed(self):
+		doc = new_item(FINISHED_GOOD)
+		doc.run_method("onload")
+		self.assertIn("its material or product specification", doc.get_onload().item_approval["missing"])
 
 
 # --- The desk --------------------------------------------------------------------------------------

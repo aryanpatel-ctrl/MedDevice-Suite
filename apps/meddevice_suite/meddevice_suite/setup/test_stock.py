@@ -121,6 +121,37 @@ def effective_document_for_test(title: str, document_type: str) -> str:
 	return doc.name
 
 
+def inspection_method_for_test() -> str:
+	"""A test method in effect, the controlled document a specification names (module 6, plan D-34),
+	for other modules' tests."""
+	return effective_document_for_test("Test method for tests", "SOP")
+
+
+def specification_document_for_test() -> str:
+	"""A specification in effect, the controlled document that defines a purchased material or a
+	finished good (module 1, plan D-34), for other modules' tests."""
+	return effective_document_for_test("Specification for tests", "Specification")
+
+
+def approve_specification_for_test(name: str) -> None:
+	"""QA's approval of a specification other modules' tests inspect against (module 6, plan D-33),
+	recorded as the signed act records it, with a test method in effect when it names none (plan
+	D-34). The act itself, with its checks and its signature, is tested in
+	master_data/test_specification.py."""
+	from meddevice_suite.master_data import master_approval, specification
+
+	if master_approval.approved(specification.DOCTYPE, name):
+		return
+	values = {
+		master_approval.APPROVAL_STATUS: master_approval.APPROVED,
+		master_approval.APPROVED_BY: "Administrator",
+		master_approval.APPROVED_AT: now_datetime(),
+	}
+	if not frappe.db.get_value(specification.DOCTYPE, name, specification.TEST_METHOD):
+		values[specification.TEST_METHOD] = inspection_method_for_test()
+	frappe.db.set_value(specification.DOCTYPE, name, values)  # test fixture only
+
+
 def risk_report_for_test(item: str) -> str:
 	"""The risk management report in force of the file that lists a finished good, for other
 	modules' tests (module 39; plan D-23: a finished good's device master record pins it), recorded

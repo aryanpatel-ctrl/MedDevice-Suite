@@ -94,6 +94,8 @@ SIGNED_CONTENT: dict[str, str] = {
 	"Workstation": "meddevice_suite.master_data.master_approval.signed_content",
 	"Routing": "meddevice_suite.master_data.master_approval.signed_content",
 	"Warehouse": "meddevice_suite.master_data.master_approval.signed_content",
+	# Module 6 (plan D-33): what the specification states and its version.
+	"Quality Inspection Template": "meddevice_suite.master_data.specification.signed_content",
 }
 
 SYSTEM_MAINTAINED: dict[str, tuple[str, ...]] = {
