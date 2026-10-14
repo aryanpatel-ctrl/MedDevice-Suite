@@ -1038,6 +1038,13 @@ source = "ISO 13485 4.2.5, 7.5.11; 21 CFR 11.10(e), 11.50, 11.70; URS-STK-008; f
 status = "implemented"
 
 [[requirement]]
+id = "URS-STK-013"
+module = 17
+title = "A finished good comes into stock only from production, on its work order's manufacture entry: a material receipt of a finished good is refused on the form and at the stock ledger, unless it is opening stock at migration (Is Opening = Yes), which comes in as a Quarantine lot inspected on that entry and released by QA."
+source = "D4 4.6 Batch Creation; ISO 13485 7.5.1, 7.5.8, 7.5.9; URS-STK-004, URS-QMS-031; foundation hardening plan D-28, decided 2026-10-14"
+status = "implemented"
+
+[[requirement]]
 id = "URS-QC-001"
 module = 16
 title = "A goods receipt records, per line, the supplier's lot number and the supplier's certificate (analysis or conformity) as a file attached by Stores; the QC Inspector records its verification against the purchase specification, and incoming inspection cannot start for a lot whose certificate is not verified."

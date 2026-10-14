@@ -9,6 +9,7 @@ from frappe.utils import add_days, getdate, today
 from meddevice_suite.compliance.esign import SigningRefused, verify_signatures
 from meddevice_suite.compliance.signing import sign_action
 from meddevice_suite.compliance.test_esign import PASSWORD
+from meddevice_suite.lot_control.finished_goods import as_opening_stock
 from meddevice_suite.lot_control.test_lot_status import company, store
 from meddevice_suite.master_data import item_master
 from meddevice_suite.master_data.item_master import (
@@ -446,14 +447,20 @@ class TestSignedApproval(ItemMasterTestCase):
 
 	def test_pack_sizes_of_an_item_held_before_the_module_are_filled_once(self):
 		item = self.approved_item(FINISHED_GOOD)
-		frappe.get_doc(
-			{
-				"doctype": "Stock Entry",
-				"stock_entry_type": "Material Receipt",
-				"company": company(),
-				"items": [{"item_code": item, "qty": 1, "t_warehouse": store("Quarantine"), "basic_rate": 1}],
-			}
-		).insert().submit()  # in use by its stock
+		# In use by its stock, there before the module: a finished good comes in on a material receipt
+		# only as opening stock (plan D-28).
+		as_opening_stock(
+			frappe.get_doc(
+				{
+					"doctype": "Stock Entry",
+					"stock_entry_type": "Material Receipt",
+					"company": company(),
+					"items": [
+						{"item_code": item, "qty": 1, "t_warehouse": store("Quarantine"), "basic_rate": 1}
+					],
+				}
+			)
+		).insert().submit()
 		frappe.db.set_value("Item", item, {APPROVAL_STATUS: DRAFT, UNITS_PER_BOX: 0})  # held before
 		doc = frappe.get_doc("Item", item)
 		doc.set(UNITS_PER_BOX, 12)

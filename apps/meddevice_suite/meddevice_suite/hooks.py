@@ -103,6 +103,8 @@ doc_events = {
 	"Stock Ledger Entry": {
 		"validate": [
 			"meddevice_suite.master_data.warehouse.guard_stock_ledger_entry",  # module 7: approved stores
+			# Plan D-28: finished goods come in from production; opening stock is the one receipt.
+			"meddevice_suite.lot_control.finished_goods.guard_stock_ledger_entry",
 			"meddevice_suite.lot_control.lot_status.guard_stock_ledger_entry",
 			"meddevice_suite.lot_control.expiry.guard_stock_ledger_entry",  # module 18: expiry, FEFO
 		],
@@ -112,7 +114,12 @@ doc_events = {
 		# Module 31: a finished good is made only on a work order of it, while its device master
 		# record is Current (before_validate runs even when validation is skipped).
 		"before_validate": "meddevice_suite.qms.device_master_record.guard_stock_entry",
-		"validate": "meddevice_suite.lot_control.lot_status.guard_stock_entry",
+		"validate": [
+			# Plan D-28, first: a finished good on a material receipt is refused for what it is, before
+			# the lot status rules say where its lot may go.
+			"meddevice_suite.lot_control.finished_goods.guard_stock_entry",
+			"meddevice_suite.lot_control.lot_status.guard_stock_entry",
+		],
 		"before_submit": "meddevice_suite.qms.device_master_record.guard_stock_entry",
 		"before_cancel": "meddevice_suite.lot_control.lot_status.refuse_cancel_of_release_transfer",
 	},

@@ -34,6 +34,7 @@ from frappe.utils import add_days, today
 from frappe.utils.password import update_password
 
 from meddevice_suite.lot_control import stores
+from meddevice_suite.lot_control.finished_goods import as_opening_stock
 from meddevice_suite.lot_control.lot_status import (
 	APPROVED,
 	REJECTED,
@@ -339,14 +340,18 @@ def put_later_expiring_lots() -> dict[str, str]:
 	# lot comes into an approved store (module 17), so the lots are approved before they come in.
 	for lot in lots.values():
 		set_status(lot, APPROVED, "Browser test: approved stock already in store before the run")
-	post_stock_entry("Material Receipt", rows)
+	# Stock in store before the run is the run's opening stock: a finished good comes in on a material
+	# receipt only as opening stock, otherwise only from production (plan D-28).
+	post_stock_entry("Material Receipt", rows, opening=True)
 	return lots
 
 
-def post_stock_entry(purpose: str, rows: list[dict]) -> Document:
+def post_stock_entry(purpose: str, rows: list[dict], opening: bool = False) -> Document:
 	entry = frappe.get_doc(
 		{"doctype": "Stock Entry", "stock_entry_type": purpose, "company": COMPANY, "items": rows}
 	)
+	if opening:
+		as_opening_stock(entry)
 	# test-site set-up by the Administrator, checked by the caller
 	entry.insert(ignore_permissions=True)
 	entry.submit()
