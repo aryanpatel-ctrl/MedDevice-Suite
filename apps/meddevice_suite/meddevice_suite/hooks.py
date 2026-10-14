@@ -227,7 +227,8 @@ doc_events = {
 		"before_update_after_submit": "meddevice_suite.lot_control.receipt.protect_certificate",
 	},
 	# Controlled specifications (module 6): each inspection against the item's specification for
-	# its stage; a specification in use changes only under an approved change request.
+	# its stage, approved by QA (plan D-33); a specification in use changes only under an approved
+	# change request.
 	"Quality Inspection": {
 		"before_validate": [
 			"meddevice_suite.master_data.specification.choose_specification",
@@ -281,8 +282,10 @@ doc_events = {
 		"before_cancel": "meddevice_suite.master_data.versioning.guard_cancel",
 		"on_cancel": "meddevice_suite.master_data.versioning.let_change_requests_not_block_cancel",
 	},
+	# Plan D-33: QA approves a specification with a signature; a change returns it to draft.
 	"Quality Inspection Template": {
 		"validate": "meddevice_suite.master_data.specification.guard_template",
+		"onload": "meddevice_suite.master_data.specification.onload",
 		"on_trash": "meddevice_suite.master_data.specification.protect_template",
 		"on_update": "meddevice_suite.qms.pinned_records.on_pinned_change",  # module 39: pinned records
 	},

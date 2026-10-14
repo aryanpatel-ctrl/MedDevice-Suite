@@ -2,13 +2,16 @@
 draft, reviewed and approved by the responsible role before they can be used in a transaction).
 
 The masters that carry no approval of their own in ERPNext share these fields and this act: the
-operation, the workstation and the routing (module 3, master_data/routing.py) and the warehouse
-(module 7). Each module says what its master needs before approval and where an unapproved one
-is refused. The item (module 1) and the equipment (module 8) have their own approvals.
+operation, the workstation and the routing (module 3, master_data/routing.py), the warehouse
+(module 7) and the specification (module 6, master_data/specification.py; plan D-33). Each module
+says what its master needs before approval and where an unapproved one is refused. The item
+(module 1) and the equipment (module 8) have their own approvals.
 
 - A new or copied master is in draft; only the signed act approves it, on every save.
 - What QA approved changes once approved only under an approved change request
-  (master_data/versioning.py, which counts an approved master as in use).
+  (master_data/versioning.py, which counts an approved master as in use). A specification's
+  approval stands for what it says: a change returns it to draft (`return_to_draft`) until QA
+  approves it again, and its own module decides when a change needs a request.
 - The signature binds what versioning controls of the master (compliance.esign.SIGNED_CONTENT).
 """
 
@@ -140,6 +143,17 @@ def guard_approval(doc: Document, method: str | None = None) -> None:
 				_("The approval of {0} is given only by QA's signed approval.").format(doc.name),
 				frappe.PermissionError,
 			)
+
+
+def return_to_draft(doc: Document) -> None:
+	"""A master whose approval stands for its content alone (a specification, module 6): changed
+	once approved, it is in draft again until QA approves what it now says. Called by its module's
+	validate after `guard_approval`, for a change of what QA approved."""
+	if doc.flags.get(FLAG) or doc.get(APPROVAL_STATUS) != APPROVED:
+		return
+	doc.set(APPROVAL_STATUS, DRAFT)
+	doc.set(APPROVED_BY, None)
+	doc.set(APPROVED_AT, None)
 
 
 def onload(doc: Document, missing_for_approval: Callable[[Document], list[str]]) -> None:

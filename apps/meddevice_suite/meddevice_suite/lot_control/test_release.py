@@ -52,6 +52,7 @@ from meddevice_suite.setup.install import apply_configuration
 from meddevice_suite.setup.test_stock import (
 	approve_equipment_for_test,
 	approve_for_test,
+	approve_specification_for_test,
 	device_master_record_for_test,
 	submit_bom_for_test,
 )
@@ -137,7 +138,8 @@ class ReleaseTestCase(IntegrationTestCase):
 		lot_item(ITEM)
 		lot_item(NO_TEMPLATE_ITEM)
 		cls.instrument = ensure_inspection_masters(company(), approve_for_test, approve_equipment_for_test)
-		cls.template = ensure_inspection_template(ITEM, "Raw Material")
+		# Module 6 (plan D-33): inspected only against a specification QA has approved.
+		cls.template = ensure_inspection_template(ITEM, "Raw Material", approve_specification_for_test)
 		cls.qa = signer("QA Manager")
 		cls.qc = signer("QC Inspector")
 		cls.stores_user = signer("Stores")

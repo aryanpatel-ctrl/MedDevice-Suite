@@ -15,17 +15,28 @@ stage.
   the values the change replaced.
 - A template made before this rule becomes a specification once QA completes it; completing
   it is its first issue and needs no change request (as the first revision of a document).
+- QA approves a specification with an electronic signature (plan D-33, decided 2026-10-14), with
+  the same act and fields as the operation's (master_data/master_approval.py), once it states
+  everything above and names its test method, a controlled document in effect (plan D-34,
+  master_data/defining_documents.py). An inspection is made only against an approved
+  specification whose test method, if it names one, is still in effect. Any change of what QA
+  approved returns the specification to draft until QA approves it again; a change of one in
+  use still needs its change request as well. Naming the test method for the first time is its
+  first issue, as completing a template is: it needs no change request, and QA approves the
+  specification again with it.
 """
 
 import frappe
 from frappe import _
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 from frappe.model.document import Document
+from frappe.query_builder import DocType
 from frappe.utils import cint, flt
 
 from meddevice_suite.compliance.audit import same
-from meddevice_suite.master_data import sampling
-from meddevice_suite.master_data.versioning import raise_version
+from meddevice_suite.master_data import master_approval, sampling
+from meddevice_suite.master_data.defining_documents import DefiningDocument, document_missing, not_in_effect
+from meddevice_suite.master_data.versioning import VERSION, raise_version
 from meddevice_suite.qms.change_control import require_approved_change
 
 DOCTYPE = "Quality Inspection Template"
@@ -33,6 +44,14 @@ PARAMETERS = "item_quality_inspection_parameter"
 INCOMING, IN_PROCESS, FINAL = "Incoming", "In Process", "Final"
 # ERPNext's inspection type -> the specification's stage
 STAGE_OF_INSPECTION = {"Incoming": INCOMING, "In Process": IN_PROCESS, "Outgoing": FINAL}
+TEST_METHOD = "mds_test_method"
+# A test method is a procedure the plant writes (an SOP or a work instruction, such as a standard
+# test procedure) or a standard it adopts as it is (an external document, such as the test methods
+# of ISO 20696); a form or a specification states what is recorded or accepted, not how it is
+# tested (plan D-34).
+TEST_METHOD_DOCUMENT = DefiningDocument(
+	TEST_METHOD, ("SOP", "Work Instruction", "External Document"), "test method"
+)
 # What a specification states, with each field's type; a change to any of these is a change
 # of the specification.
 CONTROLLED_FIELDS = {
@@ -42,6 +61,7 @@ CONTROLLED_FIELDS = {
 	sampling.METHOD: "Select",
 	sampling.LEVEL: "Select",
 	sampling.AQL: "Select",
+	TEST_METHOD: "Link",
 }
 # The acceptance criteria a reading carries from its specification.
 CRITERIA = {
@@ -111,11 +131,19 @@ CUSTOM_FIELDS = {
 			"description": "Acceptance quality limit, in percent nonconforming (above 10: nonconformities per 100 units).",
 		},
 		{
+			"fieldname": TEST_METHOD,
+			"label": "Test Method",
+			"fieldtype": "Link",
+			"options": "Controlled Document",
+			"insert_after": sampling.AQL,
+			"description": "The controlled document that says how the parameters are tested: an SOP, a work instruction or an adopted standard, in effect when QA approves the specification.",
+		},
+		{
 			"fieldname": "mds_change_request",
 			"label": "Change Request for This Change",
 			"fieldtype": "Link",
 			"options": "Change Request",
-			"insert_after": sampling.AQL,
+			"insert_after": TEST_METHOD,
 			"no_copy": 1,
 			"description": "Once the specification is in use: the approved change request this change is made under. Named for each change.",
 		},
@@ -128,6 +156,8 @@ CUSTOM_FIELDS = {
 			"read_only": 1,
 			"no_copy": 1,
 		},
+		# After the parameters: what QA approves is the whole specification (plan D-33).
+		*master_approval.approval_fields(PARAMETERS),
 	],
 	"Quality Inspection": [
 		{
@@ -198,6 +228,12 @@ CUSTOM_FIELDS = {
 
 def apply_specification_fields() -> None:
 	create_custom_fields(CUSTOM_FIELDS, ignore_validate=True)
+	# A template held before QA approved specifications is in draft, as a new one is; those already
+	# inspected against were approved by the migration that brought the rule (plan D-33).
+	table = DocType(DOCTYPE)
+	frappe.qb.update(table).set(table[master_approval.APPROVAL_STATUS], master_approval.DRAFT).where(
+		table[master_approval.APPROVAL_STATUS].isnull() | (table[master_approval.APPROVAL_STATUS] == "")
+	).run()
 
 
 # --- The specification -----------------------------------------------------------------------
@@ -236,10 +272,10 @@ def missing_from(doc: Document) -> list[str]:
 	return missing
 
 
-def changed(before: Document, after: Document) -> bool:
+def changed(before: Document, after: Document, skip: tuple[str, ...] = ()) -> bool:
 	"""Whether the specification states something else, compared as stored (the desk sends
-	numbers and dates as text)."""
-	if any(not same(before.get(f), after.get(f), t) for f, t in CONTROLLED_FIELDS.items()):
+	numbers and dates as text); fields in `skip` aside."""
+	if any(not same(before.get(f), after.get(f), t) for f, t in CONTROLLED_FIELDS.items() if f not in skip):
 		return True
 	rows_before, rows_after = before.get(PARAMETERS) or [], after.get(PARAMETERS) or []
 	return len(rows_before) != len(rows_after) or any(
@@ -262,8 +298,10 @@ def in_use(name: str) -> bool:
 
 def guard_template(doc: Document, method: str | None = None) -> None:
 	"""Quality Inspection Template validate: a specification states everything an inspection
-	needs, is the only one for its item and stage, and once in use changes only under an
-	approved change request that lists it."""
+	needs, is the only one for its item and stage, once in use changes only under an approved
+	change request that lists it, and is approved only by QA's signed act, which a change of what
+	it states undoes."""
+	master_approval.guard_approval(doc)
 	before = None if doc.is_new() else doc.get_doc_before_save()
 	was_specification = before is not None and not missing_from(before)
 	missing = missing_from(doc)
@@ -307,7 +345,9 @@ def guard_template(doc: Document, method: str | None = None) -> None:
 	if before is not None and not same(before.get("mds_changed_under"), doc.get("mds_changed_under"), "Link"):
 		frappe.throw(_("{0} records the change request a change was made under itself.").format(doc.name))
 	request, doc.mds_change_request = doc.get("mds_change_request"), None  # named afresh for each change
-	if was_specification and changed(before, doc) and in_use(doc.name):
+	# Naming the test method for the first time is its first issue (D-34 came after the rule).
+	first_issue = (TEST_METHOD,) if before is not None and not before.get(TEST_METHOD) else ()
+	if was_specification and changed(before, doc, skip=first_issue) and in_use(doc.name):
 		if not request:
 			frappe.throw(
 				_(
@@ -318,6 +358,9 @@ def guard_template(doc: Document, method: str | None = None) -> None:
 		require_approved_change(request, DOCTYPE, doc.name, made_in=doc)
 		doc.mds_changed_under = request
 		raise_version(doc)  # URS-MST-001
+	if before is not None and changed(before, doc):
+		# QA's signature stood for what the specification said: what it says now is approved anew.
+		master_approval.return_to_draft(doc)
 
 
 def protect_template(doc: Document, method: str | None = None) -> None:
@@ -326,6 +369,65 @@ def protect_template(doc: Document, method: str | None = None) -> None:
 	if in_use(doc.name):
 		frappe.throw(
 			_("Specification {0} is in use and is never deleted.").format(doc.name), frappe.PermissionError
+		)
+
+
+# --- QA's approval (plan D-33) ----------------------------------------------------------------
+
+
+def missing_for_approval(doc: Document) -> list[str]:
+	"""What the specification still lacks for QA to approve it: what an inspection needs, and its
+	test method in effect."""
+	return [*missing_from(doc), *document_missing(doc, TEST_METHOD_DOCUMENT)]
+
+
+def approve(doc: Document, password: str, reason: str | None = None) -> None:
+	"""QA's signed approval of a specification (compliance.signing.SIGNING_ACTIONS)."""
+	master_approval.approve(doc, password, reason, missing_for_approval)
+
+
+def onload(doc: Document, method: str | None = None) -> None:
+	"""Quality Inspection Template onload: QA's approval, or what still stands in its way. A
+	specification approved by the migration that brought this rule names no approver (patches/
+	v0_1/approve_specifications_in_use.py); the form says so."""
+	master_approval.onload(doc, missing_for_approval)
+	approval = doc.get_onload().get("master_approval")
+	approval["by_migration"] = bool(approval["approved"] and not doc.get(master_approval.APPROVED_BY))
+
+
+def signed_content(doc: Document) -> dict:
+	"""What QA's signature on a specification binds (compliance.esign.SIGNED_CONTENT): what it
+	states (item, stage, sampling, test method, each parameter with its method and criteria) and
+	its version; not the change request named for its next change."""
+	content = {field: master_approval.value_of(doc, field) for field in (*CONTROLLED_FIELDS, VERSION)}
+	content[PARAMETERS] = [
+		{field: master_approval.value_of(row, field) for field in CONTROLLED_PARAMETER_FIELDS}
+		for row in doc.get(PARAMETERS) or []
+	]
+	return content
+
+
+def refuse_unless_approved(specification: str, item: str) -> None:
+	"""An inspection is made only against a specification QA has approved, whose test method, if it
+	names one, is still in effect."""
+	if not master_approval.configured(DOCTYPE):
+		return  # the fields arrive with apply_configuration
+	status, test_method = frappe.db.get_value(
+		DOCTYPE, specification, [master_approval.APPROVAL_STATUS, TEST_METHOD]
+	)
+	if status != master_approval.APPROVED:
+		frappe.throw(
+			_(
+				"Specification {0} of {1} is in draft: new, or changed since QA approved it. QA approves it with a signature before {1} is inspected against it."
+			).format(specification, item),
+			title=_("Specification not approved"),
+		)
+	if not_in_effect([test_method]):
+		frappe.throw(
+			_(
+				"The test method {0} of specification {1} is no longer in effect. QA names the method in effect and approves the specification again before {2} is inspected."
+			).format(test_method, specification, item),
+			title=_("Test method not in effect"),
 		)
 
 
@@ -360,6 +462,7 @@ def choose_specification(doc: Document, method: str | None = None) -> None:
 			),
 			title=_("No specification"),
 		)
+	refuse_unless_approved(specification, doc.item_code)  # plan D-33
 	if (
 		not flt(doc.sample_size)
 		and (frappe.db.get_value(DOCTYPE, specification, sampling.METHOD) or sampling.FIXED) == sampling.FIXED

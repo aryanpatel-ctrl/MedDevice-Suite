@@ -40,7 +40,12 @@ from frappe.utils import cint, today
 from meddevice_suite.compliance.audit import record, row_content, same
 from meddevice_suite.master_data.equipment import CONTROLLED_FIELDS as EQUIPMENT_CONTROLLED
 from meddevice_suite.master_data.equipment import approved as equipment_approved
-from meddevice_suite.master_data.item_master import APPROVAL_STATUS, APPROVED, UNSET_WHEN_ZERO
+from meddevice_suite.master_data.item_master import (
+	APPROVAL_STATUS,
+	APPROVED,
+	SPECIFICATION_DOCUMENT,
+	UNSET_WHEN_ZERO,
+)
 from meddevice_suite.master_data.item_master import CONTROLLED_FIELDS as ITEM_DEVICE_FIELDS
 from meddevice_suite.master_data.master_approval import APPROVAL_STATUS as MASTER_APPROVAL
 from meddevice_suite.master_data.master_approval import APPROVED as MASTER_APPROVED
@@ -96,6 +101,10 @@ class Master:
 FIRST_ISSUE_FIELDS: dict[str, tuple[str, ...]] = {
 	"Operation": ("mds_work_instruction", "mds_in_process_check"),
 }
+# Links a later rule added to a master, made once without a change request even once it is in
+# use: the controlled document that defines an item approved before plan D-34 (2026-10-14). The
+# link adds the document to what QA approved and replaces nothing; changing it later is a change.
+LINKED_ONCE_FIELDS: dict[str, tuple[str, ...]] = {"Item": (SPECIFICATION_DOCUMENT,)}
 
 MASTERS: dict[str, Master] = {
 	"Item": Master(
@@ -325,6 +334,8 @@ def version_master(doc: Document, method: str | None = None) -> None:
 		touched = [
 			f for f in touched if not (f in FIRST_ISSUE_FIELDS[doc.doctype] and never_filled(before, f))
 		]
+	linked_once = LINKED_ONCE_FIELDS.get(doc.doctype, ())
+	touched = [f for f in touched if not (f in linked_once and never_filled(before, f))]
 	# A request counts only when named with the change, not one left on the record before.
 	named = (
 		doc.get(CHANGE_REQUEST)

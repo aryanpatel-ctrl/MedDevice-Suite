@@ -4,9 +4,9 @@ A finished good is put into production only on its Current device master record 
 each demo product gets one, made as the system makes it: the Production Supervisor drafts it with
 its headings and its Packaging and Labelling document and signs it as its author; the QA Manager,
 another person, approves it with a signature. The labelling document is issued through document
-control and the product's in-process specification registered (module 6), if missing. The record
-pins the risk management report in force of the product's family (plan D-23), which the caller
-puts in force first (pilot/risk.py).
+control and the product's in-process specification registered and approved by QA (module 6), if
+missing. The record pins the risk management report in force of the product's family (plan D-23),
+which the caller puts in force first (pilot/risk.py).
 
 A product whose Current record still matches the live records is left as it is; one without a
 record, or whose record has gone out of date, gets the next revision. A revision left part-way by
@@ -19,7 +19,7 @@ from contextlib import AbstractContextManager
 import frappe
 from frappe.model.document import Document
 
-from meddevice_suite.pilot.documents import ensure_work_instruction
+from meddevice_suite.pilot.documents import approve_specification, ensure_work_instruction
 from meddevice_suite.pilot.inspection import ensure_in_process_specification
 from meddevice_suite.qms import device_master_record as dmr
 
@@ -66,7 +66,8 @@ def ensure_device_master_record(
 	current = dmr.current_record(item)
 	if current and not dmr.changes_since_approval(current):
 		return current
-	ensure_in_process_specification(item)
+	# Module 6 (plan D-33): the record names it once QA has approved it, with its test method.
+	ensure_in_process_specification(item, lambda name: approve_specification(name, act_as, user_of, password))
 	labelling = ensure_work_instruction(labelling_title, act_as, user_of, password, LABELLING_TYPE)
 	author = user_of(AUTHOR)
 	name = dmr.revision_in_progress(item)

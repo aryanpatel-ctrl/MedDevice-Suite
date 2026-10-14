@@ -29,7 +29,11 @@ from meddevice_suite.qms import risk_management as rm
 from meddevice_suite.qms.test_change_control import approved_change, signer
 from meddevice_suite.qms.test_risk_management import RiskTestCase
 from meddevice_suite.setup.sidebars import SIDEBAR_ADDITIONS
-from meddevice_suite.setup.test_stock import device_master_record_for_test, risk_report_for_test
+from meddevice_suite.setup.test_stock import (
+	approve_specification_for_test,
+	device_master_record_for_test,
+	risk_report_for_test,
+)
 from meddevice_suite.work_management import reminders
 
 REFUSED = (frappe.ValidationError, frappe.PermissionError)  # Frappe or this module, whichever checks first
@@ -137,6 +141,7 @@ class DeviceMasterRecordTestCase(RiskTestCase):
 				template(f"MDS DMR IPQC {suffix}", item, stage="In Process").insert().name
 			)
 			frappe.set_user("Administrator")
+			approve_specification_for_test(in_process_specification)  # module 6, plan D-33
 		component = component_bom = None
 		if sub_assembly:
 			component = self.approved_item(SUB_ASSEMBLY)
@@ -266,7 +271,8 @@ class DeviceMasterRecordTestCase(RiskTestCase):
 		return frappe.db.get_value("Document Revision", revision.name, "change_request")
 
 	def change_specification(self, specification: str) -> str:
-		"""QA changes a specification in use under an approved change request (module 6)."""
+		"""QA changes a specification in use under an approved change request, which returns it to
+		draft, and approves it again with a signature (module 6, plan D-33)."""
 		change = approved_change(
 			self.author, self.qa, specification, "Quality Inspection Template", "Product or BOM"
 		)
@@ -278,6 +284,9 @@ class DeviceMasterRecordTestCase(RiskTestCase):
 			spec.save()
 		finally:
 			frappe.set_user("Administrator")
+		self.sign_as(
+			self.qa, "Quality Inspection Template", specification, "Approve", f"Changed under {change}"
+		)
 		return change
 
 	def work_order(self, item: str, bom: str) -> Document:

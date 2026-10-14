@@ -12,7 +12,7 @@ true, and its owner must look at it again.
   materials whether it is still submitted, active and the default, and for a risk management
   report whether it is still approved.
 - `in_force` says whether the record may be relied on now: the document is effective, the
-  master approved and enabled, the bill submitted (QA's signed approval is its only submit),
+  master (a specification too) approved and enabled, the bill submitted (QA's signed approval is its only submit),
   active and the default, the risk management report the one in force of its file.
 - `on_pinned_change` runs when such a record is saved and asks each owner in `PIN_OWNERS` for
   the pins on it; every pin whose version is no longer the one in force, or whose record is no
@@ -166,8 +166,15 @@ def in_force_names(doctype: str, names: Iterable[str | None]) -> set[str]:
 		if frappe.get_meta(doctype).has_field("disabled"):
 			filters["disabled"] = 0
 	elif doctype == SPECIFICATION:
-		# A registered specification states its item and stage (module 6).
-		filters.update({"mds_item": ["is", "set"], "mds_stage": ["is", "set"]})
+		# A registered specification states its item and stage (module 6), and QA has approved what
+		# it says now (plan D-33).
+		filters.update(
+			{
+				"mds_item": ["is", "set"],
+				"mds_stage": ["is", "set"],
+				master_approval.APPROVAL_STATUS: master_approval.APPROVED,
+			}
+		)
 	elif doctype == RISK_REPORT:
 		# Approved, and the report of a file whose approved revision is in force (module 39).
 		filters.update({"docstatus": 1, "status": "Approved"})

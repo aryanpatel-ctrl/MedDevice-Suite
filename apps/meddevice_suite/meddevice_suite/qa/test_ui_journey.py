@@ -23,6 +23,7 @@ from meddevice_suite.qa.ui_journey import (
 	journey_items,
 	lots_of,
 	post_stock_entry,
+	prepare_effective_document,
 	prepare_journey,
 	prepare_lot_dates,
 	store,
@@ -67,6 +68,18 @@ class TestBrowserJourney(IntegrationTestCase):
 
 		with self.assertRaises(frappe.PermissionError):
 			prepare_journey(self.password)
+
+	def test_an_effective_document_is_issued_for_the_browser_to_name(self):
+		"""Plan D-34: the browser names a test method on a specification and a specification on an item."""
+		name = prepare_effective_document(self.password, "Specification")
+		self.assertEqual(
+			frappe.db.get_value("Controlled Document", name, ["document_type", "status"]),
+			("Specification", "Effective"),
+		)
+		self.assertEqual(prepare_effective_document(self.password, "Specification"), name)  # made once
+		frappe.set_user(prepare_job_users()["users"]["Stores"])
+		with self.assertRaises(frappe.PermissionError):
+			prepare_effective_document(self.password, "SOP")
 
 	def test_preparing_keeps_the_callers_session(self):
 		"""The items are approved as the run's QA user inside the browser's request; the browser's own

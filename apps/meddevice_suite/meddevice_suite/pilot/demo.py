@@ -14,7 +14,9 @@ Loads the masters the pilot walk-through needs, for the site's default company:
 - one demo user per job profile, whose password comes from the site_config key
   "pilot_user_password", never from the code;
 - every item approved by the QA Manager's demo user with a signature (module 1), with a
-  fictional GTIN in the GS1 range for restricted circulation (20…), never a real one;
+  fictional GTIN in the GS1 range for restricted circulation (20…), never a real one, after QA
+  approved its specification with its test method (module 6, plan D-33) and, for a material or a
+  product, the document that defines it was issued (plan D-34);
 - a risk management file per product family (plan D-13: Foley catheters, urine collection bags)
   with its approved risk assessment and its risk management report in force (module 39), which
   each product's device master record pins (plan D-23); a second QA demo user approves what the
@@ -207,20 +209,26 @@ def load_demo_data() -> None:
 	from meddevice_suite.pilot.flow import as_job  # the flow builds on this module
 
 	calibrate_instrument(instrument, password, lambda: as_job("Maintenance"))  # module 38: before it measures
+	from meddevice_suite.pilot.documents import approve_specification, ensure_specification_document
+
+	# Module 6 (plan D-33): QA approves each specification, with its test method, with a signature.
+	approve_spec = lambda name: approve_specification(name, as_job, demo_user_email, password)  # noqa: E731
 	for code, (name, unit, hsn, shelf_life, supplier, rate) in RAW_MATERIALS.items():
 		ensure_item(
 			code, name, "Raw Material", unit, hsn, shelf_life, company, store("Stores"), supplier=supplier
 		)
 		ensure_price(code, "Standard Buying", rate)
-		ensure_inspection_template(code, "Raw Material")
+		ensure_inspection_template(code, "Raw Material", approve_spec)
 	for code, (name, hsn, rate, _line, _materials) in PRODUCTS.items():
 		ensure_item(
 			code, name, "Products", "Nos", hsn, PRODUCT_SHELF_LIFE_DAYS, company, store("Finished Goods")
 		)
 		ensure_price(code, "Standard Selling", rate)
-		ensure_inspection_template(code, "Products")
-	# Each item set up with its specification, QA approves it before any record uses it.
+		ensure_inspection_template(code, "Products", approve_spec)
+	# Each item set up with its approved specification and the document that defines it (plan
+	# D-34), QA approves it before any record uses it.
 	for code in (*RAW_MATERIALS, *PRODUCTS):
+		ensure_specification_document(code, as_job, demo_user_email, password)
 		approve(code)
 
 	for line, steps in ROUTINGS.items():

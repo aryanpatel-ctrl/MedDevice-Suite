@@ -175,6 +175,30 @@ def approve_as_qa(password: str | None, doctype: str = "Item") -> Callable[[str]
 	return approve
 
 
+def approve_specification_as_qa(password: str | None) -> Callable[[str], None]:
+	"""QA's signed approval of a journey specification, with its test method issued through document
+	control (module 6, plan D-33), as the run's QA Manager user."""
+	from meddevice_suite.pilot.documents import approve_specification
+
+	def approve(name: str) -> None:
+		if not password:
+			frappe.throw(_("Give the run's password of the job users to approve {0}.").format(name))
+		approve_specification(name, lambda profile: acting_as(email_for(profile)), email_for, password)
+
+	return approve
+
+
+def ensure_item_document(code: str, password: str | None) -> None:
+	"""The specification that defines a journey material or product, issued through document control
+	and named on it before QA approves it (module 1, plan D-34)."""
+	from meddevice_suite.pilot.documents import ensure_specification_document
+
+	if password:  # without it the item is approved already, or its approval says what it lacks
+		ensure_specification_document(
+			code, lambda profile: acting_as(email_for(profile)), email_for, password
+		)
+
+
 @contextmanager
 def acting_as(user: str) -> Iterator[None]:
 	"""Act as a journey job user, then return to the Administrator who prepares the journey.
@@ -212,17 +236,19 @@ def ensure_masters(
 	)
 	ensure("Supplier", SUPPLIER, supplier_name=SUPPLIER, supplier_group="Raw Material")
 	ensure("Customer", CUSTOMER, customer_name=CUSTOMER, customer_group="Commercial", territory="India")
+	approve_spec = approve_specification_as_qa(password)
 	for code, (name, unit, hsn, shelf_life, rate, _per_batch) in RAW_MATERIALS.items():
 		ensure_item(
 			code, name, "Raw Material", unit, hsn, shelf_life, COMPANY, store("Stores"), supplier=SUPPLIER
 		)
 		ensure_price(code, "Standard Buying", rate)
-		ensure_inspection_template(code, "Raw Material")
+		ensure_inspection_template(code, "Raw Material", approve_spec)
 	name, hsn, rate, shelf_life = PRODUCT_DETAILS
 	ensure_item(PRODUCT, name, "Products", "Nos", hsn, shelf_life, COMPANY, store("Finished Goods"))
 	ensure_price(PRODUCT, "Standard Selling", rate)
-	ensure_inspection_template(PRODUCT, "Products")
-	for code in journey_items():  # each with its specification, approved before it is used
+	ensure_inspection_template(PRODUCT, "Products", approve_spec)
+	for code in journey_items():  # each with its approved specification, approved before it is used
+		ensure_item_document(code, password)
 		approve(code)
 
 	for operation, workstation, _minutes in OPERATIONS:
@@ -356,6 +382,25 @@ def post_stock_entry(purpose: str, rows: list[dict], opening: bool = False) -> D
 	entry.insert(ignore_permissions=True)
 	entry.submit()
 	return entry
+
+
+@frappe.whitelist(methods=["POST"])
+def prepare_effective_document(password: str, document_type: str) -> str:
+	"""A controlled document of the type in effect, issued through document control by the jobs with
+	signatures (module 30), for the browser to name on a master QA approves (plan D-34): a test
+	method on a specification, a specification on an item."""
+	from meddevice_suite.pilot.documents import ensure_work_instruction
+
+	ensure_test_site()
+	if frappe.session.user != "Administrator":
+		frappe.throw(_("The browser journey is prepared only by the Administrator."), frappe.PermissionError)
+	return ensure_work_instruction(
+		f"{document_type} (browser test)",
+		lambda profile: acting_as(email_for(profile)),
+		email_for,
+		password,
+		document_type,
+	)
 
 
 # Any signed-in user may ask: the answer describes only a record the user may read.
@@ -577,7 +622,8 @@ def prepare_device_master_record(password: str) -> dict:
 	ensure_masters(approve, approve_bom, approve_as_qa(password, "Asset"), password)
 	name, hsn, _rate, shelf_life = DMR_PRODUCT_DETAILS
 	ensure_item(DMR_PRODUCT, name, "Products", "Nos", hsn, shelf_life, COMPANY, store("Finished Goods"))
-	specification = ensure_inspection_template(DMR_PRODUCT, "Products")
+	specification = ensure_inspection_template(DMR_PRODUCT, "Products", approve_specification_as_qa(password))
+	ensure_item_document(DMR_PRODUCT, password)
 	approve(DMR_PRODUCT)
 	ensure_bom(
 		DMR_PRODUCT,
@@ -586,7 +632,7 @@ def prepare_device_master_record(password: str) -> dict:
 		COMPANY,
 		approve_bom,
 	)
-	ensure_in_process_specification(DMR_PRODUCT)
+	ensure_in_process_specification(DMR_PRODUCT, approve_specification_as_qa(password))
 	act_as = lambda profile: acting_as(email_for(profile))  # noqa: E731
 	ensure_risk_report(DMR_PRODUCT_FAMILY, [DMR_PRODUCT], act_as, email_for, password, RISK_TAG)
 	labelling = ensure_work_instruction(
@@ -609,8 +655,9 @@ def prepare_device_master_record(password: str) -> dict:
 def revise_dmr_specification(password: str) -> dict:
 	"""The browser product's final specification changed under an approved change request, as the
 	jobs do it: the Production Supervisor raises the request, QA assesses and approves it with
-	signatures and changes the specification under it (module 6), which puts the product's device
-	master record out of date (module 31). Returns {"change_request", "specification"}."""
+	signatures, changes the specification under it, which returns it to draft, and approves it again
+	with a signature (module 6, plan D-33); the change puts the product's device master record out
+	of date (module 31). Returns {"change_request", "specification"}."""
 	from meddevice_suite.master_data.specification import FINAL, specification_for
 
 	ensure_test_site()
@@ -624,6 +671,7 @@ def revise_dmr_specification(password: str) -> dict:
 		row.max_value = 5.5 if row.max_value != 5.5 else 5.4  # wider, then back, run after run
 		doc.mds_change_request = change
 		doc.save()
+	approve_specification_as_qa(password)(specification)
 	return {"change_request": change, "specification": specification}
 
 
