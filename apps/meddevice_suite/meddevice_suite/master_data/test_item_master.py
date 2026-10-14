@@ -903,6 +903,8 @@ class TestNotUsedBeforeApproval(ItemMasterTestCase):
 
 		from erpnext.controllers.accounts_controller import update_child_qty_rate
 
+		from meddevice_suite.compliance.audit_reason import stage_reason
+
 		product = self.approved_item(FINISHED_GOOD)
 		order = frappe.get_doc(
 			{
@@ -932,8 +934,10 @@ class TestNotUsedBeforeApproval(ItemMasterTestCase):
 		self.assertEqual(
 			[row.item_code for row in frappe.get_doc("Sales Order", order.name).items], [product]
 		)
-		# An approved item is taken on as before.
+		# An approved item is taken on as before, with the reason a change to a submitted order
+		# needs since sales orders are audited (URS-CMP-041); the desk asks it before Update Items.
 		rows[1]["item_code"] = self.approved_item(FINISHED_GOOD)
+		stage_reason("Sales Order", order.name, "update_after_submit", "Second line ordered by the customer")
 		update_child_qty_rate("Sales Order", json.dumps(rows), order.name)
 		self.assertEqual(len(frappe.get_doc("Sales Order", order.name).items), 2)
 
