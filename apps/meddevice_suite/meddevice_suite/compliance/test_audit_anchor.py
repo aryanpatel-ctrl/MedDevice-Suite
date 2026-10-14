@@ -54,6 +54,15 @@ class AnchorTestCase(AuditTestCase):
 		self.enterContext(
 			patch("meddevice_suite.compliance.audit_anchor.anchor_file", return_value=self.file)
 		)
+		# The site's own anchors (taken on it before, from its screens or hourly) start the test's
+		# file, as the site's file holds them: the test begins from an intact trail on any site.
+		held = frappe.get_all(audit_anchor.DOCTYPE, pluck="name", order_by="creation asc, name asc")
+		if held:
+			self.file.write_text(
+				"".join(
+					audit_anchor.as_line(frappe.get_doc(audit_anchor.DOCTYPE, name)) + "\n" for name in held
+				)
+			)
 		# Each test's anchors, entries and deletions are undone, so the next test starts from the same trail.
 		frappe.db.savepoint("audit_anchor_test")
 		self.addCleanup(frappe.db.rollback, save_point="audit_anchor_test")
@@ -165,7 +174,9 @@ class TestAnchorsAreKeptOutsideTheDatabase(AnchorTestCase):
 		self.history()
 
 		anchors = anchor_trail()
-		self.assertFalse(self.file.exists())  # an anchor rolled back never reaches the file
+		# An anchor rolled back never reaches the file.
+		filed_before = {line["anchor"] for line in self.lines()} if self.file.exists() else set()
+		self.assertFalse({anchor.name for anchor in anchors} & filed_before)
 		self.on_commit.run()
 
 		filed = {line["anchor"]: line for line in self.lines()}
