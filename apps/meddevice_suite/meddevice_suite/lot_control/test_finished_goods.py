@@ -75,6 +75,7 @@ def stock_voucher_types() -> set[str]:
 	"""Every record type of the installed apps that ERPNext treats as a stock voucher (its controller
 	is a StockController), whether or not it posts stock."""
 	from erpnext.controllers.stock_controller import StockController
+	from frappe.model.base_document import get_controller
 
 	modules = [
 		module
@@ -87,7 +88,7 @@ def stock_voucher_types() -> set[str]:
 		filters={"module": ["in", modules], "istable": 0, "issingle": 0, "is_virtual": 0, "custom": 0},
 		pluck="name",
 	)
-	return {doctype for doctype in doctypes if issubclass(frappe.get_controller(doctype), StockController)}
+	return {doctype for doctype in doctypes if issubclass(get_controller(doctype), StockController)}
 
 
 def material_receipt(item: str, warehouse: str, opening: bool = False) -> Document:
