@@ -153,7 +153,8 @@ context("Audit anchors and sales orders, on the screens of each job", () => {
 	it("[URS-CMP-040] a job outside QA and administration has no anchor buttons and cannot anchor", () => {
 		as_job("Sales");
 		cy.visit("/desk/audit-anchor");
-		cy.get(FORM).should("exist");
+		// The job cannot open the anchors at all, let alone see their buttons.
+		cy.get(".modal:visible").should("contain", "You are not permitted to open Audit Anchor");
 		cy.get(`button[data-label="${encodeURIComponent("Anchor Now")}"]`).should("not.exist");
 		cy.get(`button[data-label="${encodeURIComponent("Verify Audit Trail")}"]`).should(
 			"not.exist"
