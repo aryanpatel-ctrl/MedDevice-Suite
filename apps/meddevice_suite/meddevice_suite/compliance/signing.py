@@ -62,6 +62,8 @@ SIGNING_ACTIONS: dict[tuple[str, str], SignedAct] = {
 	("Document Revision", "Return"): SignedAct("Rejected", f"{DOCUMENT_CONTROL}.return_for_changes"),
 	("Document Revision", "Approve"): SignedAct("Approved", f"{DOCUMENT_CONTROL}.approve"),
 	("Controlled Document", "Withdraw"): SignedAct("Withdrawn", f"{DOCUMENT_CONTROL}.withdraw"),
+	# The periodic review: QA finds the effective revision still current (ISO 13485 4.2.4 b).
+	("Controlled Document", "Review"): SignedAct("Reviewed", f"{DOCUMENT_CONTROL}.review_document"),
 	# Module 36, change control
 	("Change Request", "Assess"): SignedAct("Reviewed", f"{CHANGE_CONTROL}.assess"),
 	("Change Request", "Approve"): SignedAct("Approved", f"{CHANGE_CONTROL}.approve"),

@@ -148,6 +148,8 @@ SYSTEM_MAINTAINED: dict[str, tuple[str, ...]] = {
 	"Risk Assessment": ("status", "docstatus", "superseded_by"),
 	"Risk Management Report": ("status", "docstatus"),
 	"Risk Review": ("docstatus",),
+	# The record each listed record's change was made in, recorded as the change is made (module 36).
+	"Change Request Affected Record": ("change_record_type", "change_record", "changed_on"),
 	"Change Request Action": (
 		"done",
 		"done_on",
@@ -157,6 +159,18 @@ SYSTEM_MAINTAINED: dict[str, tuple[str, ...]] = {
 		"result_name",
 		"alerted_for",
 	),
+}
+
+
+# (record type, act) -> fields the system maintains after that act's signature, beyond the record
+# type's own. For an act added after its record type already carried signatures: widening
+# SYSTEM_MAINTAINED would change what those earlier signatures bind, and a signature that verified
+# must keep verifying (21 CFR 11.70). The act is part of the signature and its fingerprint, so each
+# signature is checked against the content its own act binds.
+ACT_MAINTAINED: dict[tuple[str, str], tuple[str, ...]] = {
+	# The periodic review (module 30, 2026-10-12): the review alert's bookkeeping moves on after it
+	# when the next review falls due.
+	("Controlled Document", "Review"): ("review_alerted_for",),
 }
 
 
@@ -217,7 +231,7 @@ def sign(
 			"signer": user,
 			"signer_name": get_fullname(user),
 			"signed_at": now_datetime(),
-			"record_hash": record_fingerprint(doc),
+			"record_hash": record_fingerprint(doc, action),
 			"previous_signature": previous.name if previous else None,
 		}
 	)
@@ -268,12 +282,17 @@ def last_signature(doctype: str, name: str) -> frappe._dict | None:
 	return chain_head("Electronic Signature", "previous_signature", "signature_hash", (doctype, name))
 
 
-def record_fingerprint(doc: Document) -> str:
-	"""SHA-256 of the content a signature binds, child rows included (see the module docstring)."""
+def record_fingerprint(doc: Document, action: str | None = None) -> str:
+	"""SHA-256 of the content a signature of `action` binds, child rows included (see the module
+	docstring and `ACT_MAINTAINED`)."""
 	if doc.doctype in SIGNED_CONTENT:
 		return sha256(frappe.get_attr(SIGNED_CONTENT[doc.doctype])(doc))
 	content = record_content(doc)
-	for field in ("name", *SYSTEM_MAINTAINED.get(doc.doctype, ())):
+	for field in (
+		"name",
+		*SYSTEM_MAINTAINED.get(doc.doctype, ()),
+		*ACT_MAINTAINED.get((doc.doctype, action), ()),
+	):
 		content.pop(field, None)
 	for rows in content.values():
 		if isinstance(rows, list):
@@ -340,4 +359,4 @@ def verify_signatures(doctype: str, name: str) -> bool:
 def is_unchanged_since(signature: Document) -> bool:
 	"""Whether the signed record's content is still exactly what was signed."""
 	doc = frappe.get_doc(signature.reference_doctype, signature.reference_name)
-	return record_fingerprint(doc) == signature.record_hash
+	return record_fingerprint(doc, signature.action) == signature.record_hash
