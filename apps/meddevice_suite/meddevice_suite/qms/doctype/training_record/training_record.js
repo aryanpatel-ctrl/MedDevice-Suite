@@ -1,7 +1,7 @@
 // Training records (module 37): the trainee signs that they were trained (or read and understood
 // a document their job allows reading for); the named assessor signs Competent or Not Competent;
-// QA enters paper history and may revoke a competence. Every rule is checked on the server
-// (qms/training.py).
+// QA enters paper history (started from the list, training_record_list.js) and may revoke a
+// competence. Every rule is checked on the server (qms/training.py).
 const esign = frappe.provide("meddevice_suite.esign");
 
 frappe.ui.form.on("Training Record", {
@@ -9,6 +9,15 @@ frappe.ui.form.on("Training Record", {
 		frm.set_query("document_revision", () => ({
 			filters: { controlled_document: frm.doc.controlled_document, docstatus: 1 },
 		}));
+	},
+
+	onload(frm) {
+		// A record a person adds can only be QA's paper history; the system opens all the others.
+		// The reason field is read-only, so the form gives it, as the server requires; nothing
+		// falls due on training given long ago, so it is due today, as the server would set.
+		if (!frm.is_new()) return;
+		if (!frm.doc.trigger) frm.set_value("trigger", "Historical");
+		if (!frm.doc.due_date) frm.set_value("due_date", frappe.datetime.get_today());
 	},
 
 	refresh(frm) {

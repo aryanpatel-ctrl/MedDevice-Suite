@@ -27,7 +27,7 @@ State on 2026-10-11: built; tests written from the requirement matrix before the
 | Document Review Alert (days) | 30 | 1–365 | daily alert to the document owner and QA before a review date (module 30) |
 | Change Action Due Alert (days) | 7 | 1–90 | daily alert to an action's owner before it is due (module 36) |
 | Effectiveness Check After (days) | 90 | 0–730 | the default given to a new change request; the assessor may set another |
-| Wrong Passwords Before Lockout | 5 | 3–10 | login and electronic signature (21 CFR 11.300(d)) |
+| Wrong Passwords Before Lockout | 5 | 3–10 | login and electronic signature (21 CFR 11.300(d)): the account locks once this many consecutive wrong passwords are entered |
 | Locked For (minutes) | 15 | 5–1440 | how long a locked account stays locked |
 | Minimum Password Strength | 3 | 3–4 | how hard a new password must be to guess (URS-CMP-037) |
 | Password Valid For (days) | 90 | 30–365 | after this, a new password is required at sign-in (URS-CMP-037) |
@@ -37,6 +37,7 @@ State on 2026-10-11: built; tests written from the requirement matrix before the
 - **Change control:** saving a changed value needs **Change Request** = an approved request listing *Quality Settings* (the lookup offers only those). The request is recorded in **Last Changed Under**, **Version** goes up by one, **Effective From** becomes today, and the Change Request field is cleared for the next change. These three are set by the rule only.
 - **One change, one request:** a request that already changed the settings (the one recorded now, or an earlier one) is refused; each change is raised and approved on its own.
 - **Lockout, passwords and sessions:** on save, and on every migrate, the site's System Settings are set to the lockout values and to the password strength, password validity and inactivity sign-out (URS-CMP-037, `access-policy.md`); changing any of them in System Settings by hand is refused at once (*… is set by the access policy: in Quality Settings, under change control*).
+- **How the lockout count is written:** Frappe's *Allow Consecutive Login Attempts* is the number of failures it lets pass; it locks an account once the failures exceed it. So System Settings gets **one less** than *Wrong Passwords Before Lockout* (5 → 4, 3 → 2). With the value N set here, wrong passwords 1 to N are each refused as wrong; from then on the account is locked for *Locked For* minutes, and even the correct password is refused (at login and at signing, one counter) until the time is up. A correct password before the N-th wrong one resets the count.
 - **Naming the settings on a change request:** every job that raises change requests may pick *Quality Settings* (and *Controlled Document*) as a record type without being able to read it; the record is filled in by itself, because a settings record has no list to look it up in. Before 2026-10-11 nobody could pick either type on screen.
 - **Alerts** read the setting each time they run: a change applies from the next daily run.
 
@@ -69,8 +70,9 @@ Role: Production Supervisor (raise), QA Manager (approve, change).
 5. Set it to 400 (with another approved request). Expected: refused — *Lot Expiry Alert is between 1 and 365.*
 
 ### QS-02 Lockout
-1. Under an approved request set **Wrong Passwords Before Lockout** = 3. Expected: System Settings › *Allow Consecutive Login Attempts* = 3.
-2. Sign in as a test user with a wrong password three times. Expected: the account is locked for the set minutes; signing is refused too.
+1. Under an approved request set **Wrong Passwords Before Lockout** = 3. Expected: System Settings › *Allow Consecutive Login Attempts* = **2** (Frappe's number of failures allowed; it locks once they exceed it).
+2. Sign in as a test user with a wrong password three times. Expected: each attempt says the login is invalid.
+3. Sign in once more, with the **correct** password. Expected: refused — the account is locked for the set minutes; signing is refused too.
 
 ### QS-03 Who may
 System Administrator opens Quality Settings: read only. Stores: no access.
