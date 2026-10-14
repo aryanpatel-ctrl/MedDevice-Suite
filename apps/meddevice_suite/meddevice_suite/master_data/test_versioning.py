@@ -174,6 +174,24 @@ class TestVersionedMasters(VersioningTestCase):
 		with self.assertRaisesRegex(frappe.ValidationError, "name the approved change request"):
 			item.save()
 
+	@verifies("URS-QMS-033")
+	def test_a_request_changes_each_master_it_lists_once(self):
+		"""Found in the foundation review of 2026-10-12: named again, the same approved request
+		authorised a second, unrelated change."""
+		code = self.item_in_use()
+		change = self.change_request_for("Item", code)
+		item = frappe.get_doc("Item", code)
+		item.update({"shelf_life_in_days": 730, CHANGE_REQUEST: change})
+		item.save()
+
+		item = frappe.get_doc("Item", code)
+		item.update({"shelf_life_in_days": 900, CHANGE_REQUEST: change})
+		with self.assertRaisesRegex(frappe.ValidationError, f"{change} has already changed Item {code}"):
+			item.save()
+		self.assertEqual(frappe.db.get_value("Item", code, ["shelf_life_in_days", VERSION]), (730, 2))
+		row = frappe.get_doc("Change Request", change).affected_records[0]
+		self.assertEqual((row.change_record_type, row.change_record), ("Item", code))
+
 	def test_the_version_record_is_set_only_by_a_controlled_change(self):
 		code = self.item_in_use()
 		change = self.change_request_for("Item", code)
@@ -272,6 +290,22 @@ class TestVersionedMasters(VersioningTestCase):
 		stage_reason("BOM", bom.name, "cancel", "Withdrawn under the change request")
 		frappe.get_doc("BOM", bom.name).cancel()
 		self.assertEqual(frappe.db.get_value("BOM", bom.name, ["docstatus", CHANGED_UNDER]), (2, change))
+
+		# The request still lists the cancelled bill of materials, and is still acted on; a record it
+		# names that does not exist is still refused.
+		from meddevice_suite.qms import change_control
+
+		request = frappe.get_doc("Change Request", change)
+		self.assertEqual(
+			[(row.reference_name, row.get(change_control.CHANGE_RECORD)) for row in request.affected_records],
+			[(bom.name, bom.name)],
+		)
+		request.flags.audit_reason = "A later act on the request"
+		change_control.save(request)
+		request.affected_records[0].reference_name = "BOM-DOES-NOT-EXIST"
+		request.flags.audit_reason = "A record that does not exist"
+		with self.assertRaises(frappe.LinkValidationError):
+			change_control.save(request)
 
 	def test_a_master_in_use_keeps_its_name(self):
 		code = self.item_in_use()

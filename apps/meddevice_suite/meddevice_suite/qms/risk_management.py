@@ -520,7 +520,7 @@ def require_reason_to_revise(doc: Document, file: str) -> None:
 	if doc.risk_review:
 		require_open_review(doc.risk_review, file)
 		if doc.change_request:
-			change_control.require_approved_change(doc.change_request, FILE, file)
+			change_control.require_approved_change(doc.change_request, FILE, file, made_in=doc)
 		return
 	require(
 		doc.change_request,
@@ -528,7 +528,7 @@ def require_reason_to_revise(doc: Document, file: str) -> None:
 			"{0} has an approved risk assessment: name the approved change request or the open risk review for this revision."
 		).format(file),
 	)
-	change_control.require_approved_change(doc.change_request, FILE, file)
+	change_control.require_approved_change(doc.change_request, FILE, file, made_in=doc)
 
 
 def guard_assessment(doc: Document) -> None:

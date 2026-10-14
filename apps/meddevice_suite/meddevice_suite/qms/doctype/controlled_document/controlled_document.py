@@ -5,8 +5,9 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.model.naming import make_autoname
-from frappe.utils import cint
+from frappe.utils import add_days, cint, getdate, today
 
+from meddevice_suite.compliance import quality_settings
 from meddevice_suite.qms.document_control import IN_PROGRESS
 
 # Numbering TYPE-DEPARTMENT-###, decided on the client's instruction of 2026-10-07.
@@ -50,6 +51,17 @@ class ControlledDocument(Document):
 			"revision_in_progress",
 			frappe.db.get_value(
 				"Document Revision", {"controlled_document": self.name, "status": ["in", IN_PROGRESS]}, "name"
+			),
+		)
+		# The form puts the periodic review first once it falls within the alert's lead time, as the
+		# review alert and the reminder do (Quality Settings).
+		warning = add_days(today(), quality_settings.value("document_review_warning_days"))
+		self.set_onload(
+			"review_due",
+			bool(
+				self.status == "Effective"
+				and self.next_review_date
+				and getdate(self.next_review_date) <= getdate(warning)
 			),
 		)
 

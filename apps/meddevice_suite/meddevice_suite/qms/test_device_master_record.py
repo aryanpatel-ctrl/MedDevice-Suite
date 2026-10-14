@@ -790,6 +790,31 @@ class TestOutOfDate(DeviceMasterRecordTestCase):
 			)[0],
 		)
 
+	@verifies("URS-QMS-032")
+	def test_the_change_is_implemented_only_once_the_record_is_approved_again(self):
+		"""Found in the foundation review of 2026-10-12: the change request reached Implemented while
+		the device master record it put out of date was not yet approved again."""
+		from meddevice_suite.qms.change_control import complete_action
+
+		p = self.product()
+		record = self.current_dmr(p)
+		change = self.revise_document(p.labelling, "New symbol on the carton label")
+		self.assertEqual(self.status(record.name), dmr.OUT_OF_DATE)
+		action = frappe.get_doc("Change Request", change).actions[0]
+
+		frappe.set_user(action.action_owner)
+		with self.assertRaisesRegex(frappe.ValidationError, f"Device Master Record {record.name}"):
+			complete_action(change, action.name, "Carton label revised")
+		frappe.set_user("Administrator")
+		second = self.next_revision(p.item)
+		self.sign_as(self.supervisor, dmr.DOCTYPE, second.name, "Author")
+		self.sign_as(self.qa, dmr.DOCTYPE, second.name, "Approve")
+
+		frappe.set_user(action.action_owner)
+		complete_action(change, action.name, "Carton label revised")
+		frappe.set_user("Administrator")
+		self.assertEqual(frappe.db.get_value("Change Request", change, "status"), "Implemented")
+
 	def test_spec_version_marks_out_of_date(self):
 		p = self.product()
 		record = self.current_dmr(p)
