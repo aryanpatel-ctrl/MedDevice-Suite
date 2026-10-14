@@ -191,6 +191,23 @@ PERMISSIONS: dict[str, dict[str, tuple[str, ...]]] = {
 			"Sales Manager": APPROVE,
 		}
 	),
+	# Regulated since the foundation review of 2026-10-12 (URS-CMP-041): ERPNext's own rows, less
+	# deleting, sharing and importing (URS-CMP-016), the projects roles no job holds, and the
+	# maintenance job, which takes no customer orders.
+	"Sales Order": oversight(
+		{
+			# Orders come only through the sales team (client decision of 2026-10-09): it takes,
+			# corrects and cancels them.
+			"Sales User": CORRECT,
+			"Sales Manager": APPROVE,
+			# Stores dispatches against the order; accounts invoice it.
+			"Stock User": VIEW,
+			"Accounts User": VIEW,
+			# A work order made against an order; production also plans from the orders it reads in
+			# the forecasting report of its area (Exponential Smoothing Forecasting, module 13).
+			"Manufacturing User": ("select", "read", "report"),
+		}
+	),
 	"Material Request": oversight(
 		{
 			"Stock User": CORRECT,
@@ -296,6 +313,7 @@ HIGHER_LEVELS: dict[str, dict[tuple[str, int], tuple[str, ...]]] = {
 	"Purchase Order": {("Purchase Manager", 1): ("read", "write")},
 	"Purchase Receipt": {("Stock Manager", 1): ("read", "write")},
 	"Delivery Note": {("Stock Manager", 1): ("read", "write")},
+	"Sales Order": {("Sales Manager", 1): ("read", "write")},  # ERPNext's: ignoring pricing rules
 }
 
 # Configuration of the site (URS-CMP-038; engineering rules section 1.3: configuration is code).
@@ -321,9 +339,6 @@ SUPPORTING_PERMISSIONS: dict[str, dict[str, tuple[str, ...]]] = {
 	"Account": {"Stock User": PICK, "System Manager": PICK},
 	# The forms these jobs fill in look these up (found in the live pilot test, 2026-10-07).
 	"Stock Entry Type": {"Manufacturing User": PICK},
-	# A work order made against an order; production also plans from the orders it reads in
-	# the forecasting report of its area (Exponential Smoothing Forecasting, module 13).
-	"Sales Order": {"Manufacturing User": ("select", "read", "report")},
 	"Workstation Type": {"Operator": PICK, "Quality Manager": PICK, **dict.fromkeys(MANAGEMENT, PICK)},
 	"Quality Inspection Parameter": {"QC Inspector": PICK},
 	"Price List": {"Quality Manager": PICK},  # a BOM's costing
@@ -404,6 +419,7 @@ CONFIGURATION = frozenset(
 		"Buying Settings",
 		"Selling Settings",
 		"Print Settings",
+		"Company",  # set up by the administrator, as the settings are (URS-CMP-041)
 	}
 )
 

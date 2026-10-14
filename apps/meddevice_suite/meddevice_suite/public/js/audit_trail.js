@@ -1,5 +1,5 @@
 // Audit Trail and Verify Integrity buttons on regulated records, for users who may
-// review the audit trail (URS-CMP-010, URS-CMP-012). The server decides who sees
+// review the audit trail (URS-CMP-010, URS-CMP-012, URS-CMP-040). The server decides who sees
 // them (compliance/audit_timeline.py) and checks again when verifying.
 $(document).on("form-refresh", (event, frm) => {
 	if (frm.is_new() || !frm.doc.__onload?.audit_trail) return;
@@ -22,13 +22,21 @@ $(document).on("form-refresh", (event, frm) => {
 					doctype: frm.doctype,
 					name: frm.doc.name,
 				})
-				.then(({ audit_trail, signatures_intact }) => {
-					const intact = !audit_trail.length && signatures_intact;
+				.then(({ audit_trail, signatures_intact, anchors }) => {
+					const intact = !audit_trail.length && signatures_intact && !anchors.length;
 					const findings = audit_trail.map((problem) =>
 						frappe.utils.escape_html(problem)
 					);
 					if (!signatures_intact) {
 						findings.push(__("The signatures on this record do not verify."));
+					}
+					// Entries removed anywhere in the trail, which no record's chain shows
+					// (URS-CMP-040).
+					if (anchors.length) {
+						findings.push(__("Across the whole audit trail:"));
+						findings.push(
+							...anchors.map((problem) => frappe.utils.escape_html(problem))
+						);
 					}
 					frappe.msgprint({
 						title: intact ? __("Integrity verified") : __("Integrity problem found"),

@@ -67,7 +67,25 @@ function with_reason(frm, action, name) {
 	});
 }
 
+// ERPNext's Update Items changes a submitted order's lines in a request of its own
+// (update_child_qty_rate), which the server refuses without a reason: it is asked first.
+// ERPNext's forms look the function up when the button is clicked, so wrapping it once serves all.
+function wrap_update_items() {
+	const update_child_items = window.erpnext?.utils?.update_child_items;
+	if (!update_child_items || update_child_items.mds_reason_for_change) return;
+	// A function, not an arrow: ERPNext's keeps its rows on `this` (erpnext.utils).
+	const wrapped = function (opts) {
+		return with_reason(opts.frm, "update_after_submit", opts.frm.doc.name).then(
+			() => update_child_items.call(this, opts),
+			() => {}
+		);
+	};
+	wrapped.mds_reason_for_change = true;
+	window.erpnext.utils.update_child_items = wrapped;
+}
+
 $(document).on("form-refresh", (event, frm) => {
+	wrap_update_items();
 	// One form object serves every record of its type; wrap its actions once.
 	if (frm.mds_reason_for_change) return;
 	frm.mds_reason_for_change = true;

@@ -596,6 +596,20 @@ context("The standard flow, through the screens of each job", { retries: 0 }, ()
 
 		// ERPNext offers Update Items on a submitted quotation; a new rate is refused.
 		button("Update Items").click();
+		// A change to a submitted, audited record asks its reason first (URS-CMP-041).
+		open_dialog().should("contain", `Reason for changing ${made.quotation}`);
+		cy.get('.modal.show [data-fieldname="reason"] textarea').type(
+			"Price check (browser test)"
+		);
+		cy.window()
+			.its("cur_dialog")
+			.should((dialog) =>
+				expect(dialog.get_value("reason")).to.equal("Price check (browser test)")
+			);
+		cy.get(".modal.show .btn-primary").contains("Continue").click();
+		cy.window()
+			.its("cur_dialog")
+			.should((dialog) => expect(dialog.title).to.equal("Update Items"));
 		open_dialog().should("contain", "Update Items");
 		const rate =
 			'.modal.show [data-fieldname="trans_items"] .grid-row[data-idx="1"] [data-fieldname="rate"]';

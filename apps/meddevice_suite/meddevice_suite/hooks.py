@@ -354,6 +354,9 @@ has_permission = {
 }
 
 scheduler_events = {
+	# The head of the audit trail and of the signatures, so that removed entries are detected
+	# (URS-CMP-040): hourly, so at most an hour of entries is ever unanchored.
+	"hourly": ["meddevice_suite.compliance.audit_anchor.anchor_trail"],
 	"daily": [
 		"meddevice_suite.compliance.alerts.send_expiry_alerts",
 		"meddevice_suite.compliance.archive.fail_stalled_archives",

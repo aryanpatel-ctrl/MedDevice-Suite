@@ -3,8 +3,9 @@
 Users allowed to review the audit trail see the record's latest audit events in
 its activity timeline, and an Audit Trail button that lists all of them, where
 they can be filtered and exported, and a Verify Integrity button that checks the
-record's audit and signature chains. Other users see the form as usual. Searching
-across records by user, action and date range is the Audit Event list itself.
+record's audit and signature chains and the anchors of the whole trail. Other
+users see the form as usual. Searching across records by user, action and date
+range is the Audit Event list itself.
 """
 
 import frappe
@@ -14,6 +15,7 @@ from frappe.model.meta import Meta
 from frappe.utils import escape_html, get_fullname, get_link_to_form
 
 from meddevice_suite.compliance.audit import as_data, verify_events
+from meddevice_suite.compliance.audit_anchor import checked_trail
 from meddevice_suite.compliance.audit_scope import is_regulated
 from meddevice_suite.compliance.esign import verify_signatures
 
@@ -30,7 +32,10 @@ def onload(doc: Document, method: str | None = None) -> None:
 
 @frappe.whitelist()
 def verify_record(doctype: str, name: str) -> dict:
-	"""For reviewers: whether the record's audit trail and signatures are intact (21 CFR 11.10(e))."""
+	"""For reviewers: whether the record's audit trail and signatures are intact (21 CFR 11.10(e)),
+	and what the anchors show about the whole trail (URS-CMP-040): a record's newest entries, or its
+	whole history, removed leave a shorter chain that verifies, which only the anchors reveal. A new
+	finding alerts QA (audit_anchor.alert)."""
 	if not shows_audit_trail(doctype):
 		frappe.throw(
 			_("You cannot review the audit trail of {0}.").format(_(doctype)), frappe.PermissionError
@@ -39,6 +44,7 @@ def verify_record(doctype: str, name: str) -> dict:
 	return {
 		"audit_trail": verify_events(doctype, name),
 		"signatures_intact": verify_signatures(doctype, name),
+		"anchors": checked_trail(),
 	}
 
 
