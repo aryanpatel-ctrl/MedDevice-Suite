@@ -105,6 +105,14 @@ For users who may read Audit Event (Quality Manager, System Manager) and only on
 ### 2.7 What is intended but not implemented
 
 - Values ERPNext writes to *another* record with `frappe.db.set_value` (per-received percentages, statuses recalculated from linked documents) are not recorded; the transaction that caused them is. Documented in `audit.py`; the requirement's "values that code writes through the record itself" is met, derived values on other records are out of scope by design.
+- **Known system writes (2026-10-15, independent review).** ERPNext maintains these links on regulated records directly (SQL or `frappe.db.set_value`), with no audit event of their own. Each is a documented system process (engineering rules section 5): it is caused by an act that is itself audited, with who and when (and the reason, for a cancel), and that names the record written, so the trail shows why the link changed. Listed in the `audit.py` module docstring.
+
+| System write | Where in ERPNext | Audited act that causes it |
+| --- | --- | --- |
+| `quality_inspection` set on the inspected rows of a **Purchase Receipt Item** or **Stock Entry Detail** (the row of the item, and of the lot when the inspection names one), or on the **Job Card**; the record's `modified` set | `quality_inspection.py` `update_qc_reference`, on submit | **Quality Inspection** submit (event *Submitted* on the inspection, which names its reference) |
+| the same link cleared | `update_qc_reference(remove_reference=True)`, on cancel and on deleting a draft | **Quality Inspection** cancel (with its reason) or deletion (event *Deleted* with the whole record) |
+| `serial_and_batch_bundle` and `rejected_serial_and_batch_bundle` cleared on the voucher's rows (**Purchase Receipt Item**, **Stock Entry Detail**, **Delivery Note Item** and its **Packed Item** rows, and the rows of any other voucher with lots) | `serial_batch_bundle.py` `delink_serial_and_batch_bundle`, on cancel | the stock transaction's cancel (event *Cancelled* with its reason) |
+| `is_cancelled` set on the voucher's **Serial and Batch Bundle** and its **Serial and Batch Entry** rows | same | same |
 - Accounting documents (invoices, payments, journal entries) are not in `REGULATED_DOCTYPES` (left to India Compliance).
 - Export is the list's standard export (CSV/Excel of the chosen columns); there is no dedicated audit report with the Changes JSON rendered per field.
 - A forged tail entry is not detectable by verification (section 2.5; accepted in the requirement text).
