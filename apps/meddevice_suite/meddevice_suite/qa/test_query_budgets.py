@@ -51,7 +51,8 @@ from meddevice_suite.master_data.test_supplier_approval import ensure_supplier, 
 from meddevice_suite.pilot.flow import lot_of
 from meddevice_suite.qa import verifies
 from meddevice_suite.qa.volume import APP_INDEXES, counted, index_present
-from meddevice_suite.qms import change_control, document_control, equipment_care, training
+from meddevice_suite.qms import change_control, document_control, equipment_care, pinned_records, training
+from meddevice_suite.qms import device_master_record as dmr
 from meddevice_suite.qms.report.licence_register.licence_register import execute as licence_register
 from meddevice_suite.qms.test_change_control import licence_for_test
 from meddevice_suite.qms.test_document_control import signer
@@ -526,6 +527,74 @@ class TestDailyJobsBudget(QueryBudget, IntegrationTestCase):
 		self.assert_does_not_grow(
 			rate, lambda: suppliers.extend(f"MDS QB Rated {i}" for i in range(SMALL, LARGE))
 		)
+
+
+@verifies("URS-PLT-021")
+class TestPinnedRecordSweepBudget(QueryBudget, IntegrationTestCase):
+	"""The daily sweep of pinned records finds every device master record out of date again, each
+	day until QA re-approves it: what it has recorded already is read for all of them at once, and
+	none is loaded or locked again for nothing."""
+
+	def setUp(self):
+		frappe.set_user("Administrator")
+		self.item = stock_item(f"MDS-QB-PIN-{frappe.generate_hash(length=6)}")
+		approve_for_test(self.item)
+		self.records: list[str] = []
+		self.out_of_date(SMALL)
+
+	def out_of_date(self, count: int) -> None:
+		"""Device master records out of date, their device element's new version recorded already, as
+		the sweep leaves them (test fixture: drafting and approving one is tested in
+		qms/test_device_master_record.py)."""
+		for _ in range(count):
+			record = f"DMR-QB-{frappe.generate_hash(length=8)}"
+			self.records.append(record)
+			frappe.get_doc(
+				{
+					"doctype": dmr.DOCTYPE,
+					"name": record,
+					"item": self.item,
+					"revision": "01",
+					"status": dmr.OUT_OF_DATE,
+					"out_of_date_since": now_datetime(),
+					"docstatus": 1,
+				}
+			).db_insert()
+			row = frappe.get_doc(
+				{
+					"doctype": dmr.ELEMENT,
+					"parent": record,
+					"parenttype": dmr.DOCTYPE,
+					"parentfield": "elements",
+					"idx": 1,
+					"docstatus": 1,
+					"element_type": dmr.DEVICE,
+					"reference_doctype": "Item",
+					"reference_name": self.item,
+					"pinned_version": "0",  # approved against a version before the item's own
+				}
+			)
+			row.db_insert()
+			changes = pinned_records.changes_of(
+				[pinned_records.Pin(record, "Item", self.item, "0", row.name)]
+			)
+			((note, changed_under),) = dmr.notes_of(changes)
+			frappe.db.set_value(
+				dmr.ELEMENT,
+				row.name,
+				{
+					"stale": 1,
+					"current_version": changes[0].current,
+					"change_note": note,
+					"current_changed_under": changed_under,
+				},
+			)
+
+	def test_the_daily_sweep_does_not_reload_what_it_recorded(self):
+		self.assert_does_not_grow(pinned_records.sweep, lambda: self.out_of_date(GROWTH))
+		ours = [p for p in dmr.element_pins(None) if p.owner in self.records]
+		self.assertEqual(len(ours), LARGE)
+		self.assertEqual(dmr.unrecorded(pinned_records.changes_of(ours)), [])  # all recorded already
 
 
 @verifies("URS-PLT-021")
