@@ -1125,8 +1125,8 @@ status = "implemented"
 [[requirement]]
 id = "URS-MST-001"
 module = 1
-title = "Each of the nine masters (item, bill of materials, routing, operation and work centre, supplier, customer, warehouse, equipment, inspection template) carries a version number and an effective date; a change to the controlled fields of a master in use is made only under an approved change request that lists it, raises the version, and is recorded with the previous values in the audit trail; ERPNext's BOM Update Tool does not replace a bill of materials inside approved ones, a changed bill of materials being a new one under change control."
-source = "D2 All masters are version controlled and linked with Document Control; DFD D3 Item / BOM / Routing Master; ISO 13485 4.2.4, 7.3.9; blocking the BOM Update Tool's replace decided on 2026-10-09"
+title = "Each of the nine masters (item, bill of materials, routing, operation and work centre, supplier, customer, warehouse, equipment, inspection template) carries a version number and an effective date; a change to the controlled fields of a master in use is made only under an approved change request that lists it, raises the version, and is recorded with the previous values in the audit trail; ERPNext's BOM Update Tool does not replace a bill of materials inside approved ones, a changed bill of materials being a new one under change control; production runs only on an item's default bill of materials, so a second approved bill is produced on only once it replaces the default under an approved change request."
+source = "D2 All masters are version controlled and linked with Document Control; DFD D3 Item / BOM / Routing Master; ISO 13485 4.2.4, 7.3.9; blocking the BOM Update Tool's replace decided on 2026-10-09; independent review 2026-10-15: production on the controlled bill (ISO 13485 4.2.3, 7.5.1)"
 status = "implemented"
 
 [[requirement]]
@@ -1167,8 +1167,8 @@ status = "implemented"
 [[requirement]]
 id = "URS-MST-007"
 module = 2
-title = "A bill of materials is drafted by Production and approved by QA with an electronic signature, which is its only submit, for the Administrator too; QA approves it only when its product is a QA-approved finished good or sub-assembly, it has at least one component, every component is a QA-approved item with a quantity above zero, and its process-loss allowance is between 0 and 100 percent; the signature binds what was approved (product, quantity, components, operations, process loss), not the costs ERPNext updates; a work order is made only from an approved, active bill of its own product."
-source = "DFD D3 Item / BOM / Routing Master, 2.2 MRP, 4.1 Create Production Order; master plan section 3 (BOM: components and quantities per unit, scrap allowance, version; masters approved before use) and tracker step 8 (versioned, e-signed, changed only through change control); ISO 13485 7.5.1, 4.2.3; 21 CFR 11.50, 11.70; decided 2026-10-11 under the client's instruction to follow the DFD"
+title = "A bill of materials is drafted by Production and approved by QA with an electronic signature, which is its only submit, for the Administrator too; QA approves it only when its product is a QA-approved finished good or sub-assembly, it has at least one component, every component is a QA-approved item with a quantity above zero, and its process-loss allowance is between 0 and 100 percent; the signature binds what was approved (product, quantity, components, operations, process loss), not the costs ERPNext updates; a work order is made only from an approved, active bill of its own product that is the product's default bill of materials, the one in force, for a sub-assembly as for a finished good."
+source = "DFD D3 Item / BOM / Routing Master, 2.2 MRP, 4.1 Create Production Order; master plan section 3 (BOM: components and quantities per unit, scrap allowance, version; masters approved before use) and tracker step 8 (versioned, e-signed, changed only through change control); ISO 13485 7.5.1, 4.2.3; 21 CFR 11.50, 11.70; decided 2026-10-11 under the client's instruction to follow the DFD; independent review 2026-10-15: a sub-assembly was made on a second approved bill with no change request, changed in place (rules section 8)"
 status = "implemented"
 
 [[requirement]]

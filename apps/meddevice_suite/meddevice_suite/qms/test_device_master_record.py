@@ -1064,8 +1064,10 @@ class TestWorkOrders(DeviceMasterRecordTestCase):
 		dmr.require_current_record(frappe.get_doc("Work Order", order.name))  # passes on the pinned bill
 
 		other = self.bill(p.item, p.material, p.routing, is_default=0)  # active, approved, not the default
+		with self.assertRaisesRegex(frappe.ValidationError, "not the default bill of materials"):
+			self.work_order(p.item, other).insert()  # URS-MST-007: refused as the order is made
 		with self.assertRaisesRegex(frappe.ValidationError, "does not name bill of materials"):
-			self.work_order(p.item, other).insert().submit()
+			dmr.require_current_record(frappe._dict(production_item=p.item, bom_no=other))
 
 		frappe.db.set_value("Controlled Document", p.labelling, "status", "Obsolete")  # past the hooks
 		with self.assertRaisesRegex(frappe.ValidationError, "no longer matches"):
@@ -1138,8 +1140,10 @@ class TestWorkOrders(DeviceMasterRecordTestCase):
 		self.sign_as(self.supervisor, dmr.DOCTYPE, second.name, "Author")
 		self.sign_as(self.qa, dmr.DOCTYPE, second.name, "Approve")  # re-approved on the new bill
 		dmr.require_current_record(self.work_order(p.item, bill))
+		with self.assertRaisesRegex(frappe.ValidationError, "not the default bill of materials"):
+			self.work_order(p.item, p.bom).insert()  # the bill replaced (URS-MST-007)
 		with self.assertRaisesRegex(frappe.ValidationError, "does not name bill of materials"):
-			self.work_order(p.item, p.bom).insert().submit()  # the bill replaced
+			dmr.require_current_record(frappe._dict(production_item=p.item, bom_no=p.bom))
 
 		change = approved_change(self.author, self.qa, bill, "BOM", "Product or BOM")
 		frappe.set_user("Administrator")

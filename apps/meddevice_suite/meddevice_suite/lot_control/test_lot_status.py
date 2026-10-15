@@ -612,7 +612,7 @@ class TestOnlyAnApprovedLotLeaves(LotTestCase):
 
 	def test_a_work_order_draws_from_an_approved_store_and_finishes_into_quarantine(self):
 		approve_for_test(PRODUCT, RAW)  # module 1: production uses approved items only
-		bom = frappe.db.get_value("BOM", {"item": PRODUCT, "docstatus": 1}) or (
+		bom = frappe.db.get_value("BOM", {"item": PRODUCT, "docstatus": 1, "is_default": 1}) or (
 			frappe.get_doc(
 				{
 					"doctype": "BOM",
