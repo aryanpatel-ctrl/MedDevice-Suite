@@ -344,8 +344,15 @@ SUPPORTING_PERMISSIONS: dict[str, dict[str, tuple[str, ...]]] = {
 	"Price List": {"Quality Manager": PICK},  # a BOM's costing
 	"Terms and Conditions": dict.fromkeys(MANAGEMENT, PICK),  # an approver correcting a quotation
 	"Asset Maintenance": {"Maintenance User": PICK},
-	# ERPNext's stock forms read these settings and fail quietly when they may not.
-	"Stock Settings": {"Stock User": ("read",), "Manufacturing User": ("read",)},
+	# ERPNext's stock forms read these settings and fail quietly when they may not; QA opens the
+	# lots and transfers it releases and QC the receipts whose certificates it verifies (found by the
+	# browser walk-through of data store D4, 2026-10-15).
+	"Stock Settings": {
+		"Stock User": ("read",),
+		"Manufacturing User": ("read",),
+		"Quality Manager": ("read",),
+		"QC Inspector": ("read",),
+	},
 	# Found by the browser test of each job (URS-PLT-009), 2026-10-07:
 	# a new material request, inspection, asset or repair reads the company's letter head, and the
 	# desk tells the person they may not when they cannot read the company.

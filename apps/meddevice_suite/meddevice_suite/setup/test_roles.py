@@ -213,6 +213,15 @@ class TestSupportingPermissions(ProfileTestCase):
 		self.assertFalse(can(stores, "Account", "read"))
 		self.assertFalse(can(stores, "Account", "write"))
 
+	def test_the_jobs_that_open_stock_forms_read_their_settings_and_may_not_change_them(self):
+		"""ERPNext's stock forms read Stock Settings as they open: QA opens the lots and transfers it
+		releases, QC the receipts whose certificates it verifies (found by the browser walk-through,
+		2026-10-15)."""
+		for job in ("Stores", "Production Supervisor", "QA Manager", "QC Inspector"):
+			with self.subTest(job=job):
+				self.assertTrue(can(self.users[job], "Stock Settings", "read"))
+				self.assertFalse(can(self.users[job], "Stock Settings", "write"))
+
 	def test_erpnext_permissions_on_the_record_type_are_kept(self):
 		for doctype in SUPPORTING_PERMISSIONS:
 			standard = frappe.get_all(
