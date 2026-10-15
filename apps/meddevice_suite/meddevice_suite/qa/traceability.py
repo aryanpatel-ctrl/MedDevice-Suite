@@ -28,6 +28,23 @@ UI_TEST_TITLE = re.compile(r"""\bit\(\s*(["'`])(?P<title>.*?)\1""")
 UI_REQUIREMENT_TAG = re.compile(r"\[(URS-[A-Z]{2,5}-\d{3})\]")
 XML_DECLARATION = re.compile(r"(?=<\?xml)")
 OUTCOME_SEVERITY = {"passed": 0, "skipped": 1, "failed": 2}
+# A source names where its requirement comes from: a step, process or data store of the
+# data flow diagram (the final requirement), a client diagram, a dated decision or a
+# regulation clause. A DFD reference must be one the diagram has: steps 1.1 to 8.6,
+# processes 1 to 9 and 9A to 9F, data stores D1 to D12.
+DFD_REFERENCE = re.compile(r"\bDFD (?:box )?(?P<ref>\d+(?:\.\d+)?|9[A-Z]|D\d+)(?![\w.])")
+DFD_REFERENCES = (
+	{f"{process}.{step}" for process in range(1, 9) for step in range(1, 7)}
+	| {str(process) for process in range(1, 10)}
+	| {f"9{system}" for system in "ABCDEF"}
+	| {f"D{store}" for store in range(1, 13)}
+)
+CLIENT_DIAGRAM = re.compile(r"\bD[1-3]\b")
+DATED_DECISION = re.compile(r"\b20\d\d-[01]\d-[0-3]\d\b")
+REGULATION_CLAUSE = re.compile(
+	r"\bISO 13485 \d|\bISO 14971 \d|\bISO 2859-1\b|\b21 CFR (?:\d+\.\d+|8\d\d)\b"
+	r"|\bCDSCO MDR 2017\b|\bEU MDR Art\. \d|\bEU GMP Annex 11\b"
+)
 APPROACHES = {"ready", "customise", "build"}
 STATUSES = {"planned", "implemented", "withdrawn"}
 PLATFORM = 0
@@ -92,11 +109,29 @@ def load_registry(path: Path = REGISTRY_PATH) -> Registry:
 			problems.append(f"{requirement.id}: unknown module {requirement.module}")
 		if requirement.status not in STATUSES:
 			problems.append(f"{requirement.id}: unknown status {requirement.status!r}")
+		problems += [f"{requirement.id}: {problem}" for problem in source_problems(requirement.source)]
 		requirements[requirement.id] = requirement
 
 	if problems:
 		raise TraceabilityError("\n".join(problems))
 	return Registry(modules, requirements)
+
+
+def source_problems(source: str) -> list[str]:
+	"""Why a requirement's source does not trace it, if it does not."""
+	problems = [
+		f"source cites DFD {match['ref']}, which the data flow diagram does not have"
+		for match in DFD_REFERENCE.finditer(source)
+		if match["ref"] not in DFD_REFERENCES
+	]
+	patterns = (DFD_REFERENCE, CLIENT_DIAGRAM, DATED_DECISION, REGULATION_CLAUSE)
+	if not any(pattern.search(source) for pattern in patterns):
+		problems.append(
+			"source must cite a DFD step, process or data store (DFD 3.4, DFD 9F, DFD D4), a client "
+			"diagram (D1, D2, D3), a dated decision (YYYY-MM-DD) or a regulation clause (ISO 13485 7.6, "
+			"21 CFR 11.10, CDSCO MDR 2017)"
+		)
+	return problems
 
 
 def collect_python_tests(package_root: Path = PACKAGE_ROOT) -> list[VerifyingTest]:
