@@ -194,20 +194,12 @@ def earlier_lot_left(lot: str, expiry_date, left: list[frappe._dict]) -> frappe.
 	return None
 
 
-# The lines of each voucher type that uses stock (`describe`): a lot bundle names the line it is for,
-# a packed item's bundle the packed item or its parent line.
-LINE_TABLES: dict[str, tuple[str, ...]] = {
-	"Stock Entry": ("Stock Entry Detail",),
-	"Delivery Note": ("Delivery Note Item", "Packed Item"),
-	"Sales Invoice": ("Sales Invoice Item", "Packed Item"),
-	"POS Invoice": ("POS Invoice Item", "Packed Item"),
-}
-
-
 def taken_by_document(sle: Document) -> dict[str, float]:
 	"""What the document takes of each lot of the item out of the entry's store, on all its lines."""
 	bundle, entry = frappe.qb.DocType("Serial and Batch Bundle"), frappe.qb.DocType("Serial and Batch Entry")
-	query = (
+	# The bundle's document is indexed by this app's configuration (setup/indexes.py): ERPNext indexes
+	# only its type, which half the bundles share.
+	rows = (
 		frappe.qb.from_(entry)
 		.join(bundle)
 		.on(entry.parent == bundle.name)
@@ -221,22 +213,8 @@ def taken_by_document(sle: Document) -> dict[str, float]:
 			& (bundle.is_cancelled == 0)
 			& (bundle.docstatus < 2)
 		)
+		.run(as_dict=True)
 	)
-	if tables := LINE_TABLES.get(sle.voucher_type):
-		# ERPNext indexes a bundle by its line, not by its document (only the document's type, shared
-		# by half the bundles): the document's lines are read by their parent, which is indexed, so the
-		# bundles are found through the index on their line whatever the size of the table.
-		lines = [
-			name
-			for table in tables
-			for name in frappe.get_all(
-				table, filters={"parent": sle.voucher_no, "parenttype": sle.voucher_type}, pluck="name"
-			)
-		]
-		if not lines:
-			return {}
-		query = query.where(bundle.voucher_detail_no.isin(lines))
-	rows = query.run(as_dict=True)
 	taken: dict[str, float] = {}
 	for row in rows:
 		taken[row.batch_no] = taken.get(row.batch_no, 0) + abs(flt(row.qty))

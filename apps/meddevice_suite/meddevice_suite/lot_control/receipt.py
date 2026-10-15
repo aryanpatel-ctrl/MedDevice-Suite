@@ -376,6 +376,7 @@ def accepted_inspection(
 	whatever its result: an accepted inspection followed by a rejected one is a rejected lot, not an
 	accepted one (ISO 13485 8.2.6, found 2026-10-12). Made, not last modified: an older inspection
 	changed after a hold is not a new inspection."""
+	# Read through the index on the inspection's lot that this app configures (setup/indexes.py).
 	filters = {
 		"batch_no": lot,
 		"inspection_type": ["in", list(inspection_types)],

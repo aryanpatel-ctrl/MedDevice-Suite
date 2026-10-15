@@ -102,8 +102,8 @@ BUDGET_MS = {
 
 # --- Indexes the hot paths rely on ----------------------------------------------------------------
 
-# (record type, leading columns of an index, what reads by it). The app's own tables: the test
-# test_query_budgets.TestIndexes holds the site to these.
+# (record type, leading columns of an index): the app's own tables, and the indexes it configures on
+# ERPNext's (setup/indexes.py). The test test_query_budgets.TestIndexes holds the site to these.
 APP_INDEXES: tuple[tuple[str, tuple[str, ...]], ...] = (
 	("Audit Event", ("reference_doctype", "reference_name")),  # chain head, verify, timeline
 	("Audit Event", ("previous_event",)),  # chain head: the event no other follows
@@ -131,6 +131,18 @@ APP_INDEXES: tuple[tuple[str, tuple[str, ...]], ...] = (
 	("Customer Licence", ("customer",)),
 	("Batch", ("mds_lot_status",)),  # this app's column on ERPNext's lot: reports, quarantine list
 	("Batch", ("expiry_date",)),  # expiry alerts and reminders
+	# Configured by this app on ERPNext's tables (setup/indexes.py).
+	("Quality Inspection", ("batch_no",)),  # a lot's newest inspection: release, Lots Awaiting Release
+	("Serial and Batch Bundle", ("voucher_no",)),  # what a document takes of each lot (FEFO)
+	# The file columns an evidence file is looked up by (compliance/evidence_files.py).
+	("Document Revision", ("file",)),
+	("Record Archive", ("archive_file",)),
+	("Purchase Receipt Item", ("mds_certificate",)),
+	("Supplier Approval", ("certificate",)),
+	("Customer Licence", ("licence_copy",)),
+	("Important File Version", ("file",)),
+	("Calibration Record", ("certificate",)),
+	("Training Record", ("certificate",)),
 )
 # ERPNext's tables, checked and reported, never changed (rules.md section 1).
 ERPNEXT_INDEXES: tuple[tuple[str, tuple[str, ...]], ...] = (
@@ -140,10 +152,6 @@ ERPNEXT_INDEXES: tuple[tuple[str, tuple[str, ...]], ...] = (
 	("Stock Ledger Entry", ("serial_and_batch_bundle",)),
 	("Serial and Batch Entry", ("parent",)),  # a bundle's lots
 	("Serial and Batch Entry", ("batch_no",)),  # origins of a lot, its stock history
-	("Serial and Batch Bundle", ("voucher_detail_no",)),  # what a document takes (FEFO)
-	("Serial and Batch Bundle", ("voucher_no",)),  # not indexed by ERPNext: read through the line
-	("Quality Inspection", ("item_code",)),  # lots awaiting release read inspections by item
-	("Quality Inspection", ("batch_no",)),  # not indexed by ERPNext: see docs/features
 	("Bin", ("item_code", "warehouse")),
 	("Stock Entry Detail", ("parent",)),
 	("Delivery Note Item", ("parent",)),

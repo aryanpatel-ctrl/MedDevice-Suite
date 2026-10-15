@@ -56,6 +56,7 @@ from meddevice_suite.qms.report.licence_register.licence_register import execute
 from meddevice_suite.qms.test_change_control import licence_for_test
 from meddevice_suite.qms.test_document_control import signer
 from meddevice_suite.qms.test_training import TrainingTestCase, employee
+from meddevice_suite.setup import indexes
 from meddevice_suite.setup.install import apply_configuration
 from meddevice_suite.setup.test_stock import (
 	approve_equipment_for_test,
@@ -649,10 +650,22 @@ class TestMasterDataBudget(QueryBudget, IntegrationTestCase):
 
 @verifies("URS-PLT-021")
 class TestIndexes(IntegrationTestCase):
-	"""The filters and sorts the hot paths use on the app's own growing tables are served by an
-	index (the volume harness checks ERPNext's tables too, read-only)."""
+	"""The filters the hot paths use on growing tables are served by an index: the app's own tables,
+	and the columns of ERPNext's that the app indexes by configuration (setup/indexes.py), which must
+	outlive an ERPNext upgrade. A dropped index fails here."""
 
 	def test_the_app_s_growing_tables_are_indexed(self):
 		for doctype, columns in APP_INDEXES:
 			with self.subTest(doctype=doctype, columns=columns):
 				self.assertTrue(index_present(doctype, columns), f"{doctype} has no index on {columns}")
+
+	def test_the_indexes_on_erpnext_s_tables_outlive_an_upgrade(self):
+		# Marked indexed in the record type's definition, so Frappe's schema sync keeps them.
+		for doctype, field in indexes.SEARCHED:
+			with self.subTest(doctype=doctype, field=field):
+				self.assertEqual(frappe.get_meta(doctype).get_field(field).search_index, 1)
+
+	def test_applying_the_indexes_again_changes_nothing(self):
+		setters = frappe.db.count("Property Setter", {"property": "search_index"})
+		indexes.apply_indexes()
+		self.assertEqual(frappe.db.count("Property Setter", {"property": "search_index"}), setters)
