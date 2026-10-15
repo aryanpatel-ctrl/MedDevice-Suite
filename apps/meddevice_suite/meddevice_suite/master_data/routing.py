@@ -80,6 +80,7 @@ def operation_missing(doc: Document) -> list[str]:
 def workstation_missing(doc: Document) -> list[str]:
 	from meddevice_suite.master_data import equipment
 
+	# The equipment at it now, rightly: QA approves the workstation as it now stands.
 	at_it = frappe.get_all(
 		"Asset",
 		filters={
@@ -201,6 +202,7 @@ def not_usable(
 		]
 		from meddevice_suite.master_data import equipment
 
+		# The equipment at each workstation now, rightly: whether it may be used now.
 		reasons += [
 			_("workstation {0}: its equipment {1} approved").format(
 				asset.get(equipment.WORKSTATION), asset.name

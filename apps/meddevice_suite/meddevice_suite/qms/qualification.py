@@ -10,7 +10,8 @@ be executed and approved again. An OQ needs an approved, passed IQ before it; a 
 passed OQ done on or after that IQ. Equipment that needs qualification is qualified while its
 latest approved IQ, OQ and PQ each passed, in that order, and the PQ is within the requalification
 interval QA set on the equipment, if one is set; after a repair, a PQ done on or after it; after a
-move, an IQ (and so the OQ and PQ after it) done on or after it (URS-EQP-013).
+move (an asset movement or a change of its workstation), an IQ (and so the OQ and PQ after it) done
+on or after it (URS-EQP-013).
 """
 
 import frappe
@@ -149,7 +150,9 @@ def not_qualified(
 	assets: list[str], on, repaired: dict | None = None, moved: dict | None = None
 ) -> dict[str, str]:
 	"""Why each asset needing qualification is not qualified on the day; qualified ones left out.
-	`repaired` and `moved` give the day of an asset's latest completed repair and relocation."""
+	`repaired` and `moved` give the day of an asset's latest completed repair and relocation (an
+	asset movement or a change of workstation, `equipment_care.repaired_and_moved`). A qualification
+	on the day of the move counts as after it: both are known by their day."""
 	if not assets:
 		return {}
 	day = getdate(on)
