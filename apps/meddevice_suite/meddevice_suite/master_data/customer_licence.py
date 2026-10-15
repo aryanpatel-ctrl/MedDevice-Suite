@@ -34,11 +34,11 @@ from frappe.model.document import Document
 from frappe.utils import add_days, flt, getdate, now_datetime, today
 
 from meddevice_suite.compliance import quality_settings
+from meddevice_suite.compliance.checks import QA_ROLE, is_qa, require
 from meddevice_suite.compliance.esign import sign
 
 DOCTYPE = "Customer Licence"
 TYPE_DOCTYPE = "Customer Licence Type"
-QA_ROLE = "Quality Manager"
 VERIFIED, REJECTED, WITHDRAWN = "Verified", "Rejected", "Withdrawn"
 # act -> (status it records, signature meaning)
 ACTS = {
@@ -74,15 +74,6 @@ CUSTOM_FIELDS = {
 
 def apply_customer_licence_fields() -> None:
 	create_custom_fields(CUSTOM_FIELDS, ignore_validate=True)
-
-
-def is_qa(user: str | None = None) -> bool:
-	return QA_ROLE in frappe.get_roles(user or frappe.session.user)
-
-
-def require(condition: object, message: str, exception: type[Exception] = frappe.ValidationError) -> None:
-	if not condition:
-		frappe.throw(message, exception)
 
 
 def date_text(value: object) -> str:

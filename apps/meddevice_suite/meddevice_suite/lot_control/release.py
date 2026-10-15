@@ -40,6 +40,7 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import flt, get_datetime, getdate, now_datetime
 
+from meddevice_suite.compliance.checks import require
 from meddevice_suite.compliance.esign import sign
 from meddevice_suite.lot_control import lot_status, stores
 from meddevice_suite.lot_control.lot_status import (
@@ -257,8 +258,3 @@ def locked(name: str) -> Document:
 	doc = frappe.get_doc(DOCTYPE, name)
 	doc.check_permission("read")
 	return doc
-
-
-def require(condition, message: str, exception: type[Exception] = frappe.ValidationError) -> None:
-	if not condition:
-		frappe.throw(message, exception)

@@ -28,10 +28,10 @@ from frappe.model.document import Document
 from frappe.utils import add_days, cint, flt, getdate, now_datetime, today
 
 from meddevice_suite.compliance import quality_settings
+from meddevice_suite.compliance.checks import QA_ROLE, is_qa, require
 from meddevice_suite.compliance.esign import sign
 
 DOCTYPE = "Supplier Approval"
-QA_ROLE = "Quality Manager"
 APPROVED, CONDITIONAL, NOT_APPROVED = "Approved", "Conditional", "Not Approved"
 # act -> (decision it records, signature meaning)
 ACTS = {
@@ -83,10 +83,6 @@ CUSTOM_FIELDS = {
 
 def apply_supplier_approval_fields() -> None:
 	create_custom_fields(CUSTOM_FIELDS, ignore_validate=True)
-
-
-def is_qa(user: str | None = None) -> bool:
-	return QA_ROLE in frappe.get_roles(user or frappe.session.user)
 
 
 # --- The signed decision ------------------------------------------------------------------
@@ -161,11 +157,6 @@ def locked(name: str) -> Document:
 	doc = frappe.get_doc(DOCTYPE, name)
 	doc.check_permission("read")
 	return doc
-
-
-def require(condition, message: str, exception: type[Exception] = frappe.ValidationError) -> None:
-	if not condition:
-		frappe.throw(message, exception)
 
 
 # --- The decision in force ------------------------------------------------------------------

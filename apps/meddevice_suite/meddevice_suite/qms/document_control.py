@@ -34,19 +34,15 @@ from frappe.model.document import Document
 from frappe.utils import add_days, add_years, getdate, nowdate, today
 
 from meddevice_suite.compliance import quality_settings
+from meddevice_suite.compliance.checks import QA_ROLE, is_qa, require
 from meddevice_suite.compliance.esign import sign
 from meddevice_suite.qms import training
 from meddevice_suite.work_management import reminders
 
-QA_ROLE = "Quality Manager"
 IN_PROGRESS = ("Draft", "In Review", "Awaiting Approval", "Approved")
 CHUNK = 1 << 20
 EFFECTIVE_SAVEPOINT = "document_revision_effective"
 REVIEW_SAVEPOINT = "controlled_document_review_alert"
-
-
-def is_qa(user: str | None = None) -> bool:
-	return QA_ROLE in frappe.get_roles(user or frappe.session.user)
 
 
 # --- Signed acts ----------------------------------------------------------------------
@@ -330,8 +326,3 @@ def save(doc: Document) -> None:
 	# The signed act has done its own checks; the controllers' edit rules are for users.
 	doc.flags.document_control = True
 	doc.save(ignore_permissions=True)
-
-
-def require(condition, message: str, exception: type[Exception] = frappe.ValidationError) -> None:
-	if not condition:
-		frappe.throw(message, exception)

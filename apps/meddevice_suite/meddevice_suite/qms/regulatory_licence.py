@@ -27,22 +27,13 @@ from frappe.model.document import Document
 from frappe.utils import add_days, getdate, now_datetime, today
 
 from meddevice_suite.compliance import quality_settings
+from meddevice_suite.compliance.checks import QA_ROLE, is_qa, require
 from meddevice_suite.compliance.esign import sign
 
 DOCTYPE, TYPE_DOCTYPE = "Regulatory Licence", "Regulatory Licence Type"
-QA_ROLE = "Quality Manager"
 DRAFT, VERIFIED, REJECTED, WITHDRAWN, SUPERSEDED = "Draft", "Verified", "Rejected", "Withdrawn", "Superseded"
 EXPIRY_ALERT = "Regulatory Licence Expiring"
 SAVEPOINT = "regulatory_licence_alert"
-
-
-def require(condition: object, message: str, exception: type[Exception] = frappe.ValidationError) -> None:
-	if not condition:
-		frappe.throw(message, exception)
-
-
-def is_qa(user: str | None = None) -> bool:
-	return QA_ROLE in frappe.get_roles(user or frappe.session.user)
 
 
 def date_text(value: object) -> str:

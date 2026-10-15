@@ -40,13 +40,13 @@ from frappe.desk.doctype.notification_log.notification_log import enqueue_create
 from frappe.utils import add_days, add_months, cint, date_diff, getdate, now_datetime, today
 
 from meddevice_suite.compliance import quality_settings
+from meddevice_suite.compliance.checks import QA_ROLE
 
 DOCTYPE = "Reminder"
 SCHEDULE = "Reminder Schedule"
 OPEN, OVERDUE, ESCALATED, COMPLETED = "Open", "Overdue", "Escalated", "Completed"
 STILL_OPEN = (OPEN, OVERDUE, ESCALATED)
 RAISED = "Raised"  # what a reminder's people were told: that it was raised, then that it escalated
-QA_ROLE = "Quality Manager"
 MANAGEMENT = ("Sales Manager", "Purchase Manager", "Stock Manager", "Manufacturing Manager")
 SEES_ALL = frozenset({QA_ROLE, *MANAGEMENT, "System Manager"})
 OVERDUE_ALERT = "Reminder Overdue"

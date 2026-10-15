@@ -33,11 +33,11 @@ from frappe.model.document import Document
 from frappe.utils import add_days, add_months, getdate, now_datetime, today
 
 from meddevice_suite.compliance import quality_settings
+from meddevice_suite.compliance.checks import QA_ROLE, require
 from meddevice_suite.compliance.esign import sign
 from meddevice_suite.master_data import routing
 
 RECORD, MATRIX = "Training Record", "Training Matrix"
-QA_ROLE = "Quality Manager"
 COORDINATOR_ROLE = "HR User"
 # Who may assess (D-09): the Production Supervisor's role, and QA.
 ASSESSOR_ROLES = frozenset({"Manufacturing User", QA_ROLE})
@@ -70,11 +70,6 @@ OUTCOME = (
 	"revoked_by",
 	"revoked_on",
 )
-
-
-def require(condition, message: str, exception: type[Exception] = frappe.ValidationError) -> None:
-	if not condition:
-		frappe.throw(message, exception)
 
 
 def roles_of(user: str) -> set[str]:

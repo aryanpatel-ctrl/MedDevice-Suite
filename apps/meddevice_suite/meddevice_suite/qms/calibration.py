@@ -33,6 +33,7 @@ from frappe.query_builder import Criterion
 from frappe.utils import add_days, cint, flt, get_datetime, getdate, now_datetime, today
 
 from meddevice_suite.compliance.audit import as_data
+from meddevice_suite.compliance.checks import QA_ROLE, require
 from meddevice_suite.compliance.esign import sign
 from meddevice_suite.master_data import equipment
 
@@ -44,7 +45,6 @@ NO_IMPACT, ACTION_NEEDED = "No product impact", "Product action needed"
 OUT_OF_TOLERANCE_ALERT = "Calibration Out of Tolerance"
 PROCEDURE_TYPES = ("SOP", "Work Instruction")
 PERFORMERS = frozenset({"Maintenance User", "Quality Manager"})
-QA_ROLE = "Quality Manager"
 PRECISION = 9
 # Set only by the signed acts. A draft never holds them, though Frappe's Amend copies them from the
 # cancelled record: an amendment is completed, and its impact assessed, afresh.
@@ -59,11 +59,6 @@ SET_BY_ACTS = (
 	"assessed_by",
 	"assessed_on",
 )
-
-
-def require(condition, message: str, exception: type[Exception] = frappe.ValidationError) -> None:
-	if not condition:
-		frappe.throw(message, exception)
 
 
 def only_by_signature(doc: Document, method: str | None = None) -> None:

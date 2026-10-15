@@ -46,6 +46,7 @@ from frappe.model.document import Document
 from frappe.query_builder.functions import Max, Sum
 from frappe.utils import cint, flt, get_datetime, now_datetime
 
+from meddevice_suite.compliance.checks import QA_ROLE, is_qa
 from meddevice_suite.compliance.fingerprint import plain_text
 from meddevice_suite.lot_control import stores
 
@@ -53,8 +54,6 @@ from meddevice_suite.lot_control import stores
 STOCK_POSTING_ROLES = frozenset(
 	{"Stock User", "Stock Manager", "Manufacturing User", "Manufacturing Manager"}
 )
-
-QA_ROLE = "Quality Manager"
 
 STATUS_FIELD = "mds_lot_status"
 QUARANTINE, APPROVED, REJECTED, HOLD = "Quarantine", "Approved", "Rejected", "Hold"
@@ -172,10 +171,6 @@ def apply_lot_status() -> None:
 	create_custom_fields(CUSTOM_FIELDS, ignore_validate=True)
 	# The quarantine list and the stock report read lots by status.
 	frappe.db.add_index("Batch", [STATUS_FIELD])
-
-
-def is_qa(user: str | None = None) -> bool:
-	return QA_ROLE in frappe.get_roles(user or frappe.session.user)
 
 
 # --- The lot's own record -------------------------------------------------------------------
