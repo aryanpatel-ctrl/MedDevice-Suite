@@ -19,7 +19,15 @@ APP = Path(__file__).resolve().parent.parent  # the meddevice_suite package
 def guarded_modules() -> list[Path]:
 	"""Every test module outside pilot/, the browser journey and the shared fixture modules."""
 	tests = [path for path in APP.rglob("test_*.py") if path.relative_to(APP).parts[0] != "pilot"]
-	return sorted({*tests, APP / "qa" / "ui_journey.py", *(APP / "setup" / "fixtures").glob("*.py")})
+	return sorted(
+		{
+			*tests,
+			APP / "qa" / "ui_journey.py",
+			# The browser test sheets' data (qa/sheets), set up as the journey's is.
+			*(APP / "qa" / "sheets").glob("*.py"),
+			*(APP / "setup" / "fixtures").glob("*.py"),
+		}
+	)
 
 
 def module_name(path: Path) -> str:
@@ -54,6 +62,7 @@ class TestFixtureBoundaries(UnitTestCase):
 	def test_no_test_module_imports_the_pilot(self):
 		modules = guarded_modules()
 		self.assertIn(APP / "qa" / "ui_journey.py", modules)
+		self.assertIn(APP / "qa" / "sheets" / "d4.py", modules)
 		self.assertIn(APP / "setup" / "fixtures" / "records.py", modules)
 		self.assertGreater(len(modules), 50)  # the scan found the app's tests
 		offenders = [
