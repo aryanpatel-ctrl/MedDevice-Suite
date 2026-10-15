@@ -22,8 +22,9 @@ through the acts below; those marked ✍ are electronic signatures (21 CFR Part 
 - an approved request authorises the change of each record it lists, once (ISO 13485 7.3.9,
   4.2.4): the record the change is made in is recorded against the listing once the change is
   saved (`require_approved_change`, `record_changes_made`), and the request authorises no further
-  change of that record; a change abandoned before it took effect (a withdrawn risk assessment)
-  leaves the listing unspent (found in the foundation review of 2026-10-12);
+  change of that record; a change abandoned before it took effect (a withdrawn risk assessment,
+  or an abandoned document revision) leaves the listing unspent (found in the foundation review of
+  2026-10-12 and the independent review of 2026-10-15);
 - QA closes the change with a signed effectiveness check, on or after its check date;
 - nothing is deleted or cancelled; until it is approved, the person who raised it may withdraw it;
 - a new revision of an effective controlled document needs an approved change request that
@@ -79,8 +80,12 @@ CHANGE_RECORD_FIELDS = (CHANGE_RECORD_TYPE, CHANGE_RECORD, CHANGED_ON)
 # save makes under a request, recorded once the save has gone through.
 PENDING_FLAG = "changes_under_request"
 # A record a change was started in that was given up before it took effect; the listing it spent
-# is free again (module 39: a withdrawn assessment no longer holds the change request back).
-ABANDONED: dict[str, tuple[str, ...]] = {"Risk Assessment": ("Withdrawn",)}
+# is free again (module 39: a withdrawn assessment no longer holds the change request back; module
+# 30: an abandoned document revision, independent review 2026-10-15).
+ABANDONED: dict[str, tuple[str, ...]] = {
+	"Risk Assessment": ("Withdrawn",),
+	"Document Revision": ("Abandoned",),
+}
 
 IMPACT_AREAS = (
 	"impact_product_quality",

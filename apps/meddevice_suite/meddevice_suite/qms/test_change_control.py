@@ -1248,6 +1248,36 @@ class TestEachListedRecordChangedOnce(ChangeControlTestCase):
 			self.new_revision(document, approved_change(self.requester, self.qa, document)).revision, "02"
 		)
 
+	@verifies("URS-QMS-002")
+	def test_an_abandoned_revision_leaves_the_listing_unspent(self):
+		"""Independent review 2026-10-15: a revision given up before approval is a change abandoned
+		before it took effect, as a withdrawn risk assessment is."""
+		document = self.effective_document()
+		change = approved_change(self.requester, self.qa, document)
+		abandoned = self.new_revision(document, change)
+		self.as_user(self.qa)
+		sign_action("Document Revision", abandoned.name, "Abandon", PASSWORD, "Wrong approach; redrafted")
+		self.assertEqual(
+			[
+				name
+				for name, _title in approved_changes_for(
+					doctype=DOCTYPE,
+					txt="",
+					searchfield="name",
+					start=0,
+					page_len=20,
+					filters={"controlled_document": document},
+				)
+			],
+			[change],
+		)
+
+		redrafted = self.new_revision(document, change)
+		self.assertEqual(self.approve_revision(redrafted), "Effective")
+		self.as_user(self.requester)
+		complete_action(change, frappe.get_doc(DOCTYPE, change).actions[0].name, "Revision issued")
+		self.assertEqual(frappe.db.get_value(DOCTYPE, change, "status"), "Implemented")
+
 	def test_the_request_records_the_record_each_change_was_made_in(self):
 		document = self.effective_document()
 		change = approved_change(self.requester, self.qa, document)

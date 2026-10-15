@@ -8,6 +8,7 @@ author, then moves on only through signed acts (21 CFR Part 11):
 	  └──────Return────────┴──────────────────────┘                           ▼
 	                                                       Effective ──next revision──▶ Superseded
 	                       a withdrawn document's revisions become Obsolete
+	  Draft, In Review or Awaiting Approval ──Abandon (QA)──▶ Abandoned (final, kept)
 
 - the reviewer is never the author, and QA approves, never the author or the reviewer;
 - the document file is fingerprinted when it is authored, and approval is refused
@@ -42,6 +43,9 @@ from meddevice_suite.qms import training
 from meddevice_suite.work_management import reminders
 
 IN_PROGRESS = ("Draft", "In Review", "Awaiting Approval", "Approved")
+# Before approval a revision can be abandoned; Approved is submitted and takes effect on its date.
+NOT_YET_APPROVED = ("Draft", "In Review", "Awaiting Approval")
+ABANDONED = "Abandoned"
 CHUNK = 1 << 20
 EFFECTIVE_SAVEPOINT = "document_revision_effective"
 REVIEW_SAVEPOINT = "controlled_document_review_alert"
@@ -119,6 +123,28 @@ def approve(doc: Document, password: str, reason: str | None = None) -> None:
 	else:
 		# Trained before it takes effect (module 37, plan D-07).
 		training.on_document_change(doc.controlled_document)
+
+
+def abandon(doc: Document, password: str, reason: str | None = None) -> None:
+	"""Signed act: QA gives up a revision that will not be finished, before it is approved (ISO 13485
+	4.2.4 b; independent review 2026-10-15). Returned to its author it was a draft for ever: never
+	deleted or cancelled, it held the document's one revision in progress, so the document could
+	not be withdrawn, reviewed as still current or revised again, and the change request it was
+	started under could not be implemented. Abandoned is final and is not in progress; the revision
+	is kept, and a change request listing its document counts the change as given up
+	(change_control.ABANDONED), its listing free for another revision."""
+	require(is_qa(), _("Only QA can abandon a document revision."), frappe.PermissionError)
+	# Held until the request ends, so the revision is not approved or taken on while this holds.
+	lock_document(doc.controlled_document)
+	doc = frappe.get_doc("Document Revision", doc.name)
+	require(
+		doc.status in NOT_YET_APPROVED,
+		_("Only a revision not yet approved can be abandoned; {0} is {1}.").format(doc.name, _(doc.status)),
+	)
+	require(reason, _("Say why the revision is abandoned."))
+	doc.status = ABANDONED
+	sign(doc, "Withdrawn", "Abandon", password, reason)
+	save(doc)
 
 
 def withdraw(document: Document, password: str, reason: str | None = None) -> None:

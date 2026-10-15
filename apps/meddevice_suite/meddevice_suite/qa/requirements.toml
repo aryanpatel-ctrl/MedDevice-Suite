@@ -781,8 +781,8 @@ status = "implemented"
 [[requirement]]
 id = "URS-QMS-002"
 module = 30
-title = "A revision is signed by its author, reviewed by someone other than the author and approved by QA, never by its author or its reviewer, each with an electronic signature; the reviewer or QA can return it for changes with a reason, and every revision after the first states what changed."
-source = "DFD 9A QMS Documentation (A3 Review Document, A4 Approve Document, A6 Revision); D2 Document Control: Review & Approval, Version Control; ISO 13485 4.2.4 a), b); 21 CFR 11.50; approver other than the reviewer decided on the client's instruction of 2026-10-07"
+title = "A revision is signed by its author, reviewed by someone other than the author and approved by QA, never by its author or its reviewer, each with an electronic signature; the reviewer or QA can return it for changes with a reason; QA can abandon a revision not yet approved with an electronic signature and a reason, which ends it as Abandoned, kept and no longer in progress; and every revision after the first states what changed."
+source = "DFD 9A QMS Documentation (A3 Review Document, A4 Approve Document, A6 Revision); D2 Document Control: Review & Approval, Version Control; ISO 13485 4.2.4 a), b); 21 CFR 11.50; approver other than the reviewer decided on the client's instruction of 2026-10-07; abandoning a revision: Independent review 2026-10-15, ISO 13485 4.2.4 b)"
 status = "implemented"
 
 [[requirement]]
@@ -897,8 +897,8 @@ status = "implemented"
 [[requirement]]
 id = "URS-QMS-033"
 module = 36
-title = "An approved change request authorises one change of each record it lists: the record the change was made in is recorded against the listing once the change is saved, a further change of that record under the same request is refused, a record is listed once, and a change given up before it took effect (a withdrawn risk assessment) leaves the listing unused."
-source = "D2 Change Control: Review & Approval, Implementation; ISO 13485 7.3.9, 4.2.4 (changes reviewed and approved before implementation); found in the foundation review of 2026-10-12"
+title = "An approved change request authorises one change of each record it lists: the record the change was made in is recorded against the listing once the change is saved, a further change of that record under the same request is refused, a record is listed once, and a change given up before it took effect (a withdrawn risk assessment or an abandoned document revision) leaves the listing unused."
+source = "D2 Change Control: Review & Approval, Implementation; ISO 13485 7.3.9, 4.2.4 (changes reviewed and approved before implementation); found in the foundation review of 2026-10-12; abandoned document revision: Independent review 2026-10-15"
 status = "implemented"
 
 # --- Module 30: periodic review (added 2026-10-12) ------------------------------

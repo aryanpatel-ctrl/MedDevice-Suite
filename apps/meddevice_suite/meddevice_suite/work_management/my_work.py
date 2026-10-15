@@ -457,6 +457,7 @@ NOT_WAITING: dict[tuple[str, str], str] = {
 	("Customer", "Require Licence"): "QA ends an exemption when it no longer applies",
 	("Training Record", "Revoke"): "QA revokes a competence after a nonconformity or a failed check",
 	("Risk Assessment", "Withdraw"): "QA abandons a revision that will not be finished",
+	("Document Revision", "Abandon"): "QA abandons a revision that will not be finished",
 	("Risk Management Report", "Withdraw"): "QA abandons a report that will not be finished",
 	("Regulatory Licence", "Withdraw"): "QA withdraws a licence the authority suspended or cancelled",
 	("Device Master Record", "Withdraw"): "QA withdraws the record of a product no longer made",

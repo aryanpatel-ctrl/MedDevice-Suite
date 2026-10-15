@@ -270,6 +270,57 @@ context("Document control", () => {
 		});
 	});
 
+	it("[URS-QMS-002] QA abandons a revision that will not be finished, with a signed reason", () => {
+		as("qa");
+		cy.call("frappe.client.insert", {
+			doc: {
+				doctype: "Controlled Document",
+				title: "Browser test procedure given up",
+				document_type: "Work Instruction",
+				department: "PRD",
+				process_owner: email("author"),
+			},
+		}).then((r) => {
+			const document = r.message.name;
+			as("author");
+			upload_private_pdf().then((file) =>
+				cy
+					.call("frappe.client.insert", {
+						doc: {
+							doctype: "Document Revision",
+							controlled_document: document,
+							file,
+							reviewer: email("reviewer"),
+						},
+					})
+					.then(({ message: draft }) => {
+						cy.visit(`/desk/document-revision/${draft.name}`);
+						cy.window().its("cur_frm.doc.name").should("eq", draft.name);
+						offered("Abandon Revision", false); // QA's act, not the author's
+
+						as("qa");
+						cy.visit(`/desk/document-revision/${draft.name}`);
+						cy.window().its("cur_frm.doc.name").should("eq", draft.name);
+						sign_with_reason("Abandon Revision", "The procedure is no longer needed");
+						status_is("Abandoned");
+						cy.contains(".page-container:visible", "Abandoned before approval").should(
+							"be.visible"
+						);
+						cy.get(".page-container:visible .mds-signatures")
+							.should("contain", "Withdrawn")
+							.and("contain", "The procedure is no longer needed");
+						offered("Abandon Revision", false); // final
+
+						// No revision is in progress any more: the owner may start another.
+						as("author");
+						cy.visit(`/desk/controlled-document/${document}`);
+						cy.window().its("cur_frm.doc.name").should("eq", document);
+						offered("New Revision", true);
+					})
+			);
+		});
+	});
+
 	it("[URS-QMS-006] QA withdraws the document with a signature and a reason", () => {
 		as("qa");
 		cy.call("frappe.client.get_value", {

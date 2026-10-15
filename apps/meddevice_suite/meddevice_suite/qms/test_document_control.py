@@ -426,6 +426,88 @@ class TestWithdrawal(DocumentControlTestCase):
 			self.withdraw(self.qa, document)
 
 
+@verifies("URS-QMS-002")
+class TestAbandonedRevision(DocumentControlTestCase):
+	"""Independent review 2026-10-15: a revision returned to its author could never be given up, and
+	as the document's one revision in progress it held back the document's withdrawal, its periodic
+	review and its next revision (ISO 13485 4.2.4 b)."""
+
+	def at(self, status: str):
+		"""A revision of a new document brought to `status` by its signed acts."""
+		revision = self.draft(self.register())
+		if status in ("In Review", "Awaiting Approval"):
+			revision = self.act(self.author, revision, "Author")
+		if status == "Awaiting Approval":
+			revision = self.act(self.reviewer, revision, "Review")
+		self.assertEqual(revision.status, status)
+		return revision
+
+	def test_qa_abandons_a_revision_not_yet_approved_with_a_signed_reason(self):
+		for status in ("Draft", "In Review", "Awaiting Approval"):
+			with self.subTest(status=status):
+				revision = self.act(self.qa, self.at(status), "Abandon", "The procedure is no longer needed")
+				self.assertEqual((revision.status, revision.docstatus), ("Abandoned", 0))
+				signature = frappe.get_last_doc(
+					"Electronic Signature",
+					filters={"reference_doctype": "Document Revision", "reference_name": revision.name},
+				)
+				self.assertEqual(
+					(signature.signer, signature.action, signature.meaning, signature.reason),
+					(self.qa, "Abandon", "Withdrawn", "The procedure is no longer needed"),
+				)
+				self.assertTrue(verify_signatures("Document Revision", revision.name))
+				# Not in progress any more: the document is revised afresh.
+				document = frappe.get_doc("Controlled Document", revision.controlled_document)
+				self.assertEqual(self.draft(document).revision, "01")
+
+	def test_only_qa_abandons_with_a_reason_and_only_before_approval(self):
+		revision = self.at("In Review")
+		for user in (self.author, self.reviewer):
+			with self.assertRaises(frappe.PermissionError):
+				self.act(user, revision, "Abandon", "Not needed")
+		with self.assertRaisesRegex(frappe.ValidationError, "Say why the revision is abandoned"):
+			self.act(self.qa, revision, "Abandon")
+		self.assertEqual(frappe.db.get_value("Document Revision", revision.name, "status"), "In Review")
+
+		effective = self.issue(self.register())
+		with self.assertRaisesRegex(frappe.ValidationError, "Only a revision not yet approved"):
+			self.act(self.qa, effective, "Abandon", "Too late")
+		later = self.issue(self.register(), effective_date=add_days(today(), 10))
+		self.assertEqual(later.status, "Approved")
+		with self.assertRaisesRegex(frappe.ValidationError, "Only a revision not yet approved"):
+			self.act(self.qa, later, "Abandon", "Approved already")
+
+	def test_an_abandoned_revision_is_final_and_kept(self):
+		revision = self.act(self.qa, self.at("Draft"), "Abandon", "Not needed")
+		with self.assertRaisesRegex(frappe.ValidationError, "Only a revision not yet approved"):
+			self.act(self.qa, revision, "Abandon", "Again")
+		with self.assertRaises(frappe.ValidationError):
+			self.act(self.author, revision, "Author")
+		self.as_user(self.author)
+		revision.summary_of_change = "Edited after it was abandoned"
+		with self.assertRaises(frappe.PermissionError):
+			revision.save()
+		self.as_user("Administrator")
+		with self.assertRaises(frappe.PermissionError):
+			frappe.delete_doc("Document Revision", revision.name)
+		self.assertTrue(frappe.db.exists("Document Revision", revision.name))
+
+	def test_an_abandoned_revision_no_longer_holds_the_document_back(self):
+		document = self.register()
+		self.issue(document)
+		draft = self.draft(document, summary="A change that will not be made")
+		with self.assertRaisesRegex(frappe.ValidationError, "in progress"):
+			self.as_user(self.qa)
+			sign_action("Controlled Document", document.name, "Review", PASSWORD, "Still correct")
+		self.act(self.qa, draft, "Abandon", "The change was dropped")
+
+		self.as_user(self.qa)
+		sign_action("Controlled Document", document.name, "Review", PASSWORD, "Still correct")
+		sign_action("Controlled Document", document.name, "Withdraw", PASSWORD, "Replaced")
+		self.assertEqual(frappe.db.get_value("Controlled Document", document.name, "status"), "Obsolete")
+		self.assertEqual(frappe.db.get_value("Document Revision", draft.name, "status"), "Abandoned")
+
+
 @verifies("URS-QMS-006", "URS-MST-016")
 class TestWithdrawalOfADefiningDocument(DocumentControlTestCase):
 	"""Independent review 2026-10-15: a document that defines an approved master in use was withdrawn
