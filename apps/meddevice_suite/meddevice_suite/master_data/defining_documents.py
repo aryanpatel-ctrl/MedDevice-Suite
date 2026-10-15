@@ -114,7 +114,7 @@ def masters_defined_by(document: str) -> list[str]:
 		if meta.has_field("disabled"):
 			filters["disabled"] = 0
 		cited += [
-			_("{0} {1}").format(_(doctype), name)
+			f"{_(doctype)} {name}"
 			for name in frappe.get_all(doctype, filters=filters, pluck="name", order_by="name asc")
 		]
 	return cited
