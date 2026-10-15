@@ -1297,14 +1297,10 @@ context(
 			run.problems.length = 0;
 			run.expected.length = 0;
 			watch_requests();
-			// A desk call the server refuses rejects its promise with nothing, which some form scripts
-			// leave unhandled; the refused request itself is reported by watch_requests with the server's
-			// message. Any other script error is a problem of the step.
-			cy.on("uncaught:exception", (error, _runnable, promise) => {
-				const message = error?.message;
-				if (!(promise && (message === undefined || message === "undefined"))) {
-					run.problems.push(`script error: ${message}`);
-				}
+			// Every script error is a problem of the step: the form scripts handle a refused call
+			// (qa/test_form_scripts.py), so an unhandled one is a defect, never noise.
+			cy.on("uncaught:exception", (error) => {
+				run.problems.push(`script error: ${error?.message}`);
 				return false;
 			});
 		});

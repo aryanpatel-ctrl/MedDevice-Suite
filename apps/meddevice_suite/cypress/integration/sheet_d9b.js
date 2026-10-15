@@ -334,18 +334,6 @@ function refused_call(method, args) {
 		});
 }
 
-// A desk call the server refused rejects its promise with nothing (frappe.xcall), and some form
-// scripts leave that unhandled (the Start New Revision dialog, the Training Record list's Record
-// Training History dialog): Cypress reports it as an unknown error of "undefined". The refusal
-// itself is on screen and reported by watch_requests with the server's message.
-function refused_call_left_unhandled(message) {
-	return (
-		message === undefined ||
-		message === "undefined" ||
-		/An unknown error has occurred: undefined\s*$/m.test(String(message))
-	);
-}
-
 // --- Using the desk -------------------------------------------------------------------------
 
 function slug(doctype) {
@@ -1097,13 +1085,10 @@ context("D9 Quality Records: risk, licences and training, as each job", () => {
 		run.problems.length = 0;
 		run.expected.length = 0;
 		watch_requests();
-		// A desk call the server refuses rejects its promise with nothing, which some form scripts
-		// leave unhandled; the refused request itself is reported by watch_requests with the
-		// server's message. Any other script error is a problem of the step.
-		cy.on("uncaught:exception", (error, _runnable, promise) => {
-			if (!(promise && refused_call_left_unhandled(error?.message))) {
-				run.problems.push(`script error: ${error?.message}`);
-			}
+		// Every script error is a problem of the step: the form scripts handle a refused call
+		// (qa/test_form_scripts.py), so an unhandled one is a defect, never noise.
+		cy.on("uncaught:exception", (error) => {
+			run.problems.push(`script error: ${error?.message}`);
 			return false;
 		});
 	});
