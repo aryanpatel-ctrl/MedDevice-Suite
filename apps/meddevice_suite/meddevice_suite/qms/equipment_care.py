@@ -353,10 +353,32 @@ def guard_job_card(doc: Document, method: str | None = None) -> None:
 
 
 def guard_work_order(doc: Document, method: str | None = None) -> None:
-	"""Work Order before_submit: its operations' workstations' equipment is fit."""
-	refuse_unusable(
-		[row.workstation for row in doc.get("operations") or []], _("Work order {0}").format(doc.name)
-	)
+	"""Work Order before_validate when it is being submitted (Frappe skips before_submit when a
+	caller skips validation) and before_submit: it has operations, and their workstations'
+	equipment is fit.
+
+	The equipment a work order uses is found through the workstations of its operations: one with
+	none would go into production with no equipment checked at all. A validated process names the
+	workstations it runs at, and so its equipment (ISO 13485 7.5.6; DFD D3 routing): an order whose
+	bill of materials has no routing is refused, not let through unchecked (independent review of
+	2026-10-15)."""
+	if method == "before_validate" and doc.get("_action") != "submit":
+		return
+	rows = doc.get("operations") or []
+	if not rows:
+		bom = doc.get("bom_no")
+		has_routing = bool(bom) and frappe.db.exists("BOM Operation", {"parent": bom, "parenttype": "BOM"})
+		frappe.throw(
+			_(
+				"Work order {0} has no operations: take them from its bill of materials {1} before it is submitted."
+			).format(doc.name, bom)
+			if has_routing
+			else _(
+				"Work order {0} cannot be submitted: its bill of materials {1} has no routing. Production runs only on a bill of materials whose operations name the workstations, and so the equipment, of the validated process; QA approves its routing first."
+			).format(doc.name, bom or _("none was given")),
+			title=_("No routing"),
+		)
+	refuse_unusable([row.workstation for row in rows], _("Work order {0}").format(doc.name))
 
 
 @frappe.whitelist()

@@ -290,7 +290,9 @@ class DeviceMasterRecordTestCase(RiskTestCase):
 		return change
 
 	def work_order(self, item: str, bom: str) -> Document:
-		return frappe.get_doc(
+		"""A work order of the item on the bill, with the bill's materials and operations, as the form
+		takes them when the bill is chosen."""
+		order = frappe.get_doc(
 			{
 				"doctype": "Work Order",
 				"production_item": item,
@@ -302,6 +304,8 @@ class DeviceMasterRecordTestCase(RiskTestCase):
 				"fg_warehouse": store("Quarantine"),
 			}
 		)
+		order.get_items_and_operations_from_bom()
+		return order
 
 	def alerts_sent(self, name: str) -> int:
 		return frappe.db.count(

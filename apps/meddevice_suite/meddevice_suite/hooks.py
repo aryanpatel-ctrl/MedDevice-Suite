@@ -169,6 +169,9 @@ doc_events = {
 			"meddevice_suite.lot_control.lot_status.guard_unvalidated_work_order",
 			"meddevice_suite.master_data.bom.guard_work_order",
 			"meddevice_suite.master_data.routing.guard_work_order",
+			# Modules 38 and 40, at submit: its routing, and the equipment at its workstations fit;
+			# here too, as Frappe skips before_submit when validation is skipped.
+			"meddevice_suite.qms.equipment_care.guard_work_order",
 		],
 		"validate": [
 			"meddevice_suite.lot_control.lot_status.guard_work_order",

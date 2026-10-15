@@ -1328,8 +1328,8 @@ status = "implemented"
 [[requirement]]
 id = "URS-EQP-006"
 module = 38
-title = "Equipment that is not fit, not qualified though it needs qualification, or under an open repair is refused as an inspection's instrument, at every save and submit of a job card at its workstation and every time logged on one, and when a work order on its workstation is submitted."
-source = "DFD 4.4 Execute Work Orders, 5.1 IPQC Inspection, 9D step D6 Calibration / Validation; master plan production stage 3 (machine must be within calibration and maintenance due); decided 2026-10-11: block, never warn, on every entry path"
+title = "Equipment that is not fit, not qualified though it needs qualification, or under an open repair is refused as an inspection's instrument, at every save and submit of a job card at its workstation and every time logged on one, and when a work order on its workstation is submitted, also when validation is skipped; a work order is submitted only with operations, whose workstations name the equipment it uses: one whose bill of materials has no routing is refused."
+source = "DFD 4.4 Execute Work Orders, 5.1 IPQC Inspection, 9D step D6 Calibration / Validation; master plan production stage 3 (machine must be within calibration and maintenance due); decided 2026-10-11: block, never warn, on every entry path; independent review 2026-10-15: a work order without operations had no equipment checked (ISO 13485 7.5.6; DFD D3 Item / BOM / Routing Master: a validated process names its workstations), changed in place (rules section 8)"
 status = "implemented"
 
 [[requirement]]
