@@ -22,7 +22,7 @@ from frappe.model.document import Document
 from frappe.utils import cint, flt, now_datetime
 
 from meddevice_suite.compliance.audit import same
-from meddevice_suite.lot_control.lot_status import lots_of_row
+from meddevice_suite.lot_control.lot_status import lots_of_rows
 from meddevice_suite.master_data.supplier_approval import check_full_inspection
 
 QC_ROLES = frozenset({"QC Inspector", "Quality Manager"})
@@ -275,8 +275,8 @@ def refuse_existing_lots(doc: Document, method: str | None = None) -> None:
 	if doc.is_return:
 		return
 	lines: dict[str, list[int]] = {}
-	for row in doc.items:
-		for lot in dict.fromkeys(lots_of_row(row)):
+	for row, lots in zip(doc.items, lots_of_rows(doc.items), strict=True):
+		for lot in dict.fromkeys(lots):
 			lines.setdefault(lot, []).append(row.idx)
 	for lot, idxs in lines.items():
 		if len(idxs) > 1:

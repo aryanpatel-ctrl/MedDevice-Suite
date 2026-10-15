@@ -49,6 +49,7 @@ def execute(filters: dict | None = None) -> tuple[list[dict], list[dict]]:
 			},
 			fields=[
 				"name",
+				"item",
 				STATUS_FIELD,
 				"creation",
 				"mds_status_set_at",
@@ -85,7 +86,7 @@ def execute(filters: dict | None = None) -> tuple[list[dict], list[dict]]:
 			if lot.reference_doctype == "Stock Entry"
 			else None
 		)
-	inspections = latest_inspections(list(lots))
+	inspections = latest_inspections(list(lots), sorted({lot.item for lot in lots.values() if lot.item}))
 	lines = receipt_lines(lots.values())
 	data = []
 	for h in holdings:
@@ -135,11 +136,17 @@ def waiting_for(lot: frappe._dict, line: frappe._dict | None, inspection: frappe
 	return "release"
 
 
-def latest_inspections(lots: list[str]) -> dict[str, frappe._dict]:
+def latest_inspections(lots: list[str], items: list[str] | None = None) -> dict[str, frappe._dict]:
+	"""lot -> its newest submitted incoming inspection. ERPNext indexes an inspection by its item, not
+	by its lot: the lots' items are named too, so the inspections are read through that index rather
+	than by a scan of every inspection ever made."""
+	filters = {"batch_no": ["in", lots or [""]], "inspection_type": "Incoming", "docstatus": 1}
+	if items:
+		filters["item_code"] = ["in", items]
 	latest: dict[str, frappe._dict] = {}
 	for row in frappe.get_all(
 		"Quality Inspection",
-		filters={"batch_no": ["in", lots or [""]], "inspection_type": "Incoming", "docstatus": 1},
+		filters=filters,
 		fields=["batch_no", "status", "creation"],
 		order_by="creation asc",
 	):

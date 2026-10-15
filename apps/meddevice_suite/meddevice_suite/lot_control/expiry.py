@@ -94,8 +94,11 @@ def guard_stock_ledger_entry(sle: Document, method: str | None = None) -> None:
 				title=_("Lot expired"),
 			)
 	if movement.uses and not movement.reason:
+		# Read once for the entry, not once per lot: an item made every day has hundreds of lots
+		# that expire before the newest, and a query per lot or per such lot grew with the years.
+		left = lots_left(sle)
 		for lot in lots:
-			earlier = earlier_lot_left(sle, lot, expiry.get(lot))
+			earlier = earlier_lot_left(lot, expiry.get(lot), left)
 			if earlier:
 				frappe.throw(
 					_(
@@ -143,51 +146,68 @@ def describe(sle: Document) -> frappe._dict:
 	return frappe._dict(keeps_apart=keeps_apart, uses=uses, reason=(reason or "").strip())
 
 
-def earlier_lot_left(sle: Document, lot: str, expiry_date) -> frappe._dict | None:
-	"""An Approved lot of the item that expires before `lot`, is not expired, and would still be in
-	the store after this document: its stock there apart from this document, less what this
-	document takes of it from there."""
+def lots_left(sle: Document) -> list[frappe._dict]:
+	"""The Approved lots of the entry's item, not expired on its posting date, that would still be
+	in its store after the document, soonest expiry first: their stock there apart from this
+	document, less what the document takes of them from there. A lot that never expires is not
+	among them; it goes after every lot that does.
+
+	Read in a fixed number of queries whatever the item's history (URS-PLT-021): the stock comes
+	from ERPNext's own lot quantities for the item in the store, in one call, as each lot's was
+	read before (`get_batch_qty`, so reserved stock and expired or disabled lots count as ERPNext
+	counts them), and only the lots with stock left are read further."""
 	from erpnext.stock.doctype.batch.batch import get_batch_qty
 
-	# A lot that never expires goes after every lot that does.
-	expires = (
-		["between", [getdate(sle.posting_date), getdate(expiry_date)]]
-		if expiry_date
-		else [">=", getdate(sle.posting_date)]
-	)
-	candidates = frappe.get_all(
-		"Batch",
-		filters={"item": sle.item_code, "name": ["!=", lot], "expiry_date": expires},
-		fields=["name as batch_no", "expiry_date"],
-		order_by="expiry_date asc",
-	)
-	if expiry_date:
-		candidates = [row for row in candidates if getdate(row.expiry_date) < getdate(expiry_date)]
-	if not candidates:
-		return None
-	statuses = status_of([row.batch_no for row in candidates])
-	taken = taken_by_document(sle)
 	precision = qty_precision()
-	for row in candidates:
-		if statuses.get(row.batch_no) != APPROVED:
-			continue
-		elsewhere = flt(
-			get_batch_qty(
-				batch_no=row.batch_no,
-				warehouse=sle.warehouse,
-				ignore_voucher_nos=[sle.voucher_no],
-			),
-			precision,
+	in_store: dict[str, float] = {}
+	for row in (
+		get_batch_qty(item_code=sle.item_code, warehouse=sle.warehouse, ignore_voucher_nos=[sle.voucher_no])
+		or []
+	):
+		if lot := row.get("batch_no"):
+			in_store[lot] = in_store.get(lot, 0) + flt(row.get("qty"))
+	taken = taken_by_document(sle) if in_store else {}
+	left = [
+		lot for lot, qty in in_store.items() if flt(flt(qty, precision) - taken.get(lot, 0), precision) > 0
+	]
+	if not left:
+		return []
+	statuses = status_of(left)
+	return [
+		row
+		for row in frappe.get_all(
+			"Batch",
+			filters={"name": ["in", left], "expiry_date": [">=", getdate(sle.posting_date)]},
+			fields=["name as batch_no", "expiry_date"],
+			order_by="expiry_date asc, name asc",
 		)
-		if flt(elsewhere - taken.get(row.batch_no, 0), precision) > 0:
+		if statuses.get(row.batch_no) == APPROVED
+	]
+
+
+def earlier_lot_left(lot: str, expiry_date, left: list[frappe._dict]) -> frappe._dict | None:
+	"""Of `left` (`lots_left`), the first lot that expires before `lot`; any, for a lot that
+	never expires."""
+	for row in left:
+		if row.batch_no != lot and (not expiry_date or getdate(row.expiry_date) < getdate(expiry_date)):
 			return row
 	return None
+
+
+# The lines of each voucher type that uses stock (`describe`): a lot bundle names the line it is for,
+# a packed item's bundle the packed item or its parent line.
+LINE_TABLES: dict[str, tuple[str, ...]] = {
+	"Stock Entry": ("Stock Entry Detail",),
+	"Delivery Note": ("Delivery Note Item", "Packed Item"),
+	"Sales Invoice": ("Sales Invoice Item", "Packed Item"),
+	"POS Invoice": ("POS Invoice Item", "Packed Item"),
+}
 
 
 def taken_by_document(sle: Document) -> dict[str, float]:
 	"""What the document takes of each lot of the item out of the entry's store, on all its lines."""
 	bundle, entry = frappe.qb.DocType("Serial and Batch Bundle"), frappe.qb.DocType("Serial and Batch Entry")
-	rows = (
+	query = (
 		frappe.qb.from_(entry)
 		.join(bundle)
 		.on(entry.parent == bundle.name)
@@ -201,8 +221,22 @@ def taken_by_document(sle: Document) -> dict[str, float]:
 			& (bundle.is_cancelled == 0)
 			& (bundle.docstatus < 2)
 		)
-		.run(as_dict=True)
 	)
+	if tables := LINE_TABLES.get(sle.voucher_type):
+		# ERPNext indexes a bundle by its line, not by its document (only the document's type, shared
+		# by half the bundles): the document's lines are read by their parent, which is indexed, so the
+		# bundles are found through the index on their line whatever the size of the table.
+		lines = [
+			name
+			for table in tables
+			for name in frappe.get_all(
+				table, filters={"parent": sle.voucher_no, "parenttype": sle.voucher_type}, pluck="name"
+			)
+		]
+		if not lines:
+			return {}
+		query = query.where(bundle.voucher_detail_no.isin(lines))
+	rows = query.run(as_dict=True)
 	taken: dict[str, float] = {}
 	for row in rows:
 		taken[row.batch_no] = taken.get(row.batch_no, 0) + abs(flt(row.qty))

@@ -30,7 +30,7 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import flt
 
-from meddevice_suite.lot_control.lot_status import lots_of_bundle, lots_of_row, qty_precision
+from meddevice_suite.lot_control.lot_status import lots_of_bundle, lots_of_rows, qty_precision
 from meddevice_suite.lot_control.receipt import origins_of
 from meddevice_suite.master_data.item_master import FINISHED_GOOD, ITEM_TYPE
 
@@ -155,7 +155,7 @@ def rows_bringing_stock_in(doc: Document) -> list[Document]:
 		return []
 	if doc.doctype != STOCK_RECONCILIATION:
 		return list(doc.items)
-	rows = [(row, lots_of_row(row)) for row in doc.items]
+	rows = list(zip(doc.items, lots_of_rows(doc.items), strict=True))
 	origins = origins_of(sorted({lot for _row, lots in rows for lot in lots}))
 	return [row for row, lots in rows if is_new(lots, origins, doc.name)]
 

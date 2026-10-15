@@ -351,7 +351,30 @@ def lots_of_bundle(bundle: str | None) -> list[str]:
 
 
 def lots_of_row(row: Document) -> list[str]:
-	return [row.batch_no] if row.get("batch_no") else lots_of_bundle(row.get("serial_and_batch_bundle"))
+	return lots_of_rows([row])[0]
+
+
+def lots_of_rows(rows: list[Document | frappe._dict]) -> list[list[str]]:
+	"""The lots of each line, in the lines' order: its own lot, or its bundle's. The bundles of all
+	the lines are read in one query, not one per line: a stock count or a delivery has hundreds."""
+	bundles = sorted(
+		{row.get("serial_and_batch_bundle") for row in rows if not row.get("batch_no")} - {None, ""}
+	)
+	in_bundle: dict[str, list[str]] = {}
+	if bundles:
+		for entry in frappe.get_all(
+			"Serial and Batch Entry",
+			filters={"parent": ["in", bundles], "batch_no": ["is", "set"]},
+			fields=["parent", "batch_no"],
+			order_by="idx asc",
+		):
+			lots = in_bundle.setdefault(entry.parent, [])
+			if entry.batch_no not in lots:
+				lots.append(entry.batch_no)
+	return [
+		[row.batch_no] if row.get("batch_no") else list(in_bundle.get(row.get("serial_and_batch_bundle"), []))
+		for row in rows
+	]
 
 
 def guard_stock_ledger_entry(sle: Document, method: str | None = None) -> None:
@@ -445,9 +468,14 @@ def guard_new_stock(sle: Document, lots: list[str], movement: Movement) -> None:
 
 	if movement.is_return:
 		return
-	for lot, origin in origins_of(lots).items():
+	origins = origins_of(lots)
+	# What a count puts back, read once for all the lots of the entry, not once per lot.
+	recounted = counted_back(
+		sle, [lot for lot, origin in origins.items() if origin.voucher_no != sle.voucher_no]
+	)
+	for lot, origin in origins.items():
 		if origin.voucher_no != sle.voucher_no:
-			if not counted_back(sle, lot):
+			if lot not in recounted:
 				frappe.throw(
 					_("Lot {0} came in on {1} {2}; new stock comes in as a new lot.").format(
 						lot, _(origin.voucher_type), origin.voucher_no
@@ -467,15 +495,16 @@ def guard_new_stock(sle: Document, lots: list[str], movement: Movement) -> None:
 			)
 
 
-def counted_back(sle: Document, lot: str) -> bool:
-	"""A stock count posts each line of a batch as the lot's stock taken out and the counted stock
-	put back (ERPNext's stock_reconciliation.get_sle_for_serialized_items, the taking out first).
-	Putting back no more than the same line took out is the count, not new stock: a loss, an
-	unchanged line or a corrected value. Only a gain beyond it would be new stock in an existing
-	lot. Read from the ledger entries of the line, which exist by now; the bundles may not yet be
-	submitted."""
-	if sle.voucher_type != "Stock Reconciliation":
-		return False
+def counted_back(sle: Document, lots: list[str]) -> set[str]:
+	"""Of `lots`, those a stock count only puts back. A count posts each line of a batch as the
+	lot's stock taken out and the counted stock put back (ERPNext's
+	stock_reconciliation.get_sle_for_serialized_items, the taking out first). Putting back no more
+	than the same line took out is the count, not new stock: a loss, an unchanged line or a corrected
+	value. Only a gain beyond it would be new stock in an existing lot. Read from the ledger entries
+	of the line, which exist by now; the bundles may not yet be submitted. Read for all the lots in
+	a fixed number of queries, however many the line's bundle holds."""
+	if sle.voucher_type != "Stock Reconciliation" or not lots:
+		return set()
 	taken_out = frappe.get_all(
 		"Stock Ledger Entry",
 		filters={
@@ -487,29 +516,30 @@ def counted_back(sle: Document, lot: str) -> bool:
 		},
 		fields=["batch_no", "serial_and_batch_bundle", "actual_qty"],
 	)
+	taken: dict[str, float] = {}
+	put_back: dict[str, float] = {}
 	# Counted the way this entry names the lot: by its batch field or by its bundle, not both.
-	if sle.batch_no == lot:
-		taken = sum(abs(flt(row.actual_qty)) for row in taken_out if row.batch_no == lot)
-		put_back = abs(flt(sle.actual_qty))
-	else:
+	if sle.batch_no:
+		for row in taken_out:
+			if row.batch_no == sle.batch_no:
+				taken[sle.batch_no] = taken.get(sle.batch_no, 0) + abs(flt(row.actual_qty))
+		put_back[sle.batch_no] = abs(flt(sle.actual_qty))
+	bundled = [lot for lot in lots if lot != sle.batch_no]
+	if bundled:
 		bundles = [row.serial_and_batch_bundle for row in taken_out if row.serial_and_batch_bundle]
-		taken = sum(
-			abs(flt(qty))
-			for qty in frappe.get_all(
-				"Serial and Batch Entry",
-				filters={"parent": ["in", bundles or [""]], "batch_no": lot},
-				pluck="qty",
-			)
-		)
-		put_back = sum(
-			abs(flt(qty))
-			for qty in frappe.get_all(
-				"Serial and Batch Entry",
-				filters={"parent": sle.serial_and_batch_bundle, "batch_no": lot},
-				pluck="qty",
-			)
-		)
-	return flt(put_back, qty_precision()) <= flt(taken, qty_precision())
+		for row in frappe.get_all(
+			"Serial and Batch Entry",
+			filters={
+				"parent": ["in", [*bundles, sle.serial_and_batch_bundle or ""]],
+				"batch_no": ["in", bundled],
+			},
+			fields=["parent", "batch_no", "qty"],
+		):
+			# The entry's own bundle is what it puts back; the line's earlier bundles what it took out.
+			into = put_back if row.parent == sle.serial_and_batch_bundle else taken
+			into[row.batch_no] = into.get(row.batch_no, 0) + abs(flt(row.qty))
+	precision = qty_precision()
+	return {lot for lot in lots if flt(put_back.get(lot, 0), precision) <= flt(taken.get(lot, 0), precision)}
 
 
 def guard_stock_entry(doc: Document, method: str | None = None) -> None:
@@ -523,7 +553,7 @@ def guard_stock_entry(doc: Document, method: str | None = None) -> None:
 			_("Stock is posted by Stores and Production; QA moves a lot through its release."),
 			frappe.PermissionError,
 		)
-	rows = [(row, lots_of_row(row)) for row in doc.items]
+	rows = list(zip(doc.items, lots_of_rows(doc.items), strict=True))
 	statuses = status_of(lot for _row, lots in rows for lot in lots)
 	for row, lots in rows:
 		movement = Movement(
@@ -559,7 +589,7 @@ def guard_sales_document(doc: Document, method: str | None = None) -> None:
 	if doc.doctype != "Delivery Note" and not cint(doc.get("update_stock")):
 		return
 	is_return = bool(doc.get("is_return"))
-	rows = [(row, lots_of_row(row)) for row in doc.items]
+	rows = list(zip(doc.items, lots_of_rows(doc.items), strict=True))
 	statuses = status_of(lot for _row, lots in rows for lot in lots)
 	for row, lots in rows:
 		kind = stores.kind_of(row.get("warehouse"))
@@ -602,10 +632,12 @@ def guard_packing_slip(doc: Document, method: str | None = None) -> None:
 			fields=["name", "batch_no", "serial_and_batch_bundle", "warehouse"],
 		):
 			lines[line.name] = line
+	found = [lines.get(row.get("dn_detail")) or lines.get(row.get("pi_detail")) for row in doc.items]
+	of_lines = lots_of_rows([line for line in found if line])  # one query for every line's bundle
+	lots_of_line = {line.name: lots for line, lots in zip([f for f in found if f], of_lines, strict=True)}
 	lots_by_row = []
-	for row in doc.items:
-		line = lines.get(row.get("dn_detail")) or lines.get(row.get("pi_detail"))
-		lots = [row.batch_no] if row.get("batch_no") else (lots_of_row(line) if line else [])
+	for row, line in zip(doc.items, found, strict=True):
+		lots = [row.batch_no] if row.get("batch_no") else (lots_of_line[line.name] if line else [])
 		lots_by_row.append((lots, line.warehouse if line else None))
 	statuses = status_of(lot for lots, _store in lots_by_row for lot in lots)
 	for lots, warehouse in lots_by_row:
@@ -619,7 +651,7 @@ def guard_packing_slip(doc: Document, method: str | None = None) -> None:
 def guard_pick_list(doc: Document, method: str | None = None) -> None:
 	"""Pick List validate: only approved stock in an approved store is picked (URS-STK-005,
 	URS-STK-010)."""
-	rows = [(row, lots_of_row(row)) for row in doc.locations]
+	rows = list(zip(doc.locations, lots_of_rows(doc.locations), strict=True))
 	statuses = status_of(lot for _row, lots in rows for lot in lots)
 	for row, lots in rows:
 		movement = Movement(
