@@ -41,6 +41,8 @@ IDENTITY = ("file_url", "is_private", "file_name", "content_hash", "attached_to_
 
 
 def is_evidence(file_url: str | None) -> bool:
+	# Each column is indexed on the file's address by this app's configuration (setup/indexes.py),
+	# so each check is an index lookup however many records hold files.
 	return bool(file_url) and any(
 		frappe.db.exists(doctype, {field: file_url, **condition}) for doctype, field, condition in EVIDENCE
 	)

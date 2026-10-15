@@ -335,8 +335,11 @@ def equipment_at(workstations: Iterable[str]) -> list[str]:
 
 
 def refuse_unusable(workstations: Iterable[str], what: str) -> None:
-	for asset in equipment_at(workstations):
-		state = equipment.usable(asset)
+	at_hand = equipment_at(workstations)
+	# All of it judged at once: a query set for each piece grew with the equipment at the stations.
+	states = equipment.usable_all(at_hand)
+	for asset in at_hand:
+		state = states[asset]
 		if not state.ok:
 			frappe.throw(
 				_("{0} cannot be used: equipment {1} at its workstation is not fit, {2}.").format(

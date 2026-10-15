@@ -351,7 +351,30 @@ def lots_of_bundle(bundle: str | None) -> list[str]:
 
 
 def lots_of_row(row: Document) -> list[str]:
-	return [row.batch_no] if row.get("batch_no") else lots_of_bundle(row.get("serial_and_batch_bundle"))
+	return lots_of_rows([row])[0]
+
+
+def lots_of_rows(rows: list[Document | frappe._dict]) -> list[list[str]]:
+	"""The lots of each line, in the lines' order: its own lot, or its bundle's. The bundles of all
+	the lines are read in one query, not one per line: a stock count or a delivery has hundreds."""
+	bundles = sorted(
+		{row.get("serial_and_batch_bundle") for row in rows if not row.get("batch_no")} - {None, ""}
+	)
+	in_bundle: dict[str, list[str]] = {}
+	if bundles:
+		for entry in frappe.get_all(
+			"Serial and Batch Entry",
+			filters={"parent": ["in", bundles], "batch_no": ["is", "set"]},
+			fields=["parent", "batch_no"],
+			order_by="idx asc",
+		):
+			lots = in_bundle.setdefault(entry.parent, [])
+			if entry.batch_no not in lots:
+				lots.append(entry.batch_no)
+	return [
+		[row.batch_no] if row.get("batch_no") else list(in_bundle.get(row.get("serial_and_batch_bundle"), []))
+		for row in rows
+	]
 
 
 def guard_stock_ledger_entry(sle: Document, method: str | None = None) -> None:
@@ -398,20 +421,10 @@ def movement_of(sle: Document, inward: bool) -> Movement | None:
 	"""The movement a ledger entry is part of; None for the arriving end of a move between stores,
 	whose leaving end carries both stores."""
 	here = stores.kind_of(sle.warehouse)
+	header = voucher_header(sle.voucher_type, sle.voucher_no)
 	if sle.voucher_type == "Stock Entry":
-		purpose, transfer = frappe.db.get_value(
-			"Stock Entry", sle.voucher_no, ["purpose", TRANSFER_FIELD]
-		) or (
-			None,
-			None,
-		)
-		row = (
-			frappe.db.get_value(
-				"Stock Entry Detail", sle.voucher_detail_no, ["s_warehouse", "t_warehouse"], as_dict=True
-			)
-			if sle.voucher_detail_no
-			else None
-		) or frappe._dict()
+		purpose, transfer = header.get("purpose"), header.get(TRANSFER_FIELD)
+		row = stock_entry_line(sle.voucher_no, sle.voucher_detail_no)
 		if inward and row.s_warehouse:
 			return None
 		return Movement(
@@ -422,15 +435,76 @@ def movement_of(sle: Document, inward: bool) -> Movement | None:
 			# Only the release's own transfer, while the release posts it.
 			signed=bool(transfer) and frappe.flags.lot_release_transfer == sle.voucher_no,
 		)
-	is_return = frappe.get_meta(sle.voucher_type).has_field("is_return") and bool(
-		frappe.db.get_value(sle.voucher_type, sle.voucher_no, "is_return")
-	)
+	is_return = bool(header.get("is_return"))  # read only where the record type has it
 	return Movement(
 		sle.voucher_type,
 		source=None if inward else here,
 		target=here if inward else None,
 		is_return=is_return,
 	)
+
+
+# The fields of a voucher the ledger checks read (here, in expiry and in finished_goods), each where
+# its record type has it; mds_fefo_reason is expiry.REASON_FIELD, named here as expiry builds on this.
+HEADER_FIELDS = ("purpose", "stock_entry_type", "is_opening", "is_return", TRANSFER_FIELD, "mds_fefo_reason")
+VOUCHERS_READ = "mds_vouchers_read"
+
+
+def voucher_header(voucher_type: str, voucher_no: str) -> frappe._dict:
+	"""The voucher's fields the ledger checks read (`HEADER_FIELDS`), read once per document: ERPNext
+	posts one ledger entry per line, and each entry's checks read the same header, which a document
+	of a hundred lines read a few hundred times."""
+	read = vouchers_read()
+	key = ("header", voucher_type, voucher_no)
+	if key not in read:
+		meta = frappe.get_meta(voucher_type)
+		fields = [field for field in HEADER_FIELDS if meta.has_field(field)]
+		read[key] = (
+			frappe.db.get_value(voucher_type, voucher_no, fields, as_dict=True) if fields else None
+		) or frappe._dict()
+	return read[key]
+
+
+def stock_entry_line(voucher_no: str, line: str | None) -> frappe._dict:
+	"""A stock entry line's stores, all the entry's lines read in one query, once per document."""
+	read = vouchers_read()
+	key = ("lines", "Stock Entry", voucher_no)
+	if key not in read:
+		read[key] = {
+			row.name: row
+			for row in frappe.get_all(
+				"Stock Entry Detail",
+				filters={"parent": voucher_no, "parenttype": "Stock Entry"},
+				fields=["name", "s_warehouse", "t_warehouse"],
+			)
+		}
+	return read[key].get(line) or frappe._dict()
+
+
+def vouchers_read() -> dict:
+	"""What the ledger checks have read of the vouchers being posted, kept for the transaction only:
+	forgotten when it commits or rolls back, and a voucher's own when it is submitted again
+	(`forget_voucher`), so a value is never read from before the document's latest submission."""
+	read = getattr(frappe.local, VOUCHERS_READ, None)
+	if read is None:
+		read = {}
+		setattr(frappe.local, VOUCHERS_READ, read)
+		frappe.db.after_commit.add(forget_vouchers)
+		frappe.db.after_rollback.add(forget_vouchers)
+	return read
+
+
+def forget_vouchers() -> None:
+	setattr(frappe.local, VOUCHERS_READ, None)
+
+
+def forget_voucher(doc: Document, method: str | None = None) -> None:
+	"""before_submit and before_cancel of every record type: a document submitted again in the same
+	transaction (a submission refused, the document corrected and submitted) is read afresh."""
+	read = getattr(frappe.local, VOUCHERS_READ, None)
+	if read:
+		for kind in ("header", "lines"):
+			read.pop((kind, doc.doctype, doc.name), None)
 
 
 def guard_new_stock(sle: Document, lots: list[str], movement: Movement) -> None:
@@ -445,9 +519,14 @@ def guard_new_stock(sle: Document, lots: list[str], movement: Movement) -> None:
 
 	if movement.is_return:
 		return
-	for lot, origin in origins_of(lots).items():
+	origins = origins_of(lots)
+	# What a count puts back, read once for all the lots of the entry, not once per lot.
+	recounted = counted_back(
+		sle, [lot for lot, origin in origins.items() if origin.voucher_no != sle.voucher_no]
+	)
+	for lot, origin in origins.items():
 		if origin.voucher_no != sle.voucher_no:
-			if not counted_back(sle, lot):
+			if lot not in recounted:
 				frappe.throw(
 					_("Lot {0} came in on {1} {2}; new stock comes in as a new lot.").format(
 						lot, _(origin.voucher_type), origin.voucher_no
@@ -467,15 +546,16 @@ def guard_new_stock(sle: Document, lots: list[str], movement: Movement) -> None:
 			)
 
 
-def counted_back(sle: Document, lot: str) -> bool:
-	"""A stock count posts each line of a batch as the lot's stock taken out and the counted stock
-	put back (ERPNext's stock_reconciliation.get_sle_for_serialized_items, the taking out first).
-	Putting back no more than the same line took out is the count, not new stock: a loss, an
-	unchanged line or a corrected value. Only a gain beyond it would be new stock in an existing
-	lot. Read from the ledger entries of the line, which exist by now; the bundles may not yet be
-	submitted."""
-	if sle.voucher_type != "Stock Reconciliation":
-		return False
+def counted_back(sle: Document, lots: list[str]) -> set[str]:
+	"""Of `lots`, those a stock count only puts back. A count posts each line of a batch as the
+	lot's stock taken out and the counted stock put back (ERPNext's
+	stock_reconciliation.get_sle_for_serialized_items, the taking out first). Putting back no more
+	than the same line took out is the count, not new stock: a loss, an unchanged line or a corrected
+	value. Only a gain beyond it would be new stock in an existing lot. Read from the ledger entries
+	of the line, which exist by now; the bundles may not yet be submitted. Read for all the lots in
+	a fixed number of queries, however many the line's bundle holds."""
+	if sle.voucher_type != "Stock Reconciliation" or not lots:
+		return set()
 	taken_out = frappe.get_all(
 		"Stock Ledger Entry",
 		filters={
@@ -487,29 +567,30 @@ def counted_back(sle: Document, lot: str) -> bool:
 		},
 		fields=["batch_no", "serial_and_batch_bundle", "actual_qty"],
 	)
+	taken: dict[str, float] = {}
+	put_back: dict[str, float] = {}
 	# Counted the way this entry names the lot: by its batch field or by its bundle, not both.
-	if sle.batch_no == lot:
-		taken = sum(abs(flt(row.actual_qty)) for row in taken_out if row.batch_no == lot)
-		put_back = abs(flt(sle.actual_qty))
-	else:
+	if sle.batch_no:
+		for row in taken_out:
+			if row.batch_no == sle.batch_no:
+				taken[sle.batch_no] = taken.get(sle.batch_no, 0) + abs(flt(row.actual_qty))
+		put_back[sle.batch_no] = abs(flt(sle.actual_qty))
+	bundled = [lot for lot in lots if lot != sle.batch_no]
+	if bundled:
 		bundles = [row.serial_and_batch_bundle for row in taken_out if row.serial_and_batch_bundle]
-		taken = sum(
-			abs(flt(qty))
-			for qty in frappe.get_all(
-				"Serial and Batch Entry",
-				filters={"parent": ["in", bundles or [""]], "batch_no": lot},
-				pluck="qty",
-			)
-		)
-		put_back = sum(
-			abs(flt(qty))
-			for qty in frappe.get_all(
-				"Serial and Batch Entry",
-				filters={"parent": sle.serial_and_batch_bundle, "batch_no": lot},
-				pluck="qty",
-			)
-		)
-	return flt(put_back, qty_precision()) <= flt(taken, qty_precision())
+		for row in frappe.get_all(
+			"Serial and Batch Entry",
+			filters={
+				"parent": ["in", [*bundles, sle.serial_and_batch_bundle or ""]],
+				"batch_no": ["in", bundled],
+			},
+			fields=["parent", "batch_no", "qty"],
+		):
+			# The entry's own bundle is what it puts back; the line's earlier bundles what it took out.
+			into = put_back if row.parent == sle.serial_and_batch_bundle else taken
+			into[row.batch_no] = into.get(row.batch_no, 0) + abs(flt(row.qty))
+	precision = qty_precision()
+	return {lot for lot in lots if flt(put_back.get(lot, 0), precision) <= flt(taken.get(lot, 0), precision)}
 
 
 def guard_stock_entry(doc: Document, method: str | None = None) -> None:
@@ -523,7 +604,7 @@ def guard_stock_entry(doc: Document, method: str | None = None) -> None:
 			_("Stock is posted by Stores and Production; QA moves a lot through its release."),
 			frappe.PermissionError,
 		)
-	rows = [(row, lots_of_row(row)) for row in doc.items]
+	rows = list(zip(doc.items, lots_of_rows(doc.items), strict=True))
 	statuses = status_of(lot for _row, lots in rows for lot in lots)
 	for row, lots in rows:
 		movement = Movement(
@@ -559,7 +640,7 @@ def guard_sales_document(doc: Document, method: str | None = None) -> None:
 	if doc.doctype != "Delivery Note" and not cint(doc.get("update_stock")):
 		return
 	is_return = bool(doc.get("is_return"))
-	rows = [(row, lots_of_row(row)) for row in doc.items]
+	rows = list(zip(doc.items, lots_of_rows(doc.items), strict=True))
 	statuses = status_of(lot for _row, lots in rows for lot in lots)
 	for row, lots in rows:
 		kind = stores.kind_of(row.get("warehouse"))
@@ -602,10 +683,12 @@ def guard_packing_slip(doc: Document, method: str | None = None) -> None:
 			fields=["name", "batch_no", "serial_and_batch_bundle", "warehouse"],
 		):
 			lines[line.name] = line
+	found = [lines.get(row.get("dn_detail")) or lines.get(row.get("pi_detail")) for row in doc.items]
+	of_lines = lots_of_rows([line for line in found if line])  # one query for every line's bundle
+	lots_of_line = {line.name: lots for line, lots in zip([f for f in found if f], of_lines, strict=True)}
 	lots_by_row = []
-	for row in doc.items:
-		line = lines.get(row.get("dn_detail")) or lines.get(row.get("pi_detail"))
-		lots = [row.batch_no] if row.get("batch_no") else (lots_of_row(line) if line else [])
+	for row, line in zip(doc.items, found, strict=True):
+		lots = [row.batch_no] if row.get("batch_no") else (lots_of_line[line.name] if line else [])
 		lots_by_row.append((lots, line.warehouse if line else None))
 	statuses = status_of(lot for lots, _store in lots_by_row for lot in lots)
 	for lots, warehouse in lots_by_row:
@@ -619,7 +702,7 @@ def guard_packing_slip(doc: Document, method: str | None = None) -> None:
 def guard_pick_list(doc: Document, method: str | None = None) -> None:
 	"""Pick List validate: only approved stock in an approved store is picked (URS-STK-005,
 	URS-STK-010)."""
-	rows = [(row, lots_of_row(row)) for row in doc.locations]
+	rows = list(zip(doc.locations, lots_of_rows(doc.locations), strict=True))
 	statuses = status_of(lot for _row, lots in rows for lot in lots)
 	for row, lots in rows:
 		movement = Movement(
@@ -813,10 +896,11 @@ def approved_store(item: str, company: str) -> str:
 
 
 def stock_by_lot(
-	item: str | None = None, warehouse: str | None = None, lot: str | None = None
+	item: str | None = None, warehouse: str | list[str] | None = None, lot: str | None = None
 ) -> list[frappe._dict]:
 	"""[{item_code, warehouse, batch_no, qty}] for every lot with stock, in two grouped queries
-	(ERPNext keeps old-style lots on the ledger entry and bundled lots on the bundle's rows)."""
+	(ERPNext keeps old-style lots on the ledger entry and bundled lots on the bundle's rows); in one
+	store, or in any of a list of stores."""
 	sle = frappe.qb.DocType("Stock Ledger Entry")
 	entry = frappe.qb.DocType("Serial and Batch Entry")
 	plain = (
@@ -840,7 +924,9 @@ def stock_by_lot(
 		if item:
 			query = query.where(sle.item_code == item)
 		if warehouse:
-			query = query.where(sle.warehouse == warehouse)
+			query = query.where(
+				sle.warehouse.isin(warehouse) if isinstance(warehouse, list) else sle.warehouse == warehouse
+			)
 		if lot:
 			query = query.where(lot_field == lot)
 		for row in query.run(as_dict=True):

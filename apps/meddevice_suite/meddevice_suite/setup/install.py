@@ -24,6 +24,7 @@ from meddevice_suite.master_data.versioning import apply_master_versions
 from meddevice_suite.master_data.warehouse import apply_warehouse_fields
 from meddevice_suite.qms.device_master_record import apply_device_master_record_fields
 from meddevice_suite.setup.desk import apply_desk_configuration
+from meddevice_suite.setup.indexes import apply_indexes
 from meddevice_suite.setup.roles import apply_roles
 from meddevice_suite.setup.sidebars import apply_sidebar_scope
 from meddevice_suite.setup.stock import apply_stock_settings
@@ -52,5 +53,6 @@ def apply_configuration() -> None:
 	apply_workflows()
 	apply_retention()
 	apply_archive_indexes()
+	apply_indexes()  # after the fields it indexes exist (receipt, evidence)
 	apply_alerts()
 	apply_access_policy()

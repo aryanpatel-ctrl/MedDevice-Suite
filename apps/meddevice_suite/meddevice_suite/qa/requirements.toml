@@ -763,6 +763,13 @@ title = "Signed in as each job, the browser opens every area of that job's desk,
 source = "DFD 9F F2 Role / Permission; D2 System Foundation: Validation & System Security; Found necessary in the live pilot test of 2026-10-07: the screens each job uses were not tested as that job"
 status = "implemented"
 
+[[requirement]]
+id = "URS-PLT-021"
+module = 0
+title = "The checks that run on every stock movement, on every save and signature of a regulated record and on every opening of My Work and of the lot and licence reports, and the hourly and daily jobs, each issue a number of database queries that does not grow with the lots, ledger entries, audit events, signatures, reminders, training records and documents the site holds, and every filter they use on a growing table of this app is served by an index."
+source = "Foundation hardening plan, query budgets and volume harness; owner's instruction on long data, 2026-10-12 (years of data managed with no future impact); rules.md section 4 (no queries inside loops over records; indexes on fields used in filters)"
+status = "implemented"
+
 # --- Module 30: document control (D2 Document Control; ISO 13485 4.2.4) ----
 [[requirement]]
 id = "URS-QMS-001"

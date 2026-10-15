@@ -332,13 +332,15 @@ def send_expiry_alerts() -> None:
 	customer is verified already."""
 	notification = frappe.get_doc("Notification", EXPIRY_ALERT)
 	soon = add_days(today(), quality_settings.value("customer_licence_warning_days"))
-	for row in frappe.get_all(
+	rows = frappe.get_all(
 		DOCTYPE,
 		filters={"docstatus": 1, "status": VERIFIED, "expiry_alerted": 0, "valid_until": ["<=", soon]},
 		fields=["name", "customer", "valid_until"],
 		order_by="valid_until asc",
-	):
-		if renewed(row.customer, row.valid_until):
+	)
+	carried_on = renewed_licences(rows)
+	for row in rows:
+		if row.name in carried_on:
 			continue  # renewed: the customer's next licence is verified
 		alert(notification, row.name)
 
@@ -358,6 +360,34 @@ def renewed(customer: str, valid_until) -> bool:
 			},
 		)
 	)
+
+
+def renewed_licences(licences: list[frappe._dict]) -> set[str]:
+	"""Of licences ({name, customer, valid_until}), those `renewed`, in one query: a renewed licence
+	is never alerted, so it stays among those the daily run looks at, and a query for each grew with
+	every licence ever renewed."""
+	customers = sorted({row.customer for row in licences if row.customer})
+	if not customers:
+		return set()
+	held: dict[str, list[frappe._dict]] = {}
+	for row in frappe.get_all(
+		DOCTYPE,
+		filters={"customer": ["in", customers], "docstatus": 1, "status": VERIFIED},
+		fields=["customer", "valid_from", "valid_until"],
+	):
+		held.setdefault(row.customer, []).append(row)
+	return {
+		licence.name
+		for licence in licences
+		if licence.valid_until
+		and any(
+			other.valid_from
+			and other.valid_until
+			and getdate(other.valid_from) <= getdate(add_days(licence.valid_until, 1))
+			and getdate(other.valid_until) > getdate(licence.valid_until)
+			for other in held.get(licence.customer, ())
+		)
+	}
 
 
 def alert(notification: Document, name: str) -> None:
