@@ -114,6 +114,8 @@ function offer_acts(frm) {
 			frappe
 				.xcall(`${CHANGE_CONTROL}.submit_for_assessment`, { name: frm.doc.name })
 				.then(() => frm.reload_doc())
+				// Frappe has shown the server's refusal; the record stays as it was.
+				.catch(() => {})
 		)
 			.removeClass("btn-default")
 			.addClass("btn-primary");
@@ -171,10 +173,16 @@ function withdraw(frm) {
 		fields: [{ fieldtype: "Small Text", fieldname: "reason", label: __("Reason"), reqd: 1 }],
 		primary_action_label: __("Withdraw"),
 		primary_action({ reason }) {
-			frappe.xcall(`${CHANGE_CONTROL}.withdraw`, { name: frm.doc.name, reason }).then(() => {
-				dialog.hide();
-				frm.reload_doc();
-			});
+			dialog.disable_primary_action();
+			frappe
+				.xcall(`${CHANGE_CONTROL}.withdraw`, { name: frm.doc.name, reason })
+				.then(() => {
+					dialog.hide();
+					frm.reload_doc();
+				})
+				// Frappe has shown the server's refusal: the dialog stays open with the reason
+				// given, to correct and send again.
+				.catch(() => dialog.enable_primary_action());
 		},
 	});
 	dialog.show();
@@ -216,6 +224,7 @@ function record_done(frm, rows) {
 		],
 		primary_action_label: __("Record as Done"),
 		primary_action(values) {
+			dialog.disable_primary_action();
 			frappe
 				.xcall(`${CHANGE_CONTROL}.complete_action`, {
 					name: frm.doc.name,
@@ -227,7 +236,10 @@ function record_done(frm, rows) {
 				.then(() => {
 					dialog.hide();
 					frm.reload_doc();
-				});
+				})
+				// Frappe has shown the server's refusal: the dialog stays open with what was
+				// entered, to correct and record again.
+				.catch(() => dialog.enable_primary_action());
 		},
 	});
 	dialog.show();

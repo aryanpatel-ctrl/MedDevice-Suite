@@ -47,7 +47,9 @@ $(document).on("form-refresh", (event, frm) => {
 							  ])
 							: findings.join("<br>"),
 					});
-				}),
+				})
+				// Frappe has shown the server's refusal; there is nothing to show besides.
+				.catch(() => {}),
 		__("View")
 	);
 });
