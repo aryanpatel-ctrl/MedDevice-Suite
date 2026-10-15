@@ -517,15 +517,15 @@ status = "implemented"
 [[requirement]]
 id = "URS-CMP-014"
 module = 47
-title = "Each person is given a job profile that grants exactly the roles that job needs; the job profiles and the roles in them are declared in code and applied on every site."
-source = "DFD 9F F1 User Management, F2 Role / Permission; D2 System Foundation: Role Based Access (RBAC); 21 CFR 11.10(d); design approved 2026-10-06; jobs decided on the client's instruction of 2026-10-07"
+title = "Each person is given a job profile that grants exactly the roles that job needs; the job profiles and the roles in them are declared in code and applied on every site, and on a site nobody, the system administrator included, changes or deletes a job profile."
+source = "DFD 9F F1 User Management, F2 Role / Permission; D2 System Foundation: Role Based Access (RBAC); 21 CFR 11.10(d); design approved 2026-10-06; jobs decided on the client's instruction of 2026-10-07; job profiles not changed by hand: Independent review 2026-10-15, 21 CFR 11.10(d), (g), engineering rules 1.3"
 status = "implemented"
 
 [[requirement]]
 id = "URS-CMP-015"
 module = 47
-title = "For every regulated business record type, which roles may read, create, submit, cancel and amend it is declared in code and applied exactly, replacing the platform's default permissions, and any manual change is undone on the next migrate; on this app's own record types a permission cannot be changed by hand at all."
-source = "DFD 9F F1 User Management, F2 Role / Permission; D2 System Foundation: Role Based Access (RBAC); 21 CFR 11.10(d), (g); ISO 13485 4.2.4; hand changes on the app's own record types refused decided 2026-10-12 (foundation review)"
+title = "For every regulated business record type, which roles may read, create, submit, cancel and amend it is declared in code and applied exactly, replacing the platform's default permissions; on every record type whose permissions this app declares (the regulated records, the supporting record types it adds permissions to, the site configuration and this app's own record types) a permission cannot be added, changed, removed or reset by hand at all, and any change written past that is undone on the next migrate."
+source = "DFD 9F F1 User Management, F2 Role / Permission; D2 System Foundation: Role Based Access (RBAC); 21 CFR 11.10(d), (g); ISO 13485 4.2.4; hand changes on the app's own record types refused decided 2026-10-12 (foundation review); extended to every record type the matrix governs: Independent review 2026-10-15, 21 CFR 11.10(d), (g), engineering rules 1.3"
 status = "implemented"
 
 [[requirement]]
