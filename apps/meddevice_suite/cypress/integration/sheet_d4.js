@@ -512,6 +512,7 @@ function stored_as(stored, value, label) {
 // A person types the next field once the form has finished updating from the last one.
 function fill(fieldname, value, kind = "Data") {
 	settle();
+	close_dialogs();
 	close_open_lists();
 	reveal(fieldname);
 	const selector = inputs_of(`${FORM} .frappe-control[data-fieldname="${fieldname}"]`);
@@ -542,6 +543,7 @@ function cell(table, idx, fieldname) {
 
 function fill_row(table, idx, fieldname, value, kind = "Data") {
 	settle();
+	close_dialogs();
 	close_open_lists();
 	cy.get(cell(table, idx, fieldname)).first().click();
 	// Typed once the clicked cell has the cursor (standard_flow.js).
@@ -563,6 +565,7 @@ function fill_row(table, idx, fieldname, value, kind = "Data") {
 // Empties a cell, as a person deletes what it holds.
 function clear_row(table, idx, fieldname) {
 	settle();
+	close_dialogs();
 	close_open_lists();
 	cy.get(cell(table, idx, fieldname)).first().click();
 	cy.get(inputs_of(cell(table, idx, fieldname)))
@@ -585,14 +588,9 @@ function dismiss_batch_picker() {
 			win.cur_dialog?.display && /Batch|Serial/.test(win.cur_dialog.title || "")
 				? win.cur_dialog
 				: null;
-		return until(picker, 1500).then((open) => {
-			if (!open) return;
-			// The topmost dialog is closed as its cross closes it, until none is left: another
-			// dialog can lie over the picker's cross (found in Chrome, 2026-10-15).
-			cy.window().should((w) => {
-				if (w.cur_dialog?.display) w.cur_dialog.hide();
-				expect(w.$(".modal.show").length, "dialogs left open").to.equal(0);
-			});
+		// The picker opens once ERPNext has the item's details, which can come a moment late.
+		return until(picker, 3000).then((open) => {
+			if (open) close_dialogs();
 		});
 	});
 	settle();
@@ -620,6 +618,7 @@ function set_line(fieldname, value) {
 // Opens a line of a table in its own form, where the fields the table does not show are.
 function open_line(table, idx) {
 	settle();
+	close_dialogs();
 	close_open_lists();
 	reveal(table); // the table's tab, if another tab is open
 	cy.get(
@@ -636,6 +635,7 @@ function open_line(table, idx) {
 
 function fill_line(fieldname, value, kind = "Data") {
 	settle();
+	close_dialogs();
 	close_open_lists();
 	// A line's own form is longer than the window; the person scrolls to the field first. A field
 	// Cypress cannot reach there (in a folded section, or under the line's fixed layer: found in
@@ -749,11 +749,44 @@ function save_refused({ server, screen }, label = "Save") {
 	primary_action().should("contain", label).click();
 	refused_with(screen);
 	settle();
+	close_dialogs();
+}
+
+// The current dialog has finished fading in; a dialog closing behind it may still be fading out
+// (found in Chrome, 2026-10-15: the submit confirmation over a closing message).
+function opened_fully() {
+	cy.window().should((win) => {
+		const $wrapper = win.cur_dialog?.$wrapper;
+		expect($wrapper?.is(".modal.show"), "a dialog is open").to.equal(true);
+		expect($wrapper.css("opacity"), "it has finished opening").to.equal("1");
+	});
+}
+
+// Closes whatever dialog is left over the form, the topmost first, as its cross closes it, until
+// none is left: the batch picker ERPNext opens late on a line, or a message, would otherwise lie
+// over the field the person types into next (found in Chrome, 2026-10-15, in D4-T12). A refusal
+// left on screen is a problem of the step and is reported.
+function close_dialogs() {
+	cy.window({ log: false }).then({ timeout: TIMEOUT + 5000 }, (win) => {
+		const reported = new Set();
+		return until(() => {
+			const open = win.$(".modal.show").length > 0 || win.cur_dialog?.display;
+			if (!open) return true;
+			const shown = message_dialog(win);
+			if (shown?.error && !reported.has(shown.text)) {
+				reported.add(shown.text);
+				run.problems.push(`the message "${shown.text}" was left on screen`);
+			}
+			if (shown) win.frappe.hide_msgprint(true);
+			else if (win.cur_dialog?.display) win.cur_dialog.hide();
+			return false;
+		}).then((closed) => expect(closed, "no dialog left over the form").to.be.true);
+	});
 }
 
 // Waits for the dialog that has just opened to finish opening (standard_flow.js).
 function open_dialog() {
-	cy.get(".modal.show").should("have.css", "opacity", "1");
+	opened_fully();
 	cy.window().should((win) => {
 		expect(win.cur_dialog?.display, "the dialog has finished opening").to.equal(true);
 		expect(win.cur_dialog.$wrapper.is(".modal.show"), "it is the dialog shown").to.equal(true);
@@ -777,8 +810,9 @@ function submit_refused({ server, screen }) {
 	expect_refusal(server);
 	confirm_submit();
 	refused_with(screen);
-	cy.window().should((win) => expect(current(win).docstatus, "not submitted").to.equal(0));
 	settle();
+	close_dialogs(); // the submit confirmation, if it is still open behind the refusal
+	cy.window().should((win) => expect(current(win).docstatus, "not submitted").to.equal(0));
 }
 
 // A change to a regulated record asks its reason first (audit_reason.js); given when asked.
@@ -805,7 +839,7 @@ function give_reason_if_asked(reason) {
 function open_signing(label, act = label) {
 	settle();
 	button(label).click();
-	cy.get(".modal.show").should("have.css", "opacity", "1");
+	opened_fully();
 	cy.window().should((win) => {
 		expect(win.cur_dialog?.display, "the signing dialog has opened").to.equal(true);
 		expect(win.cur_dialog.title).to.equal(`Sign: ${act}`);
