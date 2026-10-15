@@ -416,9 +416,18 @@ function type_into($input, text) {
 	});
 }
 
+// Empties the field and types `value`, finding the field again for each step: clearing it can make
+// the form redraw it (found in Chrome, 2026-10-15, on the work order's stores).
+function type_afresh(selector, value) {
+	settle();
+	cy.get(selector).first().clear();
+	settle();
+	cy.get(selector).first().type(value, { delay: 0 });
+}
+
 // Types into a link field, found by `selector`, and chooses the matching entry of its list.
 function choose(selector, value, reopen = null) {
-	cy.get(selector).first().clear().focus().type(value, { delay: 0 });
+	type_afresh(selector, value);
 	settle();
 	// A form redrawn by what an earlier field brought (a supplier's details, an item, its bill) can
 	// take the typing away with the old input, or close a table cell again; the person opens the
@@ -428,7 +437,7 @@ function choose(selector, value, reopen = null) {
 		const listed = $body.find('[role="listbox"]:visible [role="option"]').length > 0;
 		if (!listed || !$input.length || $input.val() !== value) {
 			if (reopen) reopen();
-			cy.get(selector).first().clear().focus().type(value, { delay: 0 });
+			type_afresh(selector, value);
 		}
 	});
 	// The open list of the field: only one is open at a time. An entry shows the record's title in
@@ -578,8 +587,12 @@ function dismiss_batch_picker() {
 				: null;
 		return until(picker, 1500).then((open) => {
 			if (!open) return;
-			cy.wrap(picker().$wrapper.find(".btn-modal-close:visible").first()).click();
-			cy.get(".modal.show").should("not.exist");
+			// The topmost dialog is closed as its cross closes it, until none is left: another
+			// dialog can lie over the picker's cross (found in Chrome, 2026-10-15).
+			cy.window().should((w) => {
+				if (w.cur_dialog?.display) w.cur_dialog.hide();
+				expect(w.$(".modal.show").length, "dialogs left open").to.equal(0);
+			});
 		});
 	});
 	settle();
@@ -588,6 +601,20 @@ function dismiss_batch_picker() {
 function fill_item(table, idx, item) {
 	fill_row(table, idx, "item_code", item, "Link");
 	dismiss_batch_picker();
+}
+
+// A value of the open line entered as data on the line, then checked: for the line fields Cypress
+// cannot reach in the line's form (a folded section, its fixed layer; found in Chrome, 2026-10-15).
+function set_line(fieldname, value) {
+	settle();
+	cy.window().then((win) => {
+		const line = win.cur_frm.cur_grid.doc;
+		return win.frappe.model.set_value(line.doctype, line.name, fieldname, value);
+	});
+	settle();
+	cy.window().should((win) =>
+		expect(win.cur_frm.cur_grid.doc[fieldname], fieldname).to.equal(value)
+	);
 }
 
 // Opens a line of a table in its own form, where the fields the table does not show are.
@@ -1347,7 +1374,7 @@ context("D4 Inventory & Batch Ledger: the browser test sheet, as each job", () =
 			).to.deep.equal([8, 6, 2]);
 		});
 		open_line("items", 1);
-		fill_line("rejected_warehouse", data.stores.hold, "Link");
+		set_line("rejected_warehouse", data.stores.hold);
 		fill_line("mds_supplier_lot_no", "SUP-2026-0420");
 		close_line();
 		cy.window().then((win) => {
@@ -1364,7 +1391,7 @@ context("D4 Inventory & Batch Ledger: the browser test sheet, as each job", () =
 		save_refused(refusal("Line 1: quantity rejected at receipt goes to the Rejected store."));
 
 		open_line("items", 1);
-		fill_line("rejected_warehouse", data.stores.rejected, "Link");
+		set_line("rejected_warehouse", data.stores.rejected);
 		close_line();
 		save();
 		submit();
@@ -2510,7 +2537,7 @@ context("D4 Inventory & Batch Ledger: the browser test sheet, as each job", () =
 		save_refused(NOT_FROM_PRODUCTION(data.product, "Stock Entry"));
 		fill("is_opening", "Yes", "Select");
 		open_line("items", 1);
-		fill_line("expense_account", data.opening_account, "Link");
+		set_line("expense_account", data.opening_account);
 		close_line();
 		save();
 		submit();
