@@ -248,7 +248,8 @@ def send_review_alerts() -> None:
 	"""Daily: alert each effective document's process owner and QA once when its review falls
 	due within 30 days, including a review already overdue or a day the alerts did not run."""
 	notification = frappe.get_doc("Notification", REVIEW_ALERT)
-	for name, review_date in frappe.get_all(
+	# What each was last alerted for is read with the documents, not once per document.
+	for name, review_date, alerted_for in frappe.get_all(
 		"Controlled Document",
 		filters=[
 			["status", "=", "Effective"],
@@ -259,11 +260,11 @@ def send_review_alerts() -> None:
 				add_days(today(), quality_settings.value("document_review_warning_days")),
 			],
 		],
-		fields=["name", "next_review_date"],
+		fields=["name", "next_review_date", "review_alerted_for"],
 		as_list=True,
 		order_by="next_review_date asc",
 	):
-		if frappe.db.get_value("Controlled Document", name, "review_alerted_for") == review_date:
+		if alerted_for == review_date:
 			continue
 		frappe.db.savepoint(REVIEW_SAVEPOINT)
 		try:

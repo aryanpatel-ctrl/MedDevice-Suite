@@ -131,9 +131,9 @@ def lots_expiring() -> Iterator[Due]:
 def supplier_certificates_expiring() -> Iterator[Due]:
 	"""The certificate of each supplier decision in force that expires within the lead time,
 	until a new decision replaces it."""
-	from meddevice_suite.master_data.supplier_approval import APPROVED, CONDITIONAL, current_approval
+	from meddevice_suite.master_data.supplier_approval import APPROVED, CONDITIONAL, newest_decisions
 
-	for row in frappe.get_all(
+	rows = frappe.get_all(
 		"Supplier Approval",
 		filters={
 			"docstatus": 1,
@@ -141,9 +141,11 @@ def supplier_certificates_expiring() -> Iterator[Due]:
 			"certificate_expiry": ["<=", within("supplier_certificate_warning_days")],
 		},
 		fields=["name", "supplier", "certificate_expiry"],
-	):
-		in_force = current_approval(row.supplier)
-		if in_force and in_force.name == row.name:
+	)
+	# Every replaced decision stays among these rows for good: the decisions in force are read once.
+	in_force = newest_decisions([row.supplier for row in rows])
+	for row in rows:
+		if in_force.get(row.supplier) == row.name:
 			yield Due(
 				"Supplier Approval",
 				row.name,
@@ -157,9 +159,9 @@ def supplier_certificates_expiring() -> Iterator[Due]:
 
 def customer_licences_expiring() -> Iterator[Due]:
 	"""Each verified customer licence that ends within the lead time, until a renewal is verified."""
-	from meddevice_suite.master_data.customer_licence import VERIFIED, renewed
+	from meddevice_suite.master_data.customer_licence import VERIFIED, renewed_licences
 
-	for row in frappe.get_all(
+	rows = frappe.get_all(
 		"Customer Licence",
 		filters={
 			"docstatus": 1,
@@ -167,8 +169,11 @@ def customer_licences_expiring() -> Iterator[Due]:
 			"valid_until": ["<=", within("customer_licence_warning_days")],
 		},
 		fields=["name", "customer", "valid_until"],
-	):
-		if not renewed(row.customer, row.valid_until):
+	)
+	# Every renewed licence stays among these rows for good: the renewals are read once.
+	carried_on = renewed_licences(rows)
+	for row in rows:
+		if row.name not in carried_on:
 			yield Due(
 				"Customer Licence",
 				row.name,
@@ -202,7 +207,7 @@ def document_reviews_due() -> Iterator[Due]:
 
 def change_actions_due() -> Iterator[Due]:
 	"""Each action of an approved change that falls due within the lead time, until it is done."""
-	for row in frappe.get_all(
+	rows = frappe.get_all(
 		"Change Request Action",
 		filters={
 			"parenttype": "Change Request",
@@ -210,8 +215,12 @@ def change_actions_due() -> Iterator[Due]:
 			"due_date": ["<=", within("change_action_warning_days")],
 		},
 		fields=["name", "parent", "idx", "action_owner", "due_date"],
-	):
-		if frappe.db.get_value("Change Request", row.parent, "status") == "Approved":
+	)
+	# The actions of every change rejected or closed undone stay among these rows: their requests'
+	# status is read in one query, not one per action.
+	approved = approved_changes([row.parent for row in rows])
+	for row in rows:
+		if row.parent in approved:
 			yield Due(
 				"Change Request",
 				row.parent,
@@ -223,6 +232,16 @@ def change_actions_due() -> Iterator[Due]:
 				row.action_owner,
 				part=row.name,
 			)
+
+
+def approved_changes(names: list[str]) -> set[str]:
+	"""Of the change requests named, those Approved, in one query."""
+	wanted = sorted(set(names))
+	if not wanted:
+		return set()
+	return set(
+		frappe.get_all("Change Request", filters={"name": ["in", wanted], "status": "Approved"}, pluck="name")
+	)
 
 
 def effectiveness_checks_due() -> Iterator[Due]:
@@ -573,11 +592,26 @@ def run() -> None:
 		)
 	for name in frappe.get_all(SCHEDULE, filters={"active": 1}, pluck="name"):
 		in_step(f"recurring reminder {name}", lambda name=name: raise_occurrence(name))
-	for name in frappe.get_all(
-		DOCTYPE, filters={"status": ["in", STILL_OPEN], "due_date": ["<", today()]}, pluck="name"
-	):
+	for name in to_follow_up():
 		in_step(f"reminder {name}", lambda name=name: follow_up(name))
 	send_notices()
+
+
+def to_follow_up() -> list[str]:
+	"""The reminders past their due date that `follow_up` changes today: an open one becomes
+	Overdue, and one overdue for the escalation days is escalated. An escalated reminder, and one not
+	yet overdue for the escalation days, is left unread: a reminder nobody completes stays escalated
+	for good, and reading each of them every day grew with the years."""
+	escalate_from = add_days(today(), -cint(quality_settings.value("reminder_escalation_days")))
+	return [
+		row.name
+		for row in frappe.get_all(
+			DOCTYPE,
+			filters={"status": ["in", (OPEN, OVERDUE)], "due_date": ["<", today()]},
+			fields=["name", "status", "due_date"],
+		)
+		if row.status == OPEN or getdate(row.due_date) <= getdate(escalate_from)
+	]
 
 
 def in_step(what: str, step: Callable[[], None]) -> None:
