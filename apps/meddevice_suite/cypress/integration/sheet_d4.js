@@ -411,6 +411,16 @@ function shifted(iso, days) {
 // the form redraw it (found in Chrome, 2026-10-15, on the work order's stores).
 function type_afresh(selector, value) {
 	settle();
+	// In a line's form a field can sit below the fold: brought into view first, as a person scrolls
+	// to it (found in Chrome, 2026-10-15, on the receipt line's supplier lot number).
+	cy.get(
+		selector
+			.split(",")[0]
+			.trim()
+			.replace(/:visible(:first)?/g, "")
+	)
+		.first()
+		.scrollIntoView();
 	cy.get(first_of(selector)).clear();
 	settle();
 	cy.get(first_of(selector)).type(value, { delay: 0 });
