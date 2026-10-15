@@ -388,8 +388,8 @@ status = "implemented"
 [[requirement]]
 id = "URS-CMP-001"
 module = 49
-title = "Signing requires the signer to re-enter their own password at the moment of signing; a wrong password records no signature and counts towards the same account lockout as a failed login, and a locked account cannot sign."
-source = "21 CFR 11.200(a)(1), 11.300(d); D1 E-sign points; D2 System Foundation: Electronic Signature (21 CFR Part 11); DFD approval steps signed (6.5 QA Review & Approval, 9A A4 Approve Document, 9B B5 Approve / Reject)"
+title = "Signing requires the signer to re-enter their own password at the moment of signing; a wrong password records no signature and counts towards the same account lockout as a failed login; a locked account cannot sign, nor can one whose password is older than the days QA set until the password is changed."
+source = "21 CFR 11.200(a)(1), 11.300(b), 11.300(d); D1 E-sign points; D2 System Foundation: Electronic Signature (21 CFR Part 11); DFD approval steps signed (6.5 QA Review & Approval, 9A A4 Approve Document, 9B B5 Approve / Reject); expired password refused: Independent review 2026-10-15, 21 CFR 11.300(b)"
 status = "implemented"
 
 [[requirement]]

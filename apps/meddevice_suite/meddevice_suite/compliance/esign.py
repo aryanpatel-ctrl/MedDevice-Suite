@@ -29,7 +29,7 @@ which a rename may change; the audit trail records every one of those changes.
 
 import frappe
 from frappe import _
-from frappe.auth import get_login_attempt_tracker
+from frappe.auth import LoginManager, get_login_attempt_tracker
 from frappe.model.document import Document
 from frappe.utils import cint, get_datetime, get_fullname, now_datetime
 from frappe.utils.password import check_password
@@ -277,6 +277,15 @@ def authenticate(user: str, password: str, doc: Document, action: str) -> None:
 		)
 		frappe.throw(_("Incorrect password. The signature was not recorded."), SigningRefused)
 	tracker.add_success_attempt()
+	# An expired password signs no more than it signs in (11.300(b)): Frappe's own check, which it
+	# runs only at login, with the days QA set (URS-CMP-037). Checked once the password is right.
+	login = LoginManager.__new__(LoginManager)  # the check alone, without starting a login
+	login.user = user
+	if login.force_user_to_reset_password():
+		frappe.throw(
+			_("Your password has expired. Change your password, then sign. The signature was not recorded."),
+			SigningRefused,
+		)
 
 
 def record_failed_signing(user: str, doctype: str, name: str, action: str) -> None:
