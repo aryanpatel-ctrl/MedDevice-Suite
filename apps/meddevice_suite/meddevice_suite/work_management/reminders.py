@@ -590,8 +590,10 @@ def run() -> None:
 			f"reminders of {category}",
 			lambda category=category, due_now=kind.due: track(category, due_now),
 		)
-	for name in frappe.get_all(SCHEDULE, filters={"active": 1}, pluck="name"):
-		in_step(f"recurring reminder {name}", lambda name=name: raise_occurrence(name))
+	for name, item in occurrences_due():
+		in_step(
+			f"recurring reminder {name}", lambda name=name, item=item: make(SCHEDULED, item, schedule=name)
+		)
 	for name in to_follow_up():
 		in_step(f"reminder {name}", lambda name=name: follow_up(name))
 	send_notices()
@@ -743,20 +745,25 @@ def send_notices() -> None:
 	"""Tell the people of each open reminder what they have not been told yet: that it was raised,
 	that it was escalated. Each reminder on its own, so one that fails is logged and told on the
 	next run, and the others still go."""
+	fields = ["name", "responsible_roles"]
 	untold = frappe.get_all(
 		DOCTYPE,
 		filters={"status": ["in", STILL_OPEN], "notified": ["is", "not set"]},
-		pluck="name",
+		fields=fields,
 		order_by="creation asc",
 	)
 	escalation_untold = frappe.get_all(
-		DOCTYPE, filters={"status": ESCALATED, "notified": RAISED}, pluck="name", order_by="creation asc"
+		DOCTYPE, filters={"status": ESCALATED, "notified": RAISED}, fields=fields, order_by="creation asc"
 	)
-	for name in untold + escalation_untold:
-		in_step(f"notice of reminder {name}", lambda name=name: notify(name))
+	# The people of every job named, in one query, not one per job for every reminder told.
+	users_of = users_with_roles(
+		{role for row in untold for role in (row.responsible_roles or "").split("\n") if role}
+	)
+	for row in untold + escalation_untold:
+		in_step(f"notice of reminder {row.name}", lambda name=row.name: notify(name, users_of))
 
 
-def notify(name: str) -> None:
+def notify(name: str, users_of: dict[str, list[str]] | None = None) -> None:
 	"""Raised: its responsible person is told, or, naming none, everyone of its responsible jobs,
 	unless its category's module has told them already (`Category.told_by`). Escalated: QA,
 	Management and its responsible person, by the "Reminder Overdue" alert. What was told is
@@ -764,18 +771,22 @@ def notify(name: str) -> None:
 	reminder = frappe.get_doc(DOCTYPE, name)
 	kind = CATEGORIES.get(reminder.category)
 	if not reminder.notified and not (kind and kind.told_by):
-		tell_raised(reminder)
+		tell_raised(reminder, users_of)
 	if reminder.status == ESCALATED and reminder.notified != ESCALATED:
 		frappe.get_doc("Notification", OVERDUE_ALERT).send(reminder)
 	update(name, notified=ESCALATED if reminder.status == ESCALATED else RAISED)
 
 
-def tell_raised(reminder: frappe.model.document.Document) -> None:
+def tell_raised(
+	reminder: frappe.model.document.Document, users_of: dict[str, list[str]] | None = None
+) -> None:
 	if reminder.responsible_user:
 		users = [reminder.responsible_user]
 	else:
 		roles = [role for role in (reminder.responsible_roles or "").split("\n") if role]
-		users = sorted({user for role in roles for user in users_with_role(role)})
+		if users_of is None or not set(roles) <= set(users_of):
+			users_of = users_with_roles(roles)
+		users = sorted({user for role in roles for user in users_of.get(role, ())})
 	if not users:
 		return
 	if reminder.schedule:
@@ -803,29 +814,63 @@ def next_after(due, frequency: str):
 	return add_days(due, 7) if frequency == "Weekly" else add_months(due, FREQUENCY_MONTHS[frequency])
 
 
-def raise_occurrence(name: str) -> None:
-	"""The schedule's next occurrence, once within its lead time; its job is told by
-	`send_notices`."""
-	schedule = frappe.get_doc(SCHEDULE, name)
-	due = getdate(schedule.next_due_date or schedule.first_due_date)
-	if getdate(add_days(due, -cint(schedule.lead_days))) > getdate(today()):
-		return
-	item = Due(
+def occurrences_due() -> list[tuple[str, Due]]:
+	"""(schedule, occurrence) for each active schedule whose next occurrence is within its lead time
+	and not raised yet; its job is told by `send_notices`. The schedules are read in one query and the
+	occurrences raised already in one more, not a load and a check per schedule every day. A completed
+	occurrence keeps its key, so it is never raised again."""
+	occurrences = []
+	for schedule in frappe.get_all(
 		SCHEDULE,
-		schedule.name,
-		due,
-		_("{0} is due on {1}").format(schedule.title, date_text(due)),
-		(schedule.responsible_role,),
+		filters={"active": 1},
+		fields=["name", "title", "responsible_role", "next_due_date", "first_due_date", "lead_days"],
+	):
+		due = getdate(schedule.next_due_date or schedule.first_due_date)
+		if getdate(add_days(due, -cint(schedule.lead_days))) > getdate(today()):
+			continue
+		occurrences.append(
+			(
+				schedule.name,
+				Due(
+					SCHEDULE,
+					schedule.name,
+					due,
+					_("{0} is due on {1}").format(schedule.title, date_text(due)),
+					(schedule.responsible_role,),
+				),
+			)
+		)
+	if not occurrences:
+		return []
+	raised = set(
+		frappe.get_all(
+			DOCTYPE,
+			filters={"reminder_key": ["in", [item.key(SCHEDULED) for _name, item in occurrences]]},
+			pluck="reminder_key",
+		)
 	)
-	if frappe.db.exists(DOCTYPE, {"reminder_key": item.key(SCHEDULED)}):
-		return  # raised already; a completed occurrence keeps its key, so it is never raised again
-	make(SCHEDULED, item, schedule=schedule.name)
+	return [(name, item) for name, item in occurrences if item.key(SCHEDULED) not in raised]
 
 
-def users_with_role(role: str) -> list[str]:
-	from frappe.utils.user import get_users_with_role
-
-	return [user for user in get_users_with_role(role) if user not in ("Administrator", "Guest")]
+def users_with_roles(roles: set[str] | list[str]) -> dict[str, list[str]]:
+	"""role -> its enabled users, people only, for all the roles in one query (as Frappe's
+	get_users_with_role reads one role)."""
+	wanted = sorted(set(roles))
+	if not wanted:
+		return {}
+	user, has_role = frappe.qb.DocType("User"), frappe.qb.DocType("Has Role")
+	people: dict[str, list[str]] = {role: [] for role in wanted}
+	for role, name in (
+		frappe.qb.from_(has_role)
+		.join(user)
+		.on(has_role.parent == user.name)
+		.select(has_role.role, user.name)
+		.where(has_role.role.isin(wanted) & (user.enabled == 1) & user.name.notin(["Administrator", "Guest"]))
+		.distinct()
+		.run()
+	):
+		people[role].append(name)
+	return people
 
 
 @frappe.whitelist()

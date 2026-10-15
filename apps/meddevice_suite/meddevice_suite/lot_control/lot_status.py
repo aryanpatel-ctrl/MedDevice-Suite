@@ -896,10 +896,11 @@ def approved_store(item: str, company: str) -> str:
 
 
 def stock_by_lot(
-	item: str | None = None, warehouse: str | None = None, lot: str | None = None
+	item: str | None = None, warehouse: str | list[str] | None = None, lot: str | None = None
 ) -> list[frappe._dict]:
 	"""[{item_code, warehouse, batch_no, qty}] for every lot with stock, in two grouped queries
-	(ERPNext keeps old-style lots on the ledger entry and bundled lots on the bundle's rows)."""
+	(ERPNext keeps old-style lots on the ledger entry and bundled lots on the bundle's rows); in one
+	store, or in any of a list of stores."""
 	sle = frappe.qb.DocType("Stock Ledger Entry")
 	entry = frappe.qb.DocType("Serial and Batch Entry")
 	plain = (
@@ -923,7 +924,9 @@ def stock_by_lot(
 		if item:
 			query = query.where(sle.item_code == item)
 		if warehouse:
-			query = query.where(sle.warehouse == warehouse)
+			query = query.where(
+				sle.warehouse.isin(warehouse) if isinstance(warehouse, list) else sle.warehouse == warehouse
+			)
 		if lot:
 			query = query.where(lot_field == lot)
 		for row in query.run(as_dict=True):

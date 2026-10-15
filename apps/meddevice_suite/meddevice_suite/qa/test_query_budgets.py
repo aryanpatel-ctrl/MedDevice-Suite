@@ -423,6 +423,7 @@ class TestDailyJobsBudget(QueryBudget, IntegrationTestCase):
 			self.undone_action()
 			self.document_alerted_for_review()
 			self.reminder_left_escalated()
+			self.recurring_activity()
 		self.lots_expiring(count)
 
 	def replaced_supplier_decision(self) -> None:
@@ -508,6 +509,21 @@ class TestDailyJobsBudget(QueryBudget, IntegrationTestCase):
 				("HR User",),
 			),
 		)
+
+	def recurring_activity(self) -> None:
+		"""A recurring activity QA plans, its next occurrence within its lead time: raised once, then
+		found raised already every day until it is done (configuration, read in one query)."""
+		frappe.get_doc(
+			{
+				"doctype": "Reminder Schedule",
+				"title": f"Query budget check {frappe.generate_hash(length=6)}",
+				"description": "Recurring activity (query budget)",
+				"responsible_role": "Stock User",
+				"frequency": "Monthly",
+				"first_due_date": add_days(today(), 3),
+				"lead_days": 5,
+			}
+		).insert()
 
 	def lots_expiring(self, count: int) -> None:
 		receipt = stock_entry(
