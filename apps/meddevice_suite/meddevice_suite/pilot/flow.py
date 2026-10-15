@@ -41,8 +41,9 @@ from meddevice_suite.lot_control import release as lot_release
 from meddevice_suite.lot_control.receipt import verify_certificate
 from meddevice_suite.master_data import supplier_approval
 from meddevice_suite.pilot import refuse_unless_pilot_site
-from meddevice_suite.pilot.demo import BOM_QUANTITY, PRODUCTS, RAW_MATERIALS, demo_user_email
-from meddevice_suite.pilot.inspection import readings_for
+from meddevice_suite.pilot.demo import PRODUCTS, RAW_MATERIALS, demo_user_email
+from meddevice_suite.setup.fixtures.inspection import readings_for
+from meddevice_suite.setup.fixtures.records import BOM_QUANTITY, lot_of
 
 
 @contextmanager
@@ -59,13 +60,6 @@ def as_job(profile: str) -> Iterator[None]:
 		yield
 	finally:
 		frappe.set_user(previous)  # nosemgrep: frappe-setuser - back to the user who was acting
-
-
-def lot_of(row: Document) -> str:
-	"""The lot of a stock line: ERPNext v16 keeps it in the line's Serial and Batch Bundle."""
-	return row.batch_no or frappe.db.get_value(
-		"Serial and Batch Entry", {"parent": row.serial_and_batch_bundle}, "batch_no"
-	)
 
 
 def stored(doc: Document) -> Document:

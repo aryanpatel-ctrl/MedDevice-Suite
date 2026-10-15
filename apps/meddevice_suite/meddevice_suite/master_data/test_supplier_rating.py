@@ -14,9 +14,9 @@ from meddevice_suite.lot_control.test_release import ITEM, ReleaseTestCase, cert
 from meddevice_suite.master_data import supplier_rating
 from meddevice_suite.master_data.supplier_rating import DUE, RE_EVALUATED, SATISFACTORY
 from meddevice_suite.master_data.test_supplier_approval import approved_for, decide, ensure_supplier
-from meddevice_suite.pilot.flow import lot_of
 from meddevice_suite.qa import verifies
 from meddevice_suite.qms.test_document_control import signer
+from meddevice_suite.setup.fixtures.records import lot_of
 from meddevice_suite.setup.test_stock import approve_for_test
 
 NEXT_MONTH = getdate(add_months(get_first_day(today()), 1))  # this month is then over

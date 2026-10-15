@@ -16,8 +16,8 @@ from meddevice_suite.lot_control.lot_status import QUARANTINE, LotNotApproved, s
 from meddevice_suite.lot_control.receipt import made_by_production, material_receipt_of
 from meddevice_suite.lot_control.test_lot_status import company, lot_item, qty_in, store
 from meddevice_suite.lot_control.test_release import FINISHED_ITEM, ITEM, ReleaseTestCase, made_by_work_order
-from meddevice_suite.pilot.flow import lot_of
 from meddevice_suite.qa import verifies
+from meddevice_suite.setup.fixtures.records import lot_of
 from meddevice_suite.setup.test_stock import approve_for_test
 
 FROM_PRODUCTION = "comes into stock only from production"

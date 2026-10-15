@@ -21,8 +21,8 @@ from meddevice_suite.lot_control.test_lot_status import (
 	stock_entry,
 	store,
 )
-from meddevice_suite.pilot.flow import lot_of
 from meddevice_suite.qa import verifies
+from meddevice_suite.setup.fixtures.records import lot_of
 from meddevice_suite.setup.install import apply_configuration
 from meddevice_suite.setup.test_stock import approve_for_test
 

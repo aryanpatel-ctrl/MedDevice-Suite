@@ -24,7 +24,7 @@ Revised 2026-10-12 (branch `fix/lot-release-scope`): a decision acts only on the
 
 Only QA Manager creates a Lot Release or signs it. QC Inspector, Stores, Purchase, Production, Management and System Manager read it. Nobody holds submit, cancel, amend or delete on it: the signed act is the only submit.
 
-**Prerequisites.** Lot status and the role stores (module 17), the approved-supplier decision on the supplier (module 4), the item's incoming specification (module 6), the e-signature service (module 49) and at least one measuring instrument registered as an Asset (demo: *Digital Caliper (Demo)*, item `INST-CALIPER`). All are part of the app's configuration applied by `bench migrate`; the demo masters come from `pilot/demo.py` and `pilot/inspection.py`.
+**Prerequisites.** Lot status and the role stores (module 17), the approved-supplier decision on the supplier (module 4), the item's incoming specification (module 6), the e-signature service (module 49) and at least one measuring instrument registered as an Asset (demo: *Digital Caliper (Demo)*, item `INST-CALIPER`). All are part of the app's configuration applied by `bench migrate`; the demo masters come from `pilot/demo.py` and `setup/fixtures/inspection.py`.
 
 ## 2. Detailed functional explanation
 

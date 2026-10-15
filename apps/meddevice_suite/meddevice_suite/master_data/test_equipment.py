@@ -11,9 +11,9 @@ from meddevice_suite.lot_control.test_lot_status import company
 from meddevice_suite.lot_control.test_release import ReleaseTestCase
 from meddevice_suite.master_data import equipment
 from meddevice_suite.master_data.report.equipment_history_card import equipment_history_card
-from meddevice_suite.pilot.inspection import INSTRUMENT_EQUIPMENT, INSTRUMENT_ITEM, LOCATION
 from meddevice_suite.qa import verifies
 from meddevice_suite.qms.test_change_control import signer
+from meddevice_suite.setup.fixtures.inspection import INSTRUMENT_EQUIPMENT, INSTRUMENT_ITEM, LOCATION
 from meddevice_suite.setup.test_stock import care_in_date_for_test
 
 REFUSED = (frappe.ValidationError, frappe.PermissionError)
@@ -304,7 +304,7 @@ class TestTheRecord(EquipmentTestCase):
 @verifies("URS-MST-010")
 class TestUseOnInspections(EquipmentTestCase):
 	def inspect_with(self, instrument: str):
-		from meddevice_suite.pilot.inspection import readings_for
+		from meddevice_suite.setup.fixtures.inspection import readings_for
 
 		receipt, lot = self.received()
 		self.verified(receipt)

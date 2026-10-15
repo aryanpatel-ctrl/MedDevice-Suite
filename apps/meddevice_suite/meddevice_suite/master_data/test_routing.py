@@ -284,7 +284,7 @@ class TestOperation(RoutingTestCase):
 @verifies("URS-MST-012")
 class TestWorkstationAndRouting(RoutingTestCase):
 	def equipment_at(self, workstation: str) -> str:
-		from meddevice_suite.pilot.inspection import ensure_instrument
+		from meddevice_suite.setup.fixtures.inspection import ensure_instrument
 
 		instrument = frappe.get_doc(
 			"Asset", ensure_instrument(company(), approve_for_test, approve_equipment_for_test)
@@ -532,7 +532,7 @@ class TestUse(RoutingTestCase):
 			order.insert()
 
 	def equipment_at(self, workstation: str) -> str:
-		from meddevice_suite.pilot.inspection import ensure_instrument
+		from meddevice_suite.setup.fixtures.inspection import ensure_instrument
 
 		instrument = frappe.get_doc(
 			"Asset", ensure_instrument(company(), approve_for_test, approve_equipment_for_test)

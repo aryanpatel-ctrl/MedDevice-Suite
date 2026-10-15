@@ -1,7 +1,7 @@
 # Item master (module 1) — feature document and browser test guide
 
 Requirements: **URS-MST-003, URS-MST-004, URS-MST-005, URS-MST-006, URS-MST-016** (`meddevice_suite/qa/requirements.toml`). Also touched: URS-MST-001 (an approved item counts as in use), URS-MST-002 (a specification of an approved item counts as in use), URS-MST-014 (the item's specification approved by QA).
-Code: `meddevice_suite/master_data/item_master.py`, hooks in `meddevice_suite/hooks.py`, signed act in `compliance/signing.py`, desk in `public/js/master_data.js`; loaders `pilot/demo.py`, `pilot/inspection.py`, `qa/ui_journey.py`.
+Code: `meddevice_suite/master_data/item_master.py`, hooks in `meddevice_suite/hooks.py`, signed act in `compliance/signing.py`, desk in `public/js/master_data.js`; loaders `pilot/demo.py`, `setup/fixtures/inspection.py`, `qa/ui_journey.py`.
 DFD trace: D3 Item / BOM / Routing Master; 3.3 Internal Batch Creation; 3.4 IQC Inspection; 5.3 Final QC; 6.2 Label Printing; flowchart "All masters are version controlled and linked with Document Control".
 State on 2026-10-10: built; server and browser tests written from the requirement matrix (section 3) before the code; results in section 8. Independent review: see section 8.
 State on 2026-10-14: the specification document (URS-MST-016) and the approved specification (URS-MST-006 as changed) added under foundation hardening plan D-33 / D-34, decided 2026-10-14; written with their tests, **not yet run** (section 8).
@@ -183,9 +183,9 @@ Run the standard flow (pilot `pilot/test_standard_flow.py`, browser `standard_fl
 | Signing | `SIGNING_ACTIONS[("Item", "Approve")]` → `item_master.approve`, meaning *Approved*; `esign.SIGNED_CONTENT["Item"]` → `item_master.signed_content` (what the signature binds) |
 | API | `POST /api/method/meddevice_suite.compliance.signing.sign_action` (`doctype=Item`, `name`, `action=Approve`, `password`, `reason`); `/api/resource/Item` under Item permissions (Item Manager edits; approval fields refused) |
 | Desk | `public/js/master_data.js`: Item banner and **Approve Item** button (Quality Manager, nothing missing, saved) |
-| Loaders | `pilot/demo.py` `item_master_data`, `demo_gtin` (GS1 prefix 20, restricted circulation), `approve_as`; `pilot/inspection.py` `approve_instrument_item`; `qa/ui_journey.py` `approve_as_qa` (run's QA user and password) |
+| Loaders | `pilot/demo.py` `item_master_data`, `demo_gtin` (GS1 prefix 20, restricted circulation), `approve_as`; `setup/fixtures/inspection.py` `approve_instrument_item`; `qa/ui_journey.py` `approve_as_qa` (run's QA user and password) |
 | Test fixture | `setup/test_stock.py` `approve_for_test` — records an approval without the signed act, for other modules' tests only; the act is proved in `test_item_master.py`. `specification_document_for_test` (a Specification in effect) and `approve_specification_for_test`, used by `test_item_master.py` `with_specification` |
-| Loaders (D-34) | `pilot/documents.py` `ensure_specification_document` issues *Specification: {item} (demo)* through document control and names it on a draft material or product, before `approve`; `qa/ui_journey.py` `ensure_item_document`, `prepare_effective_document` (browser) |
+| Loaders (D-34) | `setup/fixtures/documents.py` `ensure_specification_document` issues *Specification: {item} (demo)* through document control and names it on a draft material or product, before `approve`; `qa/ui_journey.py` `ensure_item_document`, `prepare_effective_document` (browser) |
 
 ## 7. Defects, edge cases and risks
 

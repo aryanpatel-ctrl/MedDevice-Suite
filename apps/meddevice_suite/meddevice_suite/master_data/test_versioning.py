@@ -368,7 +368,7 @@ class TestVersionedMasters(VersioningTestCase):
 			item.save()
 
 	def test_an_equipment_record_in_use_is_cancelled_only_under_control(self):
-		from meddevice_suite.pilot.inspection import ensure_instrument
+		from meddevice_suite.setup.fixtures.inspection import ensure_instrument
 
 		asset = frappe.get_doc(
 			"Asset", ensure_instrument(company(), approve_for_test, approve_equipment_for_test)
@@ -743,7 +743,7 @@ class TestWiredIn(VersioningTestCase):
 			enqueue_replace_bom({"current_bom": current.name, "new_bom": other.name})
 
 	def test_a_submitted_assets_name_changes_only_under_a_request(self):
-		from meddevice_suite.pilot.inspection import ensure_instrument
+		from meddevice_suite.setup.fixtures.inspection import ensure_instrument
 
 		copy = frappe.copy_doc(
 			frappe.get_doc(

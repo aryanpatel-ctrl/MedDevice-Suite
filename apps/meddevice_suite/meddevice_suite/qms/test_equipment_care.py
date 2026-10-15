@@ -603,7 +603,7 @@ class TestRefusedAtTheWorkstation(RoutingTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
-		from meddevice_suite.pilot.inspection import ensure_inspection_masters
+		from meddevice_suite.setup.fixtures.inspection import ensure_inspection_masters
 		from meddevice_suite.setup.test_stock import approve_equipment_for_test, approve_for_test
 
 		ensure_inspection_masters(

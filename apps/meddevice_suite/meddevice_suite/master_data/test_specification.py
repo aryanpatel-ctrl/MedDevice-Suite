@@ -27,9 +27,9 @@ from meddevice_suite.master_data.specification import (
 	specification_for_inspection,
 )
 from meddevice_suite.master_data.test_routing import document
-from meddevice_suite.pilot.inspection import APPEARANCE, DIMENSION, readings_for
 from meddevice_suite.qa import verifies
 from meddevice_suite.qms.test_change_control import approved_change, signer
+from meddevice_suite.setup.fixtures.inspection import APPEARANCE, DIMENSION, readings_for
 
 REFUSED = (frappe.ValidationError, frappe.PermissionError)
 

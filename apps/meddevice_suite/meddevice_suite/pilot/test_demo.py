@@ -16,10 +16,10 @@ from meddevice_suite.pilot.demo import (
 	demo_user_email,
 	load_demo_data,
 )
-from meddevice_suite.pilot.risk import SECOND_QA
 from meddevice_suite.pilot.site import prepare_pilot_site
 from meddevice_suite.qa import verifies
 from meddevice_suite.qms import pinned_records
+from meddevice_suite.setup.fixtures.risk import SECOND_QA
 from meddevice_suite.setup.install import apply_configuration
 from meddevice_suite.setup.roles import JOB_PROFILES
 
