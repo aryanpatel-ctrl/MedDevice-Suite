@@ -14,7 +14,9 @@ author, then moves on only through signed acts (21 CFR Part 11):
   if it has changed since;
 - outside QA, people see only effective revisions, and the drafts they author or
   review, so a superseded or withdrawn revision is not used by mistake;
-- nothing is ever deleted; a document is withdrawn, with a signature and a reason;
+- nothing is ever deleted; a document is withdrawn, with a signature and a reason, once no
+  approved master in use names it as the document defining it (ISO 13485 4.2.4; independent review
+  2026-10-15);
 - each effective document is reviewed every review period (ISO 13485 4.2.4 b): QA either starts a
   new revision or signs that the effective revision is still current (`review_document`), which
   moves the next review a review period on without changing the document or the revision;
@@ -130,6 +132,16 @@ def withdraw(document: Document, password: str, reason: str | None = None) -> No
 			"Document Revision", {"controlled_document": document.name, "status": ["in", IN_PROGRESS]}
 		),
 		_("Finish or return the revision in progress before withdrawing {0}.").format(document.name),
+	)
+	# Master data builds on document control: imported here, not at the top.
+	from meddevice_suite.master_data.defining_documents import masters_defined_by
+
+	defined = masters_defined_by(document.name)
+	require(
+		not defined,
+		_(
+			"{0} defines {1}, approved and in use. Point each to another document, or retire it, under change control before withdrawing {0}."
+		).format(document.name, ", ".join(defined)),
 	)
 	document.status = "Obsolete"
 	document.withdrawn_reason = reason

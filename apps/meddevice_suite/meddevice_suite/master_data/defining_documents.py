@@ -8,7 +8,9 @@ finished good its product specification or drawing (module 1). QA approves the m
 that document is in effect, a controlled document of a type that can define it. Each master's
 approval asks `document_missing` what its document still lacks; `defined_masters` is the list the
 guardrail test holds every master with an approval act to, so that a master given a link to a
-controlled document later is held to the same rule.
+controlled document later is held to the same rule. The other way round, a document that defines an
+approved master in use is not withdrawn (`masters_defined_by`, asked by document control's
+withdrawal): QA first points the master to another document, or retires it, under change control.
 """
 
 from collections.abc import Callable
@@ -85,3 +87,34 @@ def defined_masters() -> dict[str, tuple[DefiningDocument, Callable[[Document], 
 		specification.DOCTYPE: (specification.TEST_METHOD_DOCUMENT, specification.missing_for_approval),
 		"Item": (item_master.SPECIFICATION_DOCUMENT_LINK, item_master.missing_for_approval),
 	}
+
+
+def approval_of(doctype: str) -> tuple[str, str]:
+	"""The field holding QA's approval of a master defined by a document, and its approved value:
+	the item's own (module 1), the one the other masters share (master_approval)."""
+	from meddevice_suite.master_data import item_master, master_approval
+
+	if doctype == "Item":
+		return item_master.APPROVAL_STATUS, item_master.APPROVED
+	return master_approval.APPROVAL_STATUS, master_approval.APPROVED
+
+
+def masters_defined_by(document: str) -> list[str]:
+	"""The approved masters, not disabled, that name `document` as the one defining them, each as
+	"Item X". While one does, the document is not withdrawn (ISO 13485 4.2.4: no unintended use of
+	an obsolete document; independent review 2026-10-15): QA approved the master against it, and
+	the master stays in use. One query per kind of master."""
+	cited = []
+	for doctype, (defining, _missing_for_approval) in defined_masters().items():
+		meta = frappe.get_meta(doctype)
+		approval, approved = approval_of(doctype)
+		if not (meta.has_field(defining.field) and meta.has_field(approval)):
+			continue  # before apply_configuration first adds the fields, nothing names a document
+		filters = {defining.field: document, approval: approved}
+		if meta.has_field("disabled"):
+			filters["disabled"] = 0
+		cited += [
+			_("{0} {1}").format(_(doctype), name)
+			for name in frappe.get_all(doctype, filters=filters, pluck="name", order_by="name asc")
+		]
+	return cited

@@ -426,6 +426,102 @@ class TestWithdrawal(DocumentControlTestCase):
 			self.withdraw(self.qa, document)
 
 
+@verifies("URS-QMS-006", "URS-MST-016")
+class TestWithdrawalOfADefiningDocument(DocumentControlTestCase):
+	"""Independent review 2026-10-15: a document that defines an approved master in use was withdrawn
+	while the master stayed approved, so it went on being bought, made or inspected against an
+	obsolete document (ISO 13485 4.2.4)."""
+
+	@classmethod
+	def setUpClass(cls):
+		from meddevice_suite.setup.install import apply_configuration
+
+		super().setUpClass()
+		apply_configuration()
+
+	def effective(self, document_type: str):
+		document = self.register(f"Defines a master {frappe.generate_hash(length=6)}", document_type)
+		self.issue(document)
+		return frappe.get_doc("Controlled Document", document.name)
+
+	def master(self, doctype: str) -> str:
+		"""A new master of the kind, in draft, as its people set it up."""
+		from meddevice_suite.lot_control.test_lot_status import lot_item
+		from meddevice_suite.master_data.test_specification import template
+		from meddevice_suite.setup.fixtures.inspection import APPEARANCE, DIMENSION
+
+		self.as_user("Administrator")
+		suffix = frappe.generate_hash(length=6).upper()
+		if doctype == "Item":
+			return lot_item(f"MDS-DEF-{suffix}")
+		if doctype == "Operation":
+			return frappe.get_doc({"doctype": "Operation", "name": f"MDS DEF OP {suffix}"}).insert().name
+		for parameter in (APPEARANCE, DIMENSION):  # what the template reads
+			if not frappe.db.exists("Quality Inspection Parameter", parameter):
+				frappe.get_doc({"doctype": "Quality Inspection Parameter", "parameter": parameter}).insert()
+		return template(f"Defined template {suffix}", None).insert().name
+
+	def cite(self, doctype: str, name: str, document: str, approved: bool = True) -> None:
+		"""The master names the document and QA approved it, as the signed approval leaves it."""
+		from meddevice_suite.master_data.defining_documents import approval_of, defined_masters
+
+		defining, _missing = defined_masters()[doctype]
+		approval, approved_value = approval_of(doctype)
+		values = {defining.field: document}
+		if approved:
+			values[approval] = approved_value
+		frappe.db.set_value(doctype, name, values)  # test fixture only
+
+	def withdraw(self, document) -> None:
+		self.as_user(self.qa)
+		sign_action("Controlled Document", document.name, "Withdraw", PASSWORD, "Replaced")
+
+	def test_a_document_defining_an_approved_master_is_not_withdrawn_until_qa_retires_it(self):
+		from meddevice_suite.master_data.defining_documents import approval_of, defined_masters
+
+		kinds = {
+			"Item": "Specification",
+			"Operation": "Work Instruction",
+			"Quality Inspection Template": "SOP",
+		}
+		self.assertEqual(set(defined_masters()), set(kinds), "each master a document defines is covered")
+		for doctype, document_type in kinds.items():
+			with self.subTest(doctype=doctype):
+				document = self.effective(document_type)
+				name = self.master(doctype)
+				self.cite(doctype, name, document.name)
+				with self.assertRaisesRegex(frappe.ValidationError, rf"{document.name} defines .*{name}"):
+					self.withdraw(document)
+				self.assertEqual(
+					frappe.db.get_value("Controlled Document", document.name, "status"), "Effective"
+				)
+
+				# QA retires the master (an item is disabled; another master leaves its approval).
+				if doctype == "Item":
+					frappe.db.set_value("Item", name, "disabled", 1)  # as a change under control leaves it
+				else:
+					approval, _approved = approval_of(doctype)
+					frappe.db.set_value(doctype, name, approval, "Draft")
+				self.withdraw(document)
+				self.assertEqual(
+					frappe.db.get_value("Controlled Document", document.name, "status"), "Obsolete"
+				)
+
+	def test_a_master_in_draft_naming_it_does_not_hold_the_withdrawal(self):
+		document = self.effective("Specification")
+		self.cite("Item", self.master("Item"), document.name, approved=False)
+		self.withdraw(document)
+		self.assertEqual(frappe.db.get_value("Controlled Document", document.name, "status"), "Obsolete")
+
+	def test_the_refusal_names_every_master_it_defines(self):
+		document = self.effective("Specification")
+		items = sorted(self.master("Item") for _ in range(2))
+		for item in items:
+			self.cite("Item", item, document.name)
+		with self.assertRaisesRegex(frappe.ValidationError, rf"Item {items[0]}, Item {items[1]}"):
+			self.withdraw(document)
+
+
 @verifies("URS-QMS-002")
 class TestSeparationOfSigners(DocumentControlTestCase):
 	def test_the_reviewer_cannot_also_approve(self):

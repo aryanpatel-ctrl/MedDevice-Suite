@@ -809,8 +809,8 @@ status = "implemented"
 [[requirement]]
 id = "URS-QMS-006"
 module = 30
-title = "QA can withdraw a document with an electronic signature and a reason, once no revision is in progress; the document and its effective revision become obsolete and are kept."
-source = "DFD 9A QMS Documentation (A6 Revision & Archive); D2 Document Control; ISO 13485 4.2.4 g), h); 4.2.5"
+title = "QA can withdraw a document with an electronic signature and a reason, once no revision is in progress and no approved master in use (an item, an operation or a specification not disabled) names it as the document that defines it, the refusal naming each such master; the document and its effective revision become obsolete and are kept."
+source = "DFD 9A QMS Documentation (A6 Revision & Archive); D2 Document Control; ISO 13485 4.2.4 g), h); 4.2.5; refused while it defines an approved master: Independent review 2026-10-15, ISO 13485 4.2.4 (no unintended use of obsolete documents)"
 status = "implemented"
 
 
