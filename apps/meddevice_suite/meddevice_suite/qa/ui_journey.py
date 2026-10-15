@@ -44,7 +44,14 @@ from meddevice_suite.lot_control.lot_status import (
 	stock_by_lot,
 )
 from meddevice_suite.master_data import item_master
-from meddevice_suite.pilot.demo import (
+from meddevice_suite.qa.site_setup import TEST_COMPANY
+from meddevice_suite.qa.ui_users import email_for, ensure_test_site
+from meddevice_suite.setup.fixtures.inspection import (
+	calibrate_instrument,
+	ensure_inspection_masters,
+	ensure_inspection_template,
+)
+from meddevice_suite.setup.fixtures.records import (
 	BOM_QUANTITY,
 	ensure,
 	ensure_bom,
@@ -52,13 +59,6 @@ from meddevice_suite.pilot.demo import (
 	ensure_licence,
 	ensure_price,
 )
-from meddevice_suite.pilot.inspection import (
-	calibrate_instrument,
-	ensure_inspection_masters,
-	ensure_inspection_template,
-)
-from meddevice_suite.qa.site_setup import TEST_COMPANY
-from meddevice_suite.qa.ui_users import email_for, ensure_test_site
 
 COMPANY = TEST_COMPANY["company_name"]
 CUSTOMER = "UIJ City Hospital"
@@ -160,7 +160,7 @@ def prepare_journey(password: str | None = None) -> dict:
 def approve_as_qa(password: str | None, doctype: str = "Item") -> Callable[[str], None]:
 	"""QA's signed approval of a journey item (module 1), bill of materials (module 2) or piece of
 	equipment (module 8), as the run's QA Manager user."""
-	from meddevice_suite.pilot.demo import signed_approval
+	from meddevice_suite.setup.fixtures.records import signed_approval
 
 	approved, act, _reason = signed_approval(doctype)
 
@@ -178,7 +178,7 @@ def approve_as_qa(password: str | None, doctype: str = "Item") -> Callable[[str]
 def approve_specification_as_qa(password: str | None) -> Callable[[str], None]:
 	"""QA's signed approval of a journey specification, with its test method issued through document
 	control (module 6, plan D-33), as the run's QA Manager user."""
-	from meddevice_suite.pilot.documents import approve_specification
+	from meddevice_suite.setup.fixtures.documents import approve_specification
 
 	def approve(name: str) -> None:
 		if not password:
@@ -191,7 +191,7 @@ def approve_specification_as_qa(password: str | None) -> Callable[[str], None]:
 def ensure_item_document(code: str, password: str | None) -> None:
 	"""The specification that defines a journey material or product, issued through document control
 	and named on it before QA approves it (module 1, plan D-34)."""
-	from meddevice_suite.pilot.documents import ensure_specification_document
+	from meddevice_suite.setup.fixtures.documents import ensure_specification_document
 
 	if password:  # without it the item is approved already, or its approval says what it lacks
 		ensure_specification_document(
@@ -269,7 +269,7 @@ def ensure_masters(
 		],
 	)
 	if password:  # module 3: QA approves the operations, with their work instructions, and the routing
-		from meddevice_suite.pilot.documents import approve_production_masters
+		from meddevice_suite.setup.fixtures.documents import approve_production_masters
 
 		approve_production_masters(
 			[(operation, workstation) for operation, workstation, _minutes in OPERATIONS],
@@ -278,7 +278,7 @@ def ensure_masters(
 			email_for,
 			password,
 		)
-		from meddevice_suite.pilot.training import train_operator
+		from meddevice_suite.setup.fixtures.training import train_operator
 
 		# Module 37: the operator logging time is competent on each operation's work instruction.
 		train_operator(
@@ -292,8 +292,8 @@ def ensure_masters(
 		PRODUCT, ROUTING, {code: details[5] for code, details in RAW_MATERIALS.items()}, COMPANY, approve_bom
 	)
 	if password:  # module 31: the product's device master record, Current before production
-		from meddevice_suite.pilot.device_master import ensure_device_master_record
-		from meddevice_suite.pilot.risk import ensure_risk_report
+		from meddevice_suite.setup.fixtures.device_master import ensure_device_master_record
+		from meddevice_suite.setup.fixtures.risk import ensure_risk_report
 
 		# Module 39 (plan D-23): the report in force of the product's file, which the record pins.
 		ensure_second_qa(password)
@@ -389,7 +389,7 @@ def prepare_effective_document(password: str, document_type: str) -> str:
 	"""A controlled document of the type in effect, issued through document control by the jobs with
 	signatures (module 30), for the browser to name on a master QA approves (plan D-34): a test
 	method on a specification, a specification on an item."""
-	from meddevice_suite.pilot.documents import ensure_work_instruction
+	from meddevice_suite.setup.fixtures.documents import ensure_work_instruction
 
 	ensure_test_site()
 	if frappe.session.user != "Administrator":
@@ -409,9 +409,9 @@ def prepare_training(password: str) -> dict:
 	"""A work instruction new to the Operator's job, so the browser trains the operator on it: QA
 	adds it to the job's matrix with a signature, the system opens the operator's record, and the
 	Training Coordinator plans it, with the Production Supervisor to assess (module 37)."""
-	from meddevice_suite.pilot.documents import ensure_work_instruction
-	from meddevice_suite.pilot.training import ensure_matrix, ensure_operator
 	from meddevice_suite.qms import training
+	from meddevice_suite.setup.fixtures.documents import ensure_work_instruction
+	from meddevice_suite.setup.fixtures.training import ensure_matrix, ensure_operator
 
 	ensure_test_site()
 	if frappe.session.user != "Administrator":
@@ -447,9 +447,9 @@ def prepare_training_history(password: str) -> dict:
 	the Operator's job matrix with a signature and the system opens the operator's record, as at
 	go-live; the browser then has QA enter the paper history (module 37). Returns {"employee",
 	"document", "opened"}: the record the system opened, which the history replaces."""
-	from meddevice_suite.pilot.documents import ensure_work_instruction
-	from meddevice_suite.pilot.training import ensure_matrix, ensure_operator
 	from meddevice_suite.qms import training
+	from meddevice_suite.setup.fixtures.documents import ensure_work_instruction
+	from meddevice_suite.setup.fixtures.training import ensure_matrix, ensure_operator
 
 	ensure_test_site()
 	if frappe.session.user != "Administrator":
@@ -478,16 +478,16 @@ def prepare_risk_management(password: str) -> dict:
 	The draft is authored by a second QA user, so that the QA Manager approves as a third person.
 	Returns {"file", "assessment", "author", "sop"}."""
 	from meddevice_suite.master_data.item_master import FINISHED_GOOD, ITEM_TYPE
-	from meddevice_suite.pilot.documents import ensure_work_instruction
-	from meddevice_suite.pilot.risk import ensure_policy
 	from meddevice_suite.qms import risk_management
+	from meddevice_suite.setup.fixtures.documents import ensure_work_instruction
+	from meddevice_suite.setup.fixtures.risk import ensure_policy
 
 	ensure_test_site()
 	if frappe.session.user != "Administrator":
 		frappe.throw(_("The browser journey is prepared only by the Administrator."), frappe.PermissionError)
 	act_as = lambda profile: acting_as(email_for(profile))  # noqa: E731
 	author = ensure_second_qa(password)
-	# QA reviews the policy and Management approves it, when none is in force (pilot/risk.py): severity
+	# QA reviews the policy and Management approves it, when none is in force (setup/fixtures/risk.py): severity
 	# counts double, so the matrix is not symmetric and a swapped axis shows.
 	ensure_policy(act_as, password, RISK_TAG)
 	suffix = frappe.generate_hash(length=6)
@@ -565,9 +565,9 @@ def prepare_risk_management(password: str) -> dict:
 
 def ensure_second_qa(password: str) -> str:
 	"""A second QA user with the run's password: a risk assessment is authored, reviewed and approved
-	by three people, and only QA authors one (module 39). Acted as the job pilot/risk.py names
+	by three people, and only QA authors one (module 39). Acted as the job setup/fixtures/risk.py names
 	`SECOND_QA`, whose address it is."""
-	from meddevice_suite.pilot.risk import SECOND_QA
+	from meddevice_suite.setup.fixtures.risk import SECOND_QA
 
 	email = email_for(SECOND_QA)
 	user = (
@@ -609,11 +609,11 @@ def prepare_device_master_record(password: str) -> dict:
 	journey's routing, the risk management report in force of its own file (plan D-23), and an
 	effective Packaging and Labelling document. A revision left in progress by an earlier run is
 	withdrawn by QA first. Returns {"record", "item", "specification"}."""
-	from meddevice_suite.pilot.device_master import fill
-	from meddevice_suite.pilot.documents import ensure_work_instruction
-	from meddevice_suite.pilot.inspection import ensure_in_process_specification
-	from meddevice_suite.pilot.risk import ensure_risk_report
 	from meddevice_suite.qms import device_master_record as dmr
+	from meddevice_suite.setup.fixtures.device_master import fill
+	from meddevice_suite.setup.fixtures.documents import ensure_work_instruction
+	from meddevice_suite.setup.fixtures.inspection import ensure_in_process_specification
+	from meddevice_suite.setup.fixtures.risk import ensure_risk_report
 
 	ensure_test_site()
 	if frappe.session.user != "Administrator":
@@ -725,7 +725,7 @@ def prepare_lot_dates() -> dict:
 	to show its dates fixed and to correct them as QA with a signature (module 18, plan H6). Run after
 	prepare_journey, which approves the material; the next prepare_journey writes the lot off with
 	the rest of what a run left. Returns {"lot", "manufacturing_date", "expiry_date"}."""
-	from meddevice_suite.pilot.flow import lot_of
+	from meddevice_suite.setup.fixtures.records import lot_of
 
 	ensure_test_site()
 	if frappe.session.user != "Administrator":
@@ -757,7 +757,7 @@ def draft_licence() -> str:
 	repository, for the browser to verify on its form with a signature (module 41)."""
 	ensure_test_site()
 	frappe.has_permission("Regulatory Licence", "create", throw=True)
-	tag = frappe.generate_hash(length=5)
+	tag = frappe.generate_hash(length=10)
 	licence_type = f"Manufacturing licence (browser test) {tag}"
 	frappe.get_doc(
 		{"doctype": "Regulatory Licence Type", "licence_type_name": licence_type, "has_expiry": 1}
@@ -802,7 +802,7 @@ def draft_licence() -> str:
 def draft_calibration(asset: str) -> str:
 	"""A calibration of `asset` drafted by the signed-in user, for the browser to complete on its
 	form with their signature (module 38)."""
-	from meddevice_suite.pilot.inspection import draft_calibration as draft
+	from meddevice_suite.setup.fixtures.inspection import draft_calibration as draft
 
 	ensure_test_site()
 	frappe.has_permission("Calibration Record", "create", throw=True)

@@ -30,11 +30,11 @@ from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 from frappe.model.document import Document
 from frappe.utils import cint, now_datetime
 
-from meddevice_suite.compliance.audit import same
+from meddevice_suite.compliance.audit import as_data, same
+from meddevice_suite.compliance.checks import QA_ROLE, is_qa, require
 from meddevice_suite.compliance.esign import sign
 
 DOCTYPE = "Asset"
-QA_ROLE = "Quality Manager"
 APPROVAL_FLAG = "equipment_approval"
 # Fields on the asset
 TAG, CLASS, MAKER, MODEL, SERIAL, WORKSTATION, QUALITY_IMPACT = (
@@ -269,15 +269,6 @@ def apply_equipment_fields() -> None:
 	create_custom_fields(CUSTOM_FIELDS, ignore_validate=True)
 
 
-def is_qa(user: str | None = None) -> bool:
-	return QA_ROLE in frappe.get_roles(user or frappe.session.user)
-
-
-def require(condition: object, message: str, exception: type[Exception] = frappe.ValidationError) -> None:
-	if not condition:
-		frappe.throw(message, exception)
-
-
 def approved(asset: str | Document) -> bool:
 	status = (
 		asset.get(APPROVAL_STATUS)
@@ -399,34 +390,66 @@ def guard_asset(doc: Document, method: str | None = None) -> None:
 		)
 
 
+def workstation_changes(changes: dict | str | None) -> list[tuple[str | None, str | None]]:
+	"""The changes of the workstation an Asset's audit event records, as (from, to), in order. The
+	record's creation is not one: it records where the equipment was first placed."""
+	data = as_data(changes) or {}
+	return [(old, new) for field, old, new in data.get("changed") or [] if field == WORKSTATION]
+
+
 def usable(asset: str) -> frappe._dict:
 	"""Whether a piece of equipment may be used now, and its name and status for a message."""
-	row = frappe.db.get_value(
-		DOCTYPE, asset, ["name", APPROVAL_STATUS, STATUS, "docstatus", "status"], as_dict=True
-	)
-	if not row:
+	if not asset:
 		return frappe._dict(ok=False, why=_("it does not exist"))
-	if row.docstatus == 2:
-		return frappe._dict(ok=False, why=_("it is cancelled"))
-	if row.get("status") in NOT_AT_HAND:
-		return frappe._dict(ok=False, why=_("it is {0}").format(_(row.get("status")).lower()))
-	if row.get(APPROVAL_STATUS) != APPROVED:
-		return frappe._dict(ok=False, why=_("QA has not approved it"))
-	if row.get(STATUS) != IN_SERVICE:
-		return frappe._dict(ok=False, why=_("it is {0}").format(_(row.get(STATUS) or OUT_OF_SERVICE).lower()))
+	return usable_all([asset])[asset]
+
+
+def usable_all(assets: list[str]) -> dict[str, frappe._dict]:
+	"""`usable` for each of the assets, in a fixed number of queries however many they are: a
+	workstation's equipment and an inspection's instruments are judged together, where a query
+	set for each piece grew with the equipment the plant holds."""
+	wanted = sorted({asset for asset in assets if asset})
+	rows = {
+		row.name: row
+		for row in frappe.get_all(
+			DOCTYPE,
+			filters={"name": ["in", wanted or [""]]},
+			fields=["name", APPROVAL_STATUS, STATUS, "docstatus", "status"],
+		)
+	}
+	states: dict[str, frappe._dict] = {}
+	for asset in wanted:
+		row = rows.get(asset)
+		if not row:
+			states[asset] = frappe._dict(ok=False, why=_("it does not exist"))
+		elif row.docstatus == 2:
+			states[asset] = frappe._dict(ok=False, why=_("it is cancelled"))
+		elif row.get("status") in NOT_AT_HAND:
+			states[asset] = frappe._dict(ok=False, why=_("it is {0}").format(_(row.get("status")).lower()))
+		elif row.get(APPROVAL_STATUS) != APPROVED:
+			states[asset] = frappe._dict(ok=False, why=_("QA has not approved it"))
+		elif row.get(STATUS) != IN_SERVICE:
+			states[asset] = frappe._dict(
+				ok=False, why=_("it is {0}").format(_(row.get(STATUS) or OUT_OF_SERVICE).lower())
+			)
 	from meddevice_suite.qms.equipment_care import unfit  # modules 38 and 40 build on this one
 
-	if reasons := unfit([asset]).get(asset):
-		return frappe._dict(ok=False, why="; ".join(reasons))
-	return frappe._dict(ok=True)
+	in_question = [asset for asset in wanted if asset not in states]
+	reasons = unfit(in_question) if in_question else {}
+	for asset in in_question:
+		why = reasons.get(asset)
+		states[asset] = frappe._dict(ok=False, why="; ".join(why)) if why else frappe._dict(ok=True)
+	return states
 
 
 def guard_inspection_instruments(doc: Document, method: str | None = None) -> None:
 	"""Quality Inspection validate: a reading's instrument is approved equipment in service."""
 	if doc.docstatus == 2:
 		return
-	for instrument in sorted({row.get("mds_instrument") for row in doc.get("readings") or []} - {None, ""}):
-		state = usable(instrument)
+	instruments = sorted({row.get("mds_instrument") for row in doc.get("readings") or []} - {None, ""})
+	states = usable_all(instruments)
+	for instrument in instruments:
+		state = states[instrument]
 		if not state.ok:
 			frappe.throw(
 				_("Instrument {0} is not used for an inspection: {1}.").format(instrument, state.why),

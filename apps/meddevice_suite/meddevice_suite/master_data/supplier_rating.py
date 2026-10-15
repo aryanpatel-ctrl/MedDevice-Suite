@@ -162,8 +162,18 @@ def rate_finished_months() -> None:
 		suppliers = {row.supplier for row in lots_decided(None, start, end)} | {
 			row.supplier for row in lines_due(None, start, end)
 		}
+		# The month's ratings made already, in one query rather than one per supplier.
+		rated = set(
+			frappe.get_all(
+				DOCTYPE,
+				filters={"rating_key": ["in", [key(supplier, start) for supplier in suppliers] or [""]]},
+				pluck="rating_key",
+			)
+			if suppliers
+			else []
+		)
 		for supplier in sorted(suppliers):
-			if frappe.db.exists(DOCTYPE, {"rating_key": key(supplier, start)}):
+			if key(supplier, start) in rated:
 				continue
 			frappe.db.savepoint(SAVEPOINT)
 			try:

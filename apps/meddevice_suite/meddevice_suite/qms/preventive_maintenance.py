@@ -13,6 +13,7 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import add_days, cint, flt, getdate, today
 
+from meddevice_suite.compliance.checks import require
 from meddevice_suite.compliance.esign import sign
 from meddevice_suite.master_data import equipment
 
@@ -22,11 +23,6 @@ PERFORMERS = frozenset({"Maintenance User", "Quality Manager"})
 # Set only by the signed act. A draft never holds them, though Frappe's Amend copies them from the
 # cancelled record.
 SET_BY_ACTS = ("interval_days", "next_due_date", "completed_by")
-
-
-def require(condition, message: str, exception: type[Exception] = frappe.ValidationError) -> None:
-	if not condition:
-		frappe.throw(message, exception)
 
 
 def only_by_signature(doc: Document, method: str | None = None) -> None:

@@ -28,9 +28,9 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cint, flt
 
+from meddevice_suite.compliance.checks import QA_ROLE, is_qa, require
 from meddevice_suite.compliance.esign import sign
 
-QA_ROLE = "Quality Manager"
 APPROVAL_FLAG = "bom_approval"
 
 # What QA's signature binds: the recipe of the device (ISO 13485 4.2.3), not its costs, prices,
@@ -92,10 +92,6 @@ SIGNED_ROW_FIELDS = {
 }
 NUMERIC = frozenset(("Float", "Percent", "Currency"))
 WHOLE = frozenset(("Int", "Check"))
-
-
-def is_qa(user: str | None = None) -> bool:
-	return QA_ROLE in frappe.get_roles(user or frappe.session.user)
 
 
 def missing_for_approval(doc: Document) -> list[str]:
@@ -178,11 +174,6 @@ def sign_approval(doc: Document, method: str | None = None) -> None:
 	approval = approval_of(doc)
 	if isinstance(approval, dict):
 		sign(doc, "Approved", "Approve", approval.password, approval.reason, permission="submit")
-
-
-def require(condition: object, message: str, exception: type[Exception] = frappe.ValidationError) -> None:
-	if not condition:
-		frappe.throw(message, exception)
 
 
 def only_by_approval(doc: Document, method: str | None = None) -> None:

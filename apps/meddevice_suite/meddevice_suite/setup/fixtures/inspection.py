@@ -5,7 +5,7 @@ Parameter values are demo values marked as such; the client's specifications rep
 them as data under document control (decided 2026-10-08: ISO 20696 for Foley catheters,
 ISO 8669-2 for urine bags, ISO 2859-1 sampling). Everything is created only if missing. QA
 approves each specification through the caller's `approve` (plan D-33): with a signature on the
-pilot and in the browser journey (pilot/documents.py), as the signed act records it in other
+pilot and in the browser journey (setup/fixtures/documents.py), as the signed act records it in other
 modules' tests (setup/test_stock.py).
 """
 

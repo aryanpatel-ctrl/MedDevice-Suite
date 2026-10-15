@@ -1,7 +1,7 @@
 # Equipment master and history card (modules 8 and 62) — feature document and browser test guide
 
 Requirements: **URS-MST-010** (equipment master) and **URS-MST-011** (history card) (`meddevice_suite/qa/requirements.toml`). Builds on URS-MST-001 (version control of masters) and the decision of 10 October 2026 (an Equipment item behind each asset).
-Code: `meddevice_suite/master_data/equipment.py`, report `master_data/report/equipment_history_card`, hooks in `meddevice_suite/hooks.py` (Asset `validate`, `onload`; Quality Inspection `validate`), signed act in `compliance/signing.py`, signature content in `compliance/esign.py`, version control in `master_data/versioning.py`, desk in `public/js/master_data.js`, loaders `pilot/inspection.py`, `pilot/demo.py`, `qa/ui_journey.py`.
+Code: `meddevice_suite/master_data/equipment.py`, report `master_data/report/equipment_history_card`, hooks in `meddevice_suite/hooks.py` (Asset `validate`, `onload`; Quality Inspection `validate`), signed act in `compliance/signing.py`, signature content in `compliance/esign.py`, version control in `master_data/versioning.py`, desk in `public/js/master_data.js`, loaders `setup/fixtures/inspection.py`, `pilot/demo.py`, `qa/ui_journey.py`.
 DFD trace: D10 Equipment Master; 9D Equipment Management (D1 equipment master, D2 history card, D5 performance tracking).
 
 ## 1. Feature overview

@@ -24,9 +24,9 @@ from meddevice_suite.lot_control.lot_status import (
 from meddevice_suite.lot_control.report.stock_by_lot_status.stock_by_lot_status import execute as report
 from meddevice_suite.lot_control.stores import role_of, store_for
 from meddevice_suite.patches.v0_1 import set_initial_lot_status
-from meddevice_suite.pilot.flow import lot_of
 from meddevice_suite.qa import verifies
 from meddevice_suite.qms.test_document_control import signer
+from meddevice_suite.setup.fixtures.records import lot_of
 from meddevice_suite.setup.install import apply_configuration
 from meddevice_suite.setup.test_stock import (
 	approve_equipment_for_test,
@@ -253,7 +253,10 @@ class LotTestCase(IntegrationTestCase):
 		cls.qa = signer("QA Manager")
 		cls.stores_user = signer("Stores")
 		cls.qc = signer("QC Inspector")
-		from meddevice_suite.pilot.inspection import ensure_inspection_masters, ensure_inspection_template
+		from meddevice_suite.setup.fixtures.inspection import (
+			ensure_inspection_masters,
+			ensure_inspection_template,
+		)
 
 		cls.instrument = ensure_inspection_masters(company(), approve_for_test, approve_equipment_for_test)
 		# Module 6 (plan D-33): inspected only against a specification QA has approved.
@@ -280,7 +283,7 @@ class LotTestCase(IntegrationTestCase):
 		entry that brought it in, as QA's release needs (URS-QC-003, decided 2026-10-09)."""
 		from meddevice_suite.lot_control.receipt import material_receipt_of
 		from meddevice_suite.master_data.specification import INCOMING, specification_for
-		from meddevice_suite.pilot.inspection import readings_for
+		from meddevice_suite.setup.fixtures.inspection import readings_for
 
 		entry = material_receipt_of(lot)
 		if not entry:
@@ -776,7 +779,7 @@ class TestTheDecisionMovesTheStock(LotTestCase):
 			shelf_life_in_days=30,
 			item_defaults=[{"company": company(), "default_warehouse": store(stores.QUARANTINE)}],
 		)
-		from meddevice_suite.pilot.inspection import ensure_inspection_template
+		from meddevice_suite.setup.fixtures.inspection import ensure_inspection_template
 
 		# Inspected first, against its approved specification, so the store is what is checked.
 		ensure_inspection_template(code, "Raw Material", approve_specification_for_test)

@@ -26,7 +26,7 @@ class FilesTestCase(IntegrationTestCase):
 
 	def setUp(self):
 		frappe.set_user(self.qa)
-		tag = frappe.generate_hash(length=5)
+		tag = frappe.generate_hash(length=10)
 		self.group = self.category(
 			f"Licences {tag}", is_group=1, readers=["Stock User"], editors=["Purchase User"]
 		)
@@ -87,13 +87,13 @@ class TestCategoriesAndAccess(FilesTestCase):
 		with self.assertRaises(frappe.PermissionError):
 			frappe.get_doc({"doctype": "File Category", "category_name": "By hand"}).insert()
 		with self.assertRaisesRegex(frappe.ValidationError, "not one of the business jobs"):
-			self.category(f"Admin {frappe.generate_hash(length=4)}", readers=["System Manager"])
+			self.category(f"Admin {frappe.generate_hash(length=10)}", readers=["System Manager"])
 
 	def test_a_sub_group_takes_its_groups_jobs_unless_it_names_its_own(self):
 		known = files.access()
 		self.assertEqual(known[self.licences][files.EDITORS], {"Purchase User"})
 		own = self.category(
-			f"Own {frappe.generate_hash(length=4)}", parent=self.group, readers=["Sales User"]
+			f"Own {frappe.generate_hash(length=10)}", parent=self.group, readers=["Sales User"]
 		)
 		self.assertEqual(files.access()[own][files.READERS], {"Sales User"})
 

@@ -23,9 +23,9 @@ from frappe.model.document import Document
 from frappe.utils import cint, now_datetime
 
 from meddevice_suite.compliance.audit import same
+from meddevice_suite.compliance.checks import QA_ROLE, is_qa, require
 from meddevice_suite.compliance.esign import sign
 
-QA_ROLE = "Quality Manager"
 APPROVAL_STATUS, APPROVED_BY, APPROVED_AT = (
 	"mds_master_approval",
 	"mds_master_approved_by",
@@ -74,15 +74,6 @@ def approval_fields(insert_after: str) -> list[dict]:
 			"no_copy": 1,
 		},
 	]
-
-
-def is_qa(user: str | None = None) -> bool:
-	return QA_ROLE in frappe.get_roles(user or frappe.session.user)
-
-
-def require(condition: object, message: str, exception: type[Exception] = frappe.ValidationError) -> None:
-	if not condition:
-		frappe.throw(message, exception)
 
 
 def configured(doctype: str) -> bool:

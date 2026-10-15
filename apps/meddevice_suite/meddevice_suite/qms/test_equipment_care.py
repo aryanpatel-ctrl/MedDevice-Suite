@@ -1,10 +1,13 @@
 """Calibration, maintenance and qualification (modules 38 and 40; URS-EQP-001 to URS-EQP-012, and the
 history card's additions to URS-MST-011): tests derived from the requirements' clauses."""
 
+from unittest.mock import patch
+
 import frappe
 from frappe.tests.classes.context_managers import freeze_time
 from frappe.utils import add_days, getdate, now_datetime, today
 
+from meddevice_suite.compliance import esign
 from meddevice_suite.compliance.esign import is_unchanged_since
 from meddevice_suite.compliance.evidence_files import is_evidence
 from meddevice_suite.compliance.signing import sign_action
@@ -14,8 +17,10 @@ from meddevice_suite.lot_control.test_lot_status import company
 from meddevice_suite.master_data import equipment
 from meddevice_suite.master_data.test_equipment import EquipmentTestCase
 from meddevice_suite.master_data.test_routing import RoutingTestCase
+from meddevice_suite.master_data.versioning import CHANGE_REQUEST
 from meddevice_suite.qa import verifies
-from meddevice_suite.qms import equipment_care
+from meddevice_suite.qms import calibration, equipment_care
+from meddevice_suite.qms.test_change_control import approved_change, signer
 from meddevice_suite.qms.test_document_control import private_file
 from meddevice_suite.setup.test_stock import care_in_date_for_test, work_instruction_for_test
 from meddevice_suite.work_management import reminders
@@ -51,7 +56,7 @@ class CareTestCase(EquipmentTestCase):
 			base = (
 				{
 					"laboratory": self.lab(),
-					"certificate_number": f"LAB-{frappe.generate_hash(length=5)}",
+					"certificate_number": f"LAB-{frappe.generate_hash(length=10)}",
 					"certificate": private_file("certificate"),
 				}
 				if by == "External laboratory"
@@ -114,6 +119,34 @@ class CareTestCase(EquipmentTestCase):
 				.insert()
 				.name
 			)
+		finally:
+			frappe.set_user("Administrator")
+
+	def workstations(self, count: int) -> list[str]:
+		return [
+			frappe.get_doc(
+				{
+					"doctype": "Workstation",
+					"workstation_name": f"MDS Care WS {frappe.generate_hash(length=6)}",
+				}
+			)
+			.insert()
+			.name
+			for _each in range(count)
+		]
+
+	def change_workstation(self, asset: str, workstation: str, offset: int, at: str = "11:00:00") -> None:
+		"""Moved to another workstation on the form, on the day `offset` days from today, under an
+		approved change request, as the record of approved equipment is changed. The audit trail
+		records the change at that time."""
+		change = approved_change(signer("Production Supervisor"), self.qa, asset, "Asset", "Equipment")
+		frappe.set_user(self.qa)
+		try:
+			with freeze_time(f"{on_day(offset)} {at}"):
+				doc = frappe.get_doc("Asset", asset)
+				doc.set(equipment.WORKSTATION, workstation)
+				doc.set(CHANGE_REQUEST, change)
+				doc.save()
 		finally:
 			frappe.set_user("Administrator")
 
@@ -432,6 +465,204 @@ class TestOutOfTolerance(CareTestCase):
 		self.assertEqual(self.calibrated(self.approved()).impact_status, "Not needed")
 
 
+def on_day(offset: int):
+	"""The day `offset` days from today."""
+	return getdate(add_days(today(), offset))
+
+
+@verifies("URS-EQP-003")
+class TestImpactFollowsTheInstrument(CareTestCase):
+	"""The job cards an out-of-tolerance instrument may have affected are those of each workstation
+	it was at, while it was there, read from the audit trail (found in the foundation review of
+	2026-10-12). Created today, it moves on later days, frozen there, so the trail records each
+	move at its own time as it does on the plant."""
+
+	def instrument_at(self, workstation: str) -> str:
+		return self.approved(**{equipment.WORKSTATION: workstation})
+
+	def job_card(self, workstation: str, offset: int) -> str:
+		"""A submitted job card made at the workstation on the day, stored as it stands: the rules at
+		the job card are tested with it (TestRefusedAtTheWorkstation); here only where and when."""
+		card = frappe.new_doc("Job Card")
+		card.update(
+			{
+				"workstation": workstation,
+				"posting_date": on_day(offset),
+				"company": company(),
+				"for_quantity": 1,
+				"docstatus": 1,
+			}
+		)
+		card.set_new_name()
+		card.db_insert()
+		return card.name
+
+	def cards(self, asset: str, start: int, end: int) -> dict[str, str]:
+		"""The job cards listed for the period, with the workstation each row names."""
+		return {
+			row["reference_name"]: row["workstation"]
+			for row in calibration.impact_since(asset, on_day(start), on_day(end))
+			if row["reference_doctype"] == "Job Card"
+		}
+
+	def history(self, asset: str, start: int, end: int) -> list[tuple]:
+		return calibration.workstation_history(asset, on_day(start), on_day(end))
+
+	def test_moved_in_the_period_each_workstation_counts_only_while_it_was_there(self):
+		a, b = self.workstations(2)
+		asset = self.instrument_at(a)
+		self.change_workstation(asset, b, 10)
+		at_a_before, at_a_after = self.job_card(a, 5), self.job_card(a, 15)
+		at_b_before, at_b_after = self.job_card(b, 5), self.job_card(b, 15)
+		# The trail knows the time of the move, a job card only its day: that day is in doubt at both.
+		at_a_that_day, at_b_that_day = self.job_card(a, 10), self.job_card(b, 10)
+
+		self.assertEqual(
+			self.history(asset, 1, 30), [(a, on_day(1), on_day(10)), (b, on_day(10), on_day(30))]
+		)
+		self.assertEqual(
+			self.cards(asset, 1, 30),
+			{at_a_before: a, at_a_that_day: a, at_b_that_day: b, at_b_after: b},
+		)
+		listed = self.cards(asset, 1, 30)
+		self.assertNotIn(at_a_after, listed)
+		self.assertNotIn(at_b_before, listed)
+
+	def test_not_moved_its_workstation_counts_for_the_whole_period(self):
+		a, b = self.workstations(2)
+		asset = self.instrument_at(a)
+		inside, after, elsewhere = self.job_card(a, 5), self.job_card(a, 31), self.job_card(b, 5)
+
+		self.assertEqual(self.history(asset, 1, 30), [(a, on_day(1), on_day(30))])
+		self.assertEqual(self.cards(asset, 1, 30), {inside: a})
+		self.assertNotIn(after, self.cards(asset, 1, 30))
+		self.assertNotIn(elsewhere, self.cards(asset, 1, 30))
+
+	def test_moved_twice_three_workstations_each_for_its_own_days(self):
+		a, b, c = self.workstations(3)
+		asset = self.instrument_at(a)
+		self.change_workstation(asset, b, 10)
+		self.change_workstation(asset, c, 20)
+		at_a, at_b, at_c = self.job_card(a, 5), self.job_card(b, 15), self.job_card(c, 25)
+		not_listed = [self.job_card(a, 15), self.job_card(b, 5), self.job_card(b, 25), self.job_card(c, 15)]
+
+		self.assertEqual(
+			self.history(asset, 1, 30),
+			[(a, on_day(1), on_day(10)), (b, on_day(10), on_day(20)), (c, on_day(20), on_day(30))],
+		)
+		listed = self.cards(asset, 1, 30)
+		self.assertEqual({name: listed.get(name) for name in (at_a, at_b, at_c)}, {at_a: a, at_b: b, at_c: c})
+		self.assertFalse(set(not_listed) & set(listed))
+
+	def test_moved_just_before_the_period_only_the_new_workstation_counts(self):
+		a, b = self.workstations(2)
+		asset = self.instrument_at(a)
+		self.change_workstation(asset, b, 10)
+		at_a, at_b = self.job_card(a, 15), self.job_card(b, 15)
+
+		self.assertEqual(self.history(asset, 11, 30), [(b, on_day(11), on_day(30))])
+		self.assertEqual(self.cards(asset, 11, 30), {at_b: b})
+		self.assertNotIn(at_a, self.cards(asset, 11, 30))
+
+	def test_moved_after_the_period_only_the_old_workstation_counts(self):
+		a, b = self.workstations(2)
+		asset = self.instrument_at(a)
+		self.change_workstation(asset, b, 10)
+		at_a, at_b = self.job_card(a, 5), self.job_card(b, 5)
+
+		self.assertEqual(self.history(asset, 1, 9), [(a, on_day(1), on_day(9))])
+		self.assertEqual(self.cards(asset, 1, 9), {at_a: a})
+		self.assertNotIn(at_b, self.cards(asset, 1, 9))
+
+	def test_read_in_a_fixed_number_of_queries_however_often_it_moved(self):
+		a, b, c = self.workstations(3)
+		still, moved = self.instrument_at(a), self.instrument_at(a)
+		for workstation, offset in ((b, 5), (c, 10), (a, 15), (b, 20)):
+			self.change_workstation(moved, workstation, offset)
+		self.job_card(a, 3)
+		self.job_card(b, 25)
+
+		for asset in (still, moved):
+			with self.assertQueryCount(1):
+				self.history(asset, 1, 30)
+			# The inspections, where it was, and the job cards of every workstation at once.
+			with self.assertQueryCount(3):
+				calibration.impact_since(asset, on_day(1), on_day(30))
+		self.assertEqual(len(self.history(moved, 1, 30)), 5)
+
+	def test_the_completed_record_names_each_job_cards_workstation_and_binds_it(self):
+		"""Through the performer's signed completion: its last good calibration is the day the
+		instrument was recorded (none before), so the period starts with its record's creation."""
+		a, b = self.workstations(2)
+		asset = self.instrument_at(a)
+		self.change_workstation(asset, b, 10)
+		at_a, at_b, at_a_after = self.job_card(a, 5), self.job_card(b, 15), self.job_card(a, 15)
+		with freeze_time(f"{on_day(20)} 10:00:00"):
+			record = self.calibrated(asset, points=[point(found=100.05)])
+
+		self.assertEqual(getdate(record.last_good_calibration), getdate(today()))
+		rows = {row.reference_name: row for row in record.impact if row.reference_doctype == "Job Card"}
+		self.assertEqual({name: row.workstation for name, row in rows.items()}, {at_a: a, at_b: b})
+		self.assertNotIn(at_a_after, rows)
+		completion = frappe.get_last_doc(
+			"Electronic Signature",
+			filters={"reference_doctype": "Calibration Record", "reference_name": record.name},
+		)
+		self.assertTrue(is_unchanged_since(completion))
+		frappe.db.set_value("Calibration Impact", rows[at_a].name, "workstation", b)
+		self.assertFalse(is_unchanged_since(completion))  # the workstation listed is signed
+
+	@verifies("URS-CMP-004")
+	def test_an_out_of_tolerance_completion_verifies_with_the_impact_rows_it_added(self):
+		"""The impact rows are listed by the signed completion itself, before the record is saved:
+		they are signed with the name, owner and creation they are stored with (compliance.esign
+		identify_new_rows), so the signature verifies once the record is completed."""
+		a = self.workstations(1)[0]
+		asset = self.instrument_at(a)
+		self.job_card(a, 5)
+		with freeze_time(f"{on_day(20)} 10:00:00"):
+			record = self.calibrated(asset, points=[point(found=100.05)])
+		self.assertTrue(record.impact)
+		completion = frappe.get_last_doc(
+			"Electronic Signature",
+			filters={"reference_doctype": "Calibration Record", "reference_name": record.name},
+		)
+		self.assertTrue(is_unchanged_since(completion))
+		self.assertTrue(esign.verify_signatures("Calibration Record", record.name))
+
+	@verifies("URS-CMP-004")
+	def test_a_record_signed_before_rows_named_a_workstation_still_verifies(self):
+		"""A release never invalidates a signature that verified (21 CFR 11.70): a calibration whose
+		impact rows were listed and signed before they carried a workstation still verifies."""
+		a = self.workstations(1)[0]
+		asset = self.instrument_at(a)
+		self.job_card(a, 5)
+		with freeze_time(f"{on_day(20)} 10:00:00"):
+			record = self.calibrated(asset, points=[point(found=100.05)])
+		# As a record made before the column: its rows have no workstation.
+		frappe.db.set_value("Calibration Impact", {"parent": record.name}, "workstation", None)
+		real = esign.record_content
+
+		def before_the_column(doc):
+			content = real(doc)
+			for row in content.get("impact") or []:
+				row.pop("workstation", None)
+			return content
+
+		with patch.object(esign, "record_content", before_the_column):
+			self.sign(self.qa, "Calibration Record", record.name, "Assess: No Product Impact")
+		# By its act: the completion, signed on a day frozen ahead, is the record's latest by creation.
+		assessment = frappe.get_last_doc(
+			"Electronic Signature",
+			filters={
+				"reference_doctype": "Calibration Record",
+				"reference_name": record.name,
+				"action": "Assess: No Product Impact",
+			},
+		)
+		self.assertTrue(is_unchanged_since(assessment))
+
+
 @verifies("URS-EQP-004")
 class TestMaintenance(CareTestCase):
 	def test_satisfactory_only_when_every_check_is_ok_and_only_then_due_again(self):
@@ -603,7 +834,7 @@ class TestRefusedAtTheWorkstation(RoutingTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
-		from meddevice_suite.pilot.inspection import ensure_inspection_masters
+		from meddevice_suite.setup.fixtures.inspection import ensure_inspection_masters
 		from meddevice_suite.setup.test_stock import approve_equipment_for_test, approve_for_test
 
 		ensure_inspection_masters(
@@ -741,8 +972,8 @@ class TestQualification(CareTestCase):
 			"requalification", " ".join(equipment_care.unfit([asset], on=add_days(today(), 181))[asset])
 		)
 
-	def qualified(self, days_ago: int = 2) -> str:
-		asset = self.needing()
+	def qualified(self, days_ago: int = 2, **values) -> str:
+		asset = self.needing(**values)
 		self.calibrated(asset, performed_on=add_days(today(), -days_ago))
 		for stage in ("IQ", "OQ", "PQ"):
 			self.done(asset, stage, performed_on=add_days(today(), -days_ago))
@@ -768,6 +999,69 @@ class TestQualification(CareTestCase):
 		for stage in ("IQ", "OQ", "PQ"):
 			self.done(asset, stage, occasion="After relocation or repair")
 		self.assertNotIn(asset, equipment_care.unfit([asset]))
+
+	@verifies("URS-EQP-013")
+	def test_a_workstation_changed_after_the_qualification_is_a_move(self):
+		"""Decided 2026-10-15: moved to another line on the form, as by an asset movement. Its record,
+		made today at its first workstation, is no move (`qualified` finds it fit)."""
+		a, b = self.workstations(2)
+		asset = self.qualified(**{equipment.WORKSTATION: a})  # IQ, OQ and PQ two days ago
+		self.change_workstation(asset, b, -1)
+		self.assertIn(
+			f"it was moved on {frappe.format_value(on_day(-1), {'fieldtype': 'Date'})} ",
+			" ".join(equipment_care.unfit([asset])[asset]),
+		)
+		self.done(asset, "PQ", occasion="After relocation or repair")
+		self.assertIn("moved on", " ".join(equipment_care.unfit([asset])[asset]))
+		for stage in ("IQ", "OQ", "PQ"):
+			self.done(asset, stage, occasion="After relocation or repair")
+		self.assertNotIn(asset, equipment_care.unfit([asset]))
+
+	@verifies("URS-EQP-013")
+	def test_a_workstation_changed_before_the_qualification_or_on_its_day_is_not(self):
+		"""Read by the day, as an asset movement: a qualification on the day of the change counts as
+		after it, and the day after the qualification does not."""
+		a, b, c = self.workstations(3)
+		before = self.needing(**{equipment.WORKSTATION: a})
+		self.change_workstation(before, b, -3)
+		same_day = self.needing(**{equipment.WORKSTATION: a})
+		self.change_workstation(same_day, b, -2, at="23:00:00")
+		for asset in (before, same_day):
+			self.calibrated(asset, performed_on=add_days(today(), -2))
+			for stage in ("IQ", "OQ", "PQ"):
+				self.done(asset, stage, performed_on=add_days(today(), -2))
+		self.assertEqual(equipment_care.repaired_and_moved([same_day])[1], {same_day: on_day(-2)})
+		self.assertNotIn(before, equipment_care.unfit([before]))
+		self.assertNotIn(same_day, equipment_care.unfit([same_day]))
+		self.change_workstation(same_day, c, -1, at="00:30:00")
+		self.assertIn("moved on", " ".join(equipment_care.unfit([same_day])[same_day]))
+
+	@verifies("URS-EQP-013")
+	def test_the_latest_relocation_is_the_later_of_a_movement_and_a_workstation_change(self):
+		a, b = self.workstations(2)
+		changed_last = self.qualified(days_ago=5, **{equipment.WORKSTATION: a})
+		move(changed_last, day=add_days(now_datetime(), -4))
+		self.change_workstation(changed_last, b, -1)
+		moved_last = self.qualified(days_ago=5, **{equipment.WORKSTATION: a})
+		self.change_workstation(moved_last, b, -4)
+		move(moved_last, day=add_days(now_datetime(), -1))
+		not_moved = self.qualified(days_ago=5)
+
+		_repaired, moved = equipment_care.repaired_and_moved([changed_last, moved_last, not_moved])
+		self.assertEqual(moved, {changed_last: on_day(-1), moved_last: on_day(-1)})
+
+	def test_relocations_are_read_in_a_fixed_number_of_queries(self):
+		a, b = self.workstations(2)
+		one = [self.needing(**{equipment.WORKSTATION: a})]
+		many = [self.needing(**{equipment.WORKSTATION: a}) for _each in range(3)]
+		for asset in many:
+			self.change_workstation(asset, b, -2)
+			move(asset, day=add_days(now_datetime(), -1))
+		equipment_care.repaired_and_moved(one)  # metadata loaded once
+		for assets in (one, many):
+			# The repairs, the asset movements and the workstation changes.
+			with self.assertQueryCount(3):
+				equipment_care.repaired_and_moved(assets)
 
 	@verifies("URS-EQP-013")
 	def test_a_receipt_or_an_issue_is_not_a_move(self):

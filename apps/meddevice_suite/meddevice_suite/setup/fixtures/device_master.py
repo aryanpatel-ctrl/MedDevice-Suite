@@ -6,7 +6,7 @@ its headings and its Packaging and Labelling document and signs it as its author
 another person, approves it with a signature. The labelling document is issued through document
 control and the product's in-process specification registered and approved by QA (module 6), if
 missing. The record pins the risk management report in force of the product's family (plan D-23),
-which the caller puts in force first (pilot/risk.py).
+which the caller puts in force first (setup/fixtures/risk.py).
 
 A product whose Current record still matches the live records is left as it is; one without a
 record, or whose record has gone out of date, gets the next revision. A revision left part-way by
@@ -19,9 +19,9 @@ from contextlib import AbstractContextManager
 import frappe
 from frappe.model.document import Document
 
-from meddevice_suite.pilot.documents import approve_specification, ensure_work_instruction
-from meddevice_suite.pilot.inspection import ensure_in_process_specification
 from meddevice_suite.qms import device_master_record as dmr
+from meddevice_suite.setup.fixtures.documents import approve_specification, ensure_work_instruction
+from meddevice_suite.setup.fixtures.inspection import ensure_in_process_specification
 
 AUTHOR, APPROVER = "Production Supervisor", "QA Manager"
 LABELLING_TITLE = "Labelling and instructions for use (demo)"

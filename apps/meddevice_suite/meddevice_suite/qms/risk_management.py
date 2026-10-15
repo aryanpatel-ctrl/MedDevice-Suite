@@ -53,6 +53,7 @@ from frappe.query_builder import Criterion
 from frappe.utils import add_days, add_months, cint, now_datetime, today
 
 from meddevice_suite.compliance import quality_settings
+from meddevice_suite.compliance.checks import QA_ROLE, is_qa, require
 from meddevice_suite.compliance.esign import sign
 from meddevice_suite.master_data import item_master
 from meddevice_suite.qms import pinned_records
@@ -69,7 +70,6 @@ HAZARD, CONTROL, FILE_ITEM, CELL, LEVEL = (
 	"Risk Scale Level",
 )
 CHANGE_REQUEST, CONTROLLED_DOCUMENT = "Change Request", "Controlled Document"
-QA_ROLE = "Quality Manager"
 # Plan D-21: top management approves the policy (ISO 14971 4.2).
 MANAGEMENT_ROLES = frozenset({"Manufacturing Manager", *JOB_PROFILES["Management"]})
 FLAG = "risk_management"
@@ -142,17 +142,8 @@ REPORT_SYSTEM = ("risk_assessment", "status", "author", "approver", "approved_on
 REVIEW_SAVEPOINT = "risk_review"
 
 
-def require(condition, message: str, exception: type[Exception] = frappe.ValidationError) -> None:
-	if not condition:
-		frappe.throw(message, exception)
-
-
 def roles_of(user: str | None = None) -> set[str]:
 	return set(frappe.get_roles(user or frappe.session.user))
-
-
-def is_qa(user: str | None = None) -> bool:
-	return QA_ROLE in roles_of(user)
 
 
 def is_management(user: str | None = None) -> bool:

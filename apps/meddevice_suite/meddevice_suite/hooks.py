@@ -39,7 +39,13 @@ doc_events = {
 		# Item master (module 1): also before validate, which runs when ERPNext saves with
 		# ignore_validate (Production Plan, bulk transactions).
 		"before_validate": "meddevice_suite.master_data.item_master.refuse_unapproved",
-		"before_cancel": "meddevice_suite.compliance.audit.before_cancel",
+		"before_cancel": [
+			"meddevice_suite.compliance.audit.before_cancel",
+			# The ledger checks read a voucher's header once per document (lot_control/lot_status.py):
+			# a document submitted or cancelled is read afresh.
+			"meddevice_suite.lot_control.lot_status.forget_voucher",
+		],
+		"before_submit": "meddevice_suite.lot_control.lot_status.forget_voucher",
 		# What an approval forbids is refused first; asking a reason for it would mislead.
 		"before_update_after_submit": [
 			"meddevice_suite.compliance.approvals.before_update_after_submit",

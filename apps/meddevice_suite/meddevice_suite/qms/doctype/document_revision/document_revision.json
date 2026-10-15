@@ -33,6 +33,7 @@
    "label": "Controlled Document",
    "options": "Controlled Document",
    "reqd": 1,
+   "search_index": 1,
    "set_only_once": 1
   },
   {
@@ -93,7 +94,8 @@
    "in_standard_filter": 1,
    "label": "Status",
    "options": "Draft\nIn Review\nAwaiting Approval\nApproved\nEffective\nSuperseded\nObsolete",
-   "read_only": 1
+   "read_only": 1,
+   "search_index": 1
   },
   {
    "fieldname": "author",
@@ -141,7 +143,7 @@
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2026-10-08 12:00:00.000000",
+ "modified": "2026-10-15 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "QMS",
  "name": "Document Revision",

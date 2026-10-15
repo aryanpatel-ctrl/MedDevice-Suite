@@ -40,14 +40,14 @@ from meddevice_suite.lot_control.test_lot_status import (
 	store,
 )
 from meddevice_suite.master_data.bom import default_bom
-from meddevice_suite.pilot.flow import lot_of
-from meddevice_suite.pilot.inspection import (
+from meddevice_suite.qa import verifies
+from meddevice_suite.qms.test_document_control import signer
+from meddevice_suite.setup.fixtures.inspection import (
 	ensure_inspection_masters,
 	ensure_inspection_template,
 	readings_for,
 )
-from meddevice_suite.qa import verifies
-from meddevice_suite.qms.test_document_control import signer
+from meddevice_suite.setup.fixtures.records import lot_of
 from meddevice_suite.setup.install import apply_configuration
 from meddevice_suite.setup.test_stock import (
 	approve_equipment_for_test,

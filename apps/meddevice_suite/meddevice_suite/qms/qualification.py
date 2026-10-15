@@ -10,7 +10,8 @@ be executed and approved again. An OQ needs an approved, passed IQ before it; a 
 passed OQ done on or after that IQ. Equipment that needs qualification is qualified while its
 latest approved IQ, OQ and PQ each passed, in that order, and the PQ is within the requalification
 interval QA set on the equipment, if one is set; after a repair, a PQ done on or after it; after a
-move, an IQ (and so the OQ and PQ after it) done on or after it (URS-EQP-013).
+move (an asset movement or a change of its workstation), an IQ (and so the OQ and PQ after it) done
+on or after it (URS-EQP-013).
 """
 
 import frappe
@@ -18,6 +19,7 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import add_days, cint, getdate, now_datetime
 
+from meddevice_suite.compliance.checks import QA_ROLE, require
 from meddevice_suite.compliance.esign import sign
 from meddevice_suite.master_data import equipment
 
@@ -25,18 +27,12 @@ DOCTYPE = "Equipment Qualification"
 STAGES = ("IQ", "OQ", "PQ")
 PROTOCOL_TYPES = ("SOP", "Form")
 PERFORMERS = frozenset({"Maintenance User", "Manufacturing User", "Quality Manager"})
-QA_ROLE = "Quality Manager"
 REQUALIFICATION_DAYS = equipment.REQUALIFICATION_DAYS
 # What the performer signs for: changing any of it after execution needs execution again.
 EXECUTED_CONTENT = ("asset", "stage", "occasion", "protocol", "performed_on")
 # Set only by the signed acts. A draft saved through the form or the API keeps what is stored, and a
 # new one, Frappe's Amend among them (it copies them from the cancelled record), holds none.
 SET_BY_ACTS = ("executed_by", "executed_at", "approved_by", "approved_at")
-
-
-def require(condition, message: str, exception: type[Exception] = frappe.ValidationError) -> None:
-	if not condition:
-		frappe.throw(message, exception)
 
 
 def only_by_approval(doc: Document, method: str | None = None) -> None:
@@ -149,7 +145,9 @@ def not_qualified(
 	assets: list[str], on, repaired: dict | None = None, moved: dict | None = None
 ) -> dict[str, str]:
 	"""Why each asset needing qualification is not qualified on the day; qualified ones left out.
-	`repaired` and `moved` give the day of an asset's latest completed repair and relocation."""
+	`repaired` and `moved` give the day of an asset's latest completed repair and relocation (an
+	asset movement or a change of workstation, `equipment_care.repaired_and_moved`). A qualification
+	on the day of the move counts as after it: both are known by their day."""
 	if not assets:
 		return {}
 	day = getdate(on)

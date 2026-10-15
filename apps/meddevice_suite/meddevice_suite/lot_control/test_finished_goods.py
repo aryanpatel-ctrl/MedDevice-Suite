@@ -3,7 +3,7 @@ from unittest.mock import patch
 import frappe
 from frappe.model.document import Document
 
-from meddevice_suite.lot_control import finished_goods, stores
+from meddevice_suite.lot_control import finished_goods, lot_status, stores
 from meddevice_suite.lot_control.finished_goods import (
 	STOCK_ENTRY,
 	STOCK_RECONCILIATION,
@@ -16,8 +16,8 @@ from meddevice_suite.lot_control.lot_status import QUARANTINE, LotNotApproved, s
 from meddevice_suite.lot_control.receipt import made_by_production, material_receipt_of
 from meddevice_suite.lot_control.test_lot_status import company, lot_item, qty_in, store
 from meddevice_suite.lot_control.test_release import FINISHED_ITEM, ITEM, ReleaseTestCase, made_by_work_order
-from meddevice_suite.pilot.flow import lot_of
 from meddevice_suite.qa import verifies
+from meddevice_suite.setup.fixtures.records import lot_of
 from meddevice_suite.setup.test_stock import approve_for_test
 
 FROM_PRODUCTION = "comes into stock only from production"
@@ -149,6 +149,8 @@ class TestFinishedGoodsComeFromProduction(ReleaseTestCase):
 		)
 		finished_goods.guard_stock_ledger_entry(ledger)  # opening stock
 		frappe.db.set_value("Stock Entry", entry.name, "is_opening", "No")
+		# Changed past its form, as no posting does: read afresh, as its next submission would be.
+		lot_status.forget_vouchers()
 		with self.assertRaises(FinishedGoodNotProduced):
 			finished_goods.guard_stock_ledger_entry(ledger)
 		ledger.is_cancelled = 1  # the reversal of a posting made before this rule

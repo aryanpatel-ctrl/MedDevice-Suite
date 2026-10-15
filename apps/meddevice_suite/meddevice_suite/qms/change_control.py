@@ -45,12 +45,12 @@ from frappe.model.document import Document
 from frappe.utils import add_days, cint, getdate, now_datetime, today
 
 from meddevice_suite.compliance import quality_settings
+from meddevice_suite.compliance.checks import QA_ROLE, is_qa, require
 from meddevice_suite.compliance.esign import sign
 from meddevice_suite.compliance.fingerprint import plain_text
 from meddevice_suite.setup.roles import BUSINESS_ROLES, MANAGEMENT, SYSTEM_ADMINISTRATION
 
 DOCTYPE = "Change Request"
-QA_ROLE = "Quality Manager"
 
 # The records a change can affect, and those an action can produce.
 AFFECTED_TYPES = (
@@ -123,10 +123,6 @@ AWAITING_MANAGEMENT = "Change Request Awaiting Management Approval"
 DECIDED = "Change Request Decided"
 EFFECTIVENESS_DUE = "Change Effectiveness Check Due"
 ALERT_SAVEPOINT = "change_request_alert"
-
-
-def is_qa(user: str | None = None) -> bool:
-	return QA_ROLE in frappe.get_roles(user or frappe.session.user)
 
 
 def is_management(user: str | None = None) -> bool:
@@ -654,15 +650,29 @@ def send_change_alerts() -> None:
 	alerts did not run. Each alert is sent on its own, so one that fails is logged and the
 	others still go; it is retried the next day."""
 	soon = add_days(today(), quality_settings.value("change_action_warning_days"))
-	for row in frappe.get_all(
-		"Change Request Action",
-		filters={"parenttype": DOCTYPE, "done": 0, "due_date": ["<=", soon]},
-		fields=["name", "parent", "idx", "description", "action_owner", "due_date", "alerted_for"],
-		order_by="due_date asc",
-	):
-		if row.alerted_for == row.due_date:
-			continue
-		if frappe.db.get_value(DOCTYPE, row.parent, "status") != "Approved":
+	rows = [
+		row
+		for row in frappe.get_all(
+			"Change Request Action",
+			filters={"parenttype": DOCTYPE, "done": 0, "due_date": ["<=", soon]},
+			fields=["name", "parent", "idx", "description", "action_owner", "due_date", "alerted_for"],
+			order_by="due_date asc",
+		)
+		if row.alerted_for != row.due_date
+	]
+	# The actions of a change rejected or closed undone are never alerted and stay among these rows:
+	# their requests' status is read in one query, not one per action.
+	approved = set(
+		frappe.get_all(
+			DOCTYPE,
+			filters={"name": ["in", sorted({row.parent for row in rows}) or [""]], "status": "Approved"},
+			pluck="name",
+		)
+		if rows
+		else []
+	)
+	for row in rows:
+		if row.parent not in approved:
 			continue
 		each_alert(f"action {row.name} of {row.parent}", lambda row=row: alert_action_owner(row))
 
@@ -828,8 +838,3 @@ def require_linked_records_exist(doc: Document) -> None:
 			_("Could not find {0}").format(", ".join(message for _field, _name, message in missing)),
 			frappe.LinkValidationError,
 		)
-
-
-def require(condition, message: str, exception: type[Exception] = frappe.ValidationError) -> None:
-	if not condition:
-		frappe.throw(message, exception)
