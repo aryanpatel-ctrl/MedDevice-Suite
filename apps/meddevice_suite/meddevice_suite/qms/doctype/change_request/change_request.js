@@ -64,12 +64,14 @@ frappe.ui.form.on("Change Request Action", {
 });
 
 // The record types a field offers as declared (qms/change_control.py holds the same list),
-// among those the person may look up.
+// among those the person may look up. Reading a type lets one look it up, as on the server: the
+// desk lists under "select" only the types granted it by name (found in the browser walk-through
+// of 2026-10-15: QA was never offered a Document Revision).
 function selectable(doctype, fieldname) {
 	return frappe.meta
 		.get_docfield(doctype, fieldname)
 		.options.split("\n")
-		.filter((type) => type && frappe.model.can_select(type));
+		.filter((type) => type && (frappe.model.can_select(type) || frappe.model.can_read(type)));
 }
 
 function roles() {
