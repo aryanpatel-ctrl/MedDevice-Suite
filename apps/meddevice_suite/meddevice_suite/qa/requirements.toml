@@ -1362,8 +1362,8 @@ status = "implemented"
 [[requirement]]
 id = "URS-EQP-013"
 module = 38
-title = "After a completed repair, equipment that needs calibration is not fit until calibrated again and equipment that needs qualification until a PQ is done again; after a move to another place, equipment that needs qualification is not fit until qualified again from the IQ."
-source = "ISO 13485 7.6 (safeguarded from adjustments that would invalidate the measurement), 7.5.6 (revalidation after changes); decided 2026-10-11 by the implementer on the client's instruction to decide the open questions (plan, decisions D-11)"
+title = "After a completed repair, equipment that needs calibration is not fit until calibrated again and equipment that needs qualification until a PQ is done again; after a move to another place, by an asset movement or a change of its workstation, whichever is later, equipment that needs qualification is not fit until qualified again from the IQ."
+source = "ISO 13485 7.6 (safeguarded from adjustments that would invalidate the measurement), 7.5.6 (revalidation after changes); decided 2026-10-11 by the implementer on the client's instruction to decide the open questions (plan, decisions D-11); decided 2026-10-15: a change of workstation is a move (equipment moved to another line), changed in place (rules section 8)"
 status = "implemented"
 
 [[requirement]]

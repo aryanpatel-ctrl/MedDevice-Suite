@@ -122,6 +122,34 @@ class CareTestCase(EquipmentTestCase):
 		finally:
 			frappe.set_user("Administrator")
 
+	def workstations(self, count: int) -> list[str]:
+		return [
+			frappe.get_doc(
+				{
+					"doctype": "Workstation",
+					"workstation_name": f"MDS Care WS {frappe.generate_hash(length=6)}",
+				}
+			)
+			.insert()
+			.name
+			for _each in range(count)
+		]
+
+	def change_workstation(self, asset: str, workstation: str, offset: int, at: str = "11:00:00") -> None:
+		"""Moved to another workstation on the form, on the day `offset` days from today, under an
+		approved change request, as the record of approved equipment is changed. The audit trail
+		records the change at that time."""
+		change = approved_change(signer("Production Supervisor"), self.qa, asset, "Asset", "Equipment")
+		frappe.set_user(self.qa)
+		try:
+			with freeze_time(f"{on_day(offset)} {at}"):
+				doc = frappe.get_doc("Asset", asset)
+				doc.set(equipment.WORKSTATION, workstation)
+				doc.set(CHANGE_REQUEST, change)
+				doc.save()
+		finally:
+			frappe.set_user("Administrator")
+
 	def machine(self) -> str:
 		return self.approved(**{equipment.MAINTENANCE: 1, equipment.MAINTENANCE_DAYS: 90})
 
@@ -449,35 +477,8 @@ class TestImpactFollowsTheInstrument(CareTestCase):
 	2026-10-12). Created today, it moves on later days, frozen there, so the trail records each
 	move at its own time as it does on the plant."""
 
-	def workstations(self, count: int) -> list[str]:
-		return [
-			frappe.get_doc(
-				{
-					"doctype": "Workstation",
-					"workstation_name": f"MDS Impact WS {frappe.generate_hash(length=6)}",
-				}
-			)
-			.insert()
-			.name
-			for _each in range(count)
-		]
-
 	def instrument_at(self, workstation: str) -> str:
 		return self.approved(**{equipment.WORKSTATION: workstation})
-
-	def move(self, asset: str, workstation: str, offset: int) -> None:
-		"""Moved to another workstation on the day, under an approved change request, as the
-		instrument's record is changed once QA approved it."""
-		change = approved_change(signer("Production Supervisor"), self.qa, asset, "Asset", "Equipment")
-		frappe.set_user(self.qa)
-		try:
-			with freeze_time(f"{on_day(offset)} 11:00:00"):
-				doc = frappe.get_doc("Asset", asset)
-				doc.set(equipment.WORKSTATION, workstation)
-				doc.set(CHANGE_REQUEST, change)
-				doc.save()
-		finally:
-			frappe.set_user("Administrator")
 
 	def job_card(self, workstation: str, offset: int) -> str:
 		"""A submitted job card made at the workstation on the day, stored as it stands: the rules at
@@ -510,7 +511,7 @@ class TestImpactFollowsTheInstrument(CareTestCase):
 	def test_moved_in_the_period_each_workstation_counts_only_while_it_was_there(self):
 		a, b = self.workstations(2)
 		asset = self.instrument_at(a)
-		self.move(asset, b, 10)
+		self.change_workstation(asset, b, 10)
 		at_a_before, at_a_after = self.job_card(a, 5), self.job_card(a, 15)
 		at_b_before, at_b_after = self.job_card(b, 5), self.job_card(b, 15)
 		# The trail knows the time of the move, a job card only its day: that day is in doubt at both.
@@ -540,8 +541,8 @@ class TestImpactFollowsTheInstrument(CareTestCase):
 	def test_moved_twice_three_workstations_each_for_its_own_days(self):
 		a, b, c = self.workstations(3)
 		asset = self.instrument_at(a)
-		self.move(asset, b, 10)
-		self.move(asset, c, 20)
+		self.change_workstation(asset, b, 10)
+		self.change_workstation(asset, c, 20)
 		at_a, at_b, at_c = self.job_card(a, 5), self.job_card(b, 15), self.job_card(c, 25)
 		not_listed = [self.job_card(a, 15), self.job_card(b, 5), self.job_card(b, 25), self.job_card(c, 15)]
 
@@ -556,7 +557,7 @@ class TestImpactFollowsTheInstrument(CareTestCase):
 	def test_moved_just_before_the_period_only_the_new_workstation_counts(self):
 		a, b = self.workstations(2)
 		asset = self.instrument_at(a)
-		self.move(asset, b, 10)
+		self.change_workstation(asset, b, 10)
 		at_a, at_b = self.job_card(a, 15), self.job_card(b, 15)
 
 		self.assertEqual(self.history(asset, 11, 30), [(b, on_day(11), on_day(30))])
@@ -566,7 +567,7 @@ class TestImpactFollowsTheInstrument(CareTestCase):
 	def test_moved_after_the_period_only_the_old_workstation_counts(self):
 		a, b = self.workstations(2)
 		asset = self.instrument_at(a)
-		self.move(asset, b, 10)
+		self.change_workstation(asset, b, 10)
 		at_a, at_b = self.job_card(a, 5), self.job_card(b, 5)
 
 		self.assertEqual(self.history(asset, 1, 9), [(a, on_day(1), on_day(9))])
@@ -577,7 +578,7 @@ class TestImpactFollowsTheInstrument(CareTestCase):
 		a, b, c = self.workstations(3)
 		still, moved = self.instrument_at(a), self.instrument_at(a)
 		for workstation, offset in ((b, 5), (c, 10), (a, 15), (b, 20)):
-			self.move(moved, workstation, offset)
+			self.change_workstation(moved, workstation, offset)
 		self.job_card(a, 3)
 		self.job_card(b, 25)
 
@@ -594,7 +595,7 @@ class TestImpactFollowsTheInstrument(CareTestCase):
 		instrument was recorded (none before), so the period starts with its record's creation."""
 		a, b = self.workstations(2)
 		asset = self.instrument_at(a)
-		self.move(asset, b, 10)
+		self.change_workstation(asset, b, 10)
 		at_a, at_b, at_a_after = self.job_card(a, 5), self.job_card(b, 15), self.job_card(a, 15)
 		with freeze_time(f"{on_day(20)} 10:00:00"):
 			record = self.calibrated(asset, points=[point(found=100.05)])
@@ -953,8 +954,8 @@ class TestQualification(CareTestCase):
 			"requalification", " ".join(equipment_care.unfit([asset], on=add_days(today(), 181))[asset])
 		)
 
-	def qualified(self, days_ago: int = 2) -> str:
-		asset = self.needing()
+	def qualified(self, days_ago: int = 2, **values) -> str:
+		asset = self.needing(**values)
 		self.calibrated(asset, performed_on=add_days(today(), -days_ago))
 		for stage in ("IQ", "OQ", "PQ"):
 			self.done(asset, stage, performed_on=add_days(today(), -days_ago))
@@ -980,6 +981,69 @@ class TestQualification(CareTestCase):
 		for stage in ("IQ", "OQ", "PQ"):
 			self.done(asset, stage, occasion="After relocation or repair")
 		self.assertNotIn(asset, equipment_care.unfit([asset]))
+
+	@verifies("URS-EQP-013")
+	def test_a_workstation_changed_after_the_qualification_is_a_move(self):
+		"""Decided 2026-10-15: moved to another line on the form, as by an asset movement. Its record,
+		made today at its first workstation, is no move (`qualified` finds it fit)."""
+		a, b = self.workstations(2)
+		asset = self.qualified(**{equipment.WORKSTATION: a})  # IQ, OQ and PQ two days ago
+		self.change_workstation(asset, b, -1)
+		self.assertIn(
+			f"it was moved on {frappe.format_value(on_day(-1), {'fieldtype': 'Date'})} ",
+			" ".join(equipment_care.unfit([asset])[asset]),
+		)
+		self.done(asset, "PQ", occasion="After relocation or repair")
+		self.assertIn("moved on", " ".join(equipment_care.unfit([asset])[asset]))
+		for stage in ("IQ", "OQ", "PQ"):
+			self.done(asset, stage, occasion="After relocation or repair")
+		self.assertNotIn(asset, equipment_care.unfit([asset]))
+
+	@verifies("URS-EQP-013")
+	def test_a_workstation_changed_before_the_qualification_or_on_its_day_is_not(self):
+		"""Read by the day, as an asset movement: a qualification on the day of the change counts as
+		after it, and the day after the qualification does not."""
+		a, b, c = self.workstations(3)
+		before = self.needing(**{equipment.WORKSTATION: a})
+		self.change_workstation(before, b, -3)
+		same_day = self.needing(**{equipment.WORKSTATION: a})
+		self.change_workstation(same_day, b, -2, at="23:00:00")
+		for asset in (before, same_day):
+			self.calibrated(asset, performed_on=add_days(today(), -2))
+			for stage in ("IQ", "OQ", "PQ"):
+				self.done(asset, stage, performed_on=add_days(today(), -2))
+		self.assertEqual(equipment_care.repaired_and_moved([same_day])[1], {same_day: on_day(-2)})
+		self.assertNotIn(before, equipment_care.unfit([before]))
+		self.assertNotIn(same_day, equipment_care.unfit([same_day]))
+		self.change_workstation(same_day, c, -1, at="00:30:00")
+		self.assertIn("moved on", " ".join(equipment_care.unfit([same_day])[same_day]))
+
+	@verifies("URS-EQP-013")
+	def test_the_latest_relocation_is_the_later_of_a_movement_and_a_workstation_change(self):
+		a, b = self.workstations(2)
+		changed_last = self.qualified(days_ago=5, **{equipment.WORKSTATION: a})
+		move(changed_last, day=add_days(now_datetime(), -4))
+		self.change_workstation(changed_last, b, -1)
+		moved_last = self.qualified(days_ago=5, **{equipment.WORKSTATION: a})
+		self.change_workstation(moved_last, b, -4)
+		move(moved_last, day=add_days(now_datetime(), -1))
+		not_moved = self.qualified(days_ago=5)
+
+		_repaired, moved = equipment_care.repaired_and_moved([changed_last, moved_last, not_moved])
+		self.assertEqual(moved, {changed_last: on_day(-1), moved_last: on_day(-1)})
+
+	def test_relocations_are_read_in_a_fixed_number_of_queries(self):
+		a, b = self.workstations(2)
+		one = [self.needing(**{equipment.WORKSTATION: a})]
+		many = [self.needing(**{equipment.WORKSTATION: a}) for _each in range(3)]
+		for asset in many:
+			self.change_workstation(asset, b, -2)
+			move(asset, day=add_days(now_datetime(), -1))
+		equipment_care.repaired_and_moved(one)  # metadata loaded once
+		for assets in (one, many):
+			# The repairs, the asset movements and the workstation changes.
+			with self.assertQueryCount(3):
+				equipment_care.repaired_and_moved(assets)
 
 	@verifies("URS-EQP-013")
 	def test_a_receipt_or_an_issue_is_not_a_move(self):

@@ -216,11 +216,7 @@ def workstation_history(asset: str, start, end) -> list[tuple[str, date, date]]:
 		changes = as_data(row.changes) or {}
 		if "snapshot" in changes:  # created (or amended) within the period
 			moves.append((getdate(row.event_at), None, changes["snapshot"].get(equipment.WORKSTATION)))
-		moves += [
-			(getdate(row.event_at), old, new)
-			for field, old, new in changes.get("changed") or []
-			if field == equipment.WORKSTATION
-		]
+		moves += [(getdate(row.event_at), old, new) for old, new in equipment.workstation_changes(changes)]
 	place = moves[0][1] if moves else rows[0].current_workstation
 	since, history = first, []
 	for day, _from, to in moves:

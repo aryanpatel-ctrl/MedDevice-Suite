@@ -13,8 +13,9 @@ A completed repair can change what an instrument measures and how a machine perf
 the conditions a machine was qualified in (decided 2026-10-11, URS-EQP-013): after a repair, an
 instrument is fit again only once calibrated on or after the day the repair was completed, and a
 qualified machine once a PQ was done on or after it; after a move (an ERPNext asset movement that
-transfers it), a qualified machine is fit again only once qualified again, IQ, OQ and PQ, on or
-after the day it moved. A move alone does not need a calibration: an instrument is carried by hand
+transfers it, or a change of its workstation, decided 2026-10-15: moved to another line), a
+qualified machine is fit again only once qualified again, IQ, OQ and PQ, on or after the day it
+moved. A move alone does not need a calibration: an instrument is carried by hand
 and its calibration interval covers it.
 
 A completed calibration, maintenance or qualification record is corrected only by QA's signed
@@ -76,7 +77,10 @@ def latest(
 
 
 def repaired_and_moved(assets: list[str]) -> tuple[dict, dict]:
-	"""The day of each asset's latest completed repair, and of its latest relocation."""
+	"""The day of each asset's latest completed repair, and of its latest relocation: the later of
+	its latest ERPNext asset movement that transfers it and its latest change of workstation, read
+	from the audit trail (decided 2026-10-15: equipment moved to another line is moved, whichever
+	record says so). Three queries, whatever the number of assets."""
 	repaired: dict = {}
 	for row in frappe.get_all(
 		"Asset Repair",
@@ -97,6 +101,25 @@ def repaired_and_moved(assets: list[str]) -> tuple[dict, dict]:
 		.run(as_dict=True)
 	):
 		moved.setdefault(row.asset, getdate(row.transaction_date))
+	event = frappe.qb.DocType("Audit Event")
+	changed: dict = {}
+	for row in (
+		frappe.qb.from_(event)
+		.select(event.reference_name, event.event_at, event.changes)
+		.where(
+			(event.reference_doctype == "Asset")
+			& event.reference_name.isin(assets)
+			# Only the events that name the workstation: a creation, or a change of it.
+			& event.changes.like(f'%"{equipment.WORKSTATION}"%')
+		)
+		.orderby(event.event_at, order=Order.desc)
+		.orderby(event.creation, order=Order.desc)
+		.run(as_dict=True)
+	):
+		if row.reference_name not in changed and equipment.workstation_changes(row.changes):
+			changed[row.reference_name] = getdate(row.event_at)
+	for asset, day in changed.items():
+		moved[asset] = max(day, moved.get(asset, day))
 	return repaired, moved
 
 
