@@ -143,7 +143,8 @@ def change_requests(user: str, roles: set[str]) -> Iterator[Waiting]:
 
 
 def lots(user: str, roles: set[str]) -> Iterator[Waiting]:
-	"""Received lots waiting on QC (certificate, inspection) or on QA (the decision)."""
+	"""Received lots waiting on QC (certificate, inspection) or on QA (the decision), and stock set
+	apart in the hold store, waiting on QA's decision whatever its lot's status (URS-QC-004)."""
 	if not {QA_ROLE, QC_ROLE} & roles:
 		return
 	from meddevice_suite.lot_control.report.lots_awaiting_release.lots_awaiting_release import (
@@ -152,7 +153,7 @@ def lots(user: str, roles: set[str]) -> Iterator[Waiting]:
 	)
 
 	for_qc = {WAITING_FOR["verification"], WAITING_FOR["inspection"]}
-	for_qa = {WAITING_FOR["release"], WAITING_FOR["rejected"]}
+	for_qa = {WAITING_FOR["release"], WAITING_FOR["rejected"], WAITING_FOR["set_apart"]}
 	_columns, rows = execute({})
 	for row in rows:
 		if (row["waiting_for"] in for_qc and QC_ROLE in roles) or (

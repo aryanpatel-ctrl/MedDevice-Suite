@@ -17,6 +17,7 @@ from meddevice_suite.lot_control.receipt import made_by_production, material_rec
 from meddevice_suite.lot_control.test_lot_status import company, lot_item, qty_in, store
 from meddevice_suite.lot_control.test_release import FINISHED_ITEM, ITEM, ReleaseTestCase, made_by_work_order
 from meddevice_suite.qa import verifies
+from meddevice_suite.setup.fixtures.records import loaded_as_data_import as loaded
 from meddevice_suite.setup.fixtures.records import lot_of
 from meddevice_suite.setup.test_stock import approve_for_test
 
@@ -135,7 +136,7 @@ class TestFinishedGoodsComeFromProduction(ReleaseTestCase):
 
 	def test_other_material_receipts_and_cancellations_are_not_held_to_it(self):
 		frappe.set_user("Administrator")
-		entry = material_receipt(FINISHED_ITEM, store(stores.QUARANTINE), opening=True).insert()
+		entry = loaded(material_receipt(FINISHED_ITEM, store(stores.QUARANTINE), opening=True), submit=False)
 		ledger = frappe.get_doc(
 			{
 				"doctype": "Stock Ledger Entry",
@@ -160,8 +161,7 @@ class TestFinishedGoodsComeFromProduction(ReleaseTestCase):
 
 	def test_opening_stock_of_a_finished_good_comes_in_as_a_quarantine_lot_for_qa_to_release(self):
 		frappe.set_user(self.stores_user)
-		entry = material_receipt(FINISHED_ITEM, store(stores.QUARANTINE), opening=True).insert()
-		entry.submit()
+		entry = loaded(material_receipt(FINISHED_ITEM, store(stores.QUARANTINE), opening=True))
 
 		lot = lot_of(frappe.get_doc("Stock Entry", entry.name).items[0])
 		self.assertEqual(entry.is_opening, "Yes")
@@ -176,7 +176,7 @@ class TestFinishedGoodsComeFromProduction(ReleaseTestCase):
 	def test_opening_stock_of_a_finished_good_does_not_come_into_an_approved_store(self):
 		frappe.set_user(self.stores_user)
 		with self.assertRaises(LotNotApproved):
-			material_receipt(FINISHED_ITEM, store("Finished Goods"), opening=True).insert().submit()
+			loaded(material_receipt(FINISHED_ITEM, store("Finished Goods"), opening=True))
 
 	def test_production_brings_a_finished_good_in(self):
 		lot = made_by_work_order()
@@ -231,8 +231,7 @@ class TestFinishedGoodsComeFromProduction(ReleaseTestCase):
 
 	def test_a_count_of_a_finished_lot_already_in_stock_is_left_to_the_count_rule(self):
 		frappe.set_user("Administrator")
-		entry = material_receipt(FINISHED_ITEM, store(stores.QUARANTINE), opening=True).insert()
-		entry.submit()
+		entry = loaded(material_receipt(FINISHED_ITEM, store(stores.QUARANTINE), opening=True))
 		lot = lot_of(frappe.get_doc("Stock Entry", entry.name).items[0])
 
 		finished_goods.guard_document(self.count(lot))  # not new stock: lot_status.counted_back decides
@@ -291,3 +290,67 @@ class TestFinishedGoodsComeFromProduction(ReleaseTestCase):
 				],
 			}
 		)
+
+
+@verifies("URS-STK-015")
+class TestOpeningStockIsTheDataLoads(ReleaseTestCase):
+	"""Independent review 2026-10-15: Is Opening, set by hand on a material receipt, brought a finished
+	good in outside production, or a material from no approved supplier, for QA to release on an
+	incoming inspection. Opening stock is the go-live data load's alone."""
+
+	def opening_count(self) -> Document:
+		approve_for_test(ITEM)
+		return frappe.get_doc(
+			{
+				"doctype": STOCK_RECONCILIATION,
+				"company": company(),
+				"purpose": "Opening Stock",
+				"items": [
+					{
+						"item_code": ITEM,
+						"warehouse": store(stores.QUARANTINE),
+						"qty": 1,
+						"valuation_rate": 10,
+					}
+				],
+			}
+		)
+
+	def test_opening_stock_is_refused_on_the_form_and_through_the_api(self):
+		for item in (ITEM, FINISHED_ITEM):
+			frappe.set_user(self.stores_user)
+			with self.subTest(item=item), self.assertRaises(frappe.PermissionError) as refused:
+				material_receipt(item, store(stores.QUARANTINE), opening=True).insert()
+			self.assertIn("loaded once at go-live through Data Import", str(refused.exception))
+		frappe.set_user("Administrator")  # not even the Administrator, outside the data load
+		with self.assertRaises(frappe.PermissionError):
+			material_receipt(ITEM, store(stores.QUARANTINE), opening=True).insert()
+		with self.assertRaises(frappe.PermissionError):
+			finished_goods.guard_opening_stock(self.opening_count())
+
+	def test_opening_stock_comes_in_through_the_data_load_into_quarantine(self):
+		frappe.set_user(self.stores_user)
+		entry = loaded(material_receipt(ITEM, store(stores.QUARANTINE), opening=True))
+
+		lot = lot_of(frappe.get_doc("Stock Entry", entry.name).items[0])
+		self.assertEqual(status_of([lot])[lot], QUARANTINE)
+		self.assertEqual(material_receipt_of(lot), entry.name)  # inspected on it, released by QA
+		for flag in ("in_import", "in_migrate", "in_install"):
+			with self.subTest(flag=flag), patch.dict(frappe.flags, {flag: True}):
+				finished_goods.guard_opening_stock(self.opening_count())
+
+	def test_other_stock_entries_and_counts_are_not_held_to_it(self):
+		frappe.set_user("Administrator")
+		finished_goods.guard_opening_stock(material_receipt(ITEM, store(stores.QUARANTINE)))
+		count = self.opening_count()
+		count.purpose = "Stock Reconciliation"
+		finished_goods.guard_opening_stock(count)
+
+	def test_every_opening_entry_is_checked_first(self):
+		for doctype in (STOCK_ENTRY, STOCK_RECONCILIATION):
+			hooks = frappe.get_hooks("doc_events")[doctype]["validate"]
+			with self.subTest(doctype=doctype):
+				self.assertLess(
+					hooks.index("meddevice_suite.lot_control.finished_goods.guard_opening_stock"),
+					hooks.index("meddevice_suite.lot_control.finished_goods.guard_document"),
+				)

@@ -44,8 +44,14 @@ doc_events = {
 			# The ledger checks read a voucher's header once per document (lot_control/lot_status.py):
 			# a document submitted or cancelled is read afresh.
 			"meddevice_suite.lot_control.lot_status.forget_voucher",
+			# Module 17: a cancellation's reverse movement is held to the stock path rule; stock kept
+			# apart for QA leaves only by QA's disposition (URS-STK-014). Returns at once for a record
+			# type that is not a stock document.
+			"meddevice_suite.lot_control.lot_status.guard_cancellation",
 		],
-		"before_submit": "meddevice_suite.lot_control.lot_status.forget_voucher",
+		# Read afresh, and known as submitted today: goods move when a document is submitted, whatever
+		# date it is posted on (module 18, URS-STK-008).
+		"before_submit": "meddevice_suite.lot_control.lot_status.note_submission",
 		# What an approval forbids is refused first; asking a reason for it would mislead.
 		"before_update_after_submit": [
 			"meddevice_suite.compliance.approvals.before_update_after_submit",
@@ -121,8 +127,10 @@ doc_events = {
 		# record is Current (before_validate runs even when validation is skipped).
 		"before_validate": "meddevice_suite.qms.device_master_record.guard_stock_entry",
 		"validate": [
-			# Plan D-28, first: a finished good that may not come in on it is refused for what it is,
-			# before the lot status rules say where its lot may go.
+			# Opening stock is the go-live data load's alone (URS-STK-015), first.
+			"meddevice_suite.lot_control.finished_goods.guard_opening_stock",
+			# Plan D-28: a finished good that may not come in on it is refused for what it is, before
+			# the lot status rules say where its lot may go.
 			"meddevice_suite.lot_control.finished_goods.guard_document",
 			"meddevice_suite.lot_control.lot_status.guard_stock_entry",
 		],
@@ -155,8 +163,14 @@ doc_events = {
 		"before_rename": "meddevice_suite.master_data.customer_licence.guard_customer_rename",
 	},
 	"Pick List": {"validate": "meddevice_suite.lot_control.lot_status.guard_pick_list"},
-	# Plan D-28: a count brings a new lot of a finished good in only as opening stock at migration.
-	"Stock Reconciliation": {"validate": "meddevice_suite.lot_control.finished_goods.guard_document"},
+	"Stock Reconciliation": {
+		"validate": [
+			# Opening stock is the go-live data load's alone (URS-STK-015).
+			"meddevice_suite.lot_control.finished_goods.guard_opening_stock",
+			# Plan D-28: a count never brings a new lot of a finished good in.
+			"meddevice_suite.lot_control.finished_goods.guard_document",
+		]
+	},
 	"Packing Slip": {"validate": "meddevice_suite.lot_control.lot_status.guard_packing_slip"},
 	"Work Order": {
 		# Module 2: only from an approved, active bill of its own product; module 3: only on approved

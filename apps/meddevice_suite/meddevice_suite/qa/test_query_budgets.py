@@ -147,8 +147,9 @@ class TestTheBudgetCatchesALoop(QueryBudget, IntegrationTestCase):
 class TestStockMovementBudget(QueryBudget, IntegrationTestCase):
 	"""Every stock movement passes the guards on its ledger entries (master_data/warehouse.py,
 	lot_control/finished_goods.py, lot_status.py, expiry.py, lot_dates.py). The data that grows is
-	the item's history: lots made every day, used up or sitting in another store, that expire before
-	the lot moved, which first expiry, first out has to look past."""
+	the item's history: lots made every day, sitting in another usable store, which first expiry,
+	first out reads with the lot moved, as it compares every usable store (independent review
+	2026-10-15); they expire after it, so it may go first."""
 
 	@classmethod
 	def setUpClass(cls):
@@ -164,8 +165,8 @@ class TestStockMovementBudget(QueryBudget, IntegrationTestCase):
 		self.history: list[str] = []
 		self.history_bundles: list[str] = []
 		self.grow_history(SMALL)
-		# The lot moved: the latest made, expiring last, in the store it is used from.
-		lots, receipt = self.approved_lots(1, self.stores, expires_in_days=2000)
+		# The lot moved: expiring first, in the store it is used from.
+		lots, receipt = self.approved_lots(1, self.stores, expires_in_days=20)
 		self.lot = lots[0]
 		issue = stock_entry(
 			"Material Issue",

@@ -218,3 +218,20 @@ def lot_of(row: Document) -> str:
 	return row.batch_no or frappe.db.get_value(
 		"Serial and Batch Entry", {"parent": row.serial_and_batch_bundle}, "batch_no"
 	)
+
+
+def loaded_as_data_import(doc: Document, submit: bool = True) -> Document:
+	"""The record loaded as Frappe's Data Import loads a row: built with its record type's defaults,
+	then inserted, and submitted, while `in_import` is set. Opening stock comes in only so, as part of
+	the go-live data load (lot_control/finished_goods.py, URS-STK-015); the browser journey and the
+	tests load theirs the same way."""
+	doc._set_defaults()  # what Data Import's new records carry; insert skips it while importing
+	importing = frappe.flags.in_import
+	frappe.flags.in_import = True
+	try:
+		doc.insert()
+		if submit:
+			doc.submit()
+	finally:
+		frappe.flags.in_import = importing
+	return doc
