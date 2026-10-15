@@ -49,7 +49,6 @@ from meddevice_suite.master_data import (
 )
 from meddevice_suite.master_data.test_equipment import EquipmentTestCase
 from meddevice_suite.master_data.test_supplier_approval import ensure_supplier, new_approval
-from meddevice_suite.pilot.flow import lot_of
 from meddevice_suite.qa import verifies
 from meddevice_suite.qa.volume import APP_INDEXES, counted, index_present
 from meddevice_suite.qms import change_control, document_control, equipment_care, pinned_records, training
@@ -59,6 +58,7 @@ from meddevice_suite.qms.test_change_control import licence_for_test
 from meddevice_suite.qms.test_document_control import signer
 from meddevice_suite.qms.test_training import TrainingTestCase, employee
 from meddevice_suite.setup import indexes
+from meddevice_suite.setup.fixtures.records import lot_of
 from meddevice_suite.setup.install import apply_configuration
 from meddevice_suite.setup.test_stock import (
 	approve_equipment_for_test,
