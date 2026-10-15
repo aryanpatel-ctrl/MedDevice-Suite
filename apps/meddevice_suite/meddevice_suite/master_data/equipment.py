@@ -30,7 +30,7 @@ from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 from frappe.model.document import Document
 from frappe.utils import cint, now_datetime
 
-from meddevice_suite.compliance.audit import same
+from meddevice_suite.compliance.audit import as_data, same
 from meddevice_suite.compliance.esign import sign
 
 DOCTYPE = "Asset"
@@ -397,6 +397,13 @@ def guard_asset(doc: Document, method: str | None = None) -> None:
 				doc.name, "; ".join(missing)
 			)
 		)
+
+
+def workstation_changes(changes: dict | str | None) -> list[tuple[str | None, str | None]]:
+	"""The changes of the workstation an Asset's audit event records, as (from, to), in order. The
+	record's creation is not one: it records where the equipment was first placed."""
+	data = as_data(changes) or {}
+	return [(old, new) for field, old, new in data.get("changed") or [] if field == WORKSTATION]
 
 
 def usable(asset: str) -> frappe._dict:
