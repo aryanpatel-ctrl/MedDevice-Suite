@@ -21,20 +21,60 @@ the refused request is rolled back (11.300(d)). It does not end the session:
 Frappe signs a user out on its own authentication error, which a mistyped
 signing password must not do.
 
-The content a signature binds is what the person signed. Fields the system keeps
-up to date as the record's life moves on (its status, links to later records, what
-is recorded on its rows as they are done) are left out, as is the record's name,
-which a rename may change; the audit trail records every one of those changes.
+The content a signature binds is what the person signed, declared for every record
+type with a signed act in SIGNED_CONTENT: the fields the signer approves, never the
+whole record, so a field added to the record type later changes no signature. Fields
+the system keeps up to date as the record's life moves on (its status, links to later
+records, what is recorded on its rows as they are done) are left out, as is the
+record's name, which a rename may change; the audit trail records every one of those
+changes. The signature itself binds the record's type and its name at signing, and
+verification checks that the record it is attached to has had that name.
+
+Verification (`signature_problems`, `signed_content_report`) reports, for a reviewer,
+a signature altered, removed, inserted or moved from another record, and for each
+signature whether the record still holds what it binds, was changed and signed again,
+was changed through the system (the audit trail accounts for the change), or was
+changed in a way the audit trail does not account for.
+
+Fingerprints are versioned (compliance/fingerprint.py): a signature recorded now is
+version 2, keyed with a key held outside the database and bound to the content
+SIGNED_CONTENT declares; one recorded before is version 1 and is verified as it was
+made, by `version_1_content`.
 """
+
+from dataclasses import dataclass, field
 
 import frappe
 from frappe import _
 from frappe.auth import get_login_attempt_tracker
 from frappe.model.document import Document
-from frappe.utils import cint, get_datetime, get_fullname, now_datetime
+from frappe.utils import (
+	cint,
+	flt,
+	format_datetime,
+	get_datetime,
+	get_fullname,
+	getdate,
+	now_datetime,
+)
 from frappe.utils.password import check_password
 
-from meddevice_suite.compliance.fingerprint import chain_head, plain_text, record_content, sha256
+from meddevice_suite.compliance.audit import as_data, copy_of, history, record_names, undo
+from meddevice_suite.compliance.fingerprint import (
+	CURRENT_VERSION,
+	FIRST_VERSION,
+	KEYED_VERSION,
+	Trail,
+	chain_head,
+	chain_problems,
+	in_chain_order,
+	keyed_sha256,
+	keyed_since,
+	plain_text,
+	record_content,
+	sha256,
+	version_of,
+)
 from meddevice_suite.compliance.signing import declared_meaning
 
 MEANINGS = (
@@ -61,6 +101,23 @@ FINGERPRINTED = (
 	"signed_at",
 	"record_hash",
 )
+TRAIL = Trail(
+	"Electronic Signature",
+	link="previous_signature",
+	fingerprint="signature_hash",
+	recorded_at="signed_at",
+	name_at="document_name_at_signing",
+)
+
+# What a signature's verification says of the record's content now (`signed_content_report`).
+UNCHANGED = "Unchanged"
+SIGNED_AGAIN = "Changed and signed again"
+CHANGED = "Changed since signing"
+UNACCOUNTED = "Changed outside the audit trail"
+# A signature whose record changed after it, and no later signature binds the record as it now is.
+CONTENT_FINDINGS = (CHANGED, UNACCOUNTED)
+# How far back the audit trail is undone to account for a change since a signature.
+HISTORY_LIMIT = 500
 
 # Accounts that do not identify one person (21 CFR 11.100(a)).
 SHARED_ACCOUNTS = ("Administrator", "Guest")
@@ -78,9 +135,48 @@ def apply_lockout() -> None:
 	apply_access_policy()
 
 
-# record type -> fields the system maintains after signing, outside what a signature binds.
-# Record types whose signature binds part of the record, not all of it: dotted path of
-# content(doc) -> dict. An item's approval binds what QA approved (master_data.item_master).
+@dataclass(frozen=True)
+class SignedFields:
+	"""A record type's signed content, declared as the fields its signers approve and, for each
+	child table, the columns of its rows. Called like a content function: content(doc) -> dict."""
+
+	fields: tuple[str, ...]
+	tables: dict[str, tuple[str, ...]] = field(default_factory=dict)
+
+	def __call__(self, doc: Document) -> dict:
+		content = {name: signed_value(doc, name) for name in self.fields}
+		for table, columns in self.tables.items():
+			content[table] = [
+				{column: signed_value(row, column) for column in columns} for row in doc.get(table) or []
+			]
+		return content
+
+
+def signed_value(doc: Document, fieldname: str) -> object:
+	"""A field's value in one form, whether the record was read from the database or set in code
+	(a date as a date or as text, a number as text from the desk)."""
+	df = doc.meta.get_field(fieldname)
+	fieldtype = df.fieldtype if df else None
+	value = doc.get(fieldname)
+	if fieldtype in ("Check", "Int"):
+		return cint(value)
+	if fieldtype in ("Float", "Currency", "Percent"):
+		return flt(value, 9)  # the database keeps nine decimals
+	if value in (None, ""):
+		return None
+	if fieldtype == "Date":
+		return str(getdate(value))
+	if fieldtype == "Datetime":
+		return str(get_datetime(value))
+	return value
+
+
+SIGNED_RECORDS = "meddevice_suite.compliance.signed_records"
+
+# Record type -> dotted path of its signed content: content(doc) -> dict, a function or SignedFields.
+# Every record type with a signed act in signing.SIGNING_ACTIONS is declared here (test_signature_
+# integrity checks it). Widening a declaration changes what earlier signatures bind: a field added to
+# one is bound only when set (as item_master does), so a signature that verified keeps verifying.
 SIGNED_CONTENT: dict[str, str] = {
 	"Regulatory Licence": "meddevice_suite.qms.regulatory_licence.signed_content",
 	# Module 31: the item, the headings and each element with its pinned version; not the status,
@@ -99,7 +195,45 @@ SIGNED_CONTENT: dict[str, str] = {
 	# Module 18: a correction of a lot's dates binds the lot and the dates QA approved; its quantity
 	# and status move on with the stock and QA's decisions.
 	"Batch": "meddevice_suite.lot_control.lot_dates.signed_content",
+	# Declared with fingerprint version 2 (independent review 2026-10-15); compliance/signed_records.py.
+	"Document Revision": f"{SIGNED_RECORDS}.DOCUMENT_REVISION",
+	"Controlled Document": f"{SIGNED_RECORDS}.CONTROLLED_DOCUMENT",
+	"Change Request": f"{SIGNED_RECORDS}.CHANGE_REQUEST",
+	"Lot Release": f"{SIGNED_RECORDS}.LOT_RELEASE",
+	"Supplier Approval": f"{SIGNED_RECORDS}.SUPPLIER_APPROVAL",
+	"Customer Licence": f"{SIGNED_RECORDS}.CUSTOMER_LICENCE",
+	"Work Task": f"{SIGNED_RECORDS}.WORK_TASK",
+	"Calibration Record": f"{SIGNED_RECORDS}.CALIBRATION_RECORD",
+	"Maintenance Record": f"{SIGNED_RECORDS}.MAINTENANCE_RECORD",
+	"Equipment Qualification": f"{SIGNED_RECORDS}.EQUIPMENT_QUALIFICATION",
+	"Training Matrix": f"{SIGNED_RECORDS}.TRAINING_MATRIX",
+	"Training Record": f"{SIGNED_RECORDS}.TRAINING_RECORD",
+	"Risk Acceptability Policy": f"{SIGNED_RECORDS}.RISK_ACCEPTABILITY_POLICY",
+	"Risk Assessment": f"{SIGNED_RECORDS}.RISK_ASSESSMENT",
+	"Risk Management Report": f"{SIGNED_RECORDS}.RISK_MANAGEMENT_REPORT",
+	"Risk Review": f"{SIGNED_RECORDS}.RISK_REVIEW",
 }
+
+# Version 1 only, and never changed: version-1 signatures were taken over these record types'
+# declared content and over the whole record of every other type, less the fields below.
+VERSION_1_DECLARED = frozenset(
+	{
+		"Regulatory Licence",
+		"Device Master Record",
+		"Item",
+		"Customer",
+		"BOM",
+		"Asset",
+		"Operation",
+		"Workstation",
+		"Routing",
+		"Warehouse",
+		"Quality Inspection Template",
+		"Batch",
+	}
+)
+
+# Version 1: record type -> fields the system maintains after signing, left out of the whole record.
 
 SYSTEM_MAINTAINED: dict[str, tuple[str, ...]] = {
 	"Document Revision": ("status", "docstatus", "superseded_by"),
@@ -167,8 +301,8 @@ SYSTEM_MAINTAINED: dict[str, tuple[str, ...]] = {
 }
 
 
-# (record type, act) -> fields the system maintains after that act's signature, beyond the record
-# type's own. For an act added after its record type already carried signatures: widening
+# Version 1: (record type, act) -> fields the system maintains after that act's signature, beyond
+# the record type's own. For an act added after its record type already carried signatures: widening
 # SYSTEM_MAINTAINED would change what those earlier signatures bind, and a signature that verified
 # must keep verifying (21 CFR 11.70). The act is part of the signature and its fingerprint, so each
 # signature is checked against the content its own act binds.
@@ -178,8 +312,8 @@ ACT_MAINTAINED: dict[tuple[str, str], tuple[str, ...]] = {
 	("Controlled Document", "Review"): ("review_alerted_for",),
 }
 
-# record type (or child table) -> fields added after records of it were signed, bound once they hold
-# a value. A record signed before the field existed was signed without it; binding the empty field
+# Version 1: record type (or child table) -> fields added after records of it were signed, bound once
+# they hold a value. A record signed before the field existed was signed without it; binding the empty field
 # would change that content and break a signature that verified (21 CFR 11.70).
 BOUND_WHEN_SET: dict[str, tuple[str, ...]] = {
 	# Module 38 (foundation review 2026-10-12): the workstation a job card in an out-of-tolerance
@@ -246,10 +380,12 @@ def sign(
 			"signer": user,
 			"signer_name": get_fullname(user),
 			"signed_at": now_datetime(),
-			"record_hash": record_fingerprint(doc, action),
+			"record_hash": record_fingerprint(doc, action, CURRENT_VERSION),
 			"previous_signature": previous.name if previous else None,
+			"fingerprint_version": CURRENT_VERSION,
 		}
 	)
+	keyed_since()  # recorded before the first keyed signature, if the migrate has not recorded it
 	signature.signature_hash = signature_fingerprint(signature, previous.signature_hash if previous else "")
 	# No role may create signatures directly; this service is the only way in, and the record
 	# refuses an insert without this mark, which a request cannot set on a document.
@@ -314,54 +450,93 @@ def identify_new_rows(doc: Document) -> None:
 			row.creation = doc.creation
 
 
-def record_fingerprint(doc: Document, action: str | None = None) -> str:
-	"""SHA-256 of the content a signature of `action` binds, child rows included (see the module
-	docstring and `ACT_MAINTAINED`)."""
-	if doc.doctype in SIGNED_CONTENT:
-		return sha256(frappe.get_attr(SIGNED_CONTENT[doc.doctype])(doc))
+def record_fingerprint(doc: Document, action: str | None = None, version: int = CURRENT_VERSION) -> str:
+	"""SHA-256 of the content a signature of `action` binds, in the signature's fingerprint version.
+
+	The content fingerprint itself is not keyed: the signature's own fingerprint, which is, binds it.
+	"""
+	return sha256(signed_content(doc, action, version))
+
+
+def signed_content(doc: Document, action: str | None = None, version: int = CURRENT_VERSION) -> dict:
+	"""What a signature of `action` binds: the record type's declared content (SIGNED_CONTENT), or for
+	a record type with no signed act, which only code and tests sign, the whole record."""
+	declared = VERSION_1_DECLARED if version == FIRST_VERSION else SIGNED_CONTENT
+	if doc.doctype in declared:
+		return frappe.get_attr(SIGNED_CONTENT[doc.doctype])(doc)
+	return version_1_content(doc, action)
+
+
+def version_1_content(doc: Document, action: str | None = None) -> dict:
+	"""The whole record, child rows included, less what the system maintains (see the version-1
+	tables above): what a version-1 signature of a record type without declared content binds."""
 	content = record_content(doc)
-	for field in (
+	for fieldname in (
 		"name",
 		*SYSTEM_MAINTAINED.get(doc.doctype, ()),
 		*ACT_MAINTAINED.get((doc.doctype, action), ()),
 	):
-		content.pop(field, None)
+		content.pop(fieldname, None)
 	without_unset_new_fields(content)
 	for rows in content.values():
 		if isinstance(rows, list):
 			for row in rows:
 				if isinstance(row, dict):
 					# A row's docstatus is its parent's, set as the parent is submitted.
-					for field in ("parent", "docstatus", *SYSTEM_MAINTAINED.get(row.get("doctype"), ())):
-						row.pop(field, None)
+					for fieldname in ("parent", "docstatus", *SYSTEM_MAINTAINED.get(row.get("doctype"), ())):
+						row.pop(fieldname, None)
 					without_unset_new_fields(row)
-	return sha256(content)
+	return content
 
 
 def without_unset_new_fields(content: dict) -> None:
 	"""Leave out the fields of `BOUND_WHEN_SET` that hold no value."""
-	for field in BOUND_WHEN_SET.get(content.get("doctype"), ()):
-		if content.get(field) in (None, ""):
-			content.pop(field, None)
+	for fieldname in BOUND_WHEN_SET.get(content.get("doctype"), ()):
+		if content.get(fieldname) in (None, ""):
+			content.pop(fieldname, None)
 
 
-def signature_fingerprint(signature: Document | frappe._dict, previous_hash: str) -> str:
-	# The name as it was at signing: renaming a record rewrites `reference_name`
-	# in every signature, which must not read as tampering.
-	return sha256(
-		[
-			previous_hash,
-			signature.reference_doctype,
-			signature.document_name_at_signing,
-			signature.action,
-			signature.meaning,
-			signature.reason or "",
-			signature.signer,
-			signature.signer_name,
-			str(get_datetime(signature.signed_at)),
-			signature.record_hash,
-		]
+def signature_fingerprint(signature: Document | frappe._dict, previous_hash: str) -> str | None:
+	"""The signature's fingerprint in its own version (fingerprint.py); None for an unknown version.
+
+	The name as it was at signing: renaming a record rewrites `reference_name` in every signature,
+	which must not read as tampering; verification checks that name is one the record has had."""
+	content = [
+		previous_hash,
+		signature.reference_doctype,
+		signature.document_name_at_signing,
+		signature.action,
+		signature.meaning,
+		signature.reason or "",
+		signature.signer,
+		signature.signer_name,
+		str(get_datetime(signature.signed_at)),
+		signature.record_hash,
+	]
+	version = version_of(signature)
+	if version == FIRST_VERSION:
+		return sha256(content)
+	if version == KEYED_VERSION:
+		return keyed_sha256(TRAIL.doctype, [version, *content])
+	return None
+
+
+def stored_signatures(doctype: str, name: str) -> list[frappe._dict]:
+	return frappe.get_all(
+		"Electronic Signature",
+		filters={"reference_doctype": doctype, "reference_name": name},
+		fields=["name", *FINGERPRINTED, "previous_signature", "signature_hash", "fingerprint_version"],
+		order_by="signed_at asc, creation asc",
 	)
+
+
+def signature_problems(doctype: str, name: str) -> list[str]:
+	"""What is wrong with the record's chain of signatures; an empty list means every signature is
+	intact (fingerprint.chain_problems, the rule the audit trail is verified by too)."""
+	signatures = stored_signatures(doctype, name)
+	if not signatures:
+		return []
+	return chain_problems(TRAIL, signatures, record_names(doctype, name), signature_fingerprint)
 
 
 def verify_signatures(doctype: str, name: str) -> bool:
@@ -369,35 +544,115 @@ def verify_signatures(doctype: str, name: str) -> bool:
 
 	The chain is followed by its links, as the audit trail's is (`audit.verify_events`), not by
 	time: a server clock set back between two signings orders them wrongly by time, which must not
-	read as tampering. An altered signature, one removed from the chain, one inserted into it and a
-	second one claiming the same place are still detected.
+	read as tampering. An altered signature, one removed from the chain, one inserted into it, a
+	second one claiming the same place and one moved here from another record are detected.
 	"""
-	signatures = frappe.get_all(
-		"Electronic Signature",
-		filters={"reference_doctype": doctype, "reference_name": name},
-		fields=["name", *FINGERPRINTED, "previous_signature", "signature_hash"],
-	)
-	by_name = {signature.name: signature for signature in signatures}
-	firsts, followed = 0, set()
-	for signature in signatures:
-		previous = None
-		if signature.previous_signature:
-			previous = by_name.get(signature.previous_signature)
-			# The signature before it is missing, or another signature already follows it.
-			if previous is None or signature.previous_signature in followed:
-				return False
-			followed.add(signature.previous_signature)
-		else:
-			firsts += 1
-		if signature.signature_hash != signature_fingerprint(
-			signature, previous.signature_hash if previous else ""
-		):
-			return False
-	# One chain: a single first signature, every other one following another.
-	return not signatures or firsts == 1
+	return not signature_problems(doctype, name)
 
 
-def is_unchanged_since(signature: Document) -> bool:
+def is_unchanged_since(signature: Document | frappe._dict) -> bool:
 	"""Whether the signed record's content is still exactly what was signed."""
 	doc = frappe.get_doc(signature.reference_doctype, signature.reference_name)
-	return record_fingerprint(doc, signature.action) == signature.record_hash
+	return record_fingerprint(doc, signature.action, version_of(signature)) == signature.record_hash
+
+
+def signed_content_report(doctype: str, name: str) -> list[dict]:
+	"""For a reviewer, each signature on the record in the order signed, and whether the record still
+	holds the content it binds (21 CFR 11.70; independent review 2026-10-15):
+
+	- Unchanged: it does.
+	- Changed and signed again: what it binds changed afterwards, and a later signature binds the
+	  record as it now is (a revision reviewed after its author signed, a master approved again).
+	- Changed since signing: no signature binds the record as it now is; the audit trail accounts
+	  for the change, and the changes are listed (made through the system, under its controls).
+	- Changed outside the audit trail: undoing what the audit trail recorded since does not bring
+	  back what was signed, so the record was changed past the system.
+
+	Only what the signature binds counts (SIGNED_CONTENT, or the version-1 rules for a version-1
+	signature): what the system maintains, and what is changed after submission where the record
+	type allows it, are not part of it."""
+	signatures = in_chain_order(stored_signatures(doctype, name), TRAIL.link)
+	if not signatures:
+		return []
+	doc = frappe.get_doc(doctype, name)
+	fingerprints: dict[tuple[int, str], str] = {}
+
+	def holds(signature: frappe._dict) -> bool:
+		key = (version_of(signature), signature.action)
+		if key not in fingerprints:
+			fingerprints[key] = record_fingerprint(doc, signature.action, key[0])
+		return fingerprints[key] == signature.record_hash
+
+	held = [holds(signature) for signature in signatures]
+	events = None
+	report = []
+	for index, signature in enumerate(signatures):
+		later = next((s for s, h in zip(signatures[index + 1 :], held[index + 1 :], strict=True) if h), None)
+		changes = []
+		if held[index]:
+			content = UNCHANGED
+		elif later:
+			content = SIGNED_AGAIN
+		else:
+			if events is None:
+				events = history(doctype, name)
+			changes = changes_since(doc, signature, events)
+			content = UNACCOUNTED if changes is None else CHANGED
+		report.append(
+			{
+				"signature": signature.name,
+				"action": signature.action,
+				"meaning": signature.meaning,
+				"signer_name": signature.signer_name,
+				"signed_at": signature.signed_at,
+				"content": content,
+				"finding": content in CONTENT_FINDINGS,
+				"message": content_message(signature, content, later, changes or []),
+			}
+		)
+	return report
+
+
+def changes_since(doc: Document, signature: frappe._dict, events: list[frappe._dict]) -> list | None:
+	"""The audit events, newest first, whose undoing brings back what the signature binds: the changes
+	the audit trail records since it. None when undoing the trail does not bring it back."""
+	state = copy_of(doc)
+	undone = []
+	for event in events[:HISTORY_LIMIT]:
+		changes = as_data(event.changes) or {}
+		if "snapshot" in changes:  # the record's creation: nothing before it to undo
+			return None
+		undo(state, changes)
+		undone.append(event)
+		if record_fingerprint(state, signature.action, version_of(signature)) == signature.record_hash:
+			return undone
+	return None
+
+
+def content_message(signature: frappe._dict, content: str, later: frappe._dict | None, changes: list) -> str:
+	signed = _("{0} ({1}), signed by {2} on {3}").format(
+		_(signature.action), _(signature.meaning), signature.signer_name, format_datetime(signature.signed_at)
+	)
+	if content == UNCHANGED:
+		return _("{0}: the record still holds what was signed.").format(signed)
+	if content == SIGNED_AGAIN:
+		return _(
+			"{0}: what it signed was changed afterwards, and {1} by {2} signed the record as it now is."
+		).format(signed, _(later.action), later.signer_name)
+	if content == CHANGED:
+		recorded = "; ".join(recorded_change(event) for event in reversed(changes))
+		return _(
+			"{0}: the record has changed since it was signed, and no later signature covers the change. "
+			"The audit trail records the change: {1}."
+		).format(signed, recorded)
+	return _(
+		"{0}: the record has changed since it was signed, and the audit trail does not account for the "
+		"change: it was made outside the system. Treat it as a data-integrity incident."
+	).format(signed)
+
+
+def recorded_change(event: frappe._dict) -> str:
+	when = format_datetime(event.event_at)
+	if event.reason:
+		return _("{0} by {1} on {2}, reason: {3}").format(_(event.action), event.user, when, event.reason)
+	return _("{0} by {1} on {2}").format(_(event.action), event.user, when)

@@ -7,6 +7,21 @@ cannot show that an entry once existed. 21 CFR 11.10(e) requires that recorded c
 obscured, and ALCOA+ that the record is complete and enduring: removing the newest entries must
 be detectable as well.
 
+What protects what (independent review 2026-10-15):
+
+- An entry rewritten, anywhere in its chain: the entry fingerprints. Since fingerprint version 2
+  they are keyed with a key derived from the site's `encryption_key`, kept in site_config.json
+  outside the database, so database access alone cannot compute them again (fingerprint.py). The
+  anchor does not protect older entries: it pins only each trail's newest entry and the count.
+- Entries removed from the end of a chain, or a whole history: the anchors, below.
+- The anchors themselves: their database copy is fingerprinted unkeyed and chained, which shows
+  an anchor altered by hand but not one rewritten with its fingerprint computed again; the copy
+  in the anchor file, outside the database, is what protects them.
+- Not protected by any of these: entries recorded before version 2 (unkeyed) rewritten by someone
+  who can write the database, as far as the anchors do not pin them; and anything done by someone
+  who holds both the database and the site's files (site_config.json and the anchor file), which
+  only the backups and the period archives of module 54 can show.
+
 An anchor records the head of a whole trail at one moment: its newest entry, that entry's
 fingerprint, and how many entries the trail held up to it. Verification then reports entries
 that existed and no longer do: the anchored entry is missing or changed, or fewer entries remain

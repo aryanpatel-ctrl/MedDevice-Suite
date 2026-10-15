@@ -21,7 +21,8 @@
   "section_integrity",
   "record_hash",
   "previous_signature",
-  "signature_hash"
+  "signature_hash",
+  "fingerprint_version"
  ],
  "fields": [
   {
@@ -133,13 +134,20 @@
    "read_only": 1,
    "reqd": 1,
    "unique": 1
+  },
+  {
+   "description": "How the fingerprint was computed: 2, keyed with a key kept outside the database; 1 (or empty), unkeyed, for entries recorded before version 2. Set when recorded.",
+   "fieldname": "fingerprint_version",
+   "fieldtype": "Int",
+   "label": "Fingerprint Version",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "in_create": 1,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-12 09:00:00.000000",
+ "modified": "2026-10-16 09:00:00.000000",
  "modified_by": "Administrator",
  "module": "Compliance",
  "name": "Electronic Signature",
