@@ -29,7 +29,7 @@ from contextlib import AbstractContextManager
 
 import frappe
 from frappe import _
-from frappe.utils import add_days, today
+from frappe.utils import add_days, now_datetime, today
 
 from meddevice_suite.compliance import quality_settings
 from meddevice_suite.master_data import routing
@@ -557,12 +557,20 @@ def prepare_revocation(password: str) -> dict:
 				"bom_no": frappe.db.get_value("BOM", {"item": PRODUCT, "is_default": 1, "docstatus": 1}),
 				"qty": QUANTITY,
 				"company": COMPANY,
+				"planned_start_date": now_datetime(),
 				"source_warehouse": store("Stores"),
 				"wip_warehouse": store("Work In Progress"),
 				"fg_warehouse": store(QUARANTINE),  # the finished lot waits there for QA
 			}
-		).insert()
+		)
+		# The routing's operations and the bill's materials, as the form brings them when the
+		# product is chosen: without operations no job card is made.
+		order.get_items_and_operations_from_bom()
+		order.insert()
 		order.submit()
+	job_card = frappe.db.get_value("Job Card", {"work_order": order.name, "operation": operation})
+	if not job_card:
+		frappe.throw(_("Work order {0} made no job card for {1}.").format(order.name, operation))
 	return {
 		"operator": operator,
 		"operation": operation,
@@ -571,7 +579,7 @@ def prepare_revocation(password: str) -> dict:
 		"revision_no": revision.number,
 		"record": record,
 		"work_order": order.name,
-		"job_card": frappe.db.get_value("Job Card", {"work_order": order.name, "operation": operation}),
+		"job_card": job_card,
 	}
 
 

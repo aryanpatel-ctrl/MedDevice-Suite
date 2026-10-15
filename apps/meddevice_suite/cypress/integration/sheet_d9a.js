@@ -562,10 +562,13 @@ function fill_row(table, idx, fieldname, value, kind = "Data") {
 	close_dialogs(); // and the Getting Started panel
 	close_open_lists();
 	cy.get(`${cell(table, idx, fieldname)}:first`).click();
-	// Typed once the clicked cell has the cursor (standard_flow.js).
-	cy.get(inputs_of(cell(table, idx, fieldname)))
-		.first()
-		.should("have.focus");
+	// Typed once the clicked cell has the cursor (standard_flow.js); a choice is chosen from its
+	// list, which needs no cursor (a second line's Select did not take it: D9-CC-08, 2026-10-16).
+	if (kind !== "Select") {
+		cy.get(inputs_of(cell(table, idx, fieldname)))
+			.first()
+			.should("have.focus");
+	}
 	cy.get(inputs_of(cell(table, idx, fieldname)))
 		.first()
 		.then(($input) =>
@@ -923,19 +926,6 @@ function lookup_offers(fieldname, text) {
 		});
 }
 
-// A link typed in full and left, without choosing from its lookup (which may not list it); the
-// form takes it once it has checked that the record exists.
-function type_link(fieldname, value) {
-	settle();
-	close_dialogs();
-	close_open_lists();
-	reveal(fieldname);
-	type_and_leave(inputs_of(`${FORM} .frappe-control[data-fieldname="${fieldname}"]`), value);
-	close_open_lists();
-	settle();
-	cy.window().should((win) => expect(current(win)[fieldname], fieldname).to.equal(value));
-}
-
 // The record printed in the print format, as the desk's Print shows it; the page is left again.
 function print_shows(doctype, name, format, texts) {
 	forget_unsaved();
@@ -984,6 +974,105 @@ function version_as_kept(version) {
 		"uploaded_on",
 	];
 	return Object.fromEntries(fields.map((field) => [field, version[field] ?? null]));
+}
+
+// The text of a Text field on a table's line emptied as data on the line: a Text cell of the
+// headings table does not take the cursor when clicked (found in Chrome, 2026-10-15, D9-DMR-02).
+function clear_text_row(table, idx, fieldname) {
+	settle();
+	cy.window().then((win) => {
+		const row = rows(win, table)[idx - 1];
+		return win.frappe.model.set_value(row.doctype, row.name, fieldname, "");
+	});
+	settle();
+	cy.window().should(
+		(win) =>
+			expect(rows(win, table)[idx - 1][fieldname], `line ${idx} ${fieldname}`).to.not.be.ok
+	);
+}
+
+// A link typed in full and left: the form does not take it, and the field is left empty.
+function type_link_refused(fieldname, value) {
+	settle();
+	close_dialogs();
+	close_open_lists();
+	reveal(fieldname);
+	type_and_leave(inputs_of(`${FORM} .frappe-control[data-fieldname="${fieldname}"]`), value);
+	close_open_lists();
+	settle();
+	cy.window().should((win) =>
+		expect(current(win)[fieldname], `${fieldname} not taken`).to.not.equal(value)
+	);
+}
+
+// The dialogs shown, by title and text, to say what is on screen when one stays open.
+function dialogs_shown() {
+	return cy.window().then((win) =>
+		win
+			.$(".modal.show")
+			.toArray()
+			.map((modal) =>
+				plain(
+					`${win.$(modal).find(".modal-title").text()}: ${win
+						.$(modal)
+						.find(".modal-body")
+						.text()}`
+				)
+			)
+	);
+}
+
+// Save is pressed and goes through; the form is then left with nothing unsaved. When it is not,
+// what the form changed after Save is named: each value the desk set in the form and each call that
+// marked it unsaved, with where it came from (D9-FILE-02: the form shows "Not Saved" after a version
+// is added, with no field differing from the record as stored).
+function save_listing_unsaved() {
+	cy.window().then((win) => {
+		win.__sheet_changes = [];
+		if (!win.frappe.model.set_value.__sheet) {
+			const set_value = win.frappe.model.set_value;
+			const watched = function (doctype, docname, fieldname, value, ...rest) {
+				const field =
+					typeof fieldname === "object" ? JSON.stringify(fieldname) : fieldname;
+				win.__sheet_changes?.push(`set ${doctype}.${field} = ${JSON.stringify(value)}`);
+				return set_value.apply(this, [doctype, docname, fieldname, value, ...rest]);
+			};
+			watched.__sheet = true;
+			win.frappe.model.set_value = watched;
+			const form = win.frappe.ui.form.Form.prototype;
+			const dirty = form.dirty;
+			form.dirty = function (...args) {
+				const from = (new Error().stack || "").split("\n").slice(2, 5).join(" < ");
+				win.__sheet_changes?.push(`marked unsaved from ${from}`);
+				return dirty.apply(this, args);
+			};
+		}
+	});
+	primary_action().should("contain", "Save").click();
+	cy.window().should((win) => expect(win.cur_frm.is_new(), "saved").to.not.be.ok);
+	settle(RELOAD_DELAY_MS + QUIET_MS);
+	cy.window().then((win) =>
+		stored(win.cur_frm.doctype, win.cur_frm.doc.name).then((saved) => {
+			const differing = Object.keys(saved)
+				.filter((field) => !field.startsWith("_") && field !== "modified")
+				.filter((field) => saved[field] === null || typeof saved[field] !== "object")
+				.filter((field) => (win.cur_frm.doc[field] ?? null) !== (saved[field] ?? null))
+				.map(
+					(field) =>
+						`${field}: form ${JSON.stringify(
+							win.cur_frm.doc[field]
+						)}, stored ${JSON.stringify(saved[field])}`
+				);
+			const changes = win.__sheet_changes || [];
+			win.__sheet_changes = null;
+			expect(
+				win.cur_frm.is_dirty(),
+				`nothing left unsaved after Save (differing: ${
+					differing.join("; ") || "none"
+				}; changes during and after Save: ${changes.join(" | ") || "none"})`
+			).to.not.be.ok;
+		})
+	);
 }
 
 // How many signatures of `action` with `meaning` the record holds.
@@ -1459,7 +1548,7 @@ context(
 				// The form's own mandatory check: nothing is sent.
 				primary_action().should("contain", "Save").click();
 				refused_with(
-					/Missing Fields: Please fill the following mandatory fields before saving: Change Request is required\./
+					/Missing Fields: Please fill the following mandatory fields before saving:\s*Change Request is required\./
 				);
 				cy.window().should((win) => expect(win.cur_frm.is_new(), "not saved").to.be.ok);
 				// The server's own check, as an API call without the form.
@@ -1622,7 +1711,7 @@ context(
 				fill("category", sub_group, "Link");
 				attach("new_file", "md-9-licence.pdf");
 				cy.window().then((win) => fill("new_valid_until", in_days(win, 30), "Date"));
-				save();
+				save_listing_unsaved();
 				cy.window().should((win) => {
 					const doc = current(win);
 					expect(doc.status).to.equal("Active");
@@ -1644,7 +1733,7 @@ context(
 				save_refused(refusal("Say what changed in this version."));
 
 				fill("new_note", "Renewed for five years");
-				save();
+				save_listing_unsaved();
 				cy.window().should((win) => {
 					const doc = current(win);
 					expect(doc.current_version).to.equal(2);
@@ -1720,8 +1809,11 @@ context(
 					.its("cur_dialog")
 					.should((dialog) => expect(dialog.get_value("reason")).to.equal(why));
 				cy.get(".modal.show .btn-primary").click();
-				cy.get(".modal.show").should("not.exist");
 				settle(RELOAD_DELAY_MS + QUIET_MS);
+				dialogs_shown().then((shown) =>
+					expect(shown.join("\n"), "dialogs left on screen after Archive").to.equal("")
+				);
+				cy.get(".modal.show").should("not.exist");
 				cy.window().should((win) => {
 					expect(current(win).status).to.equal("Archived");
 					expect(current(win).archived_reason, "Archived Because").to.equal(why);
@@ -2000,7 +2092,8 @@ context(
 					expect(current(win).status).to.equal("Withdrawn");
 					expect(current(win).decision_reason).to.equal(why);
 				});
-				banner("gray", `Withdrawn: ${why}`);
+				// change_request.js asks for "gray", which Frappe's form message does not have: it draws it blue.
+				banner("blue", `Withdrawn: ${why}`);
 				no_signature();
 
 				open_form(CHANGE, approved);
@@ -2154,7 +2247,7 @@ context(
 					const idx =
 						current(win).headings.findIndex((row) => row.heading === MEASURING) + 1;
 					expect(idx, `the heading "${MEASURING}"`).to.be.above(0);
-					clear_row("headings", idx, "content");
+					clear_text_row("headings", idx, "content");
 				});
 				save();
 				cy.window().should((win) => {
@@ -2251,7 +2344,17 @@ context(
 						)
 					);
 					banner("red", changed);
-					banner("red", "Open work orders: none");
+					// The item's open work orders, as the server lists them on the form (an earlier run's
+					// order submitted in this test stays open), or "none".
+					cy.window().then((win) =>
+						banner(
+							"red",
+							`Open work orders: ${
+								(current(win).__onload?.open_work_orders || []).join(", ") ||
+								"none"
+							}`
+						)
+					);
 					no_problems("D9-DMR-04, QA sees it out of date");
 
 					sign_in(PRODUCTION);
@@ -2467,13 +2570,21 @@ context(
 								"the lookup offers the spent request"
 							).to.be.empty
 					);
-					type_link("change_request", change_request);
-					attach("file", "urine-bag-leak-test-again.pdf");
-					fill("reviewer", users[QC], "Link");
-					save_refused(
-						refusal(
-							`Change request ${change_request} has already changed Controlled Document ${document} (in Document Revision ${revision}); each change has its own approved change request.`,
-							"Change control"
+					// Typed in full and left, the form does not take it (its lookup does not list it).
+					type_link_refused("change_request", change_request);
+					// The server's own refusal, as the save would send it.
+					refused_call("frappe.client.insert", {
+						doc: {
+							doctype: REVISION,
+							controlled_document: document,
+							change_request,
+							reviewer: users[QC],
+						},
+					}).then((message) =>
+						expect(message).to.match(
+							exact(
+								`Change request ${change_request} has already changed Controlled Document ${document} (in Document Revision ${revision}); each change has its own approved change request.`
+							)
 						)
 					);
 					no_problems("D9-CC-08, the spent request");

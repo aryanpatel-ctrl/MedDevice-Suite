@@ -556,9 +556,36 @@ function rows_up_to(table, count) {
 		const missing = count - rows(win, table).length;
 		for (let i = 0; i < missing; i++) {
 			cy.get(`${FORM} .frappe-control[data-fieldname="${table}"] .grid-add-row`).click();
+			close_open_rows(table);
 		}
 	});
 	cy.window().should((win) => expect(rows(win, table)).to.have.length(count));
+}
+
+// A table whose lines are not edited in the grid (the maintenance checks, the qualification's
+// tests) opens the line Add Row adds in its own form (Frappe's grid.js add_new_row), which lies
+// fixed over the rest of the table (grid.scss .grid-row-open .form-in-grid) and covers the other
+// lines (found in Chrome, 2026-10-16, D10-T12 and D10-T15). The person closes it before going on;
+// closed as Frappe closes it, since the middle of its heading can land on Delete.
+function close_open_rows(table) {
+	cy.window().then((win) => {
+		for (const row of win.cur_frm.fields_dict[table].grid.grid_rows || []) {
+			if (row.wrapper?.hasClass("grid-row-open")) row.toggle_view(false);
+		}
+	});
+	cy.get(LINE).should("not.exist");
+	scrolled();
+	settle();
+}
+
+// A line closing scrolls the page back to it with an animation; a click meanwhile lands on
+// whatever the page has scrolled to.
+function scrolled() {
+	cy.window({ log: false }).should(
+		(win) =>
+			expect(win.$("html, body").is(":animated"), "the page has stopped scrolling").to.be
+				.false
+	);
 }
 
 function cell(table, idx, fieldname) {
@@ -593,6 +620,7 @@ function open_line(table, idx) {
 	close_open_lists();
 	reveal(table); // the table's tab, if another tab is open
 	close_onboarding();
+	close_open_rows(table); // a line left open covers the others
 	cy.get(
 		`${FORM} .frappe-control[data-fieldname="${table}"] .grid-row[data-idx="${idx}"] .row-index:first`
 	).click();
@@ -638,6 +666,7 @@ function close_line() {
 	// of its heading can land on Delete.
 	cy.window().then((win) => win.cur_frm.cur_grid?.toggle_view(false));
 	cy.get(LINE).should("not.exist");
+	scrolled();
 	settle();
 }
 
@@ -781,6 +810,24 @@ function close_signing() {
 
 function banner(color, text) {
 	cy.contains(`${FORM} .form-message.${color}`, text).should("be.visible");
+}
+
+// The signatures esign.js adds to the form's dashboard show `text`. On a form with a Connections
+// tab (the asset) Frappe draws the dashboard in that tab (found in Chrome, 2026-10-16, D10-T02);
+// the person opens it to read them.
+function signatures_show(text) {
+	settle();
+	cy.get(`${FORM} .mds-signatures`).should("exist");
+	cy.get(`${FORM} .mds-signatures`)
+		.last()
+		.then(($table) => {
+			const pane = $table.closest(".tab-pane")[0];
+			if (pane && !pane.classList.contains("active")) {
+				cy.get(`${FORM} .form-tabs-list [aria-controls="${pane.id}"]`).click();
+			}
+		});
+	cy.get(`${FORM} .mds-signatures`).last().scrollIntoView();
+	cy.contains(`${FORM} .mds-signatures`, text).should("be.visible");
 }
 
 function signed_as(action, meaning) {
@@ -1222,7 +1269,7 @@ context("D10 Equipment Master: the browser test sheet, as each job", () => {
 				expect(signature?.meaning, "Meaning").to.equal("Approved");
 				expect(signature?.reason, "Reason").to.equal(reason);
 			});
-			cy.contains(`${FORM} .mds-signatures`, reason).should("be.visible");
+			signatures_show(reason);
 			no_problems("D10-T02, QA");
 
 			sign_in(MAINTENANCE);
@@ -1482,6 +1529,8 @@ context("D10 Equipment Master: the browser test sheet, as each job", () => {
 					[made.job_cards["Now At"]]: ["Job Card", now_at],
 				});
 			});
+			// The table lies below the fold of the desk's scrolling page; the person scrolls to it.
+			reveal("impact");
 			cy.contains(
 				`${FORM} .frappe-control[data-fieldname="impact"]`,
 				made.job_cards["Was At"]
@@ -2080,9 +2129,38 @@ context("D10 Equipment Master: the browser test sheet, as each job", () => {
 			cy.window().then((win) => {
 				if (!current(win).company) fill("company", data.company, "Link");
 			});
-			// Its lookup lists submitted assets only (ERPNext's accounting); the person types the
-			// equipment's name as read off its record.
-			fill("asset_name", made.asset);
+			// Its lookup lists submitted assets only (ERPNext's accounting, asset_maintenance.js), and
+			// the desk checks a typed name against the same list (frappe.client.
+			// validate_link_and_fetch): the equipment, recorded as an asset that is never submitted,
+			// is not taken when the person types its name as read off its record (found in Chrome,
+			// 2026-10-16). It is then entered as data on the record; the refusal on Save is the test.
+			settle();
+			close_dialogs();
+			close_open_lists();
+			reveal("asset_name");
+			type_and_leave(
+				inputs_of(`${FORM} .frappe-control[data-fieldname="asset_name"]`),
+				made.asset
+			);
+			settle();
+			close_open_lists();
+			cy.window().should((win) =>
+				expect(current(win).asset_name || null, "the equipment is not taken").to.equal(
+					null
+				)
+			);
+			cy.window().then((win) =>
+				win.frappe.model.set_value(
+					"Asset Maintenance",
+					current(win).name,
+					"asset_name",
+					made.asset
+				)
+			);
+			settle();
+			cy.window().should((win) =>
+				stored_as(current(win).asset_name, made.asset, "asset_name")
+			);
 			fill("maintenance_team", data.maintenance_team, "Link");
 			rows_up_to("asset_maintenance_tasks", 1);
 			open_line("asset_maintenance_tasks", 1);
