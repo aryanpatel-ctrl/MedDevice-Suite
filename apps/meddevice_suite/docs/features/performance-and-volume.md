@@ -2,7 +2,7 @@
 
 Requirement: **URS-PLT-021** (`meddevice_suite/qa/requirements.toml`), source: foundation hardening plan, query budgets and volume harness; the owner's instruction on long data, 2026-10-12 ("long data manage, so no future impact"); rules.md section 4 (no queries inside loops over records; indexes on fields used in filters).
 Code: `meddevice_suite/qa/test_query_budgets.py` (the query budgets, run in CI), `meddevice_suite/qa/volume.py` (the volume harness, run locally), and the fixes in section 2.3.
-State on 2026-10-15: built on branch `chore/volume-and-query-budgets`. The tests and the harness are written; **neither has been run yet** (section 8).
+State on 2026-10-15: built on branch `chore/volume-and-query-budgets`; the open items were closed later the same day (section 7). The tests and the harness are written; **neither has been run yet** (section 8).
 
 ## 1. Feature overview
 
@@ -96,7 +96,7 @@ The history spans three years. Three "hot" raw materials hold about 45% of the l
 | # | Where | What grew | Fix |
 | --- | --- | --- | --- |
 | 1 | `lot_control/expiry.py` `earlier_lot_left` (every stock issue and delivery) | Every lot of the item that expired before the lot taken was read once per lot of the entry: ERPNext's `get_batch_qty` was called for each such lot, used up or in another store. That is hundreds of lots per item after a few years, on every movement. | `lots_left`: one call of ERPNext's lot quantities for the item in the store, then one read of status and expiry for only the lots with stock left. This runs once per ledger entry, whatever the item's history. |
-| 2 | `expiry.taken_by_document` | It filtered Serial and Batch Bundle by `voucher_no`, which ERPNext does not index (its only index on a bundle's document is `voucher_type`, shared by half the table). | It reads the document's lines by `parent` (indexed), then the bundles by `voucher_detail_no` (indexed). |
+| 2 | `expiry.taken_by_document` | It filtered Serial and Batch Bundle by `voucher_no`, which ERPNext does not index (its only index on a bundle's document is `voucher_type`, shared by half the table). | `voucher_no` is now indexed by configuration (section 2.4), and the query reads through that index. |
 | 3 | `lot_status.counted_back` (every stock count line) | Three queries per lot in the count line's bundle. | Two queries for all the lots. |
 | 4 | `lot_status.lots_of_row` in the guards of Stock Entry, Delivery Note, Sales/POS Invoice, Pick List, Packing Slip, Purchase Receipt (`receipt.refuse_existing_lots`) and Stock Reconciliation (`finished_goods.rows_bringing_stock_in`) | One bundle query per line of the document. | `lots_of_rows`: one query for every line's bundle. |
 | 5 | `work_management/reminders.py` `supplier_certificates_expiring` (daily) | The decision in force was read for every approval whose certificate had expired. A replaced decision stays in that list for good. | `supplier_approval.newest_decisions`: one query. |
@@ -111,7 +111,11 @@ The history spans three years. Three "hot" raw materials hold about 45% of the l
 | 14 | `equipment_care.refuse_unusable` (every job card save, work order submit), `equipment.guard_inspection_instruments` (every inspection) | About ten queries per piece of equipment (`usable`, then `unfit` for one asset). | `equipment.usable_all`: one read of the assets and one `unfit` for all. |
 | 15 | `training.not_competent` (every job card save and time log) | A refusal read each operator's revision number. | One query for the revisions named. |
 | 16 | `training.reconcile` (daily) | Not a query, but processing time: for each need opened it scanned every training record, which grows with the square of the history. | A set built once. |
-| 17 | Lots Awaiting Release report and My Work (`latest_inspections`) | Quality Inspection by `batch_no`, which ERPNext does not index. | Inspections are also filtered by the lots' items (`item_code` is indexed). |
+| 17 | Lots Awaiting Release report and My Work (`latest_inspections`), and the QA release (`receipt` newest inspection) | Quality Inspection by `batch_no`, which ERPNext does not index. | `batch_no` is now indexed by configuration (section 2.4), and both read through it. |
+| 18 | Every ledger entry of a document (`lot_status.movement_of`, `expiry.describe`, `finished_goods.guard_stock_ledger_entry`) | The checks re-read the voucher header 4–5 times per line, plus the entry's line. | `lot_status.voucher_header` and `stock_entry_line` read each once per document. The values are kept for the transaction only: they are cleared on commit or rollback, and a document's own values are cleared when it is submitted or cancelled again (the `"*"` `before_submit`/`before_cancel` hooks). `test_a_document_s_header_is_read_once_whatever_its_lines` checks that a document of 3 or of 15 lines reads its header once and its lines once. |
+| 19 | Daily `pinned_records.sweep` → `device_master_record.elements_changed` | Every record out of date was locked, loaded and described every day, only to find nothing new. | `unrecorded`: one query compares the changes with what the element rows already record, using the same comparison as `mark_out_of_date`. Only a record with something new is loaded. `TestPinnedRecordSweepBudget`. |
+| 20 | `evidence_files.is_evidence` (every File save and permission check) | Eight lookups on file columns that had no index. | The columns are indexed by configuration (section 2.4); each lookup goes through its index. |
+| 21 | `reminders.run` recurring schedules, `send_notices` job members, `my_work.customer_returns` | One load-and-check per schedule, one role lookup per reminder told, and two ledger queries per Returns store. | One query for the schedules plus one for the occurrences already raised; one query for the members of every role named; one `stock_by_lot` call for all Returns stores. |
 
 ### 2.4 Indexes
 
@@ -119,6 +123,16 @@ The history spans three years. Three "hot" raw materials hold about 45% of the l
 
 - `Document Revision.controlled_document` (`search_index`). Revisions are read by document in training reconciliation (`revisions_to_train`).
 - `Document Revision.status` (`search_index`). My Work's review and approval queues and the daily `make_due_revisions_effective` read revisions by status.
+
+**Configured on ERPNext's tables and on file columns (`setup/indexes.py`, called by `apply_configuration` on every install and migrate; idempotent).** ERPNext's files are never edited.
+
+- **`Quality Inspection.batch_no` and `Serial and Batch Bundle.voucher_no`.** A Property Setter marks each field `search_index`, and the index is made under Frappe's own name for it, `<field>_index`.
+  - Why this way: when an ERPNext upgrade changes a doctype, Frappe's schema sync drops any one-column index that the field's definition does not mark as indexed (`frappe/database/schema.py`). A bare `add_index` would therefore be dropped on the upgrade, and would only come back at the end of the migrate.
+  - The Property Setter is part of the doctype's definition. It is stored in the database and applied on top of every ERPNext release, so the sync keeps the index, and recreates it if it is ever missing.
+- **The evidence file columns** (`Document Revision.file`, `Record Archive.archive_file`, `Purchase Receipt Item.mds_certificate`, `Supplier Approval.certificate`, `Customer Licence.licence_copy`, `Important File Version.file`, `Calibration Record.certificate`, `Training Record.certificate`). Each gets a `<field>_file_index` on the first 255 characters of the address, followed by the record's name.
+  - Why this way: Attach columns are stored as text. MariaDB indexes text only by a prefix, which `search_index` cannot express, and Frappe's schema sync never adds or drops an index on a text column, so this index survives every upgrade unchanged.
+  - Why the name is included: with two columns, Frappe does not also record a field-level search index, which it does for a one-column index made outside a migrate and which a text field cannot hold.
+  - Why 255 is enough: an address is far shorter than 255 characters, so a lookup by address is exact.
 
 **Checked present:** the app's indexes are listed in `qa/volume.py` `APP_INDEXES` and held there by `TestIndexes`. ERPNext's are in `ERPNEXT_INDEXES`. Section 6 has the full list.
 
@@ -133,15 +147,15 @@ These are listed in section 7, each with the reason it was left.
 | # | Acceptance criterion | Implementation | Automated verification (`qa/test_query_budgets.py`) |
 | --- | --- | --- | --- |
 | C1 | A query per record fails the budget, and one query for all of them passes it | `QueryBudget.assert_does_not_grow` | `TestTheBudgetCatchesALoop` (2 tests) |
-| C2 | Stock movement guards, count lines and line lots do not grow with the item's lots | fixes 1–4 | `TestStockMovementBudget` (3) |
+| C2 | Stock movement guards, count lines and line lots do not grow with the item's lots; a document's header is read once whatever its lines | fixes 1–4, 18 | `TestStockMovementBudget` (4) |
 | C3 | Audit write, verification, anchor and anchor check do not grow with the trail | `audit.py`, `audit_anchor.py` (indexed already) | `TestAuditTrailBudget` (2) |
 | C4 | Signing and verification do not grow with a record's signatures | `esign.py` (indexed already) | `TestSignatureBudget` (1) |
 | C5 | My Work and the lot and licence reports do not grow with what waits | `my_work.py`, reports, fix 17 | `TestPagesAndReportsBudget` (3) |
-| C6 | The daily reminder run, its categories, the daily alerts and the monthly ratings read alike whatever stays due | fixes 5–13 | `TestDailyJobsBudget` (4) |
+| C6 | The daily reminder run, its categories, the daily alerts, the monthly ratings and the pinned-record sweep read alike whatever stays due or out of date, and however many schedules are planned | fixes 5–13, 19, 21 | `TestDailyJobsBudget` (4), `TestPinnedRecordSweepBudget` (1) |
 | C7 | Training reconciliation and the job card's competence check do not grow with the staff | fixes 15, 16 | `TestTrainingBudget` (2) |
 | C8 | Equipment at a workstation and an inspection's instruments are judged at once | fix 14 | `TestEquipmentBudget` (2) |
 | C9 | Items, operations and workstations of a record are checked at once | `item_master.py`, `routing.py`, `master_approval.py` (batched already) | `TestMasterDataBudget` (2) |
-| C10 | The app's growing tables carry the indexes their filters need | doctype JSON, `on_doctype_update`, `add_index` in configuration | `TestIndexes` (1) |
+| C10 | The growing tables carry the indexes their filters need, the app's own and those it configures on ERPNext's tables, in a way that outlives an ERPNext upgrade | doctype JSON, `on_doctype_update`, `setup/indexes.py` | `TestIndexes` (3) |
 | C11 | On about three years of data, each hot path completes within its time budget | `qa/volume.py` | Volume harness, run locally (not CI) |
 
 ## 4. Step-by-step testing guide
@@ -193,7 +207,7 @@ None of its own. The guards and jobs above are steps of the standard flow: recei
 | master data: items of a 100-line record / operations and workstations (50) | 100 / 100 |
 | report: Stock by Lot Status / Lots Awaiting Release / Licence Register | 3000 / 3000 / 500 |
 
-**Indexes checked (`APP_INDEXES`, held by `TestIndexes`):**
+**Indexes checked (`APP_INDEXES`, held by `TestIndexes`, which also requires the Property Setters behind the configured ones and that applying them again changes nothing):**
 
 - Audit Event: (reference_doctype, reference_name), previous_event, user, event_at, creation.
 - Electronic Signature: (reference_doctype, reference_name), previous_signature, signer, creation.
@@ -206,36 +220,49 @@ None of its own. The guards and jobs above are steps of the standard flow: recei
 - Supplier Approval: supplier.
 - Customer Licence: customer.
 - Batch: mds_lot_status and expiry_date. These are this app's indexes on ERPNext's table.
+- Configured: Quality Inspection.batch_no, Serial and Batch Bundle.voucher_no, and the eight evidence file columns (section 2.4). A dropped index fails CI.
 
 **ERPNext indexes checked, read-only (`ERPNEXT_INDEXES`):**
 
 - Present:
   - Stock Ledger Entry: batch_no, (voucher_no, voucher_type), (item_code, warehouse, …), serial_and_batch_bundle.
   - Serial and Batch Entry: parent, batch_no.
-  - Serial and Batch Bundle: voucher_detail_no.
-  - Quality Inspection: item_code.
   - Bin: (item_code, warehouse).
   - The parent index of every line table read.
   - Employee: status, designation.
-- **Absent:**
-  - Serial and Batch Bundle.voucher_no. Our query now goes through the line (fix 2).
-  - Quality Inspection.batch_no. The report and My Work now go through item_code (fix 17). See section 7 for the release path.
+- **Absent before this change:** Serial and Batch Bundle.voucher_no and Quality Inspection.batch_no. Both are now configured (section 2.4), so they are listed with the app's indexes.
 
-`check_indexes` prints these with "no (ERPNext, not changed)" for an absent one. They are never added: rules.md section 1.
+`check_indexes` prints an ERPNext index that is still absent as "no (ERPNext, not changed)". Any index this app needs is configured, never written into ERPNext's files: rules.md section 1.
 
 ## 7. Defects, edge cases and risks
 
+Closed on 2026-10-15:
+
+- The per-line voucher header re-read is fix 18.
+- The daily re-load of device master records that are out of date is fix 19.
+- The configuration-scaled reads are fix 21.
+- The missing indexes on `Quality Inspection.batch_no`, `Serial and Batch Bundle.voucher_no` and the evidence file columns are fixes 2, 17 and 20 (section 2.4).
+
+**Reads that loop over configuration, each confirmed to issue one query per record type, not one per record:**
+
+- The daily run's reminder categories, `CATEGORIES`: 16 declared in code.
+- The pinned-record owners, `PIN_OWNERS`: 2, in code.
+- The anchor's two ledgers.
+- The two kinds of expiry alert.
+- The 12 months of supplier ratings.
+- The care record types of equipment fitness.
+- The sources of My Work.
+
+Each of these loops over a fixed list in the code. The schedules, job members and Returns stores, which are configured on the site, are each read in one query (fix 21).
+
 | # | Item | Status / reason |
 | --- | --- | --- |
-| R1 | Each ledger entry of a document re-reads its voucher header and line (`lot_status.movement_of`, `expiry.describe`, `finished_goods.guard_stock_ledger_entry`, `item_master.refuse_unapproved`), about 8–10 queries per line, 4–5 of them identical | **Open.** This scales with the document's own lines, not with history, so it is budgeted per line. A per-request cache keyed by voucher would save it, but would have to be invalidated against the release flags (`frappe.flags.lot_release_transfer`). Left for a separate change. |
-| R2 | The daily `pinned_records.sweep` reloads every device master record whose pins have changed (`device_master_record.mark_out_of_date`), every day while it stays out of date | **Open.** This grows with records out of date (a handful), not with years. Fix: compare the stored state in the bulk pins query before loading. |
-| R3 | `reminders.raise_occurrence` loads each active schedule daily; `tell_raised` looks up each role's users per new reminder; `my_work.customer_returns` reads stock per Returns store | **Open.** These grow with configuration (schedules, roles, companies), not with data. |
-| R4 | `compliance/evidence_files.is_evidence` runs 8 `exists` checks on file columns that are not indexed (`Purchase Receipt Item.mds_certificate`, `Training Record.certificate`, …) on File save and permission checks | **Open.** The count is fixed, but each check scans its table. Candidate for indexes in a follow-up, after measuring on volume data. |
-| R5 | `release`/`receipt` read the newest incoming inspection by `batch_no`, which ERPNext does not index | **Open.** Runs once per QA decision, not per movement. Narrowing by item, as fix 17 does, is the follow-up. |
-| R6 | The anchor counts entries up to its head (`count_entries`) through the `creation` index | Accepted. The count is constant, but its time grows with the trail. The harness measures it. |
-| R7 | Training reconciliation reads every training record not cancelled | Accepted. The query count is constant, but rows grow with employees × documents × revisions. The harness measures it. |
-| R8 | Stock by Lot Status and Lots Awaiting Release aggregate the whole stock ledger (`stock_by_lot`) | Accepted for now. The query count is constant, but the time grows with the ledger. The harness measures it against 3 s. A lot-level balance table would be the remedy if it fails. |
-| R9 | A budget measured at SMALL may include a one-off write (an anchor finding alerted once) | Handled. Such paths are run before measuring, and the assertion is "not more than", so a one-off at the small size cannot hide growth larger than itself. |
+| R1 | Each ledger entry still reads its own lots (`lots_of_bundle`, once in the lot status check and once in the expiry check) and its item's approval (`item_master.refuse_unapproved`, through the `"*"` before_validate and validate hooks) | Accepted. These are one or two indexed reads per line, about the line's own lot and item, and they do not grow with history. They are budgeted per line. |
+| R2 | The anchor counts entries up to its head (`count_entries`) through the `creation` index | Accepted. The query count is constant, but the time grows with the trail. The harness measures it against 1 s. |
+| R3 | Training reconciliation reads every training record that is not cancelled | Accepted. The query count is constant, but the rows grow with employees × documents × revisions. The harness measures it against 3 s. |
+| R4 | Stock by Lot Status and Lots Awaiting Release aggregate the whole stock ledger (`stock_by_lot`) | Accepted for now. The query count is constant, but the time grows with the ledger. The harness measures it against 3 s. If that budget fails, the remedy is a table of balances per lot. |
+| R5 | A budget measured at SMALL may include a one-off write, such as an anchor finding alerted once | Handled. Such paths are run before measuring, and the assertion is "not more than", so a one-off at the small size cannot hide growth larger than itself. |
+| R6 | Branch `fix/impact-list-past-workstations` changes `equipment_care.repaired_and_moved` | Compatible. This branch changes only `refuse_unusable`, which calls `equipment.usable_all` → `unfit`, and `unfit` keeps calling `repaired_and_moved(assets)` once for all the assets. |
 
 ## 8. Test results and verification summary
 
@@ -253,7 +280,8 @@ None of its own. The guards and jobs above are steps of the standard flow: recei
 | --- | --- |
 | Hot paths budgeted in CI, each with `@verifies("URS-PLT-021")` | Written; **not run** |
 | Loop queries found are fixed (section 2.3) | Done; existing module tests **not run** on the changes |
-| Indexes added on the app's own doctype (Document Revision) and checked by test | Done; **not run** (needs migrate) |
+| Indexes added on the app's own doctype (Document Revision) and configured on ERPNext's tables and the evidence file columns (`setup/indexes.py`), checked by test | Done; **not run** (needs migrate) |
+| Voucher header read once per document; device master record sweep; configuration-scaled reads | Done, with budgets; **not run** |
 | Volume harness generates scale-1 data, refuses non-test sites, prints PASS/FAIL per budget and the index check | Written; **not run** |
 | Browser check on the volume site as each job (PV-03) | **Not tested** |
-| Open items R1–R5 decided | **Open** |
+| Remaining items R1–R6 | Accepted with reasons (section 7) |
