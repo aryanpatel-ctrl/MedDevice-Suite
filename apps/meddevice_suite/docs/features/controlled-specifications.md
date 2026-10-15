@@ -40,7 +40,7 @@ Navigation: **Quality › Quality Inspection Template** (`/desk/quality-inspecti
 **In use.** A specification is in use once a submitted Quality Inspection names it. Then:
 - any change to the item, stage, sample size, or to the parameter rows (parameter, method, limits, value, formula; adding or removing rows) needs **Change Request for This Change** set to an approved change request (status *Approved*) whose *Affected Records* lists this template (record type *Quality Inspection Template*). Otherwise: *Specification X is in use: name the approved change request that lists it to change it.* / *Change request CR-… is not approved for implementation.* / *Change request CR-… does not list X.*
 - a successful change records the request in **Last Changed Under**, clears the input field (the next change names its own request), raises **Version** by 1 and sets **Version Effective From** to today; the audit trail keeps the previous values.
-- it cannot be deleted (*Specification X is in use and is never deleted.*), renamed or merged (*… keeps its name and is never merged into another.*).
+- it cannot be deleted (*Specification X is in use and is never deleted.*), renamed (*… is in use: it keeps its name.*); no specification or inspection parameter is ever merged into another, in use or not (URS-MST-017, *… is not merged into …: … Disable the duplicate instead.*).
 - a Quality Inspection Parameter that an in-use specification reads cannot be renamed.
 
 Changes to a specification not yet in use are free (no request, version unchanged); a change of one QA approved still returns it to draft (section 2.2).

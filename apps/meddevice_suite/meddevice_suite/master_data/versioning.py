@@ -609,12 +609,37 @@ def refuse_bom_replace(doc: Document, method: str | None = None) -> None:
 # --- Renaming --------------------------------------------------------------------------------
 
 
+# The controlled masters, and the inspection parameter a specification reads: never merged.
+INSPECTION_PARAMETER = "Quality Inspection Parameter"
+NEVER_MERGED = (*MASTERS, INSPECTION_PARAMETER)
+
+
+def refuse_merge(doctype: str, old: str, new: str) -> None:
+	"""No controlled master (every one of MASTERS: the supplier, the customer and the specification
+	among them) nor an inspection parameter is merged into another, in use or not (ISO 13485
+	4.2.5, 7.4.1; independent review 2026-10-15). A merge moves every record naming the one merged
+	away to the one kept: a supplier's approval, an item's specification and supplier rows, a
+	customer's licence would then stand for a record QA never approved them for, past the approval
+	and change control of the record kept. Approvals and history stay with the record they were made
+	for; a duplicate is disabled instead."""
+	if doctype in NEVER_MERGED:
+		frappe.throw(
+			_(
+				"{0} {1} is not merged into {2}: approvals and history stay with the record they were made for. Disable the duplicate instead."
+			).format(_(doctype), old, new),
+			frappe.PermissionError,
+		)
+
+
 def refuse_rename_in_use(doc: Document, method: str, old: str, new: str, merge: bool = False) -> None:
-	"""before_rename: a master in use keeps its name, and is never merged into another, which
-	would move its history; a parameter read by a specification in use keeps its name."""
+	"""before_rename of every record: a controlled master is never merged into another
+	(`refuse_merge`), even while it is being set up; a master in use keeps its name, which would
+	otherwise move its history; a parameter read by a specification in use keeps its name."""
+	if merge:
+		refuse_merge(doc.doctype, old, new)
 	if setting_up():
 		return
-	if doc.doctype == "Quality Inspection Parameter":
+	if doc.doctype == INSPECTION_PARAMETER:
 		read_by = frappe.get_all(
 			"Item Quality Inspection Parameter",
 			filters={"parenttype": SPECIFICATION, "specification": old},
@@ -635,8 +660,6 @@ def refuse_rename_in_use(doc: Document, method: str, old: str, new: str, merge: 
 		return
 	if in_use:
 		frappe.throw(
-			_("{0} {1} is in use: it keeps its name and is never merged into another.").format(
-				_(doc.doctype), old
-			),
+			_("{0} {1} is in use: it keeps its name.").format(_(doc.doctype), old),
 			frappe.PermissionError,
 		)

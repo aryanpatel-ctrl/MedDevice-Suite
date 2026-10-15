@@ -1235,6 +1235,13 @@ source = "D2 All masters are version controlled and linked with Document Control
 status = "implemented"
 
 [[requirement]]
+id = "URS-MST-017"
+module = 1
+title = "No master (item, bill of materials, routing, operation, workstation, supplier, customer, warehouse, equipment, specification) and no inspection parameter is ever merged into another, whether in use or not, approved or not, so that approvals and history stay with the record they were made for; the refusal says to disable the duplicate instead, and a master not in use can still be renamed without a merge."
+source = "Independent review 2026-10-15 (merging an approved supplier or item into another moved its approval past QA); D2 All masters are version controlled and linked with Document Control; ISO 13485 4.2.5, 7.4.1"
+status = "implemented"
+
+[[requirement]]
 id = "URS-PLT-010"
 module = 0
 title = "The pilot's standard flow performs the certificate check, incoming inspection and signed release of every received lot, and the signed release of the finished lot, by the QC Inspector and QA Manager demo users, in place of the stand-in transfer to the approved store, in both the server and the browser journey."
