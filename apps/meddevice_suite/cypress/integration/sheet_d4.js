@@ -412,12 +412,13 @@ function shifted(iso, days) {
 function type_afresh(selector, value) {
 	settle();
 	// In a line's form a field can sit below the fold: brought into view first, as a person scrolls
-	// to it (found in Chrome, 2026-10-15, on the receipt line's supplier lot number).
+	// to it (found in Chrome, 2026-10-15, on the receipt line's supplier lot number). Every part of
+	// the selector counts: the field may be a text area or a choice, not an input (D4-T13, D4-T16).
 	cy.get(
 		selector
-			.split(",")[0]
-			.trim()
-			.replace(/:visible(:first)?/g, "")
+			.split(",")
+			.map((part) => part.trim().replace(/:visible(:first)?/g, ""))
+			.join(", ")
 	)
 		.first()
 		.scrollIntoView();
