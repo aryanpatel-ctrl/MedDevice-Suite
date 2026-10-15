@@ -203,7 +203,7 @@ class TestStockMovesOnlyThroughApprovedStores(WarehouseTestCase):
 		the store is checked on the count's entry whatever quantity it shows (opening stock too)."""
 		from meddevice_suite.setup.test_stock import approve_for_test, stock_item
 
-		item = stock_item(f"MDS-WH-CONS-{frappe.generate_hash(length=5)}")  # a consumable: no lots
+		item = stock_item(f"MDS-WH-CONS-{frappe.generate_hash(length=10)}")  # a consumable: no lots
 		approve_for_test(item)
 		name = self.new_store()
 		count = frappe.get_doc(

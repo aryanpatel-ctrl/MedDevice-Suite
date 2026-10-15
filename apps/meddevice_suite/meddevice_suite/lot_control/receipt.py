@@ -22,7 +22,7 @@ from frappe.model.document import Document
 from frappe.utils import cint, flt, now_datetime
 
 from meddevice_suite.compliance.audit import same
-from meddevice_suite.lot_control.lot_status import lots_of_row
+from meddevice_suite.lot_control.lot_status import lots_of_rows
 from meddevice_suite.master_data.supplier_approval import check_full_inspection
 
 QC_ROLES = frozenset({"QC Inspector", "Quality Manager"})
@@ -275,8 +275,8 @@ def refuse_existing_lots(doc: Document, method: str | None = None) -> None:
 	if doc.is_return:
 		return
 	lines: dict[str, list[int]] = {}
-	for row in doc.items:
-		for lot in dict.fromkeys(lots_of_row(row)):
+	for row, lots in zip(doc.items, lots_of_rows(doc.items), strict=True):
+		for lot in dict.fromkeys(lots):
 			lines.setdefault(lot, []).append(row.idx)
 	for lot, idxs in lines.items():
 		if len(idxs) > 1:
@@ -376,6 +376,7 @@ def accepted_inspection(
 	whatever its result: an accepted inspection followed by a rejected one is a rejected lot, not an
 	accepted one (ISO 13485 8.2.6, found 2026-10-12). Made, not last modified: an older inspection
 	changed after a hold is not a new inspection."""
+	# Read through the index on the inspection's lot that this app configures (setup/indexes.py).
 	filters = {
 		"batch_no": lot,
 		"inspection_type": ["in", list(inspection_types)],

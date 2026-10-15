@@ -30,7 +30,7 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import flt
 
-from meddevice_suite.lot_control.lot_status import lots_of_bundle, lots_of_row, qty_precision
+from meddevice_suite.lot_control.lot_status import lots_of_bundle, lots_of_rows, qty_precision, voucher_header
 from meddevice_suite.lot_control.receipt import origins_of
 from meddevice_suite.master_data.item_master import FINISHED_GOOD, ITEM_TYPE
 
@@ -155,7 +155,7 @@ def rows_bringing_stock_in(doc: Document) -> list[Document]:
 		return []
 	if doc.doctype != STOCK_RECONCILIATION:
 		return list(doc.items)
-	rows = [(row, lots_of_row(row)) for row in doc.items]
+	rows = list(zip(doc.items, lots_of_rows(doc.items), strict=True))
 	origins = origins_of(sorted({lot for _row, lots in rows for lot in lots}))
 	return [row for row, lots in rows if is_new(lots, origins, doc.name)]
 
@@ -170,13 +170,7 @@ def guard_stock_ledger_entry(sle: Document, method: str | None = None) -> None:
 		or frappe.get_cached_value("Item", sle.item_code, ITEM_TYPE) != FINISHED_GOOD
 	):
 		return
-	meta = frappe.get_meta(sle.voucher_type)
-	fields = [
-		field for field in ("purpose", "stock_entry_type", "is_opening", "is_return") if meta.has_field(field)
-	]
-	values = (
-		frappe.db.get_value(sle.voucher_type, sle.voucher_no, fields, as_dict=True) if fields else None
-	) or frappe._dict()
+	values = voucher_header(sle.voucher_type, sle.voucher_no)  # once per document (lot_status)
 	if sle.voucher_type == STOCK_RECONCILIATION and not brings_new_lot(sle):
 		return  # a count of a lot in stock (lot_status.counted_back)
 	if not may_enter(sle.voucher_type, *way_in(sle.voucher_type, values)):

@@ -631,15 +631,29 @@ def send_change_alerts() -> None:
 	alerts did not run. Each alert is sent on its own, so one that fails is logged and the
 	others still go; it is retried the next day."""
 	soon = add_days(today(), quality_settings.value("change_action_warning_days"))
-	for row in frappe.get_all(
-		"Change Request Action",
-		filters={"parenttype": DOCTYPE, "done": 0, "due_date": ["<=", soon]},
-		fields=["name", "parent", "idx", "description", "action_owner", "due_date", "alerted_for"],
-		order_by="due_date asc",
-	):
-		if row.alerted_for == row.due_date:
-			continue
-		if frappe.db.get_value(DOCTYPE, row.parent, "status") != "Approved":
+	rows = [
+		row
+		for row in frappe.get_all(
+			"Change Request Action",
+			filters={"parenttype": DOCTYPE, "done": 0, "due_date": ["<=", soon]},
+			fields=["name", "parent", "idx", "description", "action_owner", "due_date", "alerted_for"],
+			order_by="due_date asc",
+		)
+		if row.alerted_for != row.due_date
+	]
+	# The actions of a change rejected or closed undone are never alerted and stay among these rows:
+	# their requests' status is read in one query, not one per action.
+	approved = set(
+		frappe.get_all(
+			DOCTYPE,
+			filters={"name": ["in", sorted({row.parent for row in rows}) or [""]], "status": "Approved"},
+			pluck="name",
+		)
+		if rows
+		else []
+	)
+	for row in rows:
+		if row.parent not in approved:
 			continue
 		each_alert(f"action {row.name} of {row.parent}", lambda row=row: alert_action_owner(row))
 

@@ -136,6 +136,8 @@ def waiting_for(lot: frappe._dict, line: frappe._dict | None, inspection: frappe
 
 
 def latest_inspections(lots: list[str]) -> dict[str, frappe._dict]:
+	"""lot -> its newest submitted incoming inspection, read through the index on the inspection's
+	lot that this app configures (setup/indexes.py)."""
 	latest: dict[str, frappe._dict] = {}
 	for row in frappe.get_all(
 		"Quality Inspection",

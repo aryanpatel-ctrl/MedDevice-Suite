@@ -173,15 +173,16 @@ def customer_returns(user: str, roles: set[str]) -> Iterator[Waiting]:
 		return
 	from meddevice_suite.lot_control import lot_status, stores
 
-	for store in frappe.get_all(
+	returns = frappe.get_all(
 		"Warehouse", filters={stores.ROLE_FIELD: stores.RETURNS, "is_group": 0}, pluck="name"
-	):
-		for row in lot_status.stock_by_lot(warehouse=store):
-			yield Waiting(
-				_("Lot {0}: decide on {1} returned to {2}").format(row.batch_no, row.qty, store),
-				"Batch",
-				row.batch_no,
-			)
+	)
+	# Every company's Returns store read at once, not the ledger once per store.
+	for row in lot_status.stock_by_lot(warehouse=returns) if returns else []:
+		yield Waiting(
+			_("Lot {0}: decide on {1} returned to {2}").format(row.batch_no, row.qty, row.warehouse),
+			"Batch",
+			row.batch_no,
+		)
 
 
 def waiting_for_qa(user: str, roles: set[str]) -> Iterator[Waiting]:

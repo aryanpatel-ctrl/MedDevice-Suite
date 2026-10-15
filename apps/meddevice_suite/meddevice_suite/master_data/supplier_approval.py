@@ -184,6 +184,24 @@ def current_approval(supplier: str) -> frappe._dict | None:
 	return approval
 
 
+def newest_decisions(suppliers: list[str]) -> dict[str, str]:
+	"""supplier -> the name of its newest signed decision (`current_approval`), for many suppliers in
+	one query: the daily alerts and reminders ask it of every approval they look at, and a query per
+	approval grew with every decision ever replaced."""
+	wanted = sorted({supplier for supplier in suppliers if supplier})
+	if not wanted:
+		return {}
+	newest: dict[str, str] = {}
+	for row in frappe.get_all(
+		DOCTYPE,
+		filters={"supplier": ["in", wanted], "docstatus": 1},
+		fields=["name", "supplier"],
+		order_by="decided_at desc, creation desc",
+	):
+		newest.setdefault(row.supplier, row.name)
+	return newest
+
+
 def has_ended(approval: frappe._dict) -> bool:
 	return approval.decision == CONDITIONAL and getdate(approval.valid_until) < getdate(today())
 
@@ -361,7 +379,7 @@ def send_certificate_alerts() -> None:
 	expires within 30 days, including a day the alerts did not run."""
 	notification = frappe.get_doc("Notification", CERTIFICATE_ALERT)
 	soon = add_days(today(), quality_settings.value("supplier_certificate_warning_days"))
-	for row in frappe.get_all(
+	rows = frappe.get_all(
 		DOCTYPE,
 		filters={
 			"docstatus": 1,
@@ -371,9 +389,10 @@ def send_certificate_alerts() -> None:
 		},
 		fields=["name", "supplier"],
 		order_by="certificate_expiry asc",
-	):
-		in_force = current_approval(row.supplier)
-		if in_force is None or in_force.name != row.name:
+	)
+	in_force = newest_decisions([row.supplier for row in rows])
+	for row in rows:
+		if in_force.get(row.supplier) != row.name:
 			continue  # a later decision replaced it, with its own certificate
 		alert(notification, row.name)
 
