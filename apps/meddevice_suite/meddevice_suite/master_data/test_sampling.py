@@ -10,8 +10,8 @@ from frappe.tests import UnitTestCase
 from meddevice_suite.master_data import sampling
 from meddevice_suite.master_data.specification import DOCTYPE, check_sample_size
 from meddevice_suite.master_data.test_specification import SpecificationTestCase, new_item, template
-from meddevice_suite.pilot.inspection import DIMENSION
 from meddevice_suite.qa import verifies
+from meddevice_suite.setup.fixtures.inspection import DIMENSION
 
 
 def reference() -> dict:

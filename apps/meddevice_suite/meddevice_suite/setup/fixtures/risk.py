@@ -22,8 +22,8 @@ from contextlib import AbstractContextManager
 import frappe
 from frappe import _
 
-from meddevice_suite.pilot.documents import ensure_work_instruction
 from meddevice_suite.qms import risk_management as rm
+from meddevice_suite.setup.fixtures.documents import ensure_work_instruction
 
 QA, REVIEWER, MANAGEMENT = "QA Manager", "Production Supervisor", "Management"
 # The second QA person, who approves what the first one wrote: QA does not approve its own

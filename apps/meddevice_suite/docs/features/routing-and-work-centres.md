@@ -1,7 +1,7 @@
 # Routings, operations and workstations (module 3) — feature document and browser test guide
 
 Requirement: **URS-MST-012** (`meddevice_suite/qa/requirements.toml`). Builds on URS-MST-001 (version control of masters), module 30 (document control) and URS-MST-010 (equipment).
-Code: `meddevice_suite/master_data/routing.py`, the shared approval `master_data/master_approval.py`, hooks in `meddevice_suite/hooks.py` (Operation, Workstation, Routing `validate` and `onload`; BOM `before_submit`; Work Order and Job Card `before_validate`), signed acts in `compliance/signing.py`, version control in `master_data/versioning.py`, desk in `public/js/master_data.js`, loaders `pilot/documents.py`, `pilot/demo.py`, `qa/ui_journey.py`.
+Code: `meddevice_suite/master_data/routing.py`, the shared approval `master_data/master_approval.py`, hooks in `meddevice_suite/hooks.py` (Operation, Workstation, Routing `validate` and `onload`; BOM `before_submit`; Work Order and Job Card `before_validate`), signed acts in `compliance/signing.py`, version control in `master_data/versioning.py`, desk in `public/js/master_data.js`, loaders `setup/fixtures/documents.py`, `pilot/demo.py`, `qa/ui_journey.py`.
 DFD trace: D3 Item / BOM / Routing Master; D2 "all masters are version controlled and linked with Document Control"; master plan section 3 and stage 3.
 
 ## 1. Feature overview
@@ -69,7 +69,7 @@ Work instruction authored, reviewed and approved (document control) → Producti
 | Service | `master_data/routing.py`: `operation_missing`, `workstation_missing`, `routing_missing`, `approve`, `guard`, `guard_bom`, `guard_work_order`, `guard_job_card` |
 | Fields | Operation: `mds_work_instruction`, `mds_in_process_check`; Operation, Workstation, Routing: `mds_master_approval`, `mds_master_approved_by`, `mds_master_approved_at` |
 | Version control | `versioning.MASTERS`: the new fields controlled; in use once approved; `FIRST_ISSUE_FIELDS` |
-| Loaders | `pilot/documents.py`: work instructions through document control, signed approvals |
+| Loaders | `setup/fixtures/documents.py`: work instructions through document control, signed approvals |
 | Test fixture | `setup/test_stock.py` `approve_masters_for_test`, `work_instruction_for_test` |
 
 ## 7. Defects, edge cases and risks

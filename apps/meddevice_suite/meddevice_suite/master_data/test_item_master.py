@@ -39,10 +39,10 @@ from meddevice_suite.master_data.item_master import (
 )
 from meddevice_suite.master_data.test_routing import document
 from meddevice_suite.master_data.versioning import CHANGE_REQUEST, VERSION
-from meddevice_suite.pilot.inspection import ensure_inspection_masters, ensure_inspection_template
 from meddevice_suite.qa import verifies
 from meddevice_suite.qms.test_change_control import approved_change
 from meddevice_suite.qms.test_document_control import signer
+from meddevice_suite.setup.fixtures.inspection import ensure_inspection_masters, ensure_inspection_template
 from meddevice_suite.setup.install import apply_configuration
 from meddevice_suite.setup.test_stock import (
 	approve_equipment_for_test,

@@ -91,7 +91,7 @@ Item, bill, routing, work instructions, specifications and labelling approved â†
 | Alert | *Device Master Record Out of Date* lists `open_work_orders(item)` (its `get_context`); the form's onload too |
 | Setting | `dmr_reapproval_days` 14 (1 to 90) |
 | Item | `mds_device_lifetime_years` (Int, default 5, 1 to retention âˆ’ 2 years, at least the shelf life in years rounded up), controlled; left out of the item's signed content only when it is the default 5 |
-| Pilot and journey | `pilot/risk.py` (policy, a file per product family, assessment and report, each signed by its own person; a second QA demo user); `pilot/device_master.py`; `qa/ui_journey.ensure_masters`, `prepare_device_master_record` (a file of its own per product), `prepare_risk_management`, `revise_dmr_specification`; test fixtures `setup/test_stock.risk_report_for_test`, `device_master_record_for_test` |
+| Pilot and journey | `setup/fixtures/risk.py` (policy, a file per product family, assessment and report, each signed by its own person; a second QA demo user); `setup/fixtures/device_master.py`; `qa/ui_journey.ensure_masters`, `prepare_device_master_record` (a file of its own per product), `prepare_risk_management`, `revise_dmr_specification`; test fixtures `setup/test_stock.risk_report_for_test`, `device_master_record_for_test` |
 
 ## 7. Defects, edge cases and risks
 - Production is blocked at go-live for every finished good without a Current record (plan Q8). Each product's DMR must be approved before its first work order on the working site.

@@ -29,20 +29,25 @@ release are not modelled here: they arrive as their own quality gates in Phases 
 to 9. Running the loader again adds only what is missing.
 """
 
-import zlib
 from collections.abc import Callable
-from contextlib import AbstractContextManager
 
 import frappe
 from frappe import _
-from frappe.utils import add_days, today
 
-from meddevice_suite.master_data import customer_licence, item_master
+from meddevice_suite.master_data import customer_licence
 from meddevice_suite.pilot import refuse_unless_pilot_site
-from meddevice_suite.pilot.inspection import (
+from meddevice_suite.setup.fixtures.inspection import (
 	calibrate_instrument,
 	ensure_inspection_masters,
 	ensure_inspection_template,
+)
+from meddevice_suite.setup.fixtures.records import (
+	ensure,
+	ensure_bom,
+	ensure_item,
+	ensure_licence,
+	ensure_price,
+	signed_approval,
 )
 from meddevice_suite.setup.roles import JOB_PROFILES
 
@@ -60,7 +65,6 @@ CUSTOMERS = ("City Hospital (Demo)", "Regional Medical Distributor (Demo)")
 # Module 5: the hospital buys for its own use without a licence, as QA decides; the distributor
 # holds a licence QA has verified.
 HOSPITAL, DISTRIBUTOR = CUSTOMERS
-LICENCE_TYPE = "Registration for the sale of medical devices (demo)"
 
 # code -> (name, unit, HSN, shelf life in days, supplier, buying rate)
 RAW_MATERIALS: dict[str, tuple[str, str, str, int, str, float]] = {
@@ -131,18 +135,6 @@ PRODUCTS: dict[str, tuple[str, str, float, str, dict[str, float]]] = {
 	),
 }
 PRODUCT_SHELF_LIFE_DAYS = 1825
-# The item master's data for the demo (module 1). Foley catheters and urine bags are class B
-# under the Medical Devices Rules 2017; the client's own values replace these.
-ITEM_TYPES = {"Raw Material": item_master.RAW_MATERIAL, "Products": item_master.FINISHED_GOOD}
-STORAGE_CONDITION = "Store below 30 °C in a dry place, away from direct sunlight (demo)"
-PRODUCT_DEVICE_DATA = {
-	item_master.STERILE: "Yes",
-	item_master.DEVICE_CLASS: "B",
-	item_master.UNITS_PER_BOX: 10,
-	item_master.BOXES_PER_CARTON: 20,
-}
-# Pouches and cartons are whole units, so BOMs are for a production batch of 100 pieces.
-BOM_QUANTITY = 100
 
 # The common processes and packing that both lines end with (D3 3.3 and lane 5).
 FINISHING = [
@@ -209,7 +201,7 @@ def load_demo_data() -> None:
 	from meddevice_suite.pilot.flow import as_job  # the flow builds on this module
 
 	calibrate_instrument(instrument, password, lambda: as_job("Maintenance"))  # module 38: before it measures
-	from meddevice_suite.pilot.documents import approve_specification, ensure_specification_document
+	from meddevice_suite.setup.fixtures.documents import approve_specification, ensure_specification_document
 
 	# Module 6 (plan D-33): QA approves each specification, with its test method, with a signature.
 	approve_spec = lambda name: approve_specification(name, as_job, demo_user_email, password)  # noqa: E731
@@ -249,7 +241,7 @@ def load_demo_data() -> None:
 				for index, (operation, workstation, minutes) in enumerate(steps, 1)
 			],
 		)
-	from meddevice_suite.pilot.documents import approve_production_masters
+	from meddevice_suite.setup.fixtures.documents import approve_production_masters
 
 	# Module 3: each operation with its work instruction; QA approves them and the routings.
 	approve_production_masters(
@@ -259,7 +251,7 @@ def load_demo_data() -> None:
 		demo_user_email,
 		password,
 	)
-	from meddevice_suite.pilot.training import train_operator
+	from meddevice_suite.setup.fixtures.training import train_operator
 
 	# Module 37: the operator is competent on each operation's work instruction before working.
 	train_operator(
@@ -272,13 +264,13 @@ def load_demo_data() -> None:
 	approve_bom = approve_as("QA Manager", password, "BOM")
 	for code, (_name, _hsn, _rate, line, materials) in PRODUCTS.items():
 		ensure_bom(code, line, materials, company, approve_bom)
-	from meddevice_suite.pilot.risk import ensure_risk_reports
+	from meddevice_suite.setup.fixtures.risk import ensure_risk_reports
 
 	# Module 39 (plan D-23): each product is in its family's risk management file, whose report is
 	# in force before the product's device master record is approved.
 	ensure_second_qa(password)
 	ensure_risk_reports(risk_families(), as_job, demo_user_email, password)
-	from meddevice_suite.pilot.device_master import ensure_device_master_records
+	from meddevice_suite.setup.fixtures.device_master import ensure_device_master_records
 
 	# Module 31: each product's device master record is Current before it is put into production.
 	ensure_device_master_records(list(PRODUCTS), as_job, demo_user_email, password)
@@ -295,7 +287,7 @@ def risk_families() -> dict[str, list[str]]:
 def ensure_second_qa(password: str) -> None:
 	"""A second demo user with the QA Manager's job: QA does not approve the risk assessment or the
 	risk management report it wrote (module 39)."""
-	from meddevice_suite.pilot.risk import SECOND_QA
+	from meddevice_suite.setup.fixtures.risk import SECOND_QA
 
 	ensure(
 		"User",
@@ -307,79 +299,6 @@ def ensure_second_qa(password: str) -> None:
 		new_password=password,
 		role_profiles=[{"role_profile": "QA Manager"}],
 	)
-
-
-def ensure(doctype: str, existing: str, **values) -> None:
-	"""Create the record unless one named `existing` is already there."""
-	if not frappe.db.exists(doctype, existing):
-		frappe.get_doc({"doctype": doctype, **values}).insert(ignore_permissions=True)  # demo loader
-
-
-def ensure_item(
-	code: str,
-	name: str,
-	group: str,
-	unit: str,
-	hsn: str,
-	shelf_life: int,
-	company: str,
-	warehouse: str,
-	supplier: str | None = None,
-) -> None:
-	master_data = item_master_data(code, group)
-	if frappe.db.exists("Item", code):
-		# An item loaded before lot control defaulted to the quarantine store; its default is the
-		# approved store a release moves the lot to, so the loader corrects it. One loaded before
-		# the item master (module 1) is given its data, while still in draft.
-		item = frappe.get_doc("Item", code)
-		default = next((row for row in item.item_defaults if row.company == company), None)
-		changed = bool(default and default.default_warehouse != warehouse)
-		if changed:
-			default.default_warehouse = warehouse
-		if not item_master.approved(item):
-			for field, value in master_data.items():
-				if not item.get(field):
-					item.set(field, value)
-					changed = True
-		if changed:
-			item.save(ignore_permissions=True)  # demo loader
-		return
-	ensure(
-		"Item",
-		code,
-		**master_data,
-		item_code=code,
-		item_name=name,
-		item_group=group,
-		stock_uom=unit,
-		gst_hsn_code=hsn,
-		is_stock_item=1,
-		is_purchase_item=int(group == "Raw Material"),
-		is_sales_item=int(group == "Products"),
-		has_batch_no=1,
-		create_new_batch=1,
-		batch_number_series=f"{code}-.YY..MM.-.####",
-		has_expiry_date=1,
-		shelf_life_in_days=shelf_life,
-		item_defaults=[{"company": company, "default_warehouse": warehouse, "default_supplier": supplier}],
-	)
-
-
-def demo_gtin(code: str) -> str:
-	"""A fictional GTIN-13 for a demo item: GS1's prefix 20 is for restricted circulation, so it
-	can never be another company's product."""
-	body = "20" + f"{zlib.crc32(code.encode()):010d}"[-10:]
-	total = sum(int(digit) * (3 if index % 2 == 0 else 1) for index, digit in enumerate(reversed(body)))
-	return body + str((10 - total % 10) % 10)
-
-
-def item_master_data(code: str, group: str) -> dict:
-	"""The item master's fields of a demo item (module 1)."""
-	data = {item_master.ITEM_TYPE: ITEM_TYPES[group], item_master.STORAGE_CONDITION: STORAGE_CONDITION}
-	if group == "Products":
-		data.update(PRODUCT_DEVICE_DATA)
-		data[item_master.UDI_DI] = demo_gtin(code)
-	return data
 
 
 def approve_stores(company: str, password: str) -> None:
@@ -419,23 +338,6 @@ def approve_as(profile: str, password: str, doctype: str = "Item") -> Callable[[
 	return approve
 
 
-def signed_approval(doctype: str) -> tuple[Callable[[str], bool], Callable, str]:
-	"""Whether a record of the type is approved, QA's signed act that approves it, and the reason
-	the demo gives."""
-	from meddevice_suite.master_data import bom as bill_of_materials
-	from meddevice_suite.master_data import equipment
-
-	return {
-		"Item": (item_master.approved, item_master.approve, "Item master and specification checked (demo)"),
-		"BOM": (
-			lambda name: frappe.db.get_value("BOM", name, "docstatus") == 1,
-			bill_of_materials.approve,
-			"Components and quantities checked (demo)",
-		),
-		"Asset": (equipment.approved, equipment.approve, "Equipment details checked (demo)"),
-	}[doctype]
-
-
 def ensure_customers_may_buy(password: str) -> None:
 	"""Module 5, as the system records it: Sales records the distributor's licence and QA verifies
 	it with a signature; QA decides with a signature that the hospital buys without one."""
@@ -455,99 +357,6 @@ def ensure_customers_may_buy(password: str) -> None:
 				password=password,
 				reason="Hospital buying for its own use (demo)",
 			)
-
-
-def ensure_licence(
-	customer: str,
-	as_sales: Callable[[], AbstractContextManager],
-	as_qa: Callable[[], AbstractContextManager],
-	password: str,
-	reason: str,
-) -> None:
-	"""A verified licence of a demo or journey customer, made as the system makes one: recorded by
-	Sales, verified by QA with a signature. A customer licensed today is left as it is."""
-	if customer_licence.licences_valid_on(customer, today()):
-		return
-	ensure(
-		customer_licence.TYPE_DOCTYPE,
-		LICENCE_TYPE,
-		licence_type=LICENCE_TYPE,
-		description="A registration to sell, stock or distribute medical devices (demo).",
-	)
-	with as_sales():
-		licence = frappe.get_doc(
-			{
-				"doctype": customer_licence.DOCTYPE,
-				"customer": customer,
-				"licence_type": LICENCE_TYPE,
-				"licence_number": f"DEMO-{zlib.crc32(customer.encode()):08X}",
-				"issuing_authority": "State Licensing Authority (demo)",
-				"valid_from": add_days(today(), -30),
-				"valid_until": add_days(today(), 730),
-				"licence_copy": licence_copy(customer),
-			}
-		).insert()
-	with as_qa():
-		customer_licence.verify(licence, password=password, reason=reason)
-
-
-def licence_copy(customer: str) -> str:
-	"""A placeholder copy of a demo customer's licence, as a private file."""
-	name = f"licence-{frappe.scrub(customer)}.pdf"
-	existing = frappe.db.get_value("File", {"file_name": name, "is_private": 1}, "file_url")
-	if existing:
-		return existing
-	return (
-		frappe.get_doc({"doctype": "File", "file_name": name, "is_private": 1, "content": blank_pdf()})
-		.insert(ignore_permissions=True)  # demo loader
-		.file_url
-	)
-
-
-def blank_pdf() -> bytes:
-	"""A one-page PDF standing in for a licence copy on the pilot and test sites."""
-	from io import BytesIO
-
-	from pypdf import PdfWriter  # Frappe's own PDF library
-
-	writer, out = PdfWriter(), BytesIO()
-	writer.add_blank_page(width=595, height=842)
-	writer.write(out)
-	return out.getvalue()
-
-
-def ensure_price(code: str, price_list: str, rate: float) -> None:
-	if not frappe.db.exists("Item Price", {"item_code": code, "price_list": price_list}):
-		frappe.get_doc(
-			{"doctype": "Item Price", "item_code": code, "price_list": price_list, "price_list_rate": rate}
-		).insert(ignore_permissions=True)  # demo loader
-
-
-def ensure_bom(
-	code: str, line: str, materials: dict[str, float], company: str, approve: Callable[[str], None]
-) -> None:
-	"""The product's bill of materials, approved by QA with a signature (module 2)."""
-	if frappe.db.exists("BOM", {"item": code, "is_default": 1, "docstatus": 1}):
-		return
-	if draft := frappe.db.get_value("BOM", {"item": code, "docstatus": 0}):  # left by an earlier run
-		approve(draft)
-		return
-	bom = frappe.get_doc(
-		{
-			"doctype": "BOM",
-			"item": code,
-			"company": company,
-			"quantity": BOM_QUANTITY,
-			"is_active": 1,
-			"is_default": 1,
-			"with_operations": 1,
-			"routing": line,
-			"rm_cost_as_per": "Price List",
-			"buying_price_list": "Standard Buying",
-			"items": [{"item_code": item, "qty": qty} for item, qty in materials.items()],
-		}
-	).insert(ignore_permissions=True)  # demo loader
-	approve(bom.name)
 
 
 def demo_user_email(profile: str) -> str:

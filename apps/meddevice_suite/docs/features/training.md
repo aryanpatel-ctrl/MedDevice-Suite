@@ -1,7 +1,7 @@
 # Training and competence (module 37) — feature document and browser test guide
 
 Requirements: **URS-TRN-001 to URS-TRN-006** (`meddevice_suite/qa/requirements.toml`). Builds on document control (module 30), e-signature (49), evidence files (54), reminders (60), routing (module 3).
-Code: `meddevice_suite/qms/training.py`; records *Training Matrix* (with *Training Matrix Item*) and *Training Record* (form `training_record.js`, list `training_record_list.js`); report *Training Status*; reminder *Training Due*; `pilot/training.py` (demo operator); hooks in `meddevice_suite/hooks.py`.
+Code: `meddevice_suite/qms/training.py`; records *Training Matrix* (with *Training Matrix Item*) and *Training Record* (form `training_record.js`, list `training_record_list.js`); report *Training Status*; reminder *Training Due*; `setup/fixtures/training.py` (demo operator); hooks in `meddevice_suite/hooks.py`.
 DFD trace: D2 Training (training records, expiry alerts, QMS linkage); production stage 3 ("trained operator"). Decisions: plan section 16, D-07 to D-10 and D-17 to D-19 (2026-10-11). HRMS is not used. Training is built here on ERPNext's Employee and Designation.
 
 ## 1. Feature overview
@@ -101,7 +101,7 @@ Document approved (module 30) → QA's matrix says who needs it → records open
 | Hooks | Employee on_update; document control approve, take effect, withdraw; daily after revisions take effect |
 | Settings | `training_due_days` 14, `training_expiry_warning_days` 30 |
 | Permissions | Designation: HR edits, QA and production pick; Training Record row-level for others (`query_conditions`, `has_permission`) |
-| Pilot | `pilot/training.py` trains the demo operator through the real acts; the flow names that operator on each time log |
+| Pilot | `setup/fixtures/training.py` trains the demo operator through the real acts; the flow names that operator on each time log |
 
 ## 7. Defects, edge cases and risks
 - When a revision takes effect without prior training, every operator on it is refused at once. Approve with a future effective date (records open at approval).
