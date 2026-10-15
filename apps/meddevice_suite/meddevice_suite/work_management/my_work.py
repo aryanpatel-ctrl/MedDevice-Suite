@@ -458,6 +458,7 @@ NOT_WAITING: dict[tuple[str, str], str] = {
 	("Risk Management Report", "Withdraw"): "QA abandons a report that will not be finished",
 	("Regulatory Licence", "Withdraw"): "QA withdraws a licence the authority suspended or cancelled",
 	("Device Master Record", "Withdraw"): "QA withdraws the record of a product no longer made",
+	("Batch", "Correct Dates"): "QA corrects a lot's dates as it finds the error",
 }
 
 

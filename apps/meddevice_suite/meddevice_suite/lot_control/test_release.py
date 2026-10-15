@@ -79,6 +79,56 @@ def certificate(receipt: str, version: str = "") -> str:
 	)
 
 
+def made_by_work_order() -> str:
+	"""A lot of FINISHED_ITEM made, as the finished lot is made, by a manufacture entry on a work order
+	released on the product's Current device master record (module 31), from an approved lot of ITEM;
+	returns the finished lot, in the Quarantine store."""
+	frappe.set_user("Administrator")
+	material = receive(ITEM, 2, store("Stores"))
+	set_status(material, APPROVED, "Approved material for the test's production")
+	lot_item(FINISHED_ITEM, "Products")
+	approve_for_test(ITEM, FINISHED_ITEM)  # module 1: production uses approved items only
+	bom = default_bom(FINISHED_ITEM) or (
+		submit_bom_for_test(
+			frappe.get_doc(
+				{
+					"doctype": "BOM",
+					"item": FINISHED_ITEM,
+					"company": company(),
+					"quantity": 1,
+					"is_active": 1,
+					"is_default": 1,
+					"items": [{"item_code": ITEM, "qty": 1}],
+				}
+			).insert()
+		).name
+	)
+	device_master_record_for_test(FINISHED_ITEM)
+	order = frappe.get_doc(
+		{
+			"doctype": "Work Order",
+			"production_item": FINISHED_ITEM,
+			"bom_no": bom,
+			"qty": 1,
+			"company": company(),
+			"skip_transfer": 1,  # the materials are taken from the approved store as it is made
+			"source_warehouse": store("Stores"),
+			"wip_warehouse": store("Work In Progress"),
+			"fg_warehouse": store(stores.QUARANTINE),
+		}
+	).insert()
+	order.submit()
+	entry = frappe.get_doc(make_production_entry(order.name, "Manufacture", 1))
+	for row in entry.items:
+		if row.item_code == ITEM:
+			row.update({"batch_no": material, "use_serial_batch_fields": 1})
+	entry.insert()
+	entry.submit()
+	return lot_of(
+		next(row for row in frappe.get_doc("Stock Entry", entry.name).items if row.is_finished_item)
+	)
+
+
 class ReleaseTestCase(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
@@ -650,52 +700,7 @@ class TestTheQueueAndTheFinishedLot(ReleaseTestCase):
 
 	def test_a_lot_a_work_order_made_is_released_on_the_signature_alone(self):
 		# Final QC and batch release (modules 25, 26) replace this; until then QA signs it out.
-		frappe.set_user("Administrator")
-		material = receive(ITEM, 2, store("Stores"))
-		set_status(material, APPROVED, "Approved material for the test's production")
-		lot_item(FINISHED_ITEM, "Products")
-		approve_for_test(ITEM, FINISHED_ITEM)  # module 1: production uses approved items only
-		# Made by a manufacture entry on a work order released on the product's Current device master
-		# record (module 31), as the finished lot is made.
-		bom = default_bom(FINISHED_ITEM) or (
-			submit_bom_for_test(
-				frappe.get_doc(
-					{
-						"doctype": "BOM",
-						"item": FINISHED_ITEM,
-						"company": company(),
-						"quantity": 1,
-						"is_active": 1,
-						"is_default": 1,
-						"items": [{"item_code": ITEM, "qty": 1}],
-					}
-				).insert()
-			).name
-		)
-		device_master_record_for_test(FINISHED_ITEM)
-		order = frappe.get_doc(
-			{
-				"doctype": "Work Order",
-				"production_item": FINISHED_ITEM,
-				"bom_no": bom,
-				"qty": 1,
-				"company": company(),
-				"skip_transfer": 1,  # the materials are taken from the approved store as it is made
-				"source_warehouse": store("Stores"),
-				"wip_warehouse": store("Work In Progress"),
-				"fg_warehouse": store(stores.QUARANTINE),
-			}
-		).insert()
-		order.submit()
-		entry = frappe.get_doc(make_production_entry(order.name, "Manufacture", 1))
-		for row in entry.items:
-			if row.item_code == ITEM:
-				row.update({"batch_no": material, "use_serial_batch_fields": 1})
-		entry.insert()
-		entry.submit()
-		lot = lot_of(
-			next(row for row in frappe.get_doc("Stock Entry", entry.name).items if row.is_finished_item)
-		)
+		lot = made_by_work_order()
 
 		decision = self.decide(lot, "Release", "Final inspection accepted")
 

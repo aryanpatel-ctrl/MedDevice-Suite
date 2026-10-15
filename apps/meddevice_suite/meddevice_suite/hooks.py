@@ -85,7 +85,10 @@ doc_events = {
 			"meddevice_suite.compliance.alerts.reset_expiry_alert",
 			"meddevice_suite.setup.stock.refuse_negative_stock",
 			"meddevice_suite.lot_control.lot_status.guard_batch",
-		]
+			# Module 18 (plan H6): a lot's dates are fixed once it has stock; QA corrects them signed.
+			"meddevice_suite.lot_control.lot_dates.guard_batch",
+		],
+		"onload": "meddevice_suite.lot_control.lot_dates.batch_onload",
 	},
 	# Lot status (module 17): only an Approved lot leaves a store; each status has its store.
 	"Warehouse": {
@@ -100,6 +103,8 @@ doc_events = {
 	"Stock Ledger Entry": {
 		"validate": [
 			"meddevice_suite.master_data.warehouse.guard_stock_ledger_entry",  # module 7: approved stores
+			# Plan D-28: finished goods come in from production; opening stock is the one receipt.
+			"meddevice_suite.lot_control.finished_goods.guard_stock_ledger_entry",
 			"meddevice_suite.lot_control.lot_status.guard_stock_ledger_entry",
 			"meddevice_suite.lot_control.expiry.guard_stock_ledger_entry",  # module 18: expiry, FEFO
 		],
@@ -109,7 +114,12 @@ doc_events = {
 		# Module 31: a finished good is made only on a work order of it, while its device master
 		# record is Current (before_validate runs even when validation is skipped).
 		"before_validate": "meddevice_suite.qms.device_master_record.guard_stock_entry",
-		"validate": "meddevice_suite.lot_control.lot_status.guard_stock_entry",
+		"validate": [
+			# Plan D-28, first: a finished good that may not come in on it is refused for what it is,
+			# before the lot status rules say where its lot may go.
+			"meddevice_suite.lot_control.finished_goods.guard_document",
+			"meddevice_suite.lot_control.lot_status.guard_stock_entry",
+		],
 		"before_submit": "meddevice_suite.qms.device_master_record.guard_stock_entry",
 		"before_cancel": "meddevice_suite.lot_control.lot_status.refuse_cancel_of_release_transfer",
 	},
@@ -139,6 +149,8 @@ doc_events = {
 		"before_rename": "meddevice_suite.master_data.customer_licence.guard_customer_rename",
 	},
 	"Pick List": {"validate": "meddevice_suite.lot_control.lot_status.guard_pick_list"},
+	# Plan D-28: a count brings a new lot of a finished good in only as opening stock at migration.
+	"Stock Reconciliation": {"validate": "meddevice_suite.lot_control.finished_goods.guard_document"},
 	"Packing Slip": {"validate": "meddevice_suite.lot_control.lot_status.guard_packing_slip"},
 	"Work Order": {
 		# Module 2: only from an approved, active bill of its own product; module 3: only on approved
@@ -205,6 +217,8 @@ doc_events = {
 	"Employee": {"on_update": "meddevice_suite.qms.training.on_employee_update"},
 	"Purchase Receipt": {
 		"validate": [
+			# Plan D-28: a finished good is made by the plant, never bought in.
+			"meddevice_suite.lot_control.finished_goods.guard_document",
 			"meddevice_suite.lot_control.lot_status.guard_purchase_receipt",
 			"meddevice_suite.lot_control.receipt.protect_certificate",
 			"meddevice_suite.lot_control.receipt.refuse_existing_lots",

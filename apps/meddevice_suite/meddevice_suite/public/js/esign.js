@@ -18,8 +18,10 @@ const MEANING_TEXT = {
 const esign = frappe.provide("meddevice_suite.esign");
 
 // Sign `action` on the form's record; resolves once signed, with the name of a record the act
-// opened (a correction opens its amendment), and rejects if the dialog is closed.
-esign.sign = (frm, action, meaning, { ask_reason = false } = {}) =>
+// opened (a correction opens its amendment), and rejects if the dialog is closed. `fields` are
+// the values an act takes with the signature (compliance/signing.py SignedAct.inputs), asked in
+// the same dialog so that what is signed is what the signer entered there.
+esign.sign = (frm, action, meaning, { ask_reason = false, fields = [] } = {}) =>
 	new Promise((resolve, reject) => {
 		let signed = false;
 		const dialog = new frappe.ui.Dialog({
@@ -39,6 +41,7 @@ esign.sign = (frm, action, meaning, { ask_reason = false } = {}) =>
 						)
 					)}</p>`,
 				},
+				...fields,
 				...(ask_reason
 					? [
 							{
@@ -57,7 +60,7 @@ esign.sign = (frm, action, meaning, { ask_reason = false } = {}) =>
 				},
 			],
 			primary_action_label: __("Sign"),
-			primary_action({ password, reason }) {
+			primary_action({ password, reason, ...entered }) {
 				dialog.disable_primary_action();
 				frappe
 					.xcall("meddevice_suite.compliance.signing.sign_action", {
@@ -68,6 +71,15 @@ esign.sign = (frm, action, meaning, { ask_reason = false } = {}) =>
 						reason: reason || null,
 						// The server refuses a meaning other than the declared one (11.50(a)(3)).
 						meaning,
+						// Only the act's own fields; the server refuses any it does not take.
+						values: fields.length
+							? Object.fromEntries(
+									fields.map((field) => [
+										field.fieldname,
+										entered[field.fieldname] || null,
+									])
+							  )
+							: null,
 					})
 					.then((opened) => {
 						signed = true;

@@ -10,6 +10,7 @@ from meddevice_suite.compliance.alerts import apply_alerts
 from meddevice_suite.compliance.archive import ensure_indexes as apply_archive_indexes
 from meddevice_suite.compliance.retention import apply_retention
 from meddevice_suite.lot_control.expiry import apply_expiry_fields
+from meddevice_suite.lot_control.lot_dates import apply_lot_dates_fields
 from meddevice_suite.lot_control.lot_status import apply_lot_status
 from meddevice_suite.lot_control.receipt import apply_receipt_fields
 from meddevice_suite.lot_control.stores import apply_store_roles
@@ -36,6 +37,7 @@ def apply_configuration() -> None:
 	apply_store_roles()
 	apply_lot_status()
 	apply_expiry_fields()
+	apply_lot_dates_fields()
 	apply_receipt_fields()
 	apply_supplier_approval_fields()
 	apply_customer_licence_fields()
