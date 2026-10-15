@@ -232,6 +232,7 @@ def sign(
 	# Serialises signings of the same record, so each one chains to the one before.
 	frappe.db.get_value(doc.doctype, doc.name, "name", for_update=True)
 	previous = last_signature(doc.doctype, doc.name)
+	identify_new_rows(doc)
 
 	signature = frappe.get_doc(
 		{
@@ -294,6 +295,23 @@ def record_failed_signing(user: str, doctype: str, name: str, action: str) -> No
 
 def last_signature(doctype: str, name: str) -> frappe._dict | None:
 	return chain_head("Electronic Signature", "previous_signature", "signature_hash", (doctype, name))
+
+
+def identify_new_rows(doc: Document) -> None:
+	"""Give the rows an act added just before signing (an out-of-tolerance calibration's impact
+	list, say) the name, owner and creation Frappe gives them when the record is saved, as Frappe
+	gives them (Document.set_user_and_timestamp): signed without them, the stored rows would carry
+	values the signature never bound, and it could never verify. Rows already stored are left as
+	they are, so what earlier signatures bound is unchanged."""
+	from frappe.model.naming import set_new_name
+
+	for row in doc.get_all_children():
+		if not row.name:
+			set_new_name(row)
+		if not row.owner:
+			row.owner = doc.owner
+		if not row.creation:
+			row.creation = doc.creation
 
 
 def record_fingerprint(doc: Document, action: str | None = None) -> str:

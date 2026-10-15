@@ -613,6 +613,24 @@ class TestImpactFollowsTheInstrument(CareTestCase):
 		self.assertFalse(is_unchanged_since(completion))  # the workstation listed is signed
 
 	@verifies("URS-CMP-004")
+	def test_an_out_of_tolerance_completion_verifies_with_the_impact_rows_it_added(self):
+		"""The impact rows are listed by the signed completion itself, before the record is saved:
+		they are signed with the name, owner and creation they are stored with (compliance.esign
+		identify_new_rows), so the signature verifies once the record is completed."""
+		a = self.workstations(1)[0]
+		asset = self.instrument_at(a)
+		self.job_card(a, 5)
+		with freeze_time(f"{on_day(20)} 10:00:00"):
+			record = self.calibrated(asset, points=[point(found=100.05)])
+		self.assertTrue(record.impact)
+		completion = frappe.get_last_doc(
+			"Electronic Signature",
+			filters={"reference_doctype": "Calibration Record", "reference_name": record.name},
+		)
+		self.assertTrue(is_unchanged_since(completion))
+		self.assertTrue(esign.verify_signatures("Calibration Record", record.name))
+
+	@verifies("URS-CMP-004")
 	def test_a_record_signed_before_rows_named_a_workstation_still_verifies(self):
 		"""A release never invalidates a signature that verified (21 CFR 11.70): a calibration whose
 		impact rows were listed and signed before they carried a workstation still verifies."""
