@@ -421,20 +421,10 @@ def movement_of(sle: Document, inward: bool) -> Movement | None:
 	"""The movement a ledger entry is part of; None for the arriving end of a move between stores,
 	whose leaving end carries both stores."""
 	here = stores.kind_of(sle.warehouse)
+	header = voucher_header(sle.voucher_type, sle.voucher_no)
 	if sle.voucher_type == "Stock Entry":
-		purpose, transfer = frappe.db.get_value(
-			"Stock Entry", sle.voucher_no, ["purpose", TRANSFER_FIELD]
-		) or (
-			None,
-			None,
-		)
-		row = (
-			frappe.db.get_value(
-				"Stock Entry Detail", sle.voucher_detail_no, ["s_warehouse", "t_warehouse"], as_dict=True
-			)
-			if sle.voucher_detail_no
-			else None
-		) or frappe._dict()
+		purpose, transfer = header.get("purpose"), header.get(TRANSFER_FIELD)
+		row = stock_entry_line(sle.voucher_no, sle.voucher_detail_no)
 		if inward and row.s_warehouse:
 			return None
 		return Movement(
@@ -445,15 +435,76 @@ def movement_of(sle: Document, inward: bool) -> Movement | None:
 			# Only the release's own transfer, while the release posts it.
 			signed=bool(transfer) and frappe.flags.lot_release_transfer == sle.voucher_no,
 		)
-	is_return = frappe.get_meta(sle.voucher_type).has_field("is_return") and bool(
-		frappe.db.get_value(sle.voucher_type, sle.voucher_no, "is_return")
-	)
+	is_return = bool(header.get("is_return"))  # read only where the record type has it
 	return Movement(
 		sle.voucher_type,
 		source=None if inward else here,
 		target=here if inward else None,
 		is_return=is_return,
 	)
+
+
+# The fields of a voucher the ledger checks read (here, in expiry and in finished_goods), each where
+# its record type has it; mds_fefo_reason is expiry.REASON_FIELD, named here as expiry builds on this.
+HEADER_FIELDS = ("purpose", "stock_entry_type", "is_opening", "is_return", TRANSFER_FIELD, "mds_fefo_reason")
+VOUCHERS_READ = "mds_vouchers_read"
+
+
+def voucher_header(voucher_type: str, voucher_no: str) -> frappe._dict:
+	"""The voucher's fields the ledger checks read (`HEADER_FIELDS`), read once per document: ERPNext
+	posts one ledger entry per line, and each entry's checks read the same header, which a document
+	of a hundred lines read a few hundred times."""
+	read = vouchers_read()
+	key = ("header", voucher_type, voucher_no)
+	if key not in read:
+		meta = frappe.get_meta(voucher_type)
+		fields = [field for field in HEADER_FIELDS if meta.has_field(field)]
+		read[key] = (
+			frappe.db.get_value(voucher_type, voucher_no, fields, as_dict=True) if fields else None
+		) or frappe._dict()
+	return read[key]
+
+
+def stock_entry_line(voucher_no: str, line: str | None) -> frappe._dict:
+	"""A stock entry line's stores, all the entry's lines read in one query, once per document."""
+	read = vouchers_read()
+	key = ("lines", "Stock Entry", voucher_no)
+	if key not in read:
+		read[key] = {
+			row.name: row
+			for row in frappe.get_all(
+				"Stock Entry Detail",
+				filters={"parent": voucher_no, "parenttype": "Stock Entry"},
+				fields=["name", "s_warehouse", "t_warehouse"],
+			)
+		}
+	return read[key].get(line) or frappe._dict()
+
+
+def vouchers_read() -> dict:
+	"""What the ledger checks have read of the vouchers being posted, kept for the transaction only:
+	forgotten when it commits or rolls back, and a voucher's own when it is submitted again
+	(`forget_voucher`), so a value is never read from before the document's latest submission."""
+	read = getattr(frappe.local, VOUCHERS_READ, None)
+	if read is None:
+		read = {}
+		setattr(frappe.local, VOUCHERS_READ, read)
+		frappe.db.after_commit.add(forget_vouchers)
+		frappe.db.after_rollback.add(forget_vouchers)
+	return read
+
+
+def forget_vouchers() -> None:
+	setattr(frappe.local, VOUCHERS_READ, None)
+
+
+def forget_voucher(doc: Document, method: str | None = None) -> None:
+	"""before_submit and before_cancel of every record type: a document submitted again in the same
+	transaction (a submission refused, the document corrected and submitted) is read afresh."""
+	read = getattr(frappe.local, VOUCHERS_READ, None)
+	if read:
+		for kind in ("header", "lines"):
+			read.pop((kind, doc.doctype, doc.name), None)
 
 
 def guard_new_stock(sle: Document, lots: list[str], movement: Movement) -> None:

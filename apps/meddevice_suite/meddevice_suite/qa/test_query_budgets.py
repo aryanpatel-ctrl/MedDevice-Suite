@@ -17,6 +17,7 @@ The time each path takes on years of data is measured on a test site by the volu
 (meddevice_suite/qa/volume.py), outside CI.
 """
 
+import re
 from collections.abc import Callable
 from unittest.mock import patch
 
@@ -73,6 +74,9 @@ from meddevice_suite.work_management.reminders import Due
 # apart, so a query per record shows as a dozen more queries.
 SMALL, LARGE = 3, 15
 GROWTH = LARGE - SMALL
+# A stock entry's header and its lines, as the query text names their tables.
+HEADER_READ = re.compile(r"from\s+`tabStock Entry`", re.IGNORECASE)
+LINES_READ = re.compile(r"from\s+`tabStock Entry Detail`", re.IGNORECASE)
 
 
 class QueryBudget:
@@ -205,6 +209,33 @@ class TestStockMovementBudget(QueryBudget, IntegrationTestCase):
 
 	def test_the_guards_of_a_movement_do_not_grow_with_the_item_s_lots(self):
 		self.assert_does_not_grow(self.guards, lambda: self.grow_history(GROWTH))
+
+	def test_a_document_s_header_is_read_once_whatever_its_lines(self):
+		def reads_of(lines: int) -> tuple[int, int]:
+			"""How often the guards of all the ledger entries of a document of `lines` lines read its
+			header and its lines, as ERPNext validates them one after another in one submission."""
+			_lots, receipt = self.approved_lots(lines, self.elsewhere, expires_in_days=400)
+			entries = [
+				frappe.get_doc("Stock Ledger Entry", name)
+				for name in frappe.get_all(
+					"Stock Ledger Entry", filters={"voucher_no": receipt, "is_cancelled": 0}, pluck="name"
+				)
+			]
+			self.assertEqual(len(entries), lines)
+			lot_status.forget_vouchers()  # as at the start of a submission
+			with counted() as queries:
+				for entry in entries:
+					warehouse.guard_stock_ledger_entry(entry)
+					finished_goods.guard_stock_ledger_entry(entry)
+					lot_status.guard_stock_ledger_entry(entry)
+					expiry.guard_stock_ledger_entry(entry)
+			return (
+				sum(1 for query in queries if HEADER_READ.search(query)),
+				sum(1 for query in queries if LINES_READ.search(query)),
+			)
+
+		self.assertEqual(reads_of(SMALL), (1, 1))
+		self.assertEqual(reads_of(LARGE), (1, 1))
 
 	def test_a_stock_count_reads_its_lots_at_once(self):
 		count = frappe._dict(

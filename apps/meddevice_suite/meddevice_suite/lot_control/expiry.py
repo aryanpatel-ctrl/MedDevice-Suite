@@ -32,6 +32,8 @@ from meddevice_suite.lot_control.lot_status import (
 	lots_of_bundle,
 	qty_precision,
 	status_of,
+	stock_entry_line,
+	voucher_header,
 )
 
 REASON_FIELD = "mds_fefo_reason"
@@ -126,23 +128,25 @@ def describe(sle: Document) -> frappe._dict:
 	if sle.voucher_type == "Stock Reconciliation":
 		keeps_apart = True  # a count, not a movement of the stock
 	elif sle.voucher_type == "Stock Entry":
-		purpose, transfer, reason = frappe.db.get_value(
-			"Stock Entry", sle.voucher_no, ["purpose", TRANSFER_FIELD, REASON_FIELD]
+		# The header and lines read once per document, whatever its number of lines (lot_status).
+		header = voucher_header(sle.voucher_type, sle.voucher_no)
+		purpose, transfer, reason = (
+			header.get("purpose"),
+			header.get(TRANSFER_FIELD),
+			header.get(REASON_FIELD),
 		)
-		target = frappe.db.get_value("Stock Entry Detail", sle.voucher_detail_no, "t_warehouse")
+		target = stock_entry_line(sle.voucher_no, sle.voucher_detail_no).t_warehouse
 		keeps_apart = bool(transfer) or (
 			purpose == "Material Transfer" and stores.role_of(target) in KEPT_APART
 		)
 		uses = purpose in USE_PURPOSES
 	else:
-		meta = frappe.get_meta(sle.voucher_type)
-		is_return = meta.has_field("is_return") and bool(
-			frappe.db.get_value(sle.voucher_type, sle.voucher_no, "is_return")
-		)
+		# Read only where the record type has them (lot_status.voucher_header).
+		header = voucher_header(sle.voucher_type, sle.voucher_no)
+		is_return = bool(header.get("is_return"))
 		keeps_apart = is_return and sle.voucher_type in ("Purchase Receipt", "Purchase Invoice")
 		uses = sle.voucher_type in DELIVERIES and not is_return
-		if meta.has_field(REASON_FIELD):
-			reason = frappe.db.get_value(sle.voucher_type, sle.voucher_no, REASON_FIELD)
+		reason = header.get(REASON_FIELD)
 	return frappe._dict(keeps_apart=keeps_apart, uses=uses, reason=(reason or "").strip())
 
 
