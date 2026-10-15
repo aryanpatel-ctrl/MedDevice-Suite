@@ -407,22 +407,13 @@ function shifted(iso, days) {
 	return day.toISOString().slice(0, 10);
 }
 
-// Types into a field's input and leaves it, as the person would.
-function type_into($input, text) {
-	cy.wrap($input).clear().type(text, { delay: 0 });
-	// A date picker may already have taken the focus away.
-	cy.document().then((doc) => {
-		if (doc.activeElement === $input[0]) cy.wrap($input).blur();
-	});
-}
-
 // Empties the field and types `value`, finding the field again for each step: clearing it can make
 // the form redraw it (found in Chrome, 2026-10-15, on the work order's stores).
 function type_afresh(selector, value) {
 	settle();
-	cy.get(selector).first().clear();
+	cy.get(first_of(selector)).clear();
 	settle();
-	cy.get(selector).first().type(value, { delay: 0 });
+	cy.get(first_of(selector)).type(value, { delay: 0 });
 }
 
 // Types into a link field, found by `selector`, and chooses the matching entry of its list.
@@ -445,6 +436,7 @@ function choose(selector, value, reopen = null) {
 	// The list is chosen from once the lookup's search has come back and it stops changing; the entry
 	// is looked up again on every try, as Frappe redraws the list when the search answers.
 	settle();
+	lookup_list_settled();
 	cy.get('[role="listbox"]:visible [role="option"]')
 		.filter(
 			(_, option) =>
@@ -455,8 +447,25 @@ function choose(selector, value, reopen = null) {
 				)
 		)
 		.should("have.length", 1)
-		.first()
 		.click();
+}
+
+// Waits until the open lookup list shows entries and their number has not changed for a while: the
+// list is redrawn as each search answers, and an entry clicked meanwhile is gone (found in CI).
+function lookup_list_settled() {
+	cy.window({ log: false }).then({ timeout: TIMEOUT + 5000 }, (win) => {
+		let last = -1;
+		let since = Date.now();
+		return until(() => {
+			const count = win.$('[role="listbox"]:visible [role="option"]').length;
+			if (count !== last) {
+				last = count;
+				since = Date.now();
+				return false;
+			}
+			return count > 0 && Date.now() - since >= QUIET_MS;
+		}).then((settled) => expect(settled, "the lookup's list has settled").to.be.true);
+	});
 }
 
 function entry_named($options, value) {
@@ -493,14 +502,33 @@ function close_open_lists() {
 // Puts `value` into an input as a person does for a field of `kind`: a lookup chosen from its
 // list, a lot number typed in full as read off its label (a lookup of lots lists only those it
 // thinks can be taken, and the sheet names others on purpose), a choice, a tick, a date, a text.
+// Each action finds the field again by `selector`: the form may draw it anew in between.
 function enter($input, value, kind, selector, reopen = null) {
 	cy.window().then((win) => {
 		if (kind === "Link") choose(selector, value, reopen);
-		else if (kind === "Lot") type_into($input, value);
-		else if (kind === "Select") cy.wrap($input).select(value);
-		else if (kind === "Check") cy.wrap($input)[value ? "check" : "uncheck"]();
-		else if (kind === "Date") type_into($input, user_date(win, value));
-		else type_into($input, String(value));
+		else if (kind === "Select") cy.get(first_of(selector)).select(value);
+		else if (kind === "Check") cy.get(first_of(selector))[value ? "check" : "uncheck"]();
+		else if (kind === "Date") type_and_leave(selector, user_date(win, value));
+		else type_and_leave(selector, String(value));
+	});
+}
+
+// The first match of each part of a selector list, as one query Cypress can run again when the
+// page redraws (a chained .first() cannot be run again).
+function first_of(selector) {
+	return selector
+		.split(",")
+		.map((part) => `${part.trim()}:first`)
+		.join(", ");
+}
+
+// Types into a field and leaves it, as the person would.
+function type_and_leave(selector, text) {
+	type_afresh(selector, text);
+	// A date picker may already have taken the focus away.
+	cy.document().then((doc) => {
+		const active = doc.activeElement;
+		if (active && Cypress.$(active).is(selector)) active.blur();
 	});
 }
 
@@ -543,9 +571,9 @@ function cell(table, idx, fieldname) {
 
 function fill_row(table, idx, fieldname, value, kind = "Data") {
 	settle();
-	close_dialogs();
+	close_dialogs(); // and the Getting Started panel
 	close_open_lists();
-	cy.get(cell(table, idx, fieldname)).first().click();
+	cy.get(`${cell(table, idx, fieldname)}:first`).click();
 	// Typed once the clicked cell has the cursor (standard_flow.js).
 	cy.get(inputs_of(cell(table, idx, fieldname)))
 		.first()
@@ -554,7 +582,7 @@ function fill_row(table, idx, fieldname, value, kind = "Data") {
 		.first()
 		.then(($input) =>
 			enter($input, value, kind, inputs_of(cell(table, idx, fieldname)), () =>
-				cy.get(cell(table, idx, fieldname)).first().click()
+				cy.get(`${cell(table, idx, fieldname)}:first`).click()
 			)
 		);
 	cy.window().should((win) =>
@@ -567,12 +595,10 @@ function clear_row(table, idx, fieldname) {
 	settle();
 	close_dialogs();
 	close_open_lists();
-	cy.get(cell(table, idx, fieldname)).first().click();
-	cy.get(inputs_of(cell(table, idx, fieldname)))
-		.first()
-		.should("have.focus")
-		.clear()
-		.blur();
+	cy.get(`${cell(table, idx, fieldname)}:first`).click();
+	cy.get(first_of(inputs_of(cell(table, idx, fieldname)))).should("have.focus");
+	cy.get(first_of(inputs_of(cell(table, idx, fieldname)))).clear();
+	cy.get(first_of(inputs_of(cell(table, idx, fieldname)))).blur();
 	cy.window().should(
 		(win) =>
 			expect(rows(win, table)[idx - 1][fieldname], `line ${idx} ${fieldname}`).to.not.be.ok
@@ -621,11 +647,10 @@ function open_line(table, idx) {
 	close_dialogs();
 	close_open_lists();
 	reveal(table); // the table's tab, if another tab is open
+	close_onboarding();
 	cy.get(
-		`${FORM} .frappe-control[data-fieldname="${table}"] .grid-row[data-idx="${idx}"] .row-index`
-	)
-		.first()
-		.click();
+		`${FORM} .frappe-control[data-fieldname="${table}"] .grid-row[data-idx="${idx}"] .row-index:first`
+	).click();
 	cy.get(LINE).should("be.visible");
 	cy.window().should((win) => {
 		expect(win.cur_frm.cur_grid?.doc?.parentfield, "the table").to.equal(table);
@@ -696,7 +721,9 @@ function name_lot(table, idx, lot) {
 
 function button(label) {
 	settle(); // the form has finished drawing its buttons
-	return cy.get(`${FORM} button[data-label="${encodeURIComponent(label)}"]:visible`).first();
+	close_onboarding();
+	// One query, so a button the form draws again before the click is found again.
+	return cy.get(`${FORM} button[data-label="${encodeURIComponent(label)}"]:visible:first`);
 }
 
 function offered(label, expected) {
@@ -718,14 +745,14 @@ function from_menu(group, label) {
 // dropdown of their own, outside the menu's button group.
 function form_menu_offers(label, expected) {
 	settle();
-	cy.get(`${FORM} .menu-btn-group > button:visible`).first().click();
+	cy.get(`${FORM} .menu-btn-group > button:visible:first`).click();
 	cy.get(".dropdown-menu.show").should("be.visible");
 	cy.get(".dropdown-menu.show .dropdown-item").should(($items) => {
 		const labels = $items.toArray().map((item) => item.textContent.trim());
 		if (expected) expect(labels, "the menu").to.include(label);
 		else expect(labels, "the menu").to.not.include(label);
 	});
-	cy.get(`${FORM} .menu-btn-group > button:visible`).first().click();
+	cy.get(`${FORM} .menu-btn-group > button:visible:first`).click();
 }
 
 function primary_action() {
@@ -762,6 +789,19 @@ function opened_fully() {
 	});
 }
 
+// ERPNext's "Getting Started" panel floats over the right of the form and covers a table's right-hand
+// columns (found in CI, 2026-10-15); the person closes it with its cross before going on.
+function close_onboarding() {
+	cy.window({ log: false }).then({ timeout: TIMEOUT + 5000 }, (win) =>
+		until(() => {
+			const $panel = win.$(".onb-panel:visible");
+			if (!$panel.length) return true;
+			$panel.find(".onb-header-actions button").last()[0]?.click();
+			return false;
+		}).then((closed) => expect(closed, "the Getting Started panel closes").to.be.true)
+	);
+}
+
 // Closes whatever dialog is left over the form, the topmost first, as its cross closes it, until
 // none is left: the batch picker ERPNext opens late on a line, or a message, would otherwise lie
 // over the field the person types into next (found in Chrome, 2026-10-15, in D4-T12). A refusal
@@ -782,6 +822,7 @@ function close_dialogs() {
 			return false;
 		}).then((closed) => expect(closed, "no dialog left over the form").to.be.true);
 	});
+	close_onboarding();
 }
 
 // Waits for the dialog that has just opened to finish opening (standard_flow.js).
@@ -2532,11 +2573,11 @@ context("D4 Inventory & Batch Ledger: the browser test sheet, as each job", () =
 		rows_up_to("items", 1);
 		// The line's item lookup lists purchase items only: the finished good is not among them.
 		settle();
-		cy.get(cell("items", 1, "item_code")).first().click();
-		cy.get(inputs_of(cell("items", 1, "item_code")))
-			.first()
-			.should("have.focus")
-			.type(data.product, { delay: 0 });
+		cy.get(`${cell("items", 1, "item_code")}:first`).click();
+		cy.get(first_of(inputs_of(cell("items", 1, "item_code")))).should("have.focus");
+		cy.get(first_of(inputs_of(cell("items", 1, "item_code")))).type(data.product, {
+			delay: 0,
+		});
 		settle();
 		cy.get("body").should(($body) => {
 			const offered_items = $body
