@@ -201,6 +201,9 @@ def reconcile(employees: list[str] | None = None) -> None:
 	by_pair: dict[tuple[str, str], list[frappe._dict]] = {}
 	for rec in records:
 		by_pair.setdefault((rec.employee, rec.document_revision), []).append(rec)
+	# Who has completed a record of a document, on any revision: looked up per need below, where a
+	# scan of every record for each need grew with the square of the training history.
+	completed_before = {(rec.employee, rec.controlled_document) for rec in records if rec.docstatus == 1}
 
 	for employee, documents in need.items():
 		for document in sorted(documents):
@@ -222,10 +225,7 @@ def reconcile(employees: list[str] | None = None) -> None:
 					trigger, due = RETRAINING, add_days(today(), due_days)
 				elif rev.status == "Approved":  # to take effect: trained by then (D-07)
 					trigger, due = NEW_REVISION, max(getdate(today()), getdate(rev.effective_date))
-				elif any(
-					r.controlled_document == document and r.employee == employee and r.docstatus == 1
-					for r in records
-				):
+				elif (employee, document) in completed_before:
 					trigger, due = NEW_REVISION, add_days(today(), due_days)
 				else:
 					trigger, due = NEW_ASSIGNMENT, add_days(today(), due_days)
@@ -776,6 +776,26 @@ def not_competent(pairs: set[tuple[str, str]], on=None) -> list[str]:
 		)
 		if not r.valid_until or getdate(r.valid_until) >= day
 	}
+	# The revision numbers a refusal names, read once for all the operators, not once each.
+	refused = {
+		rev
+		for employee, operation in pairs
+		if employee in active
+		and (rev := current.get(instruction.get(operation)))
+		and (employee, rev) not in held
+	}
+	numbers = (
+		dict(
+			frappe.get_all(
+				"Document Revision",
+				filters={"name": ["in", sorted(refused)]},
+				fields=["name", "revision"],
+				as_list=True,
+			)
+		)
+		if refused
+		else {}
+	)
 	why = []
 	for employee, operation in sorted(pairs, key=lambda p: (p[0] or "", p[1])):
 		wi = instruction.get(operation)
@@ -789,11 +809,7 @@ def not_competent(pairs: set[tuple[str, str]], on=None) -> list[str]:
 				_("operation {0} has no work instruction in effect to be trained on").format(operation)
 			)
 		elif (employee, rev) not in held:
-			why.append(
-				_("{0} is not competent in {1} revision {2}").format(
-					employee, wi, frappe.db.get_value("Document Revision", rev, "revision")
-				)
-			)
+			why.append(_("{0} is not competent in {1} revision {2}").format(employee, wi, numbers.get(rev)))
 	return why
 
 
