@@ -291,7 +291,8 @@ class ChangeControlTestCase(IntegrationTestCase):
 @verifies("URS-QMS-009")
 class TestRaising(ChangeControlTestCase):
 	def test_every_record_a_change_can_affect_has_a_type_to_raise_it_under(self):
-		types = set(filter(None, frappe.get_meta(DOCTYPE).get_field("change_type").options.split("\n")))
+		options = frappe.get_meta(DOCTYPE).get_field("change_type").options.split("\n")
+		types = {option for option in options if option}
 		self.assertEqual(set(change_control.CHANGE_TYPE_OF), set(change_control.AFFECTED_TYPES))
 		self.assertLessEqual(set(change_control.CHANGE_TYPE_OF.values()), types)
 		self.assertEqual(change_control.CHANGE_TYPE_OF["Customer"], "Customer")
