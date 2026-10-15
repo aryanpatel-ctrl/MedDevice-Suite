@@ -26,9 +26,10 @@ from meddevice_suite.qa.traceability import (
 VALID_MODULE = '[[module]]\nnumber = 1\ntitle = "Item master"\napproach = "customise"\n'
 
 
-def requirement_toml(id="URS-ABC-001", module=1, status="implemented"):
+def requirement_toml(id="URS-ABC-001", module=1, status="implemented", source="DFD 9F F3"):
 	return (
-		f'[[requirement]]\nid = "{id}"\nmodule = {module}\ntitle = "t"\nsource = "s"\nstatus = "{status}"\n'
+		f'[[requirement]]\nid = "{id}"\nmodule = {module}\ntitle = "t"\n'
+		f'source = "{source}"\nstatus = "{status}"\n'
 	)
 
 
@@ -103,10 +104,39 @@ class TestRegistry(UnitTestCase):
 			"unknown status": requirement_toml(status="done"),
 			"duplicate module": VALID_MODULE,
 			"unknown approach": VALID_MODULE.replace("customise", "buy").replace("1", "2"),
+			"source citing nothing traceable": requirement_toml(source="Engineering rules (README)"),
+			"source naming a regulation without its clause": requirement_toml(source="ISO 13485"),
+			"source citing a DFD step the diagram does not have": requirement_toml(source="DFD 2.7"),
+			"source citing a DFD system the diagram does not have": requirement_toml(source="DFD 9G"),
+			"source citing a DFD data store the diagram does not have": requirement_toml(source="DFD D13"),
 		}
 		for case, extra in cases.items():
 			with self.subTest(case), self.assertRaises(TraceabilityError):
 				self.load(VALID_MODULE + extra)
+
+	def test_untraceable_source_is_reported_with_its_id(self):
+		with self.assertRaises(TraceabilityError) as raised:
+			self.load(VALID_MODULE + requirement_toml("URS-ABC-007", source="Master plan: real links"))
+
+		self.assertIn("URS-ABC-007: source must cite a DFD step", str(raised.exception))
+
+	def test_accepts_each_kind_of_source(self):
+		sources = {
+			"DFD step": "DFD 3.4 IQC Inspection",
+			"DFD process": "DFD box 2 (Vendor Management)",
+			"DFD cross-functional system": "DFD 9F F3 Action / Data Logging",
+			"DFD data store": "DFD D12 Audit Logs",
+			"client diagram": "D2 Change Control: Impact Assessment",
+			"dated decision": "decided 2026-10-11 (plan D-14)",
+			"ISO 13485 clause": "ISO 13485 7.6",
+			"ISO 14971 clause": "ISO 14971 7.1",
+			"Part 11 clause": "21 CFR 11.10(e)",
+			"CDSCO MDR": "CDSCO MDR 2017 Fourth Schedule",
+		}
+		for case, source in sources.items():
+			with self.subTest(case):
+				loaded = self.load(VALID_MODULE + requirement_toml(source=source))
+				self.assertEqual(loaded.requirements["URS-ABC-001"].source, source)
 
 
 @verifies("URS-PLT-003")
