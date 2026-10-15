@@ -23,6 +23,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+from meddevice_suite.compliance.audit import same
 from meddevice_suite.compliance.audit_anchor import names_anchor_file
 
 # (record type, field holding the file, and when the file becomes evidence)
@@ -61,6 +62,11 @@ def has_permission(doc: Document, ptype: str | None = None, user: str | None = N
 	return not (ptype in ("write", "delete") and is_evidence(doc.file_url))
 
 
+def unchanged(before: Document, doc: Document, field: str) -> bool:
+	"""As stored: a form sends a check as text or a number, the database returns a number."""
+	return same(before.get(field), doc.get(field), doc.meta.get_field(field).fieldtype)
+
+
 def refuse_anchor_file(doc: Document) -> None:
 	if names_anchor_file(doc.file_url) or names_anchor_file(doc.file_name):
 		frappe.throw(
@@ -85,7 +91,7 @@ def protect(doc: Document, method: str | None = None) -> None:
 	if doc.is_new():
 		return
 	before = doc.get_doc_before_save()
-	if before and is_evidence(before.file_url) and any(before.get(f) != doc.get(f) for f in IDENTITY):
+	if before and is_evidence(before.file_url) and any(not unchanged(before, doc, f) for f in IDENTITY):
 		frappe.throw(
 			_("{0} is part of a record's evidence and cannot be changed.").format(before.file_name),
 			frappe.PermissionError,

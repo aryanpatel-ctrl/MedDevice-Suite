@@ -667,8 +667,8 @@ status = "implemented"
 [[requirement]]
 id = "URS-CMP-027"
 module = 51
-title = "Stores and QA are alerted once when a lot with stock remaining is 30 days or less from its expiry date, including a lot received that close to it, and once when it has expired, even after a day the alerts did not run; a changed expiry date is alerted afresh; lots with no stock and disabled lots raise no alert."
-source = "DFD 9C C3 Generate Reminder, C4 Notify Users, D4 Inventory & Batch Ledger; D2 Alerts & Notifications; module 51 lot expiry; 30 days decided on the client's instruction of 2026-10-07; exact-date gaps found in the robustness review of 2026-10-07"
+title = "Stores and QA are alerted once when a lot with stock remaining is 30 days or less from its expiry date, including a lot received that close to it, and once when it has expired, even after a day the alerts did not run; a changed expiry date is alerted afresh, and a lot saved with its expiry date unchanged is not alerted again; lots with no stock and disabled lots raise no alert."
+source = "DFD 9C C3 Generate Reminder, C4 Notify Users, D4 Inventory & Batch Ledger; D2 Alerts & Notifications; module 51 lot expiry; 30 days decided on the client's instruction of 2026-10-07; exact-date gaps found in the robustness review of 2026-10-07; unchanged date re-alerted on a form save: Independent review 2026-10-15 (browser walk-through)"
 status = "implemented"
 
 [[requirement]]
