@@ -271,7 +271,7 @@ class TestRecurringReminders(ReminderTestCase):
 			frappe.get_doc(
 				{
 					"doctype": "Reminder Schedule",
-					"title": f"Pest control check {frappe.generate_hash(length=5)}",
+					"title": f"Pest control check {frappe.generate_hash(length=10)}",
 					"description": "Check the traps and record the findings",
 					"responsible_role": "Stock User",
 					"frequency": "Monthly",

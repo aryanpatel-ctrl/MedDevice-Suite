@@ -33,7 +33,7 @@ class TaskTestCase(IntegrationTestCase):
 			frappe.get_doc(
 				{
 					"doctype": "Work Task",
-					"subject": f"Clean the extrusion line {frappe.generate_hash(length=5)}",
+					"subject": f"Clean the extrusion line {frappe.generate_hash(length=10)}",
 					"description": "Clean and log the extrusion line before the validation run",
 					"assigned_to": self.operator,
 					"approver": self.qa,

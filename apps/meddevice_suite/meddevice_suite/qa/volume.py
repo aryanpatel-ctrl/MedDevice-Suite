@@ -258,7 +258,7 @@ def generate(scale: float = 1) -> dict:
 	ensure_fiscal_years()
 	approve_test_stores()  # the stores QA has approved on a site in use
 	random.seed(20261015)  # the same history for the same scale, so runs compare
-	tag = frappe.generate_hash(length=4).upper()
+	tag = frappe.generate_hash(length=10).upper()
 	company = frappe.defaults.get_global_default("company")
 	started = time.monotonic()
 

@@ -49,7 +49,7 @@ def employee(job: str | None, user: str | None = None, status: str = "Active") -
 		frappe.get_doc(
 			{
 				"doctype": "Employee",
-				"first_name": f"Operator {frappe.generate_hash(length=4)}",
+				"first_name": f"Operator {frappe.generate_hash(length=10)}",
 				"gender": "Female",
 				"date_of_birth": "1990-01-01",
 				"date_of_joining": add_days(today(), -400),

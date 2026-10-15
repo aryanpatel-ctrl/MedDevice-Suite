@@ -51,7 +51,7 @@ class CareTestCase(EquipmentTestCase):
 			base = (
 				{
 					"laboratory": self.lab(),
-					"certificate_number": f"LAB-{frappe.generate_hash(length=5)}",
+					"certificate_number": f"LAB-{frappe.generate_hash(length=10)}",
 					"certificate": private_file("certificate"),
 				}
 				if by == "External laboratory"

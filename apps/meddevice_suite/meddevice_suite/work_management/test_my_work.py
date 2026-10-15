@@ -46,7 +46,7 @@ class TestTasksAndApprovals(TaskTestCase):
 	def test_a_draft_master_waits_on_qa_and_nobody_else(self):
 		from meddevice_suite.setup.test_stock import stock_item
 
-		item = stock_item(f"MDS-MYWORK-{frappe.generate_hash(length=5)}")  # a new item, in draft
+		item = stock_item(f"MDS-MYWORK-{frappe.generate_hash(length=10)}")  # a new item, in draft
 		self.assertIn(("Item", item), listed(self.qa))
 		self.assertNotIn(("Item", item), listed(self.stores_user))
 
@@ -141,7 +141,7 @@ class TestRevisions(DocumentControlTestCase):
 		apply_configuration()
 
 	def test_a_revision_waits_on_its_author_then_its_reviewer_then_qa(self):
-		revision = self.draft(self.register(title=f"SOP {frappe.generate_hash(length=5)}"))
+		revision = self.draft(self.register(title=f"SOP {frappe.generate_hash(length=10)}"))
 		self.assertIn(("Document Revision", revision.name), listed(self.author))
 		self.act(self.author, revision, "Author")
 		self.assertNotIn(("Document Revision", revision.name), listed(self.author))
@@ -151,7 +151,7 @@ class TestRevisions(DocumentControlTestCase):
 		self.assertNotIn(("Document Revision", revision.name), listed(self.reviewer))
 
 	def test_qa_is_not_asked_to_approve_a_revision_they_reviewed(self):
-		revision = self.draft(self.register(title=f"SOP {frappe.generate_hash(length=5)}"), reviewer=self.qa)
+		revision = self.draft(self.register(title=f"SOP {frappe.generate_hash(length=10)}"), reviewer=self.qa)
 		self.act(self.author, revision, "Author")
 		self.act(self.qa, revision, "Review")
 		self.assertNotIn(("Document Revision", revision.name), listed(self.qa))
