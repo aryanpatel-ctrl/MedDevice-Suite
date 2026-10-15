@@ -212,12 +212,13 @@ class TestCorrectDates(LotDatesTestCase):
 		event = frappe.get_all(
 			"Audit Event",
 			filters={"reference_doctype": "Batch", "reference_name": lot, "action": "Updated"},
-			fields=["user", "changes"],
+			fields=["user", "changes", "reason"],
 			order_by="creation desc",
 			limit=1,
 		)[0]
 		changed = {field: (old, new) for field, old, new in frappe.parse_json(event.changes)["changed"]}
 		self.assertEqual(event.user, self.qa)
+		self.assertEqual(event.reason, reason)  # the event's own reason, as every change carries
 		self.assertEqual(changed["expiry_date"], (str(old_expiry), str(new_expiry)))
 		self.assertEqual(changed[CORRECTION_REASON], (None, reason))
 
