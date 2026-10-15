@@ -11,11 +11,19 @@ Frappe gives the built-in Administrator account every permission before any app
 is asked, and deletes a file from disk inside its own delete handler. That
 account is for installing the system, not for daily use; every person's account
 is held by the rules here.
+
+No File record may name the audit trail's anchor file (compliance/audit_anchor.py), where it is
+kept or was kept: Frappe serves a private file to whoever may read a File record naming it, and a
+person may make one naming a file already on disk. The file is kept outside the folders Frappe
+serves; this refusal holds should it ever be found inside one. A new File record is refused before
+Frappe's own before_insert, which reads the named file and writes a copy of it under a new name.
 """
 
 import frappe
 from frappe import _
 from frappe.model.document import Document
+
+from meddevice_suite.compliance.audit_anchor import names_anchor_file
 
 # (record type, field holding the file, and when the file becomes evidence)
 EVIDENCE: tuple[tuple[str, str, dict], ...] = (
@@ -53,8 +61,27 @@ def has_permission(doc: Document, ptype: str | None = None, user: str | None = N
 	return not (ptype in ("write", "delete") and is_evidence(doc.file_url))
 
 
+def refuse_anchor_file(doc: Document) -> None:
+	if names_anchor_file(doc.file_url) or names_anchor_file(doc.file_name):
+		frappe.throw(
+			_("The audit trail's anchor file is kept by the system and cannot be added as a file."),
+			frappe.PermissionError,
+		)
+
+
+class ProtectedFile:
+	"""Extends Frappe's File (hook extend_doctype_class): a new record naming the anchor file is
+	refused before Frappe's before_insert reads it and stores a copy under another name, which a
+	check of the stored address could no longer recognise."""
+
+	def before_insert(self) -> None:
+		refuse_anchor_file(self)
+		super().before_insert()
+
+
 def protect(doc: Document, method: str | None = None) -> None:
 	"""File before_validate, ahead of Frappe's own validate, which moves a file made public."""
+	refuse_anchor_file(doc)  # a stored record pointed at the anchor file
 	if doc.is_new():
 		return
 	before = doc.get_doc_before_save()

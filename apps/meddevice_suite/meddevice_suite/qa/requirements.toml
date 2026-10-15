@@ -495,8 +495,8 @@ status = "implemented"
 [[requirement]]
 id = "URS-CMP-040"
 module = 50
-title = "Every hour, and whenever a reviewer asks, the system anchors the audit trail and the electronic signatures: it records each one's newest entry, that entry's fingerprint and the number of entries, in the database and in a file that the system only ever appends to; anchors are made only this way and cannot be changed or deleted; and the verification reviewers run reports when entries have been removed: an anchored entry is missing or changed, fewer entries remain up to it than were anchored, or an anchor in the file is missing from the database or differs from it."
-source = "DFD 9F F3 Action / Data Logging, D12 Audit Logs; D2 System Foundation: Audit Trail & System Logs; 21 CFR 11.10(e); data integrity (ALCOA+ complete, enduring); found in the foundation review of 2026-10-12: deleting the newest audit events or signatures left a shorter chain that still verified"
+title = "Every hour, and whenever a reviewer asks, the system anchors the audit trail and the electronic signatures: it records each one's newest entry, that entry's fingerprint and the number of entries, in the database and in a file that the system only ever appends to and that no user can read or download through the system; anchors are made only this way and cannot be changed or deleted; and the verification reviewers run reports when entries have been removed: an anchored entry is missing or changed, fewer entries remain up to it than were anchored, or an anchor in the file is missing from the database or differs from it."
+source = "DFD 9F F3 Action / Data Logging, D12 Audit Logs; D2 System Foundation: Audit Trail & System Logs; 21 CFR 11.10(e); data integrity (ALCOA+ complete, enduring); found in the foundation review of 2026-10-12: deleting the newest audit events or signatures left a shorter chain that still verified; file never served: Independent review 2026-10-15, 21 CFR 11.10(c), (d)"
 status = "implemented"
 
 [[requirement]]

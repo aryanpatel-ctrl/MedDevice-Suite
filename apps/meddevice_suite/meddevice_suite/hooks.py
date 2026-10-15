@@ -386,6 +386,10 @@ has_permission = {
 	"Training Record": "meddevice_suite.qms.training.has_permission",
 }
 
+# The audit trail's anchor file is never named by a File record (URS-CMP-040): refused before
+# Frappe's File.before_insert reads the named file and stores a copy of it.
+extend_doctype_class = {"File": ["meddevice_suite.compliance.evidence_files.ProtectedFile"]}
+
 scheduler_events = {
 	# The head of the audit trail and of the signatures, so that removed entries are detected
 	# (URS-CMP-040): hourly, so at most an hour of entries is ever unanchored.
