@@ -222,6 +222,11 @@ class TestSupportingPermissions(ProfileTestCase):
 				self.assertTrue(can(self.users[job], "Stock Settings", "read"))
 				self.assertFalse(can(self.users[job], "Stock Settings", "write"))
 
+	def test_stores_picks_a_customer_group_on_a_delivery_note_but_not_opens_it(self):
+		stores = self.users["Stores"]
+		self.assertTrue(can(stores, "Customer Group", "select"))
+		self.assertFalse(can(stores, "Customer Group", "write"))
+
 	def test_erpnext_permissions_on_the_record_type_are_kept(self):
 		for doctype in SUPPORTING_PERMISSIONS:
 			standard = frappe.get_all(
