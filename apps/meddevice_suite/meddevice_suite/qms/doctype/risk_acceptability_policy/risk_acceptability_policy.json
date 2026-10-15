@@ -61,8 +61,7 @@
    "fieldname": "severity_levels",
    "fieldtype": "Table",
    "label": "Severity",
-   "options": "Risk Scale Level",
-   "reqd": 1
+   "options": "Risk Scale Level"
   },
   {
    "fieldname": "column_break_scales",
@@ -72,8 +71,7 @@
    "fieldname": "probability_levels",
    "fieldtype": "Table",
    "label": "Probability",
-   "options": "Risk Scale Level",
-   "reqd": 1
+   "options": "Risk Scale Level"
   },
   {
    "fieldname": "section_matrix",
@@ -84,8 +82,7 @@
    "fieldname": "matrix",
    "fieldtype": "Table",
    "label": "Matrix",
-   "options": "Risk Matrix Cell",
-   "reqd": 1
+   "options": "Risk Matrix Cell"
   },
   {
    "fieldname": "section_signatures",
