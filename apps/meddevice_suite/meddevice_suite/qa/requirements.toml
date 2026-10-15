@@ -890,8 +890,8 @@ status = "implemented"
 [[requirement]]
 id = "URS-QMS-032"
 module = 36
-title = "A change request becomes Implemented only when everything changed under it is in force: each document revision made under it effective, each risk assessment approved, each record its actions produced approved where it needs QA's approval, and each device master record the change put out of date approved again; until then recording its last action is refused, naming each record not yet in force."
-source = "D2 Change Control: Implementation; ISO 13485 7.3.9 (changes verified before implementation), 4.2.4, 4.2.3; found in the foundation review of 2026-10-12"
+title = "A change request becomes Implemented only when everything changed under it is in force: each document revision made under it effective, each risk assessment approved, each record its actions produced approved where it needs QA's approval, and each device master record the change put out of date approved again; and only when each record it lists has been changed under it or recorded, by the person recording an action, as needing no change, the action's note being the reason; until then recording its last action is refused, naming each record not yet in force or not changed."
+source = "D2 Change Control: Implementation; ISO 13485 7.3.9 (changes verified before implementation), 4.2.4, 4.2.3; found in the foundation review of 2026-10-12; each listed record changed or found to need no change: Independent review 2026-10-15, ISO 13485 7.3.9, 4.2.4"
 status = "implemented"
 
 [[requirement]]

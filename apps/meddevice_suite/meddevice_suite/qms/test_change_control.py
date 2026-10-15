@@ -209,11 +209,19 @@ class ChangeControlTestCase(IntegrationTestCase):
 		return doc
 
 	def implemented(self, days: int = 0):
+		"""Approved, and each action done; the first finds that the listed records need no change
+		(the class's document never took effect), so the change is implemented."""
 		doc = self.approved(days=days)
 		for row in doc.actions:
 			self.as_user(row.action_owner)
-			complete_action(doc.name, row.name, f"{row.description}: done")
+			complete_action(
+				doc.name, row.name, f"{row.description}: done", no_change=self.listed(doc, row.idx == 1)
+			)
 		return frappe.get_doc(DOCTYPE, doc.name)
+
+	def listed(self, doc, mark: bool = True) -> list[str] | None:
+		"""The rows of the records the request lists, to mark as needing no change."""
+		return [row.name for row in doc.affected_records] if mark else None
 
 	def effective_document(self) -> str:
 		from meddevice_suite.qms.test_document_control import private_file
@@ -682,7 +690,9 @@ class TestImplementation(ChangeControlTestCase):
 		doc = self.approved(days=30)
 		first, second = doc.actions
 		self.as_user(self.requester)
-		complete_action(doc.name, first.name, "Revision 01 issued")
+		complete_action(
+			doc.name, first.name, "The hardness check is in the procedure already", no_change=self.listed(doc)
+		)
 		doc.reload()
 		self.assertEqual(
 			(doc.status, doc.actions[0].done, doc.actions[0].done_by), ("Approved", 1, self.requester)
@@ -788,7 +798,7 @@ class TestEffectivenessCheck(ChangeControlTestCase):
 		doc = self.approved(days=30)
 		for row in doc.actions:
 			self.as_user(self.qa)
-			complete_action(doc.name, row.name, "done")
+			complete_action(doc.name, row.name, "done", no_change=self.listed(doc, row.idx == 1))
 		with self.assertRaisesRegex(frappe.ValidationError, "checked on or after"):
 			self.act(self.qa, doc.name, "Verify Effective", "Too early")
 
@@ -1157,7 +1167,9 @@ class TestRiskReviews(ChangeControlTestCase):
 		doc = self.approved(days=0, affected_records=self.listing(file))
 		for row in doc.actions:
 			self.as_user(row.action_owner)
-			complete_action(doc.name, row.name, f"{row.description}: done")
+			complete_action(
+				doc.name, row.name, f"{row.description}: done", no_change=self.listed(doc, row.idx == 1)
+			)
 		review = self.reviews(doc.name)[0].name
 
 		with self.assertRaisesRegex(frappe.ValidationError, review):
@@ -1229,6 +1241,99 @@ class TestImplementedOnlyOnceInForce(ChangeControlTestCase):
 			with self.subTest(doctype=doctype):
 				self.assertTrue(doctype in RESULT_TYPES or doctype == "Risk Assessment")
 				self.assertTrue(field == "docstatus" or frappe.get_meta(doctype).has_field(field))
+
+
+@verifies("URS-QMS-032")
+class TestImplementedOnlyOnceEachListedRecordIsSettled(ChangeControlTestCase):
+	"""Independent review 2026-10-15: a change request reached Implemented, and then Closed, while a
+	record it listed was never changed (ISO 13485 7.3.9, 4.2.4: a change is verified as implemented)."""
+
+	def test_a_listed_record_never_changed_holds_the_change_back(self):
+		change = approved_change(self.requester, self.qa, self.document)
+		action = frappe.get_doc(DOCTYPE, change).actions[0].name
+		self.as_user(self.requester)
+		with self.assertRaisesRegex(
+			frappe.ValidationError, re.escape(f"Not changed: Controlled Document {self.document}")
+		):
+			complete_action(change, action, "Procedure updated")
+		self.assertEqual(frappe.db.get_value(DOCTYPE, change, "status"), "Approved")
+		self.assertFalse(frappe.db.get_value("Change Request Action", action, "done"))
+
+		listing = frappe.get_doc(DOCTYPE, change).affected_records[0].name
+		complete_action(change, action, "The procedure already states the check", no_change=[listing])
+		doc = frappe.get_doc(DOCTYPE, change)
+		self.assertEqual(doc.status, "Implemented")
+		self.assertEqual(
+			(doc.affected_records[0].no_change_needed, doc.affected_records[0].no_change_reason),
+			(1, "The procedure already states the check"),
+		)
+		approval = frappe.get_last_doc(
+			"Electronic Signature",
+			filters={"reference_doctype": DOCTYPE, "reference_name": change, "action": "Approve"},
+		)
+		self.assertTrue(is_unchanged_since(approval))
+
+	def test_a_record_changed_under_the_request_is_settled_without_marking(self):
+		document = self.effective_document()
+		change = approved_change(self.requester, self.qa, document)
+		self.assertEqual(self.approve_revision(self.new_revision(document, change)), "Effective")
+		self.as_user(self.requester)
+		complete_action(change, frappe.get_doc(DOCTYPE, change).actions[0].name, "Revision 01 issued")
+		self.assertEqual(frappe.db.get_value(DOCTYPE, change, "status"), "Implemented")
+
+	def test_only_a_listed_record_not_changed_is_marked_and_once(self):
+		document = self.effective_document()
+		doc = self.approved(
+			affected_records=[
+				{"reference_doctype": "Controlled Document", "reference_name": document},
+				{"reference_doctype": "Controlled Document", "reference_name": self.document},
+			]
+		)
+		changed, unchanged = (row.name for row in doc.affected_records)
+		self.new_revision(document, doc.name)
+		self.as_user(self.qa)
+		with self.assertRaisesRegex(frappe.ValidationError, "was changed under"):
+			complete_action(doc.name, doc.actions[0].name, "Not needed", no_change=[changed])
+		with self.assertRaisesRegex(frappe.ValidationError, "lists no such record"):
+			complete_action(doc.name, doc.actions[0].name, "Not needed", no_change=["not-a-listing"])
+		complete_action(doc.name, doc.actions[0].name, "Not needed after all", no_change=unchanged)
+		with self.assertRaisesRegex(frappe.ValidationError, "already marked"):
+			complete_action(doc.name, doc.actions[1].name, "Again", no_change=[unchanged])
+
+	def test_a_record_found_to_need_no_change_is_not_changed_under_the_request(self):
+		document = self.effective_document()
+		doc = self.approved(
+			affected_records=[{"reference_doctype": "Controlled Document", "reference_name": document}]
+		)
+		self.as_user(self.requester)
+		complete_action(doc.name, doc.actions[0].name, "No new revision needed", no_change=self.listed(doc))
+		with self.assertRaisesRegex(frappe.ValidationError, "needs no change"):
+			self.new_revision(document, doc.name)
+		self.as_user(self.requester)
+		self.assertEqual(
+			approved_changes_for(
+				doctype=DOCTYPE,
+				txt="",
+				searchfield="name",
+				start=0,
+				page_len=20,
+				filters={"controlled_document": document},
+			),
+			[],
+		)
+
+	def test_nobody_types_that_a_record_needs_no_change(self):
+		typed = {"no_change_needed": 1, "no_change_reason": "Typed"}
+		arrived = self.raise_change(
+			affected_records=[
+				{"reference_doctype": "Controlled Document", "reference_name": self.document, **typed}
+			]
+		)
+		self.assertFalse(arrived.affected_records[0].no_change_needed)
+		self.assertFalse(arrived.affected_records[0].no_change_reason)
+		arrived.affected_records[0].update(typed)
+		with self.assertRaises(frappe.PermissionError):
+			arrived.save()
 
 
 @verifies("URS-QMS-033")

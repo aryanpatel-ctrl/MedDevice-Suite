@@ -318,13 +318,26 @@ context("Change control", () => {
 		cy.get('[role="listbox"]:visible [role="option"]').should("contain", change);
 	});
 
-	it("[URS-QMS-012] each owner records their action done; the change is then implemented", () => {
-		const record = (who, note) => {
+	it("[URS-QMS-012] [URS-QMS-032] each owner records their action done; the change is then implemented", () => {
+		// `no_change`: the listed procedure was found to need no change, the note saying why.
+		const record = (who, note, no_change = false) => {
 			as(who);
 			cy.then(() => open_change());
 			button("Record Action Done").click();
 			dialog_open("Record an action as done");
 			type_in_dialog("textarea", "note", note);
+			if (no_change) {
+				cy.window()
+					.its("cur_frm.doc.affected_records.0.name")
+					.then((row) => {
+						cy.get(`.modal.show input[type="checkbox"][data-unit="${row}"]`).check();
+						cy.window()
+							.its("cur_dialog")
+							.should((dialog) =>
+								expect(dialog.get_value("no_change")).to.deep.equal([row])
+							);
+					});
+			}
 			cy.get(".modal:visible .btn-primary").contains("Record as Done").click();
 		};
 
@@ -340,8 +353,18 @@ context("Change control", () => {
 		cy.contains(FORM, "1 of 2 done").should("be.visible");
 		offered("Record Action Done", false); // stores' own action is done
 
-		record("requester", "Revision 01 drafted for review");
+		record(
+			"requester",
+			"Procedure checked: it already states the hardness check; no new revision",
+			true
+		);
 		status_is("Implemented");
+		cy.window()
+			.its("cur_frm.doc.affected_records.0")
+			.should((row) => {
+				expect(row.no_change_needed).to.equal(1);
+				expect(row.no_change_reason).to.contain("already states the hardness check");
+			});
 	});
 
 	it("[URS-QMS-013] QA verifies the change was effective and closes it", () => {
