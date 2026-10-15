@@ -60,6 +60,7 @@ from frappe.model.document import Document
 from frappe.query_builder import Criterion
 from frappe.utils import add_days, cint, getdate, now_datetime
 
+from meddevice_suite.compliance.checks import QA_ROLE, is_qa, require
 from meddevice_suite.compliance.esign import sign
 from meddevice_suite.master_data import item_master, routing, specification
 from meddevice_suite.master_data.bom import default_bom
@@ -73,7 +74,7 @@ ELEMENT, HEADING_ROW, DOCUMENT_ROW = (
 	"Device Master Record Heading",
 	"Device Master Record Document",
 )
-QA_ROLE, PRODUCTION_ROLE = "Quality Manager", "Manufacturing User"
+PRODUCTION_ROLE = "Manufacturing User"
 # Plan D-15: QA or the Production Supervisor authors a revision; QA approves it.
 AUTHOR_ROLES = frozenset({QA_ROLE, PRODUCTION_ROLE})
 FLAG = "device_master_record"
@@ -174,17 +175,8 @@ def apply_device_master_record_fields() -> None:
 	create_custom_fields(CUSTOM_FIELDS, ignore_validate=True)
 
 
-def require(condition: object, message: str, exception: type[Exception] = frappe.ValidationError) -> None:
-	if not condition:
-		frappe.throw(message, exception)
-
-
 def roles_of(user: str | None = None) -> set[str]:
 	return set(frappe.get_roles(user or frappe.session.user))
-
-
-def is_qa(user: str | None = None) -> bool:
-	return QA_ROLE in roles_of(user)
 
 
 def plain(text: str | None) -> str:
@@ -879,7 +871,7 @@ def elements_changed(changes: list[pinned_records.Change]) -> None:
 	"""Each record with a changed element records it, on its own, so that one record's failure
 	(logged; the daily sweep finds it again) holds back no other: a Current one goes out of date."""
 	by_record: dict[str, list[pinned_records.Change]] = {}
-	for change in changes:
+	for change in unrecorded(changes):
 		by_record.setdefault(change.pin.owner, []).append(change)
 	for record, its_changes in sorted(by_record.items()):
 		frappe.db.savepoint(SAVEPOINT)
@@ -890,6 +882,37 @@ def elements_changed(changes: list[pinned_records.Change]) -> None:
 			frappe.log_error(title=f"Device master record {record} could not be marked out of date")
 		else:
 			frappe.db.release_savepoint(SAVEPOINT)
+
+
+def unrecorded(changes: list[pinned_records.Change]) -> list[pinned_records.Change]:
+	"""The changes not yet recorded on their element rows, read for all records at once: a record
+	out of date keeps its pins changed until QA re-approves it, so the daily sweep finds them again
+	every day, and loading and locking each such record to find nothing new grew with how long
+	records stay out of date. A change `mark_out_of_date` would skip (its row gone, or recorded with
+	the same version, note and change request) is left out here, by the same comparison."""
+	if not changes:
+		return []
+	rows = {
+		row.name: row
+		for row in frappe.get_all(
+			ELEMENT,
+			filters={
+				"name": ["in", sorted({change.pin.row for change in changes if change.pin.row})],
+				"parenttype": DOCTYPE,
+			},
+			fields=["name", "stale", "current_version", "change_note", "current_changed_under"],
+		)
+	}
+	return [
+		change
+		for change, (note, changed_under) in zip(changes, notes_of(changes), strict=True)
+		if (row := rows.get(change.pin.row))
+		and not (
+			cint(row.stale)
+			and (row.current_version, row.change_note, row.current_changed_under)
+			== (change.current, note, changed_under)
+		)
+	]
 
 
 def notes_of(changes: list[pinned_records.Change]) -> list[tuple[str, str | None]]:

@@ -757,7 +757,7 @@ def draft_licence() -> str:
 	repository, for the browser to verify on its form with a signature (module 41)."""
 	ensure_test_site()
 	frappe.has_permission("Regulatory Licence", "create", throw=True)
-	tag = frappe.generate_hash(length=5)
+	tag = frappe.generate_hash(length=10)
 	licence_type = f"Manufacturing licence (browser test) {tag}"
 	frappe.get_doc(
 		{"doctype": "Regulatory Licence Type", "licence_type_name": licence_type, "has_expiry": 1}

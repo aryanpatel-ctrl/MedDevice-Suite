@@ -13,8 +13,9 @@ A completed repair can change what an instrument measures and how a machine perf
 the conditions a machine was qualified in (decided 2026-10-11, URS-EQP-013): after a repair, an
 instrument is fit again only once calibrated on or after the day the repair was completed, and a
 qualified machine once a PQ was done on or after it; after a move (an ERPNext asset movement that
-transfers it), a qualified machine is fit again only once qualified again, IQ, OQ and PQ, on or
-after the day it moved. A move alone does not need a calibration: an instrument is carried by hand
+transfers it, or a change of its workstation, decided 2026-10-15: moved to another line), a
+qualified machine is fit again only once qualified again, IQ, OQ and PQ, on or after the day it
+moved. A move alone does not need a calibration: an instrument is carried by hand
 and its calibration interval covers it.
 
 A completed calibration, maintenance or qualification record is corrected only by QA's signed
@@ -37,6 +38,7 @@ from frappe.model.document import Document
 from frappe.query_builder import Order
 from frappe.utils import add_days, cint, getdate, today
 
+from meddevice_suite.compliance.checks import QA_ROLE, require
 from meddevice_suite.compliance.esign import sign
 from meddevice_suite.master_data import equipment
 
@@ -45,18 +47,12 @@ CALIBRATION, MAINTENANCE, QUALIFICATION = (
 	"Maintenance Record",
 	"Equipment Qualification",
 )
-QA_ROLE = "Quality Manager"
 # The signed act that completes each record type. A cancelled record carrying its signature was
 # completed and then withdrawn for correction; a draft discarded unfinished carries none.
 COMPLETED_BY_ACT = {CALIBRATION: "Complete", MAINTENANCE: "Complete", QUALIFICATION: "Approve"}
 # ERPNext asset movements that take equipment somewhere else; a receipt is its first placing and an
 # issue hands it to a person.
 RELOCATIONS = ("Transfer", "Transfer and Issue")
-
-
-def require(condition, message: str, exception: type[Exception] = frappe.ValidationError) -> None:
-	if not condition:
-		frappe.throw(message, exception)
 
 
 def latest(
@@ -76,7 +72,10 @@ def latest(
 
 
 def repaired_and_moved(assets: list[str]) -> tuple[dict, dict]:
-	"""The day of each asset's latest completed repair, and of its latest relocation."""
+	"""The day of each asset's latest completed repair, and of its latest relocation: the later of
+	its latest ERPNext asset movement that transfers it and its latest change of workstation, read
+	from the audit trail (decided 2026-10-15: equipment moved to another line is moved, whichever
+	record says so). Three queries, whatever the number of assets."""
 	repaired: dict = {}
 	for row in frappe.get_all(
 		"Asset Repair",
@@ -97,6 +96,25 @@ def repaired_and_moved(assets: list[str]) -> tuple[dict, dict]:
 		.run(as_dict=True)
 	):
 		moved.setdefault(row.asset, getdate(row.transaction_date))
+	event = frappe.qb.DocType("Audit Event")
+	changed: dict = {}
+	for row in (
+		frappe.qb.from_(event)
+		.select(event.reference_name, event.event_at, event.changes)
+		.where(
+			(event.reference_doctype == "Asset")
+			& event.reference_name.isin(assets)
+			# Only the events that name the workstation: a creation, or a change of it.
+			& event.changes.like(f'%"{equipment.WORKSTATION}"%')
+		)
+		.orderby(event.event_at, order=Order.desc)
+		.orderby(event.creation, order=Order.desc)
+		.run(as_dict=True)
+	):
+		if row.reference_name not in changed and equipment.workstation_changes(row.changes):
+			changed[row.reference_name] = getdate(row.event_at)
+	for asset, day in changed.items():
+		moved[asset] = max(day, moved.get(asset, day))
 	return repaired, moved
 
 
@@ -292,7 +310,11 @@ def copy_attachments(amendment: Document) -> None:
 
 def equipment_at(workstations: Iterable[str]) -> list[str]:
 	"""The equipment in use at these workstations. None when no workstation is named: Frappe reads
-	`in [""]` as "no workstation set", which would take in every portable instrument on the site."""
+	`in [""]` as "no workstation set", which would take in every portable instrument on the site.
+
+	Where the equipment is now, rightly: this decides whether work may be recorded at the workstation
+	now, with what is there now. What a past period's work used is read from the audit trail
+	(`calibration.workstation_history`)."""
 	stations = sorted(set(workstations) - {None, ""})
 	if not stations:
 		return []
@@ -308,8 +330,11 @@ def equipment_at(workstations: Iterable[str]) -> list[str]:
 
 
 def refuse_unusable(workstations: Iterable[str], what: str) -> None:
-	for asset in equipment_at(workstations):
-		state = equipment.usable(asset)
+	at_hand = equipment_at(workstations)
+	# All of it judged at once: a query set for each piece grew with the equipment at the stations.
+	states = equipment.usable_all(at_hand)
+	for asset in at_hand:
+		state = states[asset]
 		if not state.ok:
 			frappe.throw(
 				_("{0} cannot be used: equipment {1} at its workstation is not fit, {2}.").format(

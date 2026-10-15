@@ -34,19 +34,15 @@ from frappe.model.document import Document
 from frappe.utils import add_days, add_years, getdate, nowdate, today
 
 from meddevice_suite.compliance import quality_settings
+from meddevice_suite.compliance.checks import QA_ROLE, is_qa, require
 from meddevice_suite.compliance.esign import sign
 from meddevice_suite.qms import training
 from meddevice_suite.work_management import reminders
 
-QA_ROLE = "Quality Manager"
 IN_PROGRESS = ("Draft", "In Review", "Awaiting Approval", "Approved")
 CHUNK = 1 << 20
 EFFECTIVE_SAVEPOINT = "document_revision_effective"
 REVIEW_SAVEPOINT = "controlled_document_review_alert"
-
-
-def is_qa(user: str | None = None) -> bool:
-	return QA_ROLE in frappe.get_roles(user or frappe.session.user)
 
 
 # --- Signed acts ----------------------------------------------------------------------
@@ -248,7 +244,8 @@ def send_review_alerts() -> None:
 	"""Daily: alert each effective document's process owner and QA once when its review falls
 	due within 30 days, including a review already overdue or a day the alerts did not run."""
 	notification = frappe.get_doc("Notification", REVIEW_ALERT)
-	for name, review_date in frappe.get_all(
+	# What each was last alerted for is read with the documents, not once per document.
+	for name, review_date, alerted_for in frappe.get_all(
 		"Controlled Document",
 		filters=[
 			["status", "=", "Effective"],
@@ -259,11 +256,11 @@ def send_review_alerts() -> None:
 				add_days(today(), quality_settings.value("document_review_warning_days")),
 			],
 		],
-		fields=["name", "next_review_date"],
+		fields=["name", "next_review_date", "review_alerted_for"],
 		as_list=True,
 		order_by="next_review_date asc",
 	):
-		if frappe.db.get_value("Controlled Document", name, "review_alerted_for") == review_date:
+		if alerted_for == review_date:
 			continue
 		frappe.db.savepoint(REVIEW_SAVEPOINT)
 		try:
@@ -329,8 +326,3 @@ def save(doc: Document) -> None:
 	# The signed act has done its own checks; the controllers' edit rules are for users.
 	doc.flags.document_control = True
 	doc.save(ignore_permissions=True)
-
-
-def require(condition, message: str, exception: type[Exception] = frappe.ValidationError) -> None:
-	if not condition:
-		frappe.throw(message, exception)

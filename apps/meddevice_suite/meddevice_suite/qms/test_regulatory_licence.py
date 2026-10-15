@@ -23,7 +23,7 @@ class LicenceTestCase(FilesTestCase):
 		self.type = self.licence_type("Manufacturing licence (MD-5)", expires=1)
 
 	def licence_type(self, name: str, expires: int) -> str:
-		name = f"{name} {frappe.generate_hash(length=4)}"
+		name = f"{name} {frappe.generate_hash(length=10)}"
 		frappe.get_doc(
 			{"doctype": "Regulatory Licence Type", "licence_type_name": name, "has_expiry": expires}
 		).insert(ignore_permissions=True)
@@ -42,7 +42,7 @@ class LicenceTestCase(FilesTestCase):
 					{
 						"doctype": DOCTYPE,
 						"licence_type": self.type,
-						"licence_number": f"MFG/MD-5/{frappe.generate_hash(length=5)}",
+						"licence_number": f"MFG/MD-5/{frappe.generate_hash(length=10)}",
 						"issuing_authority": "State Licensing Authority",
 						"site": "Unit 1",
 						"valid_from": add_days(today(), -30),

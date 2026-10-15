@@ -93,7 +93,7 @@ def approved_change(
 def licence_for_test(status: str = "Verified") -> str:
 	"""A licence of the plant a change can name, verified as QA's signed act leaves it (module 41);
 	recording and verifying one is tested in qms/test_regulatory_licence.py."""
-	licence_type = f"Licence type for tests {frappe.generate_hash(length=4)}"
+	licence_type = f"Licence type for tests {frappe.generate_hash(length=10)}"
 	frappe.get_doc({"doctype": "Regulatory Licence Type", "licence_type_name": licence_type}).insert(
 		ignore_permissions=True
 	)
@@ -101,7 +101,7 @@ def licence_for_test(status: str = "Verified") -> str:
 		{
 			"doctype": "Regulatory Licence",
 			"licence_type": licence_type,
-			"licence_number": f"MFG/{frappe.generate_hash(length=5)}",
+			"licence_number": f"MFG/{frappe.generate_hash(length=10)}",
 			"issuing_authority": "State Licensing Authority",
 			"valid_from": today(),
 		}

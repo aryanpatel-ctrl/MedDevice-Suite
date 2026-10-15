@@ -36,6 +36,7 @@ from frappe.utils import getdate, now_datetime, today
 
 from meddevice_suite.compliance import alerts
 from meddevice_suite.compliance.audit import same
+from meddevice_suite.compliance.checks import require
 from meddevice_suite.compliance.esign import sign
 from meddevice_suite.lot_control import lot_status
 
@@ -216,8 +217,3 @@ def signed_content(doc: Document) -> dict:
 def as_date(value: object) -> date | None:
 	# Frappe's getdate gives today for no value; a lot without a date has none.
 	return getdate(value) if value else None
-
-
-def require(condition: object, message: str, exception: type[Exception] = frappe.ValidationError) -> None:
-	if not condition:
-		frappe.throw(message, exception)

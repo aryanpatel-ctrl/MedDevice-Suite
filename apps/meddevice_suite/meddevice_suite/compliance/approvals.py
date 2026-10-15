@@ -147,6 +147,8 @@ def set_up_by_code() -> bool:
 	return bool(frappe.flags.in_install or frappe.flags.in_migrate or frappe.flags.in_patch)
 
 
+# Kept here, not taken from compliance.checks: a refused approval raises WorkflowPermissionError
+# with the title "Approval required", where the shared require raises ValidationError untitled.
 def require(condition, message: str) -> None:
 	if not condition:
 		frappe.throw(message, WorkflowPermissionError, title=_("Approval required"))
