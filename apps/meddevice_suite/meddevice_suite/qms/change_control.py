@@ -70,6 +70,25 @@ AFFECTED_TYPES = (
 	"Regulatory Licence",  # a licence or registration the change must be notified under (URS-REG-006)
 )
 RESULT_TYPES = (*AFFECTED_TYPES, "Document Revision")
+# The kind of change (the request's Change Type) each record it can list belongs to: every record a
+# change can affect has a kind to be raised under (found in the browser walk-through, 2026-10-15: a
+# customer's change had none).
+CHANGE_TYPE_OF = {
+	"Controlled Document": "Document",
+	"Item": "Product or BOM",
+	"BOM": "Product or BOM",
+	"Quality Inspection Template": "Product or BOM",
+	"Risk Management File": "Product or BOM",  # the product's risk file (ISO 14971)
+	"Routing": "Process or Routing",
+	"Operation": "Process or Routing",
+	"Workstation": "Process or Routing",
+	"Warehouse": "Process or Routing",
+	"Asset": "Equipment",
+	"Supplier": "Supplier",
+	"Customer": "Customer",
+	"Regulatory Licence": "Regulatory",
+	"Quality Settings": "System",
+}
 
 # On each listed record: the record its change was made in and when (a document's revision, a
 # risk file's assessment, a master itself). Set only by `record_changes_made`.
