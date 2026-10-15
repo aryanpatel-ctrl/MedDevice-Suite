@@ -30,12 +30,13 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.query_builder import Criterion
-from frappe.utils import add_days, cint, flt, get_datetime, getdate, now_datetime, today
+from frappe.utils import add_days, cint, flt, get_datetime, getdate, now_datetime
 
 from meddevice_suite.compliance.audit import as_data
 from meddevice_suite.compliance.checks import QA_ROLE, require
 from meddevice_suite.compliance.esign import sign
 from meddevice_suite.master_data import equipment
+from meddevice_suite.qms import equipment_care
 
 DOCTYPE = "Calibration Record"
 IN_HOUSE, EXTERNAL = "In-house", "External laboratory"
@@ -110,7 +111,7 @@ def evaluate(doc: Document, method: str | None = None) -> None:
 	)
 	require(asset.get(equipment.STATUS) != equipment.RETIRED, _("{0} is retired.").format(doc.asset))
 	require(cint(asset.get(equipment.CALIBRATION)), _("{0} does not need calibration.").format(doc.asset))
-	require(getdate(doc.performed_on) <= getdate(today()), _("A calibration is recorded once it is done."))
+	equipment_care.require_done(doc.performed_on, _("A calibration is recorded once it is done."))
 	previous = last_done(doc.asset, before=doc.name)
 	require(
 		not previous or getdate(doc.performed_on) >= getdate(previous.performed_on),

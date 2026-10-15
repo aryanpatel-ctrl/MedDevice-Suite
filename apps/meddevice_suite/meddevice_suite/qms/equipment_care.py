@@ -379,5 +379,13 @@ def make_time_log(kwargs: str | dict) -> None:
 	erpnext_make_time_log(kwargs)
 
 
+def require_done(performed_on, message: str) -> None:
+	"""A calibration, maintenance or qualification is recorded once it is done, never dated ahead:
+	a record dated in the future would make equipment fit, or set its next due date, from a day that
+	has not come (ALCOA+ contemporaneous; ISO 13485 7.6, 6.3, 7.5.6). Each record type says it in
+	its own words."""
+	require(getdate(performed_on) <= getdate(today()), message)
+
+
 def due_after(last_done, interval_days: int):
 	return add_days(last_done, cint(interval_days)) if last_done and cint(interval_days) else None

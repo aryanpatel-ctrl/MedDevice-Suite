@@ -958,6 +958,19 @@ class TestQualification(CareTestCase):
 		frappe.set_user("Administrator")
 		self.assertIsNone(frappe.db.get_value("Equipment Qualification", name, "executed_by"))
 
+	@verifies("URS-EQP-001", "URS-EQP-004")
+	def test_no_care_record_is_dated_ahead(self):
+		"""Independent review of 2026-10-15: a qualification could carry a future date, which would
+		qualify the equipment from a day that has not come; calibration and maintenance refused one."""
+		tomorrow = add_days(today(), 1)
+		with self.assertRaisesRegex(frappe.ValidationError, "A qualification is recorded once it is done"):
+			self.stage(self.needing(), "IQ", performed_on=tomorrow)
+		with self.assertRaisesRegex(frappe.ValidationError, "Maintenance is recorded once it is done"):
+			self.maintenance_record(self.machine(), performed_on=tomorrow)
+		with self.assertRaisesRegex(frappe.ValidationError, "A calibration is recorded once it is done"):
+			self.calibration(self.approved(), performed_on=tomorrow)
+		self.assertTrue(self.stage(self.needing(), "IQ"))  # done today: recorded
+
 	def test_the_protocol_is_an_effective_sop_or_form(self):
 		with self.assertRaisesRegex(frappe.ValidationError, "effective SOP or form"):
 			self.stage(self.needing(), "IQ", protocol=work_instruction_for_test())

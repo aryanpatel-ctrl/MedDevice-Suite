@@ -1293,8 +1293,8 @@ status = "implemented"
 [[requirement]]
 id = "URS-EQP-001"
 module = 38
-title = "A calibration records its date and, per point, the nominal value, limits and the values found and left; the system works out what was in tolerance, the result on the values left and, for a pass, the next due date from the interval QA approved on the equipment; it follows an effective procedure when done in-house and names the laboratory, certificate number and certificate when external; it is completed only by its performer's electronic signature (Maintenance or QA), is never deleted, and does not change once completed but by QA's signed impact assessment; once completed it is corrected only by QA's electronically signed correction with a reason, which cancels it and opens its amendment as a new draft, completed again by its performer's signature, and the platform's own cancel is refused."
-source = "D2 Calibration & Maintenance (Calibration Records); DFD 9D step D6 Calibration / Validation, D10 Equipment Master; ISO 13485 7.6; 21 CFR 11.50; decided 2026-10-12 (plan D-29): corrected only by QA's signed correction"
+title = "A calibration records its date, never one after today, and, per point, the nominal value, limits and the values found and left; the system works out what was in tolerance, the result on the values left and, for a pass, the next due date from the interval QA approved on the equipment; it follows an effective procedure when done in-house and names the laboratory, certificate number and certificate when external; it is completed only by its performer's electronic signature (Maintenance or QA), is never deleted, and does not change once completed but by QA's signed impact assessment; once completed it is corrected only by QA's electronically signed correction with a reason, which cancels it and opens its amendment as a new draft, completed again by its performer's signature, and the platform's own cancel is refused."
+source = "D2 Calibration & Maintenance (Calibration Records); DFD 9D step D6 Calibration / Validation, D10 Equipment Master; ISO 13485 7.6; 21 CFR 11.50; decided 2026-10-12 (plan D-29): corrected only by QA's signed correction; independent review 2026-10-15: one date check shared by calibration, maintenance and qualification (rules section 8)"
 status = "implemented"
 
 [[requirement]]
@@ -1314,7 +1314,7 @@ status = "implemented"
 [[requirement]]
 id = "URS-EQP-004"
 module = 38
-title = "Preventive maintenance records its checks, each OK or not, what was done and the downtime; it is satisfactory only when every check is OK, only a satisfactory record sets the next due date, and it is completed only by its performer's electronic signature and never deleted; once completed it is corrected only by QA's electronically signed correction with a reason, which cancels it and opens its amendment as a new draft, and the platform's own cancel is refused."
+title = "Preventive maintenance records its date, never one after today, its checks, each OK or not, what was done and the downtime; it is satisfactory only when every check is OK, only a satisfactory record sets the next due date, and it is completed only by its performer's electronic signature and never deleted; once completed it is corrected only by QA's electronically signed correction with a reason, which cancels it and opens its amendment as a new draft, and the platform's own cancel is refused."
 source = "DFD 9D steps D3 Maintenance Schedule, D4 Maintenance Execution; D2 Calibration & Maintenance (Maintenance Plan, Maintenance Log, Downtime Tracking); ISO 13485 6.3; decided 2026-10-12 (plan D-29)"
 status = "implemented"
 
@@ -1356,8 +1356,8 @@ status = "implemented"
 [[requirement]]
 id = "URS-EQP-010"
 module = 40
-title = "Each installation, operational and performance qualification is recorded against an effective protocol (an SOP or a form) with its tests, each passed or failed, and passes only when every test passes; its performer executes it with an electronic signature, a change after execution needs execution again, and QA, never its performer, approves it with an electronic signature or returns it with a signed reason; it is never deleted; once approved it is corrected only by QA's electronically signed correction with a reason, which cancels it and opens its amendment as a new draft, executed and approved again, and the platform's own cancel is refused."
-source = "DFD 9D step D6 Calibration / Validation, D10 Equipment Master; D3 (equipment qualification IQ / OQ / PQ, master plan section 7); ISO 13485 7.5.6, 6.3; decided 2026-10-12 (plan D-29)"
+title = "Each installation, operational and performance qualification is recorded, dated no later than today, against an effective protocol (an SOP or a form) with its tests, each passed or failed, and passes only when every test passes; its performer executes it with an electronic signature, a change after execution needs execution again, and QA, never its performer, approves it with an electronic signature or returns it with a signed reason; it is never deleted; once approved it is corrected only by QA's electronically signed correction with a reason, which cancels it and opens its amendment as a new draft, executed and approved again, and the platform's own cancel is refused."
+source = "DFD 9D step D6 Calibration / Validation, D10 Equipment Master; D3 (equipment qualification IQ / OQ / PQ, master plan section 7); ISO 13485 7.5.6, 6.3; decided 2026-10-12 (plan D-29); independent review 2026-10-15: a future date was accepted, unlike calibration and maintenance"
 status = "implemented"
 
 [[requirement]]
