@@ -18,6 +18,7 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import add_days, cint, getdate, now_datetime
 
+from meddevice_suite.compliance.checks import QA_ROLE, require
 from meddevice_suite.compliance.esign import sign
 from meddevice_suite.master_data import equipment
 
@@ -25,18 +26,12 @@ DOCTYPE = "Equipment Qualification"
 STAGES = ("IQ", "OQ", "PQ")
 PROTOCOL_TYPES = ("SOP", "Form")
 PERFORMERS = frozenset({"Maintenance User", "Manufacturing User", "Quality Manager"})
-QA_ROLE = "Quality Manager"
 REQUALIFICATION_DAYS = equipment.REQUALIFICATION_DAYS
 # What the performer signs for: changing any of it after execution needs execution again.
 EXECUTED_CONTENT = ("asset", "stage", "occasion", "protocol", "performed_on")
 # Set only by the signed acts. A draft saved through the form or the API keeps what is stored, and a
 # new one, Frappe's Amend among them (it copies them from the cancelled record), holds none.
 SET_BY_ACTS = ("executed_by", "executed_at", "approved_by", "approved_at")
-
-
-def require(condition, message: str, exception: type[Exception] = frappe.ValidationError) -> None:
-	if not condition:
-		frappe.throw(message, exception)
 
 
 def only_by_approval(doc: Document, method: str | None = None) -> None:

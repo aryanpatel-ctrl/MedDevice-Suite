@@ -60,6 +60,7 @@ from frappe.model.document import Document
 from frappe.query_builder import Criterion
 from frappe.utils import add_days, cint, getdate, now_datetime
 
+from meddevice_suite.compliance.checks import QA_ROLE, is_qa, require
 from meddevice_suite.compliance.esign import sign
 from meddevice_suite.master_data import item_master, routing, specification
 from meddevice_suite.master_data.bom import default_bom
@@ -73,7 +74,7 @@ ELEMENT, HEADING_ROW, DOCUMENT_ROW = (
 	"Device Master Record Heading",
 	"Device Master Record Document",
 )
-QA_ROLE, PRODUCTION_ROLE = "Quality Manager", "Manufacturing User"
+PRODUCTION_ROLE = "Manufacturing User"
 # Plan D-15: QA or the Production Supervisor authors a revision; QA approves it.
 AUTHOR_ROLES = frozenset({QA_ROLE, PRODUCTION_ROLE})
 FLAG = "device_master_record"
@@ -174,17 +175,8 @@ def apply_device_master_record_fields() -> None:
 	create_custom_fields(CUSTOM_FIELDS, ignore_validate=True)
 
 
-def require(condition: object, message: str, exception: type[Exception] = frappe.ValidationError) -> None:
-	if not condition:
-		frappe.throw(message, exception)
-
-
 def roles_of(user: str | None = None) -> set[str]:
 	return set(frappe.get_roles(user or frappe.session.user))
-
-
-def is_qa(user: str | None = None) -> bool:
-	return QA_ROLE in roles_of(user)
 
 
 def plain(text: str | None) -> str:

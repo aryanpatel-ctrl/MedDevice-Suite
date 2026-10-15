@@ -31,10 +31,10 @@ from frappe.model.document import Document
 from frappe.utils import cint, now_datetime
 
 from meddevice_suite.compliance.audit import same
+from meddevice_suite.compliance.checks import QA_ROLE, is_qa, require
 from meddevice_suite.compliance.esign import sign
 
 DOCTYPE = "Asset"
-QA_ROLE = "Quality Manager"
 APPROVAL_FLAG = "equipment_approval"
 # Fields on the asset
 TAG, CLASS, MAKER, MODEL, SERIAL, WORKSTATION, QUALITY_IMPACT = (
@@ -267,15 +267,6 @@ CUSTOM_FIELDS = {
 
 def apply_equipment_fields() -> None:
 	create_custom_fields(CUSTOM_FIELDS, ignore_validate=True)
-
-
-def is_qa(user: str | None = None) -> bool:
-	return QA_ROLE in frappe.get_roles(user or frappe.session.user)
-
-
-def require(condition: object, message: str, exception: type[Exception] = frappe.ValidationError) -> None:
-	if not condition:
-		frappe.throw(message, exception)
 
 
 def approved(asset: str | Document) -> bool:

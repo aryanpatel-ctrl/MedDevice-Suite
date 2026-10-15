@@ -39,6 +39,7 @@ from frappe.query_builder import DocType
 from frappe.utils import cint, flt, now_datetime
 
 from meddevice_suite.compliance.audit import same
+from meddevice_suite.compliance.checks import QA_ROLE, is_qa, require
 from meddevice_suite.compliance.esign import sign
 from meddevice_suite.master_data.defining_documents import DefiningDocument, document_missing
 
@@ -66,7 +67,6 @@ PURCHASED_TYPES = (RAW_MATERIAL, PACKAGING)  # inspected when they arrive (DFD 3
 DEVICE_CLASSES = ("A", "B", "C", "D", "Not a device")
 GTIN_LENGTHS = (8, 12, 13, 14)
 INCOMING, FINAL = "Incoming", "Final"
-QA_ROLE = "Quality Manager"
 SPECIFICATION_DOCUMENT = "mds_specification_document"
 # Plan D-34: the items a document defines. What the plant buys is bought to its material
 # specification (ISO 13485 7.4.2), and what it sells is made to its product specification or
@@ -313,10 +313,6 @@ def configured() -> bool:
 	"""The item master's fields exist: before apply_configuration first runs on a site (its
 	install, or the migrate that brings this module), nothing here applies."""
 	return bool(frappe.get_meta("Item").get_field(APPROVAL_STATUS))
-
-
-def is_qa(user: str | None = None) -> bool:
-	return QA_ROLE in frappe.get_roles(user or frappe.session.user)
 
 
 def approved(item: str | Document) -> bool:
@@ -584,11 +580,6 @@ def approve(doc: Document, password: str, reason: str | None = None) -> None:
 	sign(doc, "Approved", "Approve", password, reason)
 	doc.flags.item_approval = True
 	doc.save()
-
-
-def require(condition: object, message: str, exception: type[Exception] = frappe.ValidationError) -> None:
-	if not condition:
-		frappe.throw(message, exception)
 
 
 # --- Lots and serial numbers made in bulk ------------------------------------------------------

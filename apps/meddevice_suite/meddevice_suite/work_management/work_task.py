@@ -18,13 +18,13 @@ from frappe.model.document import Document
 from frappe.utils import now_datetime
 
 from meddevice_suite.compliance.audit import same
+from meddevice_suite.compliance.checks import QA_ROLE, is_qa, require
 from meddevice_suite.compliance.esign import SHARED_ACCOUNTS, sign
 
 DOCTYPE = "Work Task"
 OPEN, SUBMITTED, RETURNED, APPROVED, WITHDRAWN = "Open", "Submitted", "Returned", "Approved", "Withdrawn"
 IN_HAND = (OPEN, RETURNED)  # with the person assigned
 NOT_FINISHED = (OPEN, SUBMITTED, RETURNED)
-QA_ROLE = "Quality Manager"
 MANAGEMENT = ("Sales Manager", "Purchase Manager", "Stock Manager", "Manufacturing Manager")
 SEES_ALL = frozenset({QA_ROLE, *MANAGEMENT, "System Manager"})
 # What the task is, set by whoever raised it (or QA) while it is in hand.
@@ -40,15 +40,6 @@ DEFINITION = (
 RESULT = ("result",)
 # Set by the acts below only.
 SET_BY_ACTS = ("status", "submitted_on", "return_reason", "approved_by", "approved_on", "withdrawn_reason")
-
-
-def require(condition, message: str, exception: type[Exception] = frappe.ValidationError) -> None:
-	if not condition:
-		frappe.throw(message, exception)
-
-
-def is_qa(user: str | None = None) -> bool:
-	return QA_ROLE in frappe.get_roles(user or frappe.session.user)
 
 
 def check(doc: Document) -> None:

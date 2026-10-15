@@ -19,21 +19,16 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import now_datetime
 
+from meddevice_suite.compliance.checks import QA_ROLE, require
 from meddevice_suite.qms.document_control import file_fingerprint
 
 CATEGORY = "File Category"
 DOCTYPE = "Important File"
 ACTIVE, ARCHIVED = "Active", "Archived"
-QA_ROLE = "Quality Manager"
 SEES_ALL = frozenset({QA_ROLE, "System Manager"})
 READERS, EDITORS = "readers", "editors"
 NEW = ("new_file", "new_valid_until", "new_note")
 SET_BY_RULES = ("status", "archived_reason", "current_version", "current_file", "valid_until")
-
-
-def require(condition, message: str, exception: type[Exception] = frappe.ValidationError) -> None:
-	if not condition:
-		frappe.throw(message, exception)
 
 
 # --- Who reads and uploads a category's files ---------------------------------------------------

@@ -37,6 +37,7 @@ from frappe.model.document import Document
 from frappe.query_builder import Order
 from frappe.utils import add_days, cint, getdate, today
 
+from meddevice_suite.compliance.checks import QA_ROLE, require
 from meddevice_suite.compliance.esign import sign
 from meddevice_suite.master_data import equipment
 
@@ -45,18 +46,12 @@ CALIBRATION, MAINTENANCE, QUALIFICATION = (
 	"Maintenance Record",
 	"Equipment Qualification",
 )
-QA_ROLE = "Quality Manager"
 # The signed act that completes each record type. A cancelled record carrying its signature was
 # completed and then withdrawn for correction; a draft discarded unfinished carries none.
 COMPLETED_BY_ACT = {CALIBRATION: "Complete", MAINTENANCE: "Complete", QUALIFICATION: "Approve"}
 # ERPNext asset movements that take equipment somewhere else; a receipt is its first placing and an
 # issue hands it to a person.
 RELOCATIONS = ("Transfer", "Transfer and Issue")
-
-
-def require(condition, message: str, exception: type[Exception] = frappe.ValidationError) -> None:
-	if not condition:
-		frappe.throw(message, exception)
 
 
 def latest(

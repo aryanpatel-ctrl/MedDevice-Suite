@@ -22,7 +22,8 @@ from dataclasses import dataclass
 import frappe
 from frappe import _
 
-QA_ROLE = "Quality Manager"
+from meddevice_suite.compliance.checks import QA_ROLE
+
 QC_ROLE = "QC Inspector"
 MANAGEMENT = ("Sales Manager", "Purchase Manager", "Stock Manager", "Manufacturing Manager")
 
