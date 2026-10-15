@@ -118,8 +118,18 @@ SYSTEM_MAINTAINED: dict[str, tuple[str, ...]] = {
 	"Supplier Approval": ("docstatus", "certificate_alerted"),
 	# The expiry alert is bookkeeping of the alert, not part of the verified licence.
 	"Customer Licence": ("docstatus", "expiry_alerted"),
-	# QA's impact assessment comes after the performer's signature, with its own (module 38).
-	"Calibration Record": ("docstatus", "impact_status", "impact_decision", "assessed_by", "assessed_on"),
+	# QA's impact assessment comes after the performer's signature, with its own (module 38). The
+	# records of the period submitted since are added by the system as they are submitted, each
+	# recorded in the audit trail with the record that caused it; a field added after records were
+	# signed, so no signature ever bound it (independent review of 2026-10-15).
+	"Calibration Record": (
+		"docstatus",
+		"impact_status",
+		"impact_decision",
+		"assessed_by",
+		"assessed_on",
+		"later_impact",
+	),
 	"Maintenance Record": ("docstatus",),
 	# QA's approval and a return come after the performer's execution signature (module 40).
 	"Equipment Qualification": ("docstatus", "approved_by", "approved_at", "executed_by", "executed_at"),

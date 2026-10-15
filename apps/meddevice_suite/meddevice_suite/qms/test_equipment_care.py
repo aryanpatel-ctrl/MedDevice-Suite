@@ -469,6 +469,30 @@ def on_day(offset: int):
 	"""The day `offset` days from today."""
 	return getdate(add_days(today(), offset))
 
+	def test_an_inspection_submitted_after_the_finding_is_added_by_its_submit(self):
+		"""Independent review of 2026-10-15: the list was taken only at completion, so an inspection
+		of the period submitted afterwards was never assessed. Through the inspection's own submit."""
+		asset = self.approved()
+		record = self.calibrated(asset, points=[point(found=100.05)])  # its period is today
+		self.assertEqual((record.impact_status, record.impact), ("Open", []))
+		self.sign(self.qa, "Calibration Record", record.name, "Assess: No Product Impact", "Nothing measured")
+		receipt, lot = self.received()
+		self.verified(receipt)
+		saved, self.instrument = self.instrument, asset  # the inspection names this instrument
+		try:
+			inspection = self.inspected(receipt, lot)
+		finally:
+			self.instrument = saved
+		record.reload()
+		self.assertEqual(
+			[(row.reference_doctype, row.reference_name, row.batch_no) for row in record.later_impact],
+			[("Quality Inspection", inspection.name, lot)],
+		)
+		self.assertEqual((record.impact_status, record.impact_decision), ("Open", None))
+		# Another instrument's finding is not this inspection's.
+		other = self.calibrated(self.approved(), points=[point(found=100.05)])
+		self.assertEqual(frappe.get_doc("Calibration Record", other.name).later_impact, [])
+
 
 @verifies("URS-EQP-003")
 class TestImpactFollowsTheInstrument(CareTestCase):
@@ -573,6 +597,66 @@ class TestImpactFollowsTheInstrument(CareTestCase):
 		self.assertEqual(self.history(asset, 1, 9), [(a, on_day(1), on_day(9))])
 		self.assertEqual(self.cards(asset, 1, 9), {at_a: a})
 		self.assertNotIn(at_b, self.cards(asset, 1, 9))
+
+	def alerts(self, name: str) -> int:
+		return frappe.db.count(
+			"Notification Log",
+			{"document_type": "Calibration Record", "document_name": name, "for_user": self.qa},
+		)
+
+	def test_a_job_card_submitted_after_the_finding_is_added_and_the_assessment_opens_again(self):
+		"""Independent review of 2026-10-15: a job card drafted before an out-of-tolerance finding and
+		submitted after it was never assessed (ISO 13485 7.6). Its submit adds it, by the same rule
+		as the list taken at completion, and QA assesses again; the submit is not refused."""
+		a, b = self.workstations(2)
+		asset = self.instrument_at(a)
+		listed = self.job_card(a, 5)
+		with freeze_time(f"{on_day(20)} 10:00:00"):
+			record = self.calibrated(asset, points=[point(found=100.05)])
+		self.sign(self.qa, "Calibration Record", record.name, "Assess: No Product Impact", "Readings held")
+		reminders.run()
+		self.assertFalse(frappe.db.exists("Reminder", {"reference_name": record.name, **OPEN_IMPACT}))
+		alerts = self.alerts(record.name)
+
+		late, elsewhere, after = self.job_card(a, 10), self.job_card(b, 10), self.job_card(a, 25)
+		for card in (late, elsewhere, after, late, listed):  # late twice: listed once
+			calibration.add_later_use(frappe.get_doc("Job Card", card), "on_submit")
+
+		record.reload()
+		self.assertEqual([row.reference_name for row in record.impact], [listed])
+		self.assertEqual(
+			[(row.reference_doctype, row.reference_name, row.workstation) for row in record.later_impact],
+			[("Job Card", late, a)],
+		)
+		self.assertEqual(
+			(record.impact_status, record.impact_decision, record.assessed_by), ("Open", None, None)
+		)
+		(event,) = [e for e in events_for("Calibration Record", record.name) if late in (e.reason or "")]
+		self.assertEqual(event.action, "Updated after submission")
+		self.assertGreater(self.alerts(record.name), alerts)
+		# What the performer and QA signed stands: the rows added since are kept out of what they bind.
+		for signature in frappe.get_all(
+			"Electronic Signature",
+			filters={"reference_doctype": "Calibration Record", "reference_name": record.name},
+			pluck="name",
+		):
+			self.assertTrue(is_unchanged_since(frappe.get_doc("Electronic Signature", signature)))
+		self.assertTrue(esign.verify_signatures("Calibration Record", record.name))
+		reminders.run()
+		self.assertTrue(frappe.db.exists("Reminder", {"reference_name": record.name, **OPEN_IMPACT}))
+		self.sign(
+			self.qa, "Calibration Record", record.name, "Assess: Product Action Needed", f"{late} to recheck"
+		)
+		self.assertEqual(
+			frappe.db.get_value("Calibration Record", record.name, ["impact_status", "impact_decision"]),
+			("Assessed", "Product action needed"),
+		)
+
+	def test_the_submits_of_job_cards_and_inspections_add_their_later_use(self):
+		events = frappe.get_hooks("doc_events")
+		for doctype in ("Job Card", "Quality Inspection"):
+			with self.subTest(doctype=doctype):
+				self.assertIn("meddevice_suite.qms.calibration.add_later_use", events[doctype]["on_submit"])
 
 	def test_read_in_a_fixed_number_of_queries_however_often_it_moved(self):
 		a, b, c = self.workstations(3)

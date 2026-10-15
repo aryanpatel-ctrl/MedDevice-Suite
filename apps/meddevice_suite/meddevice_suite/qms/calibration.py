@@ -18,6 +18,14 @@ it is signed. A record withdrawn for correction keeps its open assessment, still
 signs it on that record: what was found on the instrument stays with the record that found it, and
 a correction cannot make it, or the reminder's overdue days, disappear.
 
+The list is taken when the record is completed, but production records work when it is done: a job
+card drafted before the finding and submitted after it, or an inspection submitted later with an
+earlier report date, falls in the period already assessed. Each one is added to the record's list of
+records submitted since, by the same rule, when it is submitted, and the assessment is open again
+for QA, who is alerted; the audit trail records the addition with the record that caused it
+(independent review of 2026-10-15; ISO 13485 7.6). The submit is not refused: production records
+what happened.
+
 Where the instrument was is read from the audit trail (module 50), which records every change of
 its workstation with the time and the old and new values, and is tamper-evident; not from the
 asset as it is now, which would miss the job cards of a workstation it has since left and take in
@@ -43,6 +51,8 @@ IN_HOUSE, EXTERNAL = "In-house", "External laboratory"
 PASS, FAIL = "Pass", "Fail"
 NOT_NEEDED, OPEN, ASSESSED = "Not needed", "Open", "Assessed"
 NO_IMPACT, ACTION_NEEDED = "No product impact", "Product action needed"
+# The records of the period assessed submitted after the record was completed (`add_later_use`).
+LATER_IMPACT = "later_impact"
 OUT_OF_TOLERANCE_ALERT = "Calibration Out of Tolerance"
 PROCEDURE_TYPES = ("SOP", "Work Instruction")
 PERFORMERS = frozenset({"Maintenance User", "Quality Manager"})
@@ -55,11 +65,13 @@ SET_BY_ACTS = (
 	"completed_by",
 	"last_good_calibration",
 	"impact",
+	LATER_IMPACT,
 	"impact_status",
 	"impact_decision",
 	"assessed_by",
 	"assessed_on",
 )
+TABLES_SET_BY_ACTS = frozenset({"impact", LATER_IMPACT})
 
 
 def only_by_signature(doc: Document, method: str | None = None) -> None:
@@ -100,7 +112,7 @@ def evaluate(doc: Document, method: str | None = None) -> None:
 	if doc.docstatus != 0:
 		return
 	for field in SET_BY_ACTS:
-		doc.set(field, [] if field == "impact" else None)
+		doc.set(field, [] if field in TABLES_SET_BY_ACTS else None)
 	asset = frappe.db.get_value(
 		"Asset", doc.asset, [equipment.APPROVAL_STATUS, equipment.STATUS, equipment.CALIBRATION], as_dict=True
 	)
@@ -226,29 +238,35 @@ def workstation_history(asset: str, start, end) -> list[tuple[str, date, date]]:
 	return [(workstation, start_day, end_day) for workstation, start_day, end_day in history if workstation]
 
 
-def impact_since(asset: str, start, end) -> list[dict]:
+def impact_since(asset: str, start, end, only: tuple[str, str] | None = None) -> list[dict]:
 	"""What the instrument may have measured wrongly: submitted inspections that named it, and
 	submitted job cards at each workstation it was at, while it was there, from its last good
-	calibration to this one. A job card's row names its workstation."""
-	inspection, reading = (
-		frappe.qb.DocType("Quality Inspection"),
-		frappe.qb.DocType("Quality Inspection Reading"),
-	)
-	rows = (
-		frappe.qb.from_(inspection)
-		.join(reading)
-		.on(reading.parent == inspection.name)
-		.select(inspection.name, inspection.report_date, inspection.item_code, inspection.batch_no)
-		.where(
-			(inspection.docstatus == 1)
-			& (reading.mds_instrument == asset)
-			& (inspection.report_date >= getdate(start))
-			& (inspection.report_date <= getdate(end))
+	calibration to this one. A job card's row names its workstation. `only` (record type, name)
+	asks the same of one record: whether it falls in the period, by the same rule."""
+	only_type, only_name = only or (None, None)
+	rows = []
+	if only_type in (None, "Quality Inspection"):
+		inspection, reading = (
+			frappe.qb.DocType("Quality Inspection"),
+			frappe.qb.DocType("Quality Inspection Reading"),
 		)
-		.distinct()
-		.orderby(inspection.report_date)
-		.run(as_dict=True)
-	)
+		query = (
+			frappe.qb.from_(inspection)
+			.join(reading)
+			.on(reading.parent == inspection.name)
+			.select(inspection.name, inspection.report_date, inspection.item_code, inspection.batch_no)
+			.where(
+				(inspection.docstatus == 1)
+				& (reading.mds_instrument == asset)
+				& (inspection.report_date >= getdate(start))
+				& (inspection.report_date <= getdate(end))
+			)
+			.distinct()
+			.orderby(inspection.report_date)
+		)
+		if only_name:
+			query = query.where(inspection.name == only_name)
+		rows = query.run(as_dict=True)
 	impact = [
 		{
 			"reference_doctype": "Quality Inspection",
@@ -259,11 +277,13 @@ def impact_since(asset: str, start, end) -> list[dict]:
 		}
 		for row in rows
 	]
+	if only_type not in (None, "Job Card"):
+		return impact
 	if history := workstation_history(asset, start, end):
 		card = frappe.qb.DocType("Job Card")
 		# One query for every workstation it was at; a card has one workstation, so it is listed once
 		# even where two of its intervals meet on the day of a move.
-		cards = (
+		query = (
 			frappe.qb.from_(card)
 			.select(card.name, card.posting_date, card.production_item, card.workstation)
 			.where(
@@ -275,8 +295,10 @@ def impact_since(asset: str, start, end) -> list[dict]:
 			)
 			.orderby(card.posting_date)
 			.orderby(card.name)
-			.run(as_dict=True)
 		)
+		if only_name:
+			query = query.where(card.name == only_name)
+		cards = query.run(as_dict=True)
 		impact += [
 			{
 				"reference_doctype": "Job Card",
@@ -321,6 +343,67 @@ def complete(doc: Document, password: str, reason: str | None = None) -> None:
 		frappe.get_doc("Notification", OUT_OF_TOLERANCE_ALERT).send(doc)
 
 
+def add_later_use(doc: Document, method: str | None = None) -> None:
+	"""Job Card and Quality Inspection on_submit: a record submitted after an instrument was found
+	out of tolerance whose use of it falls in the period that finding assessed (by the rule of
+	`impact_since`) is added to that calibration's records submitted since, and the assessment is
+	open again for QA, who is alerted. Never refused: production records what happened.
+
+	Only completed records are read: one withdrawn for correction is assessed afresh, on the whole
+	period, when its amendment is completed, and an amendment completed already is itself completed
+	(docstatus 1). The records found are those whose period covers the day: one for each out-of-
+	tolerance finding of the instruments concerned, each read in its own few queries, as each reads
+	its own instrument's place in the audit trail."""
+	if doc.doctype == "Quality Inspection":
+		day = doc.get("report_date")
+		instruments = sorted({row.get("mds_instrument") for row in doc.get("readings") or []} - {None, ""})
+		if not instruments:
+			return
+	else:
+		day, instruments = doc.get("posting_date"), None
+		if not doc.get("workstation"):
+			return
+	if not day:
+		return
+	filters = {
+		"docstatus": 1,
+		"out_of_tolerance": 1,
+		"last_good_calibration": ["<=", getdate(day)],
+		"performed_on": [">=", getdate(day)],
+	}
+	if instruments:
+		filters["asset"] = ["in", instruments]
+	for name in frappe.get_all(DOCTYPE, filters=filters, pluck="name", order_by="performed_on asc"):
+		record = frappe.get_doc(DOCTYPE, name)
+		listed = {
+			(row.reference_doctype, row.reference_name) for row in (*record.impact, *record.get(LATER_IMPACT))
+		}
+		if (doc.doctype, doc.name) in listed:
+			continue
+		rows = impact_since(
+			record.asset, record.last_good_calibration, record.performed_on, (doc.doctype, doc.name)
+		)
+		if rows:
+			reopen(record, rows, doc)
+
+
+def reopen(record: Document, rows: list[dict], cause: Document) -> None:
+	"""The rows added to the record's records submitted since, and its assessment open again: QA's
+	earlier decision, kept in its signature and the audit trail, did not cover them."""
+	record.extend(LATER_IMPACT, rows)
+	record.impact_status = OPEN
+	record.impact_decision = record.assessed_by = record.assessed_on = None
+	record.flags.calibration_later_use = True
+	record.flags.audit_reason = _(
+		"{0} {1} was submitted after {2} was found out of tolerance and used it within the period assessed; QA assesses it."
+	).format(_(cause.doctype), cause.name, record.asset)
+	# The person submitting the job card or inspection may not change a calibration: this system
+	# process, after its own checks, is the only way rows are added here.
+	record.flags.ignore_permissions = True
+	record.save()
+	frappe.get_doc("Notification", OUT_OF_TOLERANCE_ALERT).send(record)
+
+
 def assess(doc: Document, decision: str, act: str, password: str, reason: str | None) -> None:
 	"""QA's signed assessment, on a completed record or on one withdrawn for correction (plan D-29),
 	which keeps its open assessment."""
@@ -359,9 +442,12 @@ def assess_product_action(doc: Document, password: str, reason: str | None = Non
 
 
 def guard_after_completion(doc: Document, method: str | None = None) -> None:
-	"""before_update_after_submit: only the signed assessment changes a completed record."""
+	"""before_update_after_submit: only the signed assessment, and a record of the period submitted
+	since (`add_later_use`), change a completed record."""
 	require(
-		doc.flags.calibration_signed, _("A completed calibration does not change."), frappe.PermissionError
+		doc.flags.calibration_signed or doc.flags.calibration_later_use,
+		_("A completed calibration does not change."),
+		frappe.PermissionError,
 	)
 
 
