@@ -292,7 +292,11 @@ def copy_attachments(amendment: Document) -> None:
 
 def equipment_at(workstations: Iterable[str]) -> list[str]:
 	"""The equipment in use at these workstations. None when no workstation is named: Frappe reads
-	`in [""]` as "no workstation set", which would take in every portable instrument on the site."""
+	`in [""]` as "no workstation set", which would take in every portable instrument on the site.
+
+	Where the equipment is now, rightly: this decides whether work may be recorded at the workstation
+	now, with what is there now. What a past period's work used is read from the audit trail
+	(`calibration.workstation_history`)."""
 	stations = sorted(set(workstations) - {None, ""})
 	if not stations:
 		return []

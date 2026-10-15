@@ -11,19 +11,28 @@ certificate, which becomes evidence. The record is completed only by its perform
 `equipment_care.correct`), which cancels it and opens its amendment.
 
 A value found out of tolerance means the instrument may have measured wrongly since its last good
-calibration: the record lists the inspections that named it and the job cards at its workstation
-since then, QA is alerted, and the record waits for QA's signed assessment (no product impact, or
-product action needed), which a reminder tracks until it is signed. A record withdrawn for
-correction keeps its open assessment, still tracked, until QA signs it on that record: what was
-found on the instrument stays with the record that found it, and a correction cannot make it, or
-the reminder's overdue days, disappear.
+calibration: the record lists the inspections that named it and the job cards at each workstation
+it was at since then, each only for the days it was there, QA is alerted, and the record waits for
+QA's signed assessment (no product impact, or product action needed), which a reminder tracks until
+it is signed. A record withdrawn for correction keeps its open assessment, still tracked, until QA
+signs it on that record: what was found on the instrument stays with the record that found it, and
+a correction cannot make it, or the reminder's overdue days, disappear.
+
+Where the instrument was is read from the audit trail (module 50), which records every change of
+its workstation with the time and the old and new values, and is tamper-evident; not from the
+asset as it is now, which would miss the job cards of a workstation it has since left and take in
+those of its new one from before it came (found in the foundation review of 2026-10-12).
 """
+
+from datetime import date
 
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import add_days, cint, flt, getdate, now_datetime, today
+from frappe.query_builder import Criterion
+from frappe.utils import add_days, cint, flt, get_datetime, getdate, now_datetime, today
 
+from meddevice_suite.compliance.audit import as_data
 from meddevice_suite.compliance.esign import sign
 from meddevice_suite.master_data import equipment
 
@@ -173,9 +182,62 @@ def check_standards(doc: Document) -> None:
 		row.standard_due_on = covering[0].next_due_date
 
 
+def workstation_history(asset: str, start, end) -> list[tuple[str, date, date]]:
+	"""Where the instrument was from `start` to `end`: (workstation, first day, last day) for each
+	workstation in turn, days at none left out. Read in one query, whatever the number of moves.
+
+	It was, on the first day, where the first change of its workstation since then moved it from, or
+	where it is now if none did. A move takes the day it was made into both workstations' intervals:
+	the trail knows the time, a job card only its day, and a day in doubt is listed, not missed. A
+	record made within the period was at no workstation before it was made."""
+	first, last = getdate(start), getdate(end)
+	instrument, event = frappe.qb.DocType("Asset"), frappe.qb.DocType("Audit Event")
+	rows = (
+		frappe.qb.from_(instrument)
+		.left_join(event)
+		.on(
+			(event.reference_doctype == "Asset")
+			& (event.reference_name == instrument.name)
+			# A rename rewrites `reference_name` on every event, so the whole history is found.
+			& (event.event_at >= get_datetime(first))
+		)
+		.select(instrument[equipment.WORKSTATION].as_("current_workstation"), event.event_at, event.changes)
+		.where(instrument.name == asset)
+		.orderby(event.event_at)
+		.orderby(event.creation)
+		.run(as_dict=True)
+	)
+	if not rows:
+		return []
+	moves = []  # (day, from, to), in the order they were made
+	for row in rows:
+		if not row.event_at:
+			continue  # no event since the first day: the joined row carries only where it is now
+		changes = as_data(row.changes) or {}
+		if "snapshot" in changes:  # created (or amended) within the period
+			moves.append((getdate(row.event_at), None, changes["snapshot"].get(equipment.WORKSTATION)))
+		moves += [
+			(getdate(row.event_at), old, new)
+			for field, old, new in changes.get("changed") or []
+			if field == equipment.WORKSTATION
+		]
+	place = moves[0][1] if moves else rows[0].current_workstation
+	since, history = first, []
+	for day, _from, to in moves:
+		if day > last:
+			break
+		if (to or None) == (place or None):
+			continue
+		history.append((place, since, day))
+		place, since = to, day
+	history.append((place, since, last))
+	return [(workstation, start_day, end_day) for workstation, start_day, end_day in history if workstation]
+
+
 def impact_since(asset: str, start, end) -> list[dict]:
 	"""What the instrument may have measured wrongly: submitted inspections that named it, and
-	submitted job cards at its workstation, from its last good calibration to this one."""
+	submitted job cards at each workstation it was at, while it was there, from its last good
+	calibration to this one. A job card's row names its workstation."""
 	inspection, reading = (
 		frappe.qb.DocType("Quality Inspection"),
 		frappe.qb.DocType("Quality Inspection Reading"),
@@ -205,26 +267,34 @@ def impact_since(asset: str, start, end) -> list[dict]:
 		}
 		for row in rows
 	]
-	workstation = frappe.db.get_value("Asset", asset, equipment.WORKSTATION)
-	if workstation:
-		for card in frappe.get_all(
-			"Job Card",
-			filters={
-				"workstation": workstation,
-				"docstatus": 1,
-				"posting_date": ["between", [getdate(start), getdate(end)]],
-			},
-			fields=["name", "posting_date", "production_item"],
-			order_by="posting_date asc",
-		):
-			impact.append(
-				{
-					"reference_doctype": "Job Card",
-					"reference_name": card.name,
-					"date": card.posting_date,
-					"item_code": card.production_item,
-				}
+	if history := workstation_history(asset, start, end):
+		card = frappe.qb.DocType("Job Card")
+		# One query for every workstation it was at; a card has one workstation, so it is listed once
+		# even where two of its intervals meet on the day of a move.
+		cards = (
+			frappe.qb.from_(card)
+			.select(card.name, card.posting_date, card.production_item, card.workstation)
+			.where(
+				(card.docstatus == 1)
+				& Criterion.any(
+					(card.workstation == workstation) & card.posting_date.between(first_day, last_day)
+					for workstation, first_day, last_day in history
+				)
 			)
+			.orderby(card.posting_date)
+			.orderby(card.name)
+			.run(as_dict=True)
+		)
+		impact += [
+			{
+				"reference_doctype": "Job Card",
+				"reference_name": row.name,
+				"date": row.posting_date,
+				"item_code": row.production_item,
+				"workstation": row.workstation,
+			}
+			for row in cards
+		]
 	return impact
 
 

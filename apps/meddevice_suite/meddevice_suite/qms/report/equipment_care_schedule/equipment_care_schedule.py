@@ -75,7 +75,7 @@ def execute(filters: dict | None = None) -> tuple[list[dict], list[dict]]:
 		fields=[
 			"name",
 			"asset_name",
-			equipment.WORKSTATION,
+			equipment.WORKSTATION,  # where it is now, rightly: the schedule is of today
 			equipment.CALIBRATION,
 			equipment.MAINTENANCE,
 			equipment.QUALIFICATION,

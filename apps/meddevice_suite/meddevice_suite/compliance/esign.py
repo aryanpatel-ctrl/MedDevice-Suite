@@ -178,6 +178,15 @@ ACT_MAINTAINED: dict[tuple[str, str], tuple[str, ...]] = {
 	("Controlled Document", "Review"): ("review_alerted_for",),
 }
 
+# record type (or child table) -> fields added after records of it were signed, bound once they hold
+# a value. A record signed before the field existed was signed without it; binding the empty field
+# would change that content and break a signature that verified (21 CFR 11.70).
+BOUND_WHEN_SET: dict[str, tuple[str, ...]] = {
+	# Module 38 (foundation review 2026-10-12): the workstation a job card in an out-of-tolerance
+	# calibration's impact list was at; an inspection's row has none.
+	"Calibration Impact": ("workstation",),
+}
+
 
 class SigningRefused(frappe.ValidationError):
 	"""The signature was not recorded. Not an authentication error, which would sign the user out."""
@@ -299,6 +308,7 @@ def record_fingerprint(doc: Document, action: str | None = None) -> str:
 		*ACT_MAINTAINED.get((doc.doctype, action), ()),
 	):
 		content.pop(field, None)
+	without_unset_new_fields(content)
 	for rows in content.values():
 		if isinstance(rows, list):
 			for row in rows:
@@ -306,7 +316,15 @@ def record_fingerprint(doc: Document, action: str | None = None) -> str:
 					# A row's docstatus is its parent's, set as the parent is submitted.
 					for field in ("parent", "docstatus", *SYSTEM_MAINTAINED.get(row.get("doctype"), ())):
 						row.pop(field, None)
+					without_unset_new_fields(row)
 	return sha256(content)
+
+
+def without_unset_new_fields(content: dict) -> None:
+	"""Leave out the fields of `BOUND_WHEN_SET` that hold no value."""
+	for field in BOUND_WHEN_SET.get(content.get("doctype"), ()):
+		if content.get(field) in (None, ""):
+			content.pop(field, None)
 
 
 def signature_fingerprint(signature: Document | frappe._dict, previous_hash: str) -> str:
