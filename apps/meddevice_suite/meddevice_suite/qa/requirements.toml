@@ -12,6 +12,14 @@
 # Sources: client diagrams D1 (MedDevice Suite ERP flow map), D2 (Foley ERP
 # flowchart, ISO 13485), D3 (Foley full workflow diagram) and D4 (data flow
 # diagram, received 2026-10-08; its eCommerce process is out of scope, see module 58).
+# The data flow diagram is the final requirement and is cited as "DFD", never as D4,
+# because its own data stores are named D1 to D12: "DFD 3.4" is a Level 2 step,
+# "DFD box 2" a Level 1 process, "DFD 9F F3" a cross-functional step and "DFD D4"
+# the Inventory & Batch Ledger data store. Inside "DFD 9D", D1 to D6 are 9D's steps.
+# Every source cites at least one of: a DFD step, process or data store; a client
+# diagram D1, D2 or D3; a dated decision (YYYY-MM-DD); or a regulation clause. A
+# requirement that traces to no DFD box or client diagram starts its source with
+# "Extra" and says why it exists. The traceability check enforces the first rule.
 
 # --- A. Master data ---------------------------------------------------------
 [[module]]
@@ -313,8 +321,8 @@ number = 57
 title = "Compliance reports and dashboards"
 approach = "build"
 
-# --- M. Added by the data flow diagram (D4, received 2026-10-08) ---------------
-# Module 58, the eCommerce storefront (D4 process 1: catalogue, registration, cart,
+# --- M. Added by the data flow diagram (DFD, received 2026-10-08) --------------
+# Module 58, the eCommerce storefront (DFD process 1: catalogue, registration, cart,
 # checkout and payment, order sync and status), was withdrawn on 2026-10-09: the client
 # does not want it, every order comes from the sales team. Nothing of it was built; its
 # number is not reused.
@@ -344,35 +352,35 @@ approach = "customise"
 id = "URS-PLT-001"
 module = 0
 title = "The desk shows only the standard areas, and the entries inside them, that the client requirement uses; every other standard area and entry is hidden for all users, including ones a future release adds."
-source = "Scope decisions 2026-10-05 against D1, D2, D3 (module map)"
+source = "DFD Level 1 processes 1 to 9 (scope re-baselined against the DFD on 2026-10-08, its eCommerce part of process 1 withdrawn 2026-10-09); Scope decisions 2026-10-05 against D1, D2, D3 (module map)"
 status = "implemented"
 
 [[requirement]]
 id = "URS-PLT-002"
 module = 0
 title = "Site configuration owned by this app is applied automatically and idempotently on install and on every migrate, without modifying Frappe, ERPNext or India Compliance."
-source = "Engineering rules (README)"
+source = "D2 System Foundation: Validation & System Security; engineering rules section 1.3 (configuration is code); ISO 13485 4.1.6 (validation of QMS software)"
 status = "implemented"
 
 [[requirement]]
 id = "URS-PLT-003"
 module = 0
 title = "Every implemented requirement is verified by at least one automated test, and the traceability matrix is generated from the source."
-source = "ISO 13485 4.1.6 / 21 CFR 11.10(a) software validation"
+source = "D2 System Foundation: Validation & System Security; ISO 13485 4.1.6 / 21 CFR 11.10(a) software validation"
 status = "implemented"
 
 [[requirement]]
 id = "URS-PLT-004"
 module = 0
 title = "Automated tests run on a disposable test site brought to a known state (setup completed with a fixed test company); the preparation refuses to run on a site that does not allow tests."
-source = "ISO 13485 4.1.6 / 21 CFR 11.10(a): controlled test environment for software validation"
+source = "D2 System Foundation: Validation & System Security; ISO 13485 4.1.6 / 21 CFR 11.10(a): controlled test environment for software validation"
 status = "implemented"
 
 [[requirement]]
 id = "URS-PLT-005"
 module = 0
 title = "Every Frappe module this app declares exists on the site before its DocTypes are synced, and modules the app no longer declares are removed when they hold nothing."
-source = "Engineering rules: configuration is code; folder plan 2026-10-05"
+source = "Extra, traces to no DFD box or client diagram: platform housekeeping so this app's record types install in a known state; engineering rules section 1.3 (configuration is code); folder plan decided 2026-10-05; ISO 13485 4.1.6 (validated QMS software)"
 status = "implemented"
 
 # --- Module 49: electronic signature (21 CFR Part 11 subpart C) -------------
@@ -381,49 +389,49 @@ status = "implemented"
 id = "URS-CMP-001"
 module = 49
 title = "Signing requires the signer to re-enter their own password at the moment of signing; a wrong password records no signature and counts towards the same account lockout as a failed login, and a locked account cannot sign."
-source = "21 CFR 11.200(a)(1), 11.300(d); D1 E-sign points"
+source = "21 CFR 11.200(a)(1), 11.300(d); D1 E-sign points; D2 System Foundation: Electronic Signature (21 CFR Part 11); DFD approval steps signed (6.5 QA Review & Approval, 9A A4 Approve Document, 9B B5 Approve / Reject)"
 status = "implemented"
 
 [[requirement]]
 id = "URS-CMP-002"
 module = 49
 title = "Each signature records the signer's user ID and full name, the date and time, the action signed and the meaning of the signature (authored, reviewed, approved, rejected, released, verified, trained, competent or withdrawn), the meaning being that of the act signed, plus an optional reason."
-source = "21 CFR 11.50(a); D1, D2 QA Review & Approval (E-Signature); withdrawn added and each act's meaning fitted to the act, decided 2026-10-12 (foundation review)"
+source = "21 CFR 11.50(a); D1, D2 QA Review & Approval (E-Signature); D2 System Foundation: Electronic Signature (21 CFR Part 11); DFD approval steps signed (6.5 QA Review & Approval, 9A A4 Approve Document, 9B B5 Approve / Reject); withdrawn added and each act's meaning fitted to the act, decided 2026-10-12 (foundation review)"
 status = "implemented"
 
 [[requirement]]
 id = "URS-CMP-003"
 module = 49
 title = "The signatures on a record are shown with the record, on screen and on its printouts, with name, date and time, and meaning."
-source = "21 CFR 11.50(b)"
+source = "D2 System Foundation: Electronic Signature (21 CFR Part 11); DFD approval steps signed (6.5 QA Review & Approval, 9A A4 Approve Document, 9B B5 Approve / Reject); 21 CFR 11.50(b)"
 status = "implemented"
 
 [[requirement]]
 id = "URS-CMP-004"
 module = 49
 title = "A signature is bound to the exact content of the record at signing and to the previous signature on the same record, so that altering the signed record or any signature is detectable by verification, which follows the links between signatures so that a server clock set back does not read as tampering."
-source = "21 CFR 11.70; verification by links decided 2026-10-12 (foundation review)"
+source = "D2 System Foundation: Electronic Signature (21 CFR Part 11); DFD approval steps signed (6.5 QA Review & Approval, 9A A4 Approve Document, 9B B5 Approve / Reject); 21 CFR 11.70; verification by links decided 2026-10-12 (foundation review)"
 status = "implemented"
 
 [[requirement]]
 id = "URS-CMP-005"
 module = 49
 title = "Signature records are created only by signing, under the signer's own account, and cannot be edited or deleted by any user, including system managers; no permission to write them can be given."
-source = "21 CFR 11.70, 11.10(e); created only by signing decided 2026-10-12 (foundation review)"
+source = "D2 System Foundation: Electronic Signature (21 CFR Part 11); DFD approval steps signed (6.5 QA Review & Approval, 9A A4 Approve Document, 9B B5 Approve / Reject); 21 CFR 11.70, 11.10(e); created only by signing decided 2026-10-12 (foundation review)"
 status = "implemented"
 
 [[requirement]]
 id = "URS-CMP-006"
 module = 49
 title = "Only an identified individual can sign: shared and system accounts (Administrator, Guest) are refused, and the signer must hold the permission the signed action requires on the record; a user ID that has signed, acted on regulated records or owns one is never deleted, only disabled, so it is never given to anyone else."
-source = "21 CFR 11.100(a), 11.10(d), 11.10(g), 11.300(b); user IDs kept decided 2026-10-12 (foundation review)"
+source = "D2 System Foundation: Electronic Signature (21 CFR Part 11); DFD approval steps signed (6.5 QA Review & Approval, 9A A4 Approve Document, 9B B5 Approve / Reject); DFD 9F F1 User Management; 21 CFR 11.100(a), 11.10(d), 11.10(g), 11.300(b); user IDs kept decided 2026-10-12 (foundation review)"
 status = "implemented"
 
 [[requirement]]
 id = "URS-CMP-030"
 module = 49
 title = "A person signs from the record, in a dialog that names the act and the meaning of the signature and asks for their own password; only the acts declared for that record type can be signed, and only by someone who may open the record; the meaning recorded is the act's declared meaning, the one the dialog showed."
-source = "21 CFR 11.50, 11.200; design approved 2026-10-07 (document control); declared meaning enforced decided 2026-10-12 (foundation review)"
+source = "D2 System Foundation: Electronic Signature (21 CFR Part 11); DFD approval steps signed (6.5 QA Review & Approval, 9A A4 Approve Document, 9B B5 Approve / Reject); 21 CFR 11.50, 11.200; design approved 2026-10-07 (document control); declared meaning enforced decided 2026-10-12 (foundation review)"
 status = "implemented"
 
 # --- Module 50: tamper-evident audit trail (21 CFR 11.10(e); EU GMP Annex 11 §9) ---
@@ -432,77 +440,77 @@ status = "implemented"
 id = "URS-CMP-007"
 module = 50
 title = "Every create, change, submit, cancel, amend, discard, rename and delete of a regulated record, including values that code writes through the record itself (such as a status set on submit), is recorded in the audit trail automatically and exactly once, without any action by the user."
-source = "21 CFR 11.10(e); design approved 2026-10-06"
+source = "DFD 9F F3 Action / Data Logging, D12 Audit Logs; D2 System Foundation: Audit Trail & System Logs; 21 CFR 11.10(e); design approved 2026-10-06"
 status = "implemented"
 
 [[requirement]]
 id = "URS-CMP-008"
 module = 50
 title = "Each audit entry records the user, and the real user when someone acted on their behalf; the server date and time; the action; the record; and the old and new value of every changed field, child-table rows included. Creation and deletion entries keep the whole record."
-source = "21 CFR 11.10(e)"
+source = "DFD 9F F3 Action / Data Logging, D12 Audit Logs; D2 System Foundation: Audit Trail & System Logs; 21 CFR 11.10(e)"
 status = "implemented"
 
 [[requirement]]
 id = "URS-CMP-009"
 module = 50
 title = "Audit entries are created only by the audit trail and cannot be edited or deleted by any user, including system managers; no permission to write them can be given; and they never overwrite or hide earlier entries."
-source = "21 CFR 11.10(e); created only by the audit trail decided 2026-10-12 (foundation review)"
+source = "DFD 9F F3 Action / Data Logging, D12 Audit Logs; D2 System Foundation: Audit Trail & System Logs; 21 CFR 11.10(e); created only by the audit trail decided 2026-10-12 (foundation review)"
 status = "implemented"
 
 [[requirement]]
 id = "URS-CMP-010"
 module = 50
 title = "Each record's audit entries form a fingerprinted chain, so that an altered entry, and an entry removed or inserted before the newest, is detected by a verification that authorised reviewers can run on the record; the removal of the newest entries is detected by the anchors of URS-CMP-040."
-source = "Data integrity (ALCOA+); 21 CFR 11.10(e); daily seal dropped by decision of 2026-10-06; verification on the record and the wording on the newest entries after the robustness review of 2026-10-07; newest entries anchored, found in the foundation review of 2026-10-12"
+source = "DFD 9F F3 Action / Data Logging, D12 Audit Logs; D2 System Foundation: Audit Trail & System Logs; Data integrity (ALCOA+); 21 CFR 11.10(e); daily seal dropped by decision of 2026-10-06; verification on the record and the wording on the newest entries after the robustness review of 2026-10-07; newest entries anchored, found in the foundation review of 2026-10-12"
 status = "implemented"
 
 [[requirement]]
 id = "URS-CMP-011"
 module = 50
 title = "Cancelling or amending a regulated record, or editing it after submission, requires a reason, which is stored in the audit entry; when another record's action changes it after submission, its audit entry names that record instead; a status command run on a submitted record (close, hold, stop, re-open) is recorded with the command used."
-source = "21 CFR 11.10(e); ISO 13485 4.2.5; design approved 2026-10-06; changes caused by another record clarified 2026-10-07 (job cards update work orders); status commands scoped after the robustness review of 2026-10-07"
+source = "DFD 9F F3 Action / Data Logging, D12 Audit Logs; D2 System Foundation: Audit Trail & System Logs; 21 CFR 11.10(e); ISO 13485 4.2.5; design approved 2026-10-06; changes caused by another record clarified 2026-10-07 (job cards update work orders); status commands scoped after the robustness review of 2026-10-07"
 status = "implemented"
 
 [[requirement]]
 id = "URS-CMP-012"
 module = 50
 title = "Authorised reviewers can search the audit trail by record, user, action and date range, see it on each regulated record, and export it, without being able to change it."
-source = "21 CFR 11.10(b), 11.10(e)"
+source = "DFD 9F F4 Audit Trail Reports, D12 Audit Logs; D2 Reports & Analytics: Audit Trail Report; 21 CFR 11.10(b), 11.10(e)"
 status = "implemented"
 
 [[requirement]]
 id = "URS-CMP-013"
 module = 50
 title = "The regulated record types are declared in code, including every record type this app builds, and each is audited from the moment it is declared."
-source = "Validation scope; design approved 2026-10-06"
+source = "DFD 9F F3 Action / Data Logging, D12 Audit Logs; D2 System Foundation: Audit Trail & System Logs; Validation scope; design approved 2026-10-06"
 status = "implemented"
 
 [[requirement]]
 id = "URS-CMP-031"
 module = 50
 title = "Who created a regulated record, and when, can never be changed, through the form or the API."
-source = "21 CFR 11.10(e); ALCOA+ attributable; found in the robustness review of 2026-10-07"
+source = "DFD 9F F3 Action / Data Logging, D12 Audit Logs; D2 System Foundation: Audit Trail & System Logs; 21 CFR 11.10(e); ALCOA+ attributable; found in the robustness review of 2026-10-07"
 status = "implemented"
 
 [[requirement]]
 id = "URS-CMP-040"
 module = 50
 title = "Every hour, and whenever a reviewer asks, the system anchors the audit trail and the electronic signatures: it records each one's newest entry, that entry's fingerprint and the number of entries, in the database and in a file that the system only ever appends to; anchors are made only this way and cannot be changed or deleted; and the verification reviewers run reports when entries have been removed: an anchored entry is missing or changed, fewer entries remain up to it than were anchored, or an anchor in the file is missing from the database or differs from it."
-source = "21 CFR 11.10(e); data integrity (ALCOA+ complete, enduring); found in the foundation review of 2026-10-12: deleting the newest audit events or signatures left a shorter chain that still verified"
+source = "DFD 9F F3 Action / Data Logging, D12 Audit Logs; D2 System Foundation: Audit Trail & System Logs; 21 CFR 11.10(e); data integrity (ALCOA+ complete, enduring); found in the foundation review of 2026-10-12: deleting the newest audit events or signatures left a shorter chain that still verified"
 status = "implemented"
 
 [[requirement]]
 id = "URS-CMP-042"
 module = 50
 title = "A problem the anchors show (entries removed, an anchor removed or changed, the anchor file missing or damaged), whether the hourly check or a reviewer's check finds it, alerts QA and the system administrator once per distinct finding, naming the trail, the missing entry or how many entries are missing, and what to do; each finding alerted is kept and cannot be changed or deleted, and an alert that fails neither stops the anchoring nor is lost: it is sent at the next check."
-source = "21 CFR 11.10(e); data integrity (ALCOA+); decided 2026-10-12 (foundation review): a removal reported only to the Error Log is not acted on"
+source = "DFD 9F F3 Action / Data Logging, D12 Audit Logs; D2 System Foundation: Audit Trail & System Logs; DFD 9C C4 Notify Users; 21 CFR 11.10(e); data integrity (ALCOA+); decided 2026-10-12 (foundation review): a removal reported only to the Error Log is not acted on"
 status = "implemented"
 
 [[requirement]]
 id = "URS-CMP-041"
 module = 50
 title = "Sales orders are audited; and every standard record type this app hooks into, adds fields to or links to from its own record types is either audited or named, with the reason, on a reviewed list of record types left out of the audit trail."
-source = "21 CFR 11.10(e); ISO 13485 7.2.2, 7.5.9 (order to dispatch to lot traceability); found in the foundation review of 2026-10-12: sales orders were not audited and nothing kept the scope complete"
+source = "DFD 9F F3 Action / Data Logging, D12 Audit Logs; D2 System Foundation: Audit Trail & System Logs; DFD 1.4 Create Sales Order, 7.1 Receive Sales Order; 21 CFR 11.10(e); ISO 13485 7.2.2, 7.5.9 (order to dispatch to lot traceability); found in the foundation review of 2026-10-12: sales orders were not audited and nothing kept the scope complete"
 status = "implemented"
 
 # --- Module 47: roles and permissions (21 CFR 11.10(d), (g)) ---------------
@@ -510,77 +518,77 @@ status = "implemented"
 id = "URS-CMP-014"
 module = 47
 title = "Each person is given a job profile that grants exactly the roles that job needs; the job profiles and the roles in them are declared in code and applied on every site."
-source = "D2 Role Based Access (RBAC); 21 CFR 11.10(d); design approved 2026-10-06; jobs decided on the client's instruction of 2026-10-07"
+source = "DFD 9F F1 User Management, F2 Role / Permission; D2 System Foundation: Role Based Access (RBAC); 21 CFR 11.10(d); design approved 2026-10-06; jobs decided on the client's instruction of 2026-10-07"
 status = "implemented"
 
 [[requirement]]
 id = "URS-CMP-015"
 module = 47
 title = "For every regulated business record type, which roles may read, create, submit, cancel and amend it is declared in code and applied exactly, replacing the platform's default permissions, and any manual change is undone on the next migrate; on this app's own record types a permission cannot be changed by hand at all."
-source = "21 CFR 11.10(d), (g); ISO 13485 4.2.4; hand changes on the app's own record types refused decided 2026-10-12 (foundation review)"
+source = "DFD 9F F1 User Management, F2 Role / Permission; D2 System Foundation: Role Based Access (RBAC); 21 CFR 11.10(d), (g); ISO 13485 4.2.4; hand changes on the app's own record types refused decided 2026-10-12 (foundation review)"
 status = "implemented"
 
 [[requirement]]
 id = "URS-CMP-016"
 module = 47
 title = "No role may delete, share or import a regulated record."
-source = "ISO 13485 4.2.5; CDSCO MDR 2017 Fifth Schedule; 21 CFR 11.10(c)"
+source = "DFD 9F F1 User Management, F2 Role / Permission; D2 System Foundation: Role Based Access (RBAC); ISO 13485 4.2.5; CDSCO MDR 2017 Fifth Schedule; 21 CFR 11.10(c)"
 status = "implemented"
 
 [[requirement]]
 id = "URS-CMP-017"
 module = 47
 title = "System administrators can read regulated records but cannot create, submit, cancel or amend them."
-source = "21 CFR 11.10(g); design approved 2026-10-06"
+source = "DFD 9F F1 User Management, F2 Role / Permission; D2 System Foundation: Role Based Access (RBAC); 21 CFR 11.10(g); design approved 2026-10-06"
 status = "implemented"
 
 [[requirement]]
 id = "URS-CMP-018"
 module = 47
 title = "Inspection results are recorded and submitted by QC inspectors and corrected only by QA; operators record their operations but cannot create, submit or cancel production records."
-source = "ISO 13485 7.5.1, 8.2.6; design approved 2026-10-06"
+source = "DFD 9F F1 User Management, F2 Role / Permission; D2 System Foundation: Role Based Access (RBAC); DFD 3.4 IQC Inspection, 5.1 IPQC Inspection, 5.3 Final QC Inspection, 4.5 Record Production; ISO 13485 7.5.1, 8.2.6; design approved 2026-10-06"
 status = "implemented"
 
 [[requirement]]
 id = "URS-CMP-034"
 module = 47
 title = "Whoever administers the system holds no business role, so no one can both grant access and use it to do or approve regulated work."
-source = "21 CFR 11.10(g); EU GMP Annex 11 §12; decided on the client's instruction of 2026-10-07"
+source = "DFD 9F F1 User Management, F2 Role / Permission; D2 System Foundation: Role Based Access (RBAC); 21 CFR 11.10(g); EU GMP Annex 11 §12; decided on the client's instruction of 2026-10-07"
 status = "implemented"
 
 [[requirement]]
 id = "URS-CMP-035"
 module = 47
 title = "After a person signs out, the next person starts on a clean sign-in page and is never taken to the record the previous person had open."
-source = "21 CFR 11.10(d); shared shop-floor terminals; found in the live pilot test of 2026-10-07"
+source = "DFD 9F F1 User Management; D2 System Foundation: Validation & System Security; 21 CFR 11.10(d); shared shop-floor terminals; found in the live pilot test of 2026-10-07"
 status = "implemented"
 
 [[requirement]]
 id = "URS-CMP-036"
 module = 47
 title = "Every lookup in a form a job fills in can be searched by that job, apart from a reviewed list of features the client's process does not use, so nobody meets a permission error doing their own work; looking a record up never lets the person open it."
-source = "21 CFR 11.10(d); least privilege; found in the live pilot test of 2026-10-07 (operator time logs)"
+source = "DFD 9F F1 User Management, F2 Role / Permission; D2 System Foundation: Role Based Access (RBAC); 21 CFR 11.10(d); least privilege; found in the live pilot test of 2026-10-07 (operator time logs)"
 status = "implemented"
 
 [[requirement]]
 id = "URS-CMP-037"
 module = 47
 title = "A person signs in only with their own user ID (their email address) and password, never by a link mailed to them; a password meets the strength QA sets (strong or very strong) and must be replaced after the number of days QA sets (30 to 365, 90 until QA changes it); a session ends after the minutes of inactivity QA sets (5 to 480, 30 until QA changes it); these values change only in Quality Settings under an approved change request, and a change to them, or to the account lockout, made in the site's System Settings is refused."
-source = "Master plan section 10 (validation and system security: password policy, session timeout, account lockout); D1 System Foundation; 21 CFR 11.10(d), 11.100, 11.300; values decided 2026-10-11; no password history (11.300 met by unique IDs, strength, aging and lockout; decided 2026-10-11)"
+source = "Master plan section 10 (validation and system security: password policy, session timeout, account lockout); DFD 9F F1 User Management; D2 System Foundation: Validation & System Security; 21 CFR 11.10(d), 11.100, 11.300; values decided 2026-10-11; no password history (11.300 met by unique IDs, strength, aging and lockout; decided 2026-10-11)"
 status = "implemented"
 
 [[requirement]]
 id = "URS-CMP-038"
 module = 47
 title = "Nobody changes the configuration of a site by hand: no role, the system administrator included, may create, change or delete custom fields, property setters, form customisations or client and server scripts, which change only with a release of this app, applied on install and migrate; a permission added by hand to change them does not last; and every change made to the configuration of the site (these records, print formats, workflows, alerts, and the manufacturing, buying, selling and print settings) is recorded in the audit trail with its old and new values."
-source = "Engineering rules section 1.3 (configuration is code); master plan section 10 (the audit trail covers masters, records and configuration); D1 System Foundation (Validation and system security); 21 CFR 11.10(a), (e), (k); found 2026-10-11: a system administrator could add fields, scripts and form changes on the live site with no record"
+source = "Engineering rules section 1.3 (configuration is code); master plan section 10 (the audit trail covers masters, records and configuration); DFD 9F F2 Role / Permission, F3 Action / Data Logging; D2 System Foundation: Validation & System Security; 21 CFR 11.10(a), (e), (k); found 2026-10-11: a system administrator could add fields, scripts and form changes on the live site with no record"
 status = "implemented"
 
 [[requirement]]
 id = "URS-CMP-039"
 module = 47
 title = "Once a working site is set up, the built-in Administrator account does not sign in, by the login page or the API, and a session it already holds is refused at its next request, so that every action on the site is a named person's; for maintenance, a window opened on the server for a stated time lets it in until that time; development, test and pilot sites, and a site whose setup is not complete, keep it."
-source = "Master plan section 10 (the built-in super-user disabled for daily use); go-live check V9 (2026-10-07 review); 21 CFR 11.10(d), 11.100(a), 11.300; decided 2026-10-11: a time-limited maintenance window set on the server rather than a permanent switch"
+source = "DFD 9F F1 User Management; D2 System Foundation: Validation & System Security; Master plan section 10 (the built-in super-user disabled for daily use); go-live check V9 (2026-10-07 review); 21 CFR 11.10(d), 11.100(a), 11.300; decided 2026-10-11: a time-limited maintenance window set on the server rather than a permanent switch"
 status = "implemented"
 
 # --- Module 48: approval workflows (D1 approval points "A") ----------------
@@ -588,42 +596,42 @@ status = "implemented"
 id = "URS-CMP-019"
 module = 48
 title = "A quotation can be sent to the customer only after internal price approval; the approver approves it or returns it for revision."
-source = "D1 Internal Price Approval? / Revise - Re-estimate; Management approves every quotation, decided on the client's instruction of 2026-10-07"
+source = "DFD 9B B4 Submit for Approval, B5 Approve / Reject; D1 Internal Price Approval? / Revise - Re-estimate; Management approves every quotation, decided on the client's instruction of 2026-10-07"
 status = "implemented"
 
 [[requirement]]
 id = "URS-CMP-020"
 module = 48
 title = "A purchase order is issued only after purchase approval; the approver approves it or returns it for revision, and only the approver cancels it."
-source = "D1 Purchase Approval? / Revise; Management approves every purchase order, decided on the client's instruction of 2026-10-07"
+source = "DFD 2.4 PO Approval, 9B B5 Approve / Reject; D1 Purchase Approval? / Revise; Management approves every purchase order, decided on the client's instruction of 2026-10-07"
 status = "implemented"
 
 [[requirement]]
 id = "URS-CMP-021"
 module = 48
 title = "An approval cannot be bypassed: a record under an approval workflow is submitted only from its awaiting-approval state, only by a role allowed to approve it, and never by the person who raised it, whether through the form or the API."
-source = "21 CFR 11.10(f), (g); design approved 2026-10-07"
+source = "DFD 2.4 PO Approval, 9B B5 Approve / Reject; D1 Internal Price Approval, Purchase Approval; 21 CFR 11.10(f), (g); design approved 2026-10-07"
 status = "implemented"
 
 [[requirement]]
 id = "URS-CMP-022"
 module = 48
 title = "The approval workflows are declared in code and applied on every site; on a site they cannot be changed, switched off, deleted or replaced by another workflow, and every setting is restored on each migrate."
-source = "Configuration as code; ISO 13485 4.1.6; strengthened after the robustness review of 2026-10-07"
+source = "DFD 9B Task & Approval; D2 System Foundation: Validation & System Security; configuration as code; ISO 13485 4.1.6; strengthened after the robustness review of 2026-10-07"
 status = "implemented"
 
 [[requirement]]
 id = "URS-CMP-032"
 module = 48
 title = "While a record awaits approval only its approver can change it, and a record's approval state always matches whether it is submitted, so it never shows as approved without having been approved."
-source = "D1 Internal Price Approval, Purchase Approval; 21 CFR 11.10(f); found in the robustness review of 2026-10-07"
+source = "DFD 2.4 PO Approval, 9B B5 Approve / Reject; D1 Internal Price Approval, Purchase Approval; 21 CFR 11.10(f); found in the robustness review of 2026-10-07"
 status = "implemented"
 
 [[requirement]]
 id = "URS-CMP-033"
 module = 48
 title = "Once a quotation or purchase order is approved, its items, quantities and prices cannot be changed; a change is made by cancelling and amending it, which needs approval again."
-source = "D1 Internal Price Approval, Purchase Approval; decided on the client's instruction of 2026-10-07"
+source = "DFD 2.4 PO Approval, 2.5 Generate PO; D1 Internal Price Approval, Purchase Approval; decided on the client's instruction of 2026-10-07"
 status = "implemented"
 
 # --- Module 54: record retention and archival (D3 Retention & Archival) ----
@@ -631,28 +639,28 @@ status = "implemented"
 id = "URS-CMP-023"
 module = 54
 title = "Every regulated record type, the audit trail, the electronic signatures and the login history have a declared retention period of at least ten years with its legal basis, which QA can view in the system."
-source = "D3 Retention & Archival; ISO 13485 4.2.5; EU MDR Art. 10(8); 10 years decided on the client's instruction of 2026-10-07"
+source = "DFD 9A A6 Revision & Archive, 9F (D12 Audit Logs kept); D3 Retention & Archival; ISO 13485 4.2.5; EU MDR Art. 10(8); 10 years decided on the client's instruction of 2026-10-07"
 status = "implemented"
 
 [[requirement]]
 id = "URS-CMP-024"
 module = 54
 title = "Login, logout, failed-login and impersonation records are kept for their retention period instead of being cleared after 90 days."
-source = "21 CFR 11.10(d), (e), (g)"
+source = "DFD 9F F1 User Management, F3 Action / Data Logging, D12 Audit Logs; 21 CFR 11.10(d), (e), (g)"
 status = "implemented"
 
 [[requirement]]
 id = "URS-CMP-025"
 module = 54
 title = "QA can produce an archive copy of every regulated record changed in a period, each in full with its audit history and electronic signatures, together with the period's login history, in a file that can be read without the system; the records stay in the system."
-source = "D3 Retention & Archival; 21 CFR 11.10(b)"
+source = "DFD 9A A6 Revision & Archive, 9F F6 Compliance Reporting; D3 Retention & Archival; 21 CFR 11.10(b)"
 status = "implemented"
 
 [[requirement]]
 id = "URS-CMP-026"
 module = 54
 title = "Every archive carries a fingerprint of the whole file and of every file in it, can be verified at any time so that any changed, removed or added file is detected, and cannot be changed or deleted."
-source = "21 CFR 11.10(c); data integrity (ALCOA+)"
+source = "D3 Retention & Archival; DFD 9A A6 Revision & Archive; 21 CFR 11.10(c); data integrity (ALCOA+)"
 status = "implemented"
 
 # --- Module 51: alerts and notifications (D2 Alerts & Notifications) -------
@@ -660,21 +668,21 @@ status = "implemented"
 id = "URS-CMP-027"
 module = 51
 title = "Stores and QA are alerted once when a lot with stock remaining is 30 days or less from its expiry date, including a lot received that close to it, and once when it has expired, even after a day the alerts did not run; a changed expiry date is alerted afresh; lots with no stock and disabled lots raise no alert."
-source = "D2 Alerts & Notifications; module 51 lot expiry; 30 days decided on the client's instruction of 2026-10-07; exact-date gaps found in the robustness review of 2026-10-07"
+source = "DFD 9C C3 Generate Reminder, C4 Notify Users, D4 Inventory & Batch Ledger; D2 Alerts & Notifications; module 51 lot expiry; 30 days decided on the client's instruction of 2026-10-07; exact-date gaps found in the robustness review of 2026-10-07"
 status = "implemented"
 
 [[requirement]]
 id = "URS-CMP-028"
 module = 51
 title = "The approver is alerted when a quotation or purchase order is waiting for approval, and the person who raised it is alerted when it is approved or returned for revision."
-source = "D1 approval points; module 48 approvals"
+source = "DFD 9B B4 Submit for Approval, 9C C4 Notify Users; D1 approval points; module 48 approvals"
 status = "implemented"
 
 [[requirement]]
 id = "URS-CMP-029"
 module = 51
 title = "The alerts are declared in code, applied on every site, and cannot be edited on a site."
-source = "Configuration as code; ISO 13485 4.1.6"
+source = "D2 System Foundation: Alerts & Notifications; DFD 9C C4 Notify Users; configuration as code; ISO 13485 4.1.6"
 status = "implemented"
 
 # --- Module 18: inventory by batch ------------------------------------------
@@ -682,35 +690,35 @@ status = "implemented"
 id = "URS-STK-001"
 module = 18
 title = "Every lot of material and product can be tracked as a batch on every site."
-source = "D2 Inventory by Batch (Lot Control); D3 Batch / Lot Traceability Flow"
+source = "DFD 3.3 Internal Batch Creation, 4.6 WIP / FG Batch Creation, D4 Inventory & Batch Ledger; D2 Inventory by Batch (Lot Control); D3 Batch / Lot Traceability Flow"
 status = "implemented"
 
 [[requirement]]
 id = "URS-STK-002"
 module = 18
 title = "When stock is picked or issued, the lot that expires first is taken first."
-source = "D3 Putaway in Finished Goods Warehouse (FIFO / FEFO)"
+source = "DFD 4.3 Issue Material, 7.2 Allocate Released Batch; D3 Putaway in Finished Goods Warehouse (FIFO / FEFO)"
 status = "implemented"
 
 [[requirement]]
 id = "URS-STK-003"
 module = 18
 title = "Stock can never go below zero, for any item or lot."
-source = "D3 Batch / Lot Traceability Flow; data integrity (ALCOA+)"
+source = "DFD D4 Inventory & Batch Ledger; D3 Batch / Lot Traceability Flow; data integrity (ALCOA+)"
 status = "implemented"
 
 [[requirement]]
 id = "URS-STK-008"
 module = 18
 title = "A lot whose expiry date has passed is never issued, sent to production, consumed or delivered, from any document, the form or the API; it leaves its store only into the hold, rejected or returns store, by QA's own decision, back to its supplier, or as counted."
-source = "D3 Putaway in Finished Goods Warehouse (FIFO / FEFO); master plan section 3 (finished goods carry expiry); ISO 13485 7.5.11 (preservation of product); found 2026-10-11: ERPNext refuses an expired lot on a delivery and some production entries, but a material issue naming it by hand, or a move to another usable store, went through"
+source = "DFD 4.3 Issue Material, 7.2 Allocate Released Batch, 7.4 Dispatch / Shipment, D4 Inventory & Batch Ledger; D3 Putaway in Finished Goods Warehouse (FIFO / FEFO); master plan section 3 (finished goods carry expiry); ISO 13485 7.5.11 (preservation of product); found 2026-10-11: ERPNext refuses an expired lot on a delivery and some production entries, but a material issue naming it by hand, or a move to another usable store, went through"
 status = "implemented"
 
 [[requirement]]
 id = "URS-STK-009"
 module = 18
 title = "When stock goes to production or to a customer, the lot that expires first goes first: a lot is refused while an earlier-expiring Approved lot of the same item that has not expired would still be in the same store after the document, unless the document states its FEFO exception reason, which is kept with it and in its audit trail and listed for QA; moving stock from one store to another is not held to it."
-source = "D3 Putaway in Finished Goods Warehouse (FIFO / FEFO); URS-STK-002; found 2026-10-11: a lot named by hand was not held to it; exception with a stated reason decided 2026-10-11 (a customer may ask for one lot)"
+source = "DFD 4.3 Issue Material, 7.2 Allocate Released Batch; D3 Putaway in Finished Goods Warehouse (FIFO / FEFO); URS-STK-002; found 2026-10-11: a lot named by hand was not held to it; exception with a stated reason decided 2026-10-11 (a customer may ask for one lot)"
 status = "implemented"
 
 [[requirement]]
@@ -724,35 +732,35 @@ status = "implemented"
 id = "URS-PLT-012"
 module = 0
 title = "The lead times of the alerts (lot expiry, supplier certificate expiry, customer licence expiry, document review, change-request action due) and the default effectiveness check of a change are settings QA changes on screen, each within fixed bounds, only under an approved change request that lists the settings; the change is recorded with its request and a new version and applies from the next alert run; until QA changes a value the decided one applies (30, 30, 30, 30, 7 and 90 days)."
-source = "User's instruction of 2026-10-11 to keep business parameters adjustable by users; review of hard-coded values (master plan section 21); ISO 13485 4.1.6, 21 CFR 11.10(a): a validated parameter changes under change control; values decided 2026-10-07/08; customer licence expiry added with module 5 (URS-MST-008), 30 days as for supplier certificates, decided 2026-10-11"
+source = "DFD 9C C2 Set Due Date / Frequency; User's instruction of 2026-10-11 to keep business parameters adjustable by users; review of hard-coded values (master plan section 21); ISO 13485 4.1.6, 21 CFR 11.10(a): a validated parameter changes under change control; values decided 2026-10-07/08; customer licence expiry added with module 5 (URS-MST-008), 30 days as for supplier certificates, decided 2026-10-11"
 status = "implemented"
 
 [[requirement]]
 id = "URS-PLT-013"
 module = 49
 title = "The number of consecutive wrong passwords that locks an account (3 to 10) and how long it stays locked (5 to 1440 minutes) are settings QA changes on screen under an approved change request; login and signing follow them at once and again on every migrate, so a hand edit of the site's settings does not last."
-source = "21 CFR 11.300(d); URS-CMP-001; user's instruction of 2026-10-11 (adjustable values); 5 attempts and 15 minutes decided 2026-10-10"
+source = "DFD 9F F1 User Management; D2 System Foundation: Validation & System Security; 21 CFR 11.300(d); URS-CMP-001; user's instruction of 2026-10-11 (adjustable values); 5 attempts and 15 minutes decided 2026-10-10"
 status = "implemented"
 
 [[requirement]]
 id = "URS-PLT-007"
 module = 0
 title = "On the pilot's demo data, the standard flow runs end to end with each step done by its job: enquiry, quotation with price approval and sales order; purchase request, purchase order with approval and goods receipt by batch into quarantine; work order on the line's routing with material issue, operations and a finished lot with its expiry; and delivery of that lot, all recorded in the audit trail."
-source = "Delivery plan Phase 2 (pilot), decided 2026-10-07; D1, D2, D3"
+source = "DFD 1.4 Create Sales Order, 2.3 to 2.5, 3.1 to 3.3, 4.1 to 4.6, 7.3 Pick & Pack, 7.4 Dispatch / Shipment; Delivery plan Phase 2 (pilot), decided 2026-10-07; D1, D2, D3"
 status = "implemented"
 
 [[requirement]]
 id = "URS-PLT-008"
 module = 0
 title = "Each job's desk shows only the areas its work uses, every chart, card and link in those areas opens for that job, and opening a record type the job may not use is refused with a plain message naming it."
-source = "Least privilege (21 CFR 11.10(d)); found in the live pilot test of 2026-10-07 (report and page permission errors)"
+source = "DFD 9F F1 User Management, F2 Role / Permission; D2 System Foundation: Role Based Access (RBAC); Least privilege (21 CFR 11.10(d)); found in the live pilot test of 2026-10-07 (report and page permission errors)"
 status = "implemented"
 
 [[requirement]]
 id = "URS-PLT-009"
 module = 0
 title = "Signed in as each job, the browser opens every area of that job's desk, and the list and new form of every record type the job may create, with every lookup in those forms, without a refused or failed request, and every such form can be filled in; checked on every change."
-source = "Found necessary in the live pilot test of 2026-10-07: the screens each job uses were not tested as that job"
+source = "DFD 9F F2 Role / Permission; D2 System Foundation: Validation & System Security; Found necessary in the live pilot test of 2026-10-07: the screens each job uses were not tested as that job"
 status = "implemented"
 
 # --- Module 30: document control (D2 Document Control; ISO 13485 4.2.4) ----
@@ -760,42 +768,42 @@ status = "implemented"
 id = "URS-QMS-001"
 module = 30
 title = "Every controlled document (SOP, work instruction, form, specification, packaging and labelling, quality manual, external document) is registered by QA with a unique number TYPE-DEPARTMENT-### and a process owner, and is issued in numbered revisions, one in progress at a time."
-source = "D2 Document Control; ISO 13485 4.2.4; numbering decided on the client's instruction of 2026-10-07"
+source = "DFD 9A QMS Documentation (A1 Create Document, A2 Assign Category), D9 Documents (QMS); D2 Document Control; ISO 13485 4.2.4; numbering decided on the client's instruction of 2026-10-07"
 status = "implemented"
 
 [[requirement]]
 id = "URS-QMS-002"
 module = 30
 title = "A revision is signed by its author, reviewed by someone other than the author and approved by QA, never by its author or its reviewer, each with an electronic signature; the reviewer or QA can return it for changes with a reason, and every revision after the first states what changed."
-source = "D2 Review & Approval, Version Control; ISO 13485 4.2.4 a), b); 21 CFR 11.50; approver other than the reviewer decided on the client's instruction of 2026-10-07"
+source = "DFD 9A QMS Documentation (A3 Review Document, A4 Approve Document, A6 Revision); D2 Document Control: Review & Approval, Version Control; ISO 13485 4.2.4 a), b); 21 CFR 11.50; approver other than the reviewer decided on the client's instruction of 2026-10-07"
 status = "implemented"
 
 [[requirement]]
 id = "URS-QMS-003"
 module = 30
 title = "The document file is fingerprinted when its author signs; approval is refused if the file has changed since, the file cannot then be deleted, made public or replaced, and a revision cannot be changed, submitted or changed after submission except through the signed acts."
-source = "ISO 13485 4.2.4; 21 CFR 11.10(a), 11.70"
+source = "DFD 9A QMS Documentation (A4 Approve Document), D9; D2 Document Control: Version Control; ISO 13485 4.2.4; 21 CFR 11.10(a), 11.70"
 status = "implemented"
 
 [[requirement]]
 id = "URS-QMS-004"
 module = 30
 title = "An approved revision takes effect on its effective date, never earlier than its approval, and the revision it replaces is superseded automatically; the document then shows its effective revision and its next review date."
-source = "ISO 13485 4.2.4 c); review period decided on the client's instruction of 2026-10-07"
+source = "DFD 9A QMS Documentation (A5 Publish / Effective, A6 Revision & Archive); D2 Document Control: Version Control; ISO 13485 4.2.4 c); review period decided on the client's instruction of 2026-10-07"
 status = "implemented"
 
 [[requirement]]
 id = "URS-QMS-005"
 module = 30
 title = "Outside QA, people see only the effective revision of each document, and the drafts they author or review, so superseded and withdrawn revisions are not used by mistake; no document or revision is ever deleted or cancelled."
-source = "ISO 13485 4.2.4 d), g), h)"
+source = "DFD 9A QMS Documentation (A5 Publish / Effective, A6 Revision & Archive); D2 Document Control; ISO 13485 4.2.4 d), g), h)"
 status = "implemented"
 
 [[requirement]]
 id = "URS-QMS-006"
 module = 30
 title = "QA can withdraw a document with an electronic signature and a reason, once no revision is in progress; the document and its effective revision become obsolete and are kept."
-source = "ISO 13485 4.2.4 g), h); 4.2.5"
+source = "DFD 9A QMS Documentation (A6 Revision & Archive); D2 Document Control; ISO 13485 4.2.4 g), h); 4.2.5"
 status = "implemented"
 
 
@@ -803,14 +811,14 @@ status = "implemented"
 id = "URS-QMS-007"
 module = 30
 title = "Each effective document's process owner and QA are alerted once when its periodic review falls due within 30 days, including a review already overdue or a day the alerts did not run, and again for each new review date."
-source = "ISO 13485 4.2.4 b) (review and update documents); 30 days as for lot expiry, decided on the client's instruction of 2026-10-07"
+source = "DFD 9A QMS Documentation (A3 Review Document), 9C C3 Generate Reminder, C4 Notify Users; ISO 13485 4.2.4 b) (review and update documents); 30 days as for lot expiry, decided on the client's instruction of 2026-10-07"
 status = "implemented"
 
 [[requirement]]
 id = "URS-QMS-008"
 module = 30
 title = "A revision prints as a controlled copy with its signatures only while it is effective, and otherwise as uncontrolled and not for use; its form says whether it is in use, and offers each signed act only to the person allowed to take it, with no other way to approve it."
-source = "ISO 13485 4.2.4 d), g); 21 CFR 11.50(b); design approved 2026-10-07 (document control step C)"
+source = "DFD 9A QMS Documentation (A5 Publish / Effective); D2 Document Control; ISO 13485 4.2.4 d), g); 21 CFR 11.50(b); design approved 2026-10-07 (document control step C)"
 status = "implemented"
 # --- Module 36: change control (D2 Change Control; ISO 13485 4.1.4, 7.3.9) ---
 # Design approved 2026-10-08. Choices left open by the diagrams were decided under the
@@ -869,21 +877,21 @@ status = "implemented"
 id = "URS-QMS-016"
 module = 36
 title = "A change request is never deleted or cancelled: the person who raised it can withdraw it with a reason until it is approved, and withdrawn, rejected and closed requests are kept; QA and Management see every request, others only those they raised or have an action on."
-source = "ISO 13485 4.2.5; 21 CFR 11.10(c), (d); withdrawal by the requester decided under the client's instruction of 2026-10-07"
+source = "D2 Change Control: Change History; ISO 13485 4.2.5; 21 CFR 11.10(c), (d); withdrawal by the requester decided under the client's instruction of 2026-10-07"
 status = "implemented"
 
 [[requirement]]
 id = "URS-QMS-032"
 module = 36
 title = "A change request becomes Implemented only when everything changed under it is in force: each document revision made under it effective, each risk assessment approved, each record its actions produced approved where it needs QA's approval, and each device master record the change put out of date approved again; until then recording its last action is refused, naming each record not yet in force."
-source = "ISO 13485 7.3.9 (changes verified before implementation), 4.2.4, 4.2.3; found in the foundation review of 2026-10-12"
+source = "D2 Change Control: Implementation; ISO 13485 7.3.9 (changes verified before implementation), 4.2.4, 4.2.3; found in the foundation review of 2026-10-12"
 status = "implemented"
 
 [[requirement]]
 id = "URS-QMS-033"
 module = 36
 title = "An approved change request authorises one change of each record it lists: the record the change was made in is recorded against the listing once the change is saved, a further change of that record under the same request is refused, a record is listed once, and a change given up before it took effect (a withdrawn risk assessment) leaves the listing unused."
-source = "ISO 13485 7.3.9, 4.2.4 (changes reviewed and approved before implementation); found in the foundation review of 2026-10-12"
+source = "D2 Change Control: Review & Approval, Implementation; ISO 13485 7.3.9, 4.2.4 (changes reviewed and approved before implementation); found in the foundation review of 2026-10-12"
 status = "implemented"
 
 # --- Module 30: periodic review (added 2026-10-12) ------------------------------
@@ -892,7 +900,7 @@ status = "implemented"
 id = "URS-QMS-034"
 module = 30
 title = "QA, who approves a document's revisions, can sign an effective document as reviewed and still current, with what the review found and a password; the document and its effective revision are unchanged, the next review date moves on by the document's review period, and the document's open review reminder is completed at once with who reviewed it; it is refused while a revision is in progress or the document is not in effect."
-source = "ISO 13485 4.2.4 b) (review and update documents as necessary); 21 CFR 11.50; found in the foundation review of 2026-10-12"
+source = "DFD 9A QMS Documentation (A3 Review Document), 9C C6 Mark Completed; D2 Document Control: Review & Approval; ISO 13485 4.2.4 b) (review and update documents as necessary); 21 CFR 11.50; found in the foundation review of 2026-10-12"
 status = "implemented"
 
 # --- Module 39: risk management (ISO 14971:2019) ---------------------------------
@@ -929,14 +937,14 @@ status = "implemented"
 id = "URS-QMS-021"
 module = 39
 title = "Each control references the records verifying its implementation and its effectiveness, and a hazard a control introduces is analysed as a hazard; every hazard has a residual risk no higher than before control, and a residual risk that is not acceptable needs a justification (as low as reasonably practicable, or benefit-risk)."
-source = "ISO 14971 7.2 to 7.6"
+source = "D2 Risk Management (ISO 14971): Control Measures, Risk Evaluation; ISO 14971 7.2 to 7.6"
 status = "implemented"
 
 [[requirement]]
 id = "URS-QMS-022"
 module = 39
 title = "A risk assessment revision is authored, reviewed by another person and approved by QA, a third person, each with an electronic signature; approval checks everything again and is refused while a control's record is no longer in force; the approved revision supersedes the previous one, and nothing is deleted or cancelled."
-source = "ISO 13485 4.2.4, 4.2.5; 21 CFR 11.50; ISO 14971 4.5"
+source = "D2 Risk Management (ISO 14971); DFD 9A A3 Review Document, A4 Approve Document; ISO 13485 4.2.4, 4.2.5; 21 CFR 11.50; ISO 14971 4.5"
 status = "implemented"
 
 [[requirement]]
@@ -950,7 +958,7 @@ status = "implemented"
 id = "URS-QMS-024"
 module = 39
 title = "A change request with an impact on risk must list a Risk Management File before QA assesses it; its approval raises a Risk Review of each file it lists, and it cannot be closed while one is open; a new revision of an approved file needs an approved change request listing it, or an open review."
-source = "Plan: real links between modules; ISO 14971 10; ISO 13485 7.3.9"
+source = "D2 Risk Management (ISO 14971): Risk Review; D2 Change Control: Impact Assessment; master plan section 7 (real links between modules); ISO 14971 10; ISO 13485 7.3.9"
 status = "implemented"
 
 [[requirement]]
@@ -964,42 +972,42 @@ status = "implemented"
 id = "URS-QMS-026"
 module = 31
 title = "Each approved finished good has one device master record in force. Each revision records the ISO 13485 4.2.3 headings (general description and intended use, labelling and instructions for use, product specifications, manufacture with packaging, storage, handling and distribution, measuring and monitoring, installation and servicing, risk management), with the reason for any that does not apply, and pins the item, its default bill of materials and the bills of materials of its sub-assemblies one level down, the routing and each operation and sub-operation with its work instruction, the final specification and the in-process specification when an operation carries an in-process check, at least one Packaging and Labelling document, the documents the author chooses, and the risk management report in force of the risk management file that lists the item: every finished good is listed in one, and the record is not approved without its report in force. The device lifetime (5 years unless QA states another, never shorter than the shelf life) is on the item, under change control, and shown on the record."
-source = "Master plan; flowchart DMR structure; ISO 13485 4.2.3, 7.1; ISO 14971 4.5; 21 CFR 820.181; CDSCO MDR 2017 Device Master File; decided 2026-10-11 (plan D-15): the contents, (plan D-16): the device lifetime, (plan Q7): no further mandatory documents; decided 2026-10-12 (plan D-23): every finished good is in a risk management file whose report is in force before its device master record is approved"
+source = "D2 Document Control (DMR): DMR Structure; DFD D3 Item / BOM / Routing Master, D9 Documents (QMS); master plan section 7; ISO 13485 4.2.3, 7.1; ISO 14971 4.5; 21 CFR 820.181; CDSCO MDR 2017 Device Master File; decided 2026-10-11 (plan D-15): the contents, (plan D-16): the device lifetime, (plan Q7): no further mandatory documents; decided 2026-10-12 (plan D-23): every finished good is in a risk management file whose report is in force before its device master record is approved"
 status = "implemented"
 
 [[requirement]]
 id = "URS-QMS-027"
 module = 31
 title = "The pins are filled from the live records whenever a draft is saved and again at approval; nobody types a version. Signing and approval are refused while a required element is missing, a heading is empty, the item is not approved, or any pinned record is no longer in force, and approval is refused if a pinned record moved on since the author signed."
-source = "21 CFR 820.181; ALCOA+; decided 2026-10-11 (plan D-15)"
+source = "D2 Document Control (DMR): DMR Structure; DFD D3 Item / BOM / Routing Master, D9 Documents (QMS); 21 CFR 820.181; ALCOA+; decided 2026-10-11 (plan D-15)"
 status = "implemented"
 
 [[requirement]]
 id = "URS-QMS-028"
 module = 31
 title = "A revision is drafted by QA or the Production Supervisor, signed by its author, and approved by QA, who is not the author, each with an electronic signature; QA may return it with a signed reason or withdraw it with a signed reason. Approved, it becomes Current and the previous revision Superseded in the same transaction; one revision is in progress and one is Current per item, and nothing is deleted or cancelled."
-source = "ISO 13485 4.2.4, 4.2.5; 21 CFR 11.50, 11.70; decided 2026-10-11 (plan D-15)"
+source = "D2 Document Control (DMR): DMR Structure; DFD D3 Item / BOM / Routing Master, D9 Documents (QMS); DFD 9A A3 Review Document, A4 Approve Document; ISO 13485 4.2.4, 4.2.5; 21 CFR 11.50, 11.70; decided 2026-10-11 (plan D-15)"
 status = "implemented"
 
 [[requirement]]
 id = "URS-QMS-029"
 module = 31
 title = "A new version of any pinned record, its withdrawal, deactivation or replacement as the default, and a risk management report put in force for the item's file that the record does not pin, make the Current device master record Out of Date in the same transaction, with a daily check as a backstop, showing for each changed element its version now and the change request it was made under; a record already out of date keeps recording later changes, and the next revision is brought up to date after all of them; the signatures stay intact. QA is alerted once, with the item's open work orders to decide on, which the record's form also lists, and a DMR Re-approval reminder, due within the days set in Quality Settings, stays open until a new revision is approved."
-source = "Client decision; ISO 13485 7.3.9; re-approval due in 14 days, set in Quality Settings, decided 2026-10-11; decided 2026-10-12 (plan D-23): the risk management report in force"
+source = "D2 Document Control (DMR): DMR Structure; DFD D3 Item / BOM / Routing Master, D9 Documents (QMS); D2 Change Control (masters linked with Document Control); ISO 13485 7.3.9; re-approval due in 14 days, set in Quality Settings, decided 2026-10-11; decided 2026-10-12 (plan D-23): the risk management report in force"
 status = "implemented"
 
 [[requirement]]
 id = "URS-QMS-030"
 module = 31
 title = "Only a Current device master record prints as the controlled index with its signatures; any other prints marked not for use."
-source = "ISO 13485 4.2.4"
+source = "D2 Document Control (DMR): DMR Structure; DFD D3 Item / BOM / Routing Master, D9 Documents (QMS); DFD 9A A5 Publish / Effective; ISO 13485 4.2.4"
 status = "implemented"
 
 [[requirement]]
 id = "URS-QMS-031"
 module = 31
 title = "A work order for a finished good is submitted only when the item's device master record is Current, still matches the live records and pins the bill of materials the work order uses; the order keeps the record it was released on. A finished good is made (a Manufacture or Repack stock entry) only on a work order of it, and only while that record is still Current."
-source = "21 CFR 820.181; ISO 13485 7.5.1; decided 2026-10-11 (plan D-15, Q8 accepted)"
+source = "D2 Document Control (DMR): DMR Structure; DFD D3 Item / BOM / Routing Master, D9 Documents (QMS); DFD 4.1 Create Production Order, 4.6 WIP / FG Batch Creation; 21 CFR 820.181; ISO 13485 7.5.1; decided 2026-10-11 (plan D-15, Q8 accepted)"
 status = "implemented"
 
 # --- Wave 1: lot status and incoming QC (modules 1, 4, 6, 16, 17) ----------------
@@ -1013,112 +1021,112 @@ status = "implemented"
 id = "URS-STK-004"
 module = 17
 title = "Every lot carries a status, Quarantine, Approved, Rejected or Hold; a lot received or produced starts in Quarantine, and the status changes only through a signed QA release or disposition, never by editing the lot; stock comes into a lot only on the document that made it, lots moved between stores and returns aside, so more stock, a count gain or opening stock comes in as a new lot."
-source = "D2 Quarantine / Approved Stock; D3 QC Approval / Rejection, Putaway in Warehouse (Batch/Location); D4 3.5 Accept / Reject / Hold, 3.3 Internal Batch Creation, 4.6 Batch Creation; ISO 13485 7.5.8, 8.3; 21 CFR 11.50; no stock into an existing lot decided on 2026-10-09 from DFD 3.1-3.6"
+source = "D2 Quarantine / Approved Stock; D3 QC Approval / Rejection, Putaway in Warehouse (Batch/Location); DFD 3.5 Accept / Reject / Hold, 3.3 Internal Batch Creation, 4.6 WIP / FG Batch Creation; ISO 13485 7.5.8, 8.3; 21 CFR 11.50; no stock into an existing lot decided on 2026-10-09 from DFD 3.1-3.6"
 status = "implemented"
 
 [[requirement]]
 id = "URS-STK-005"
 module = 17
 title = "No stock of a lot that is not Approved can be issued to production, transferred to an approved store, picked, packed, delivered or changed by a stock count, through the form or the API; a Quarantine or Hold lot moves only by QA's signed decision into the store of its status, and rejected stock only goes back to its supplier, is scrapped or is kept in the returns store."
-source = "D2 Material Issue (From Approved Stock), Reject / Return To Supplier; D3 Rejected (return flow); D4 4.3 Issue Material, 7.2 Allocate Released Batch; ISO 13485 7.5.8, 8.3; no stock count of a lot that is not Approved, nor of stock kept apart, decided 2026-10-12 (plan D-24)"
+source = "D2 Material Issue (From Approved Stock), Reject / Return To Supplier; D3 Rejected (return flow); DFD 4.3 Issue Material, 7.2 Allocate Released Batch; ISO 13485 7.5.8, 8.3; no stock count of a lot that is not Approved, nor of stock kept apart, decided 2026-10-12 (plan D-24)"
 status = "implemented"
 
 [[requirement]]
 id = "URS-STK-006"
 module = 17
 title = "A lot shows its status, who set it, when and why, and the stock reports show quantities by lot status, so Stores and QA see at any time what is in quarantine, on hold, rejected or approved."
-source = "D2 Inventory by Batch (Lot Control); D4 D4 Inventory & Batch Ledger; ISO 13485 7.5.8"
+source = "D2 Inventory by Batch (Lot Control); DFD D4 Inventory & Batch Ledger; ISO 13485 7.5.8"
 status = "implemented"
 
 [[requirement]]
 id = "URS-STK-007"
 module = 17
 title = "When lot status is installed on a site that already holds stock, every lot is given a status by a migration recorded in the audit trail: lots in the approved and finished goods stores become Approved, every other lot Quarantine."
-source = "Engineering rules section 8 (schema changes migrate existing data); ISO 13485 4.2.5; status by store role decided under the client's instruction of 2026-10-08, confirmed against the physical count at cutover"
+source = "DFD 3.5 Accept / Reject / Hold, D4 Inventory & Batch Ledger; Engineering rules section 8 (schema changes migrate existing data); ISO 13485 4.2.5; status by store role decided under the client's instruction of 2026-10-08, confirmed against the physical count at cutover"
 status = "implemented"
 
 [[requirement]]
 id = "URS-STK-010"
 module = 17
 title = "Where stock of a lot may go follows from its lot status and the kind of store it is in, by one rule for every document, the form and the API: approved stock in an approved store is used, moved between approved stores or set apart in the hold or rejected store; stock in the quarantine, hold or returns store leaves only by a signed QA decision; stock in the rejected store, whatever its lot's status, only goes back to its supplier, is scrapped or moves to the returns store, never into usable stock, not even by a release; new stock of a lot that is not Approved never comes into an approved store; goods a customer sends back come only into the returns store, whatever their lot's status, and leave it only by QA's signed disposition: back to the approved store once the lot is Approved and an inspection made after they came back is accepted, or to the rejected store."
-source = "D2 Quarantine / Approved Stock, Reject / Return To Supplier; D3 Rejected (return flow); master plan section 3 (rejected and returns areas); ISO 13485 7.5.8, 8.2.6, 8.3; 21 CFR 11.50; found in the review of 2026-10-12 (stock rejected at the door was released with its lot; approved stock was used from the rejected, hold and returns stores; a customer's return came back into usable stock); customer returns into the returns store and their signed disposition decided 2026-10-12 (plan D-25)"
+source = "DFD 3.5 Accept / Reject / Hold, 3.6 Putaway to Store, D4 Inventory & Batch Ledger; D2 Quarantine / Approved Stock, Reject / Return To Supplier; D3 Rejected (return flow); master plan section 3 (rejected and returns areas); ISO 13485 7.5.8, 8.2.6, 8.3; 21 CFR 11.50; found in the review of 2026-10-12 (stock rejected at the door was released with its lot; approved stock was used from the rejected, hold and returns stores; a customer's return came back into usable stock); customer returns into the returns store and their signed disposition decided 2026-10-12 (plan D-25)"
 status = "implemented"
 
 [[requirement]]
 id = "URS-STK-011"
 module = 18
 title = "Once a lot has any stock posted, or is named on a submitted receipt, its manufacturing and expiry dates cannot be changed on its form or through the API, even after its stock is used up or counted; before then they stay editable as the receipt or work order sets them."
-source = "D3 Putaway in Finished Goods Warehouse (FIFO / FEFO); ISO 13485 4.2.5, 7.5.8, 7.5.11; 21 CFR 11.10(e); data integrity (ALCOA+); foundation hardening plan H6, decided 2026-10-14"
+source = "DFD 3.3 Internal Batch Creation, 4.6 WIP / FG Batch Creation, D4 Inventory & Batch Ledger; D3 Putaway in Finished Goods Warehouse (FIFO / FEFO); ISO 13485 4.2.5, 7.5.8, 7.5.11; 21 CFR 11.10(e); data integrity (ALCOA+); foundation hardening plan H6, decided 2026-10-14"
 status = "implemented"
 
 [[requirement]]
 id = "URS-STK-012"
 module = 18
 title = "Only QA corrects the dates of a lot that has stock, by the signed act Correct Dates, entering the new dates and a reason with the signature; the lot shows who corrected it, when and why, the audit trail records the old and new dates with the reason, and a corrected expiry date takes effect at once: a lot corrected to a date already past is refused for use and kept apart as any expired lot, and is alerted as expired at once."
-source = "ISO 13485 4.2.5, 7.5.11; 21 CFR 11.10(e), 11.50, 11.70; URS-STK-008; foundation hardening plan H6, decided 2026-10-14"
+source = "DFD 3.3 Internal Batch Creation, D4 Inventory & Batch Ledger; ISO 13485 4.2.5, 7.5.11; 21 CFR 11.10(e), 11.50, 11.70; URS-STK-008; foundation hardening plan H6, decided 2026-10-14"
 status = "implemented"
 
 [[requirement]]
 id = "URS-STK-013"
 module = 17
 title = "A finished good comes into stock only from production, on its work order's manufacture entry, or as opening stock at migration on a material receipt with Is Opening = Yes, by one rule for every voucher type, on the form and at the stock ledger: a material receipt that is not opening stock, a goods receipt, and a stock reconciliation that brings a new lot in, of any purpose, are refused; opening stock comes in as a Quarantine lot, inspected on its entry and released by QA."
-source = "D4 4.6 Batch Creation; ISO 13485 7.5.1, 7.5.8, 7.5.9; URS-STK-004, URS-QMS-031; foundation hardening plan D-28, decided 2026-10-14; opening stock only as material receipts, inspected, decided 2026-10-09 (DFD 3.1-3.5)"
+source = "DFD 4.6 WIP / FG Batch Creation, 4.5 Record Production; ISO 13485 7.5.1, 7.5.8, 7.5.9; URS-STK-004, URS-QMS-031; foundation hardening plan D-28, decided 2026-10-14; opening stock only as material receipts, inspected, decided 2026-10-09 (DFD 3.1-3.5)"
 status = "implemented"
 
 [[requirement]]
 id = "URS-QC-001"
 module = 16
 title = "A goods receipt records, per line, the supplier's lot number and the supplier's certificate (analysis or conformity) as a file attached by Stores; the QC Inspector records its verification against the purchase specification, and incoming inspection cannot start for a lot whose certificate is not verified."
-source = "D3 Document Verification (COA / COC / ISO); D4 3.1, 3.2; ISO 13485 7.4.3; verification by QC decided under the client's instruction of 2026-10-08"
+source = "D3 Document Verification (COA / COC / ISO); DFD 3.1 Receive Material, 3.2 Create GRN; ISO 13485 7.4.3; verification by QC decided under the client's instruction of 2026-10-08"
 status = "implemented"
 
 [[requirement]]
 id = "URS-QC-002"
 module = 16
 title = "Incoming quality control is a Quality Inspection of type Incoming per received lot against the item's inspection template, recorded and submitted by a QC Inspector; the sample size, parameters and limits come from the template, each reading records the instrument used, and the result is Accepted or Rejected."
-source = "D2 Incoming QC (IQC); D3 Incoming Quality Inspection (IQC); D4 3.4 IQC Inspection; ISO 13485 7.4.3, 7.6, 8.2.6"
+source = "D2 Incoming QC (IQC); D3 Incoming Quality Inspection (IQC); DFD 3.4 IQC Inspection, D6 QC / IPQC / FQC Records; ISO 13485 7.4.3, 7.6, 8.2.6"
 status = "implemented"
 
 [[requirement]]
 id = "URS-QC-003"
 module = 16
 title = "A lot that enters stock other than from a work order (on a goods receipt, or on a material receipt such as opening stock) is released by QA with an electronic signature only once the newest incoming inspection made on the document that brought it in is accepted: release sets the lot Approved and moves its stock in quarantine to the approved store in one audited transaction, never the quantity rejected at the door, which stays in the rejected store; QA can instead reject it with a signature and a reason, which sets it Rejected, moves that stock to the rejected store and drafts its return to the supplier for Purchase, the accepted quantity only; or hold it, which sets it Hold and moves it to the hold store; a held lot is released only after a new accepted inspection and with a reason. What the decision acts on, its quantity, where the lot came from and when it was held, is read when QA signs, not from the draft."
-source = "D2 Pass? No: Reject / Return To Supplier, Yes: Put Away; D3 Accepted / Rejected; D4 3.5, 3.6; ISO 13485 7.4.3, 8.3; 21 CFR 11.50; release of a held lot after retest decided under the client's instruction of 2026-10-08; inspection of material-receipt lots, and opening stock loaded as material receipts and inspected (DFD 3.1-3.5), decided on 2026-10-09; newest inspection decides, decision on the stock of the lot's status only, read when signed: found in the review of 2026-10-12"
+source = "D2 Pass? No: Reject / Return To Supplier, Yes: Put Away; D3 Accepted / Rejected; DFD 3.5 Accept / Reject / Hold, 3.6 Putaway to Store; ISO 13485 7.4.3, 8.3; 21 CFR 11.50; release of a held lot after retest decided under the client's instruction of 2026-10-08; inspection of material-receipt lots, and opening stock loaded as material receipts and inspected (DFD 3.1-3.5), decided on 2026-10-09; newest inspection decides, decision on the stock of the lot's status only, read when signed: found in the review of 2026-10-12"
 status = "implemented"
 
 [[requirement]]
 id = "URS-QC-004"
 module = 16
 title = "QA and Stores see every lot awaiting inspection and every inspected lot awaiting release, with the days each has waited, and the finished lot of a work order is released for dispatch by the same signed QA release until final QC and batch release (modules 25, 26) replace it."
-source = "D2 Quarantine / Approved Stock; D4 3.5; interim scope decided in the Phase 0 gap audit of 2026-10-08"
+source = "D2 Quarantine / Approved Stock; DFD 3.5 Accept / Reject / Hold, 6.5 QA Review & Approval; interim scope decided in the Phase 0 gap audit of 2026-10-08"
 status = "implemented"
 
 [[requirement]]
 id = "URS-PUR-001"
 module = 4
 title = "Every supplier has an approval status, Approved, Conditional or Not Approved, set by QA with an electronic signature and a reason, with the items it is approved for and the expiry date of its certificate; a purchase order for an item from a supplier not approved for it is refused; goods are received only on a goods receipt, never by a purchase invoice that updates stock, and each line only from a supplier approved for its item at the time of receipt, whatever order it was placed under; a Conditional approval has an expiry date, each purchase order under it needs a reason and its lots are inspected at 100 percent; QA and Purchase are alerted once, 30 days before a supplier certificate expires."
-source = "D2 Vendor Master, Supplier; D3 Purchase Order to Vendor; D4 2.5 Vendor Management; ISO 13485 7.4.1; conditional approval rules and the 30-day alert decided under the client's instruction of 2026-10-08; the goods receipt as the only way in, and receipt only from a supplier approved at receipt, decided on 2026-10-09"
+source = "D2 Vendor Master, Supplier; D3 Purchase Order to Vendor; DFD box 2 (Vendor Management), DFD D2 Vendor Master, 2.5 Generate PO, 3.2 Create GRN; ISO 13485 7.4.1; conditional approval rules and the 30-day alert decided under the client's instruction of 2026-10-08; the goods receipt as the only way in, and receipt only from a supplier approved at receipt, decided on 2026-10-09"
 status = "implemented"
 
 [[requirement]]
 id = "URS-PUR-002"
 module = 4
 title = "Each supplier is rated by the system for every finished calendar month in which QA decided any of its received lots or any of its order lines fell due: quality is the share of those lots QA released rather than rejected, a hold not counting until the lot is decided; delivery is the share of those lines received in full by their required date on goods receipts; the score weighs them as QA sets in Quality Settings (quality 70 percent until changed), or is the one measure the month holds; each rating lists the lots and lines it counted and the settings it used, and is never changed, cancelled or deleted; it is shown on the supplier; a score below the threshold QA sets (80 until changed) makes the supplier due for re-evaluation and alerts QA and Purchase, and only QA's next signed decision on the supplier closes it; ERPNext's supplier scorecard is not used."
-source = "D2 Purchase Management (PO, GRN, Vendor Rating); master plan section 3 (vendor master: rating; used by vendor rating); DFD 2.6 Vendor Management; ISO 13485 7.4.1 (monitoring and re-evaluation of suppliers); decided 2026-10-11: monthly, quality by QA's lot decisions, delivery in full by the required date, weights and threshold QA's under change control, the rating informs QA's signed decision and does not itself stop orders, own record instead of ERPNext's Supplier Scorecard (its quality figures read receipt rejections this process never records, its on-time count treats late receipts as on time, its periods can be cancelled unaudited and its standings block orders outside QA's decision)"
+source = "D3 Purchase Management (PO, GRN, Vendor Rating); master plan section 3 (vendor master: rating; used by vendor rating); DFD box 2 (Vendor Management), DFD D2 Vendor Master; ISO 13485 7.4.1 (monitoring and re-evaluation of suppliers); decided 2026-10-11: monthly, quality by QA's lot decisions, delivery in full by the required date, weights and threshold QA's under change control, the rating informs QA's signed decision and does not itself stop orders, own record instead of ERPNext's Supplier Scorecard (its quality figures read receipt rejections this process never records, its on-time count treats late receipts as on time, its periods can be cancelled unaudited and its standings block orders outside QA's decision)"
 status = "implemented"
 
 [[requirement]]
 id = "URS-MST-001"
 module = 1
 title = "Each of the nine masters (item, bill of materials, routing, operation and work centre, supplier, customer, warehouse, equipment, inspection template) carries a version number and an effective date; a change to the controlled fields of a master in use is made only under an approved change request that lists it, raises the version, and is recorded with the previous values in the audit trail; ERPNext's BOM Update Tool does not replace a bill of materials inside approved ones, a changed bill of materials being a new one under change control."
-source = "D2 All masters are version controlled and linked with Document Control; D4 D3 Item / BOM / Routing Master; ISO 13485 4.2.4, 7.3.9; blocking the BOM Update Tool's replace decided on 2026-10-09"
+source = "D2 All masters are version controlled and linked with Document Control; DFD D3 Item / BOM / Routing Master; ISO 13485 4.2.4, 7.3.9; blocking the BOM Update Tool's replace decided on 2026-10-09"
 status = "implemented"
 
 [[requirement]]
 id = "URS-MST-002"
 module = 6
 title = "An item's inspection template is a controlled specification that states, for each inspection stage (incoming, in-process, final), the parameters, method, limits and sample size, and a template in use changes only under an approved change request."
-source = "D2 Specifications & Tests; D3 Specification; D4 D3; ISO 13485 7.1, 8.2.6"
+source = "D2 Specifications & Tests; D3 Specification; DFD D3 Item / BOM / Routing Master, read by 3.4 IQC Inspection, 5.1 IPQC Inspection, 5.3 Final QC Inspection; ISO 13485 7.1, 8.2.6"
 status = "implemented"
 
 [[requirement]]
@@ -1132,14 +1140,14 @@ status = "implemented"
 id = "URS-MST-004"
 module = 1
 title = "Every item states its type (raw material, packaging, sub-assembly, finished good, consumable, spare part or equipment) and keeps it once approved; a raw material, packaging item, sub-assembly or finished good is lot-tracked with a shelf life, an expiry date on every lot and its storage condition, and QA cannot approve it otherwise."
-source = "D2 Inventory by Batch (Lot Control); DFD 3.3 Internal Batch Creation, D4; master plan section 3 (batch-tracked items cannot be received, issued or sold without a batch); ISO 13485 7.5.8, 7.5.9; item types from the master-data template of 2026-10-09, with Equipment for the items behind assets (decided 2026-10-10)"
+source = "D2 Inventory by Batch (Lot Control); DFD 3.3 Internal Batch Creation, DFD D3 Item / BOM / Routing Master, D4 Inventory & Batch Ledger; master plan section 3 (batch-tracked items cannot be received, issued or sold without a batch); ISO 13485 7.5.8, 7.5.9; item types from the master-data template of 2026-10-09, with Equipment for the items behind assets (decided 2026-10-10)"
 status = "implemented"
 
 [[requirement]]
 id = "URS-MST-005"
 module = 1
 title = "A finished good states whether it is supplied sterile, its device class under the Medical Devices Rules 2017 (A, B, C, D, or not a device), its storage condition, its pack sizes (units per box, boxes per carton) and its UDI device identifier, a well-formed GTIN that no other item carries; QA cannot approve a finished good without them."
-source = "D2 Labels carry batch, manufacturing date, expiry date, UDI and barcode; DFD 6.2 Label Printing, D3; CDSCO MDR 2017 Chapter VI (labelling) and UDI; 21 CFR 830; device class and storage condition kept on 2026-10-10 as D3 regulatory data; printing them on the label is module 23's requirement, not this one's"
+source = "D3 Labels carry batch, manufacturing date, expiry date, UDI and barcode; DFD 6.2 Label Printing, DFD D3 Item / BOM / Routing Master; CDSCO MDR 2017 Chapter VI (labelling) and UDI; 21 CFR 830; device class and storage condition kept on 2026-10-10 as D3 regulatory data; printing them on the label is module 23's requirement, not this one's"
 status = "implemented"
 
 [[requirement]]
@@ -1160,56 +1168,56 @@ status = "implemented"
 id = "URS-MST-008"
 module = 5
 title = "A customer is sold to only under a licence QA has verified: Sales records each licence of a customer with its type, number, issuing authority, validity dates and a copy; QA verifies or rejects it with an electronic signature and a reason, and withdraws a verified licence with a signature when the authority suspends or cancels it; a sales order, delivery note, or invoice that delivers stock is refused when submitted for a customer that holds no verified licence valid both on the document's date and on the day it is submitted, lines added to a submitted order likewise; a customer with a decided licence or exemption is not renamed or merged; unless QA has decided with an electronic signature and a reason that the customer buys without one (such as a hospital buying for its own use), a decision QA can reverse the same way; Sales and QA are alerted once before a verified licence expires, unless a renewed licence that continues it without a gap is already verified."
-source = "DFD D1 Customer Master and 1.x Sales Order (only approved customers); master plan tracker step 9 (customer licences and expiry alerts) and the regulatory table (customer licence check on the sales order, D1 holds the customer's licence); CDSCO MDR 2017 (sale of medical devices to licensed parties); ISO 13485 7.2, 7.5.8; 21 CFR 11.50, 11.70; QA verification, withdrawal, the signed per-customer exemption and the review's findings (stock invoices, backdating, merging, renewals) decided 2026-10-11 under the client's instruction to follow the DFD"
+source = "DFD D1 Customer Master, 1.4 Create Sales Order, 7.1 Receive Sales Order, 7.4 Dispatch / Shipment, 7.5 Generate Invoice (only approved customers); master plan tracker step 9 (customer licences and expiry alerts) and the regulatory table (customer licence check on the sales order, DFD D1 holds the customer's licence); CDSCO MDR 2017 (sale of medical devices to licensed parties); ISO 13485 7.2, 7.5.8; 21 CFR 11.50, 11.70; QA verification, withdrawal, the signed per-customer exemption and the review's findings (stock invoices, backdating, merging, renewals) decided 2026-10-11 under the client's instruction to follow the DFD"
 status = "implemented"
 
 [[requirement]]
 id = "URS-MST-009"
 module = 6
 title = "Each specification states how its stage is sampled: a fixed sample size, every unit, or ISO 2859-1 single sampling for normal inspection at an inspection level and an AQL; for ISO 2859-1 the inspection's sample size and its accept and reject numbers follow from the size of the lot inspected, as the system counts it, by the standard's tables and its arrows, and every unit is inspected when the sample would reach the lot; the inspector records the nonconforming units found, the lot is accepted only when they do not exceed the accept number and rejected when they reach the reject number, a reading out of its limits counts as a nonconforming unit, and the sampling plan of a specification in use changes only under an approved change request."
-source = "Master plan decision: sample sizes follow ISO 2859-1 single sampling at AQL unless the specification says 100 percent; tracker step 11 (controlled specifications and AQL sampling plans, changed only through change control); DFD D2 IQC, IPQC and final QC sampling; ISO 13485 7.4.3, 8.2.6; ISO 2859-1 Tables 1 and 2-A (identical to ANSI/ASQ Z1.4 and MIL-STD-105E), cross-checked against MIL-STD-105E, MIL-STD-105D, the AQLSchemes package, an ISO 2859-1 chart and an online calculator on 2026-10-11; normal inspection only (switching rules not in scope), decided 2026-10-11"
+source = "Master plan decision: sample sizes follow ISO 2859-1 single sampling at AQL unless the specification says 100 percent; tracker step 11 (controlled specifications and AQL sampling plans, changed only through change control); D2 Incoming QC (IQC), In-Process QC (IPQC), Final QC Testing; DFD 3.4 IQC Inspection, 5.1 IPQC Inspection, 5.3 Final QC Inspection; ISO 13485 7.4.3, 8.2.6; ISO 2859-1 Tables 1 and 2-A (identical to ANSI/ASQ Z1.4 and MIL-STD-105E), cross-checked against MIL-STD-105E, MIL-STD-105D, the AQLSchemes package, an ISO 2859-1 chart and an online calculator on 2026-10-11; normal inspection only (switching rules not in scope), decided 2026-10-11"
 status = "implemented"
 
 [[requirement]]
 id = "URS-MST-010"
 module = 8
 title = "Each piece of equipment is an asset recording its unique equipment tag, its class (production machine, measuring instrument, test equipment, sterilization equipment or utility), manufacturer, model and serial number, where it is used, whether it affects product quality, and whether it needs calibration, preventive maintenance and qualification with their intervals, a measuring instrument always needing calibration; QA approves it with an electronic signature only when these are complete, and that signature is the only way it becomes approved; an inspection reading names as its instrument only approved equipment that is in service; once approved, what QA approved changes only under an approved change request."
-source = "DFD D10 Equipment Master and 9D Equipment Management (D1 equipment master); master plan tracker step 10 (equipment master with the history card), the flowchart's equipment module (equipment master, calibration schedule, maintenance plan) and decision of 10 October 2026 (an Equipment item behind each asset); ISO 13485 6.3, 7.5.1, 7.6; 21 CFR 820.70(g), 820.72; 21 CFR 11.50, 11.70; calibration and maintenance due dates and their blocking are module 38, qualification records module 40; decided 2026-10-11 under the client's instruction to follow the DFD"
+source = "DFD D10 Equipment Master and 9D Equipment Management (step D1 Equipment Master); master plan tracker step 10 (equipment master with the history card), D2 Master Data: Equipment Master and D2 Calibration & Maintenance (Equipment Master, Calibration Schedule, Maintenance Plan) and decision of 10 October 2026 (an Equipment item behind each asset); ISO 13485 6.3, 7.5.1, 7.6; 21 CFR 820.70(g), 820.72; 21 CFR 11.50, 11.70; calibration and maintenance due dates and their blocking are module 38, qualification records module 40; decided 2026-10-11 under the client's instruction to follow the DFD"
 status = "implemented"
 
 [[requirement]]
 id = "URS-MST-011"
 module = 62
 title = "Each piece of equipment has a history card that lists, by date, its approval and every change to its record, its movements, its calibrations, preventive maintenance and qualifications as signed (and before module 38 its maintenance logs), its repairs, and the inspections that used it as their instrument, with the number of repairs, the downtime of repairs and maintenance, and the number of calibrations found out of tolerance over the period shown."
-source = "DFD 9D Equipment Management (D2 history card, D5 performance tracking); master plan module 62 (equipment history card and performance tracking, beyond module 38); ISO 13485 6.3, 7.6 (records of maintenance and calibration); decided 2026-10-11; history card extended with modules 38 and 40 records on 2026-10-11 (rules section 8)"
+source = "DFD 9D Equipment Management (steps D2 History Card, D5 Performance Tracking), D10 Equipment Master; master plan module 62 (equipment history card and performance tracking, beyond module 38); ISO 13485 6.3, 7.6 (records of maintenance and calibration); decided 2026-10-11; history card extended with modules 38 and 40 records on 2026-10-11 (rules section 8)"
 status = "implemented"
 
 [[requirement]]
 id = "URS-MST-012"
 module = 3
 title = "Each operation, workstation and routing is approved by QA with an electronic signature before it is used, and that signature is the only way it becomes approved: an operation only when it names its work instruction, an effective controlled document of type Work Instruction, and states whether it carries an in-process check; a workstation only when every piece of equipment at it is approved; a routing only when each of its operations and their workstations is approved; a bill of materials with an unapproved routing, operation or workstation is not submitted, and no work order or job card is made on an unapproved operation or workstation; once approved, what QA approved changes only under an approved change request."
-source = "Master plan section 3 (masters are created in draft, reviewed and approved by the responsible role before they can be used in a transaction; Routing holds the operation sequence, the work center, machine and the in-process checks attached to each operation), section 6 (every operation carries its in-process checks), stage 3 (released only when BOM and routing are approved versions); DFD D2 (all masters are version controlled and linked with Document Control) and D3 Item / BOM / Routing Master; user's decision of 2026-10-11 to follow the requirement rather than use these masters as is; ISO 13485 4.2.4, 7.5.1; 21 CFR 820.70(a), 11.50, 11.70; the in-process check values stay on the item's in-process specification (module 6), enforcing the check at the job card is module 20"
+source = "Master plan section 3 (masters are created in draft, reviewed and approved by the responsible role before they can be used in a transaction; Routing holds the operation sequence, the work center, machine and the in-process checks attached to each operation), section 6 (every operation carries its in-process checks), stage 3 (released only when BOM and routing are approved versions); D2 Master Data (all masters are version controlled and linked with Document Control); DFD D3 Item / BOM / Routing Master; user's decision of 2026-10-11 to follow the requirement rather than use these masters as is; ISO 13485 4.2.4, 7.5.1; 21 CFR 820.70(a), 11.50, 11.70; the in-process check values stay on the item's in-process specification (module 6), enforcing the check at the job card is module 20"
 status = "implemented"
 
 [[requirement]]
 id = "URS-MST-013"
 module = 7
 title = "Each store is approved by QA with an electronic signature, once it is a store that holds stock of a company, and that signature is the only way it becomes approved; no stock moves into or out of a store QA has not approved, whatever the document; once approved, what QA approved changes only under an approved change request."
-source = "Master plan section 3 (masters are created in draft, reviewed and approved by the responsible role before they can be used in a transaction; Warehouse: raw, quarantine, approved, WIP, finished goods, rejected and returns areas); DFD D4 Inventory & Batch Ledger; user's decision of 2026-10-11 to follow the requirement; ISO 13485 6.4, 7.5.11; 21 CFR 11.50, 11.70; store roles are module 17 (URS-STK-004 to 007), bin locations module 18"
+source = "D2 Master Data: Warehouse & Locations; Master plan section 3 (masters are created in draft, reviewed and approved by the responsible role before they can be used in a transaction; Warehouse: raw, quarantine, approved, WIP, finished goods, rejected and returns areas); DFD D4 Inventory & Batch Ledger; user's decision of 2026-10-11 to follow the requirement; ISO 13485 6.4, 7.5.11; 21 CFR 11.50, 11.70; store roles are module 17 (URS-STK-004 to 007), bin locations module 18"
 status = "implemented"
 
 [[requirement]]
 id = "URS-MST-014"
 module = 6
 title = "A specification is in draft until QA approves it with an electronic signature, which only QA can give and which is the only way it becomes approved; an inspection is made only against an approved specification, and one in draft is refused naming it; any change of what QA approved returns the specification to draft until QA approves it again, a specification in use still changing only under an approved change request; on the release that brings this rule, each specification a submitted inspection was already made against is approved by migration, recorded in the audit trail with the reason, and every other specification stays in draft."
-source = "D2 Specifications & Tests; D3 Specification; master plan section 3 (masters are created in draft, reviewed and approved by the responsible role before they can be used in a transaction); ISO 13485 4.2.4, 7.1, 8.2.6; 21 CFR 11.50, 11.70; foundation hardening plan D-33, decided 2026-10-14"
+source = "DFD D3 Item / BOM / Routing Master, read by 3.4 IQC Inspection, 5.1 IPQC Inspection, 5.3 Final QC Inspection; D2 Specifications & Tests; D3 Specification; master plan section 3 (masters are created in draft, reviewed and approved by the responsible role before they can be used in a transaction); ISO 13485 4.2.4, 7.1, 8.2.6; 21 CFR 11.50, 11.70; foundation hardening plan D-33, decided 2026-10-14"
 status = "implemented"
 
 [[requirement]]
 id = "URS-MST-015"
 module = 6
 title = "A specification names its test method, a controlled document of type SOP, Work Instruction or External Document; QA approves the specification only while that document is in effect, and no inspection is made against a specification whose test method is no longer in effect."
-source = "D2 All masters are version controlled and linked with Document Control; D2 Specifications & Tests; ISO 13485 4.2.4, 7.5.1, 8.2.6; foundation hardening plan D-34, decided 2026-10-14"
+source = "DFD D3 Item / BOM / Routing Master, D9 Documents (QMS); D2 All masters are version controlled and linked with Document Control; D2 Specifications & Tests; ISO 13485 4.2.4, 7.5.1, 8.2.6; foundation hardening plan D-34, decided 2026-10-14"
 status = "implemented"
 
 [[requirement]]
@@ -1223,7 +1231,7 @@ status = "implemented"
 id = "URS-PLT-010"
 module = 0
 title = "The pilot's standard flow performs the certificate check, incoming inspection and signed release of every received lot, and the signed release of the finished lot, by the QC Inspector and QA Manager demo users, in place of the stand-in transfer to the approved store, in both the server and the browser journey."
-source = "Delivery plan Phase 2 (pilot); Phase 0 gap audit of 2026-10-08; D2, D3"
+source = "DFD 3.1 to 3.5, 6.5 QA Review & Approval; Delivery plan Phase 2 (pilot); Phase 0 gap audit of 2026-10-08; D2, D3"
 status = "implemented"
 
 [[requirement]]
@@ -1279,173 +1287,173 @@ status = "implemented"
 id = "URS-EQP-001"
 module = 38
 title = "A calibration records its date and, per point, the nominal value, limits and the values found and left; the system works out what was in tolerance, the result on the values left and, for a pass, the next due date from the interval QA approved on the equipment; it follows an effective procedure when done in-house and names the laboratory, certificate number and certificate when external; it is completed only by its performer's electronic signature (Maintenance or QA), is never deleted, and does not change once completed but by QA's signed impact assessment; once completed it is corrected only by QA's electronically signed correction with a reason, which cancels it and opens its amendment as a new draft, completed again by its performer's signature, and the platform's own cancel is refused."
-source = "Flowchart Calibration & Maintenance (calibration records); DFD 9D D6; ISO 13485 7.6; 21 CFR 11.50; decided 2026-10-12 (plan D-29): corrected only by QA's signed correction"
+source = "D2 Calibration & Maintenance (Calibration Records); DFD 9D step D6 Calibration / Validation, D10 Equipment Master; ISO 13485 7.6; 21 CFR 11.50; decided 2026-10-12 (plan D-29): corrected only by QA's signed correction"
 status = "implemented"
 
 [[requirement]]
 id = "URS-EQP-002"
 module = 38
 title = "An in-house calibration is refused unless each reference standard it names is approved equipment, is not the instrument calibrated, and was itself in calibration on the day the calibration was done."
-source = "ISO 13485 7.6(a) (traceable to measurement standards)"
+source = "DFD 9D step D6 Calibration / Validation; ISO 13485 7.6(a) (traceable to measurement standards)"
 status = "implemented"
 
 [[requirement]]
 id = "URS-EQP-003"
 module = 38
 title = "A calibration that finds a value out of tolerance lists the submitted inspections that named the instrument and the submitted job cards at each workstation it was at since its last good calibration, each only for the days the instrument was there and naming that workstation, alerts QA, and stays open for QA's signed assessment (no product impact, or product action needed), which a reminder tracks until it is signed; when QA withdraws the calibration for correction, its open assessment stays open on it, listed and tracked by the same reminder, until QA signs it there."
-source = "ISO 13485 7.6 (assess the validity of previous results when equipment is found not to conform); decided 2026-10-11; decided 2026-10-12 (plan D-29): a correction keeps the open assessment; foundation review 2026-10-12: the job cards of each workstation the instrument was at, while it was there, from the audit trail (rules section 8)"
+source = "DFD 9D step D6 Calibration / Validation, 9C C3 Generate Reminder, C5 Track & Escalate; ISO 13485 7.6 (assess the validity of previous results when equipment is found not to conform); decided 2026-10-11; decided 2026-10-12 (plan D-29): a correction keeps the open assessment; foundation review 2026-10-12: the job cards of each workstation the instrument was at, while it was there, from the audit trail (rules section 8)"
 status = "implemented"
 
 [[requirement]]
 id = "URS-EQP-004"
 module = 38
 title = "Preventive maintenance records its checks, each OK or not, what was done and the downtime; it is satisfactory only when every check is OK, only a satisfactory record sets the next due date, and it is completed only by its performer's electronic signature and never deleted; once completed it is corrected only by QA's electronically signed correction with a reason, which cancels it and opens its amendment as a new draft, and the platform's own cancel is refused."
-source = "DFD 9D D3 maintenance schedule, D4 maintenance execution; flowchart (maintenance plan, maintenance log, downtime tracking); ISO 13485 6.3; decided 2026-10-12 (plan D-29)"
+source = "DFD 9D steps D3 Maintenance Schedule, D4 Maintenance Execution; D2 Calibration & Maintenance (Maintenance Plan, Maintenance Log, Downtime Tracking); ISO 13485 6.3; decided 2026-10-12 (plan D-29)"
 status = "implemented"
 
 [[requirement]]
 id = "URS-EQP-005"
 module = 38
 title = "Equipment that needs calibration, or preventive maintenance, is fit only while its latest completed record passed and its next due date has not passed; equipment never calibrated, or never maintained, is not fit; nor is equipment whose calibration, maintenance or qualification QA has withdrawn for correction, from the moment it is withdrawn until its amendment is completed."
-source = "ISO 13485 7.6, 6.3; production stage 3; decided 2026-10-12 (plan D-29)"
+source = "ISO 13485 7.6, 6.3; DFD 9D steps D3 Maintenance Schedule, D6 Calibration / Validation; master plan production stage 3; decided 2026-10-12 (plan D-29)"
 status = "implemented"
 
 [[requirement]]
 id = "URS-EQP-006"
 module = 38
 title = "Equipment that is not fit, not qualified though it needs qualification, or under an open repair is refused as an inspection's instrument, at every save and submit of a job card at its workstation and every time logged on one, and when a work order on its workstation is submitted."
-source = "Production stage 3 (machine must be within calibration and maintenance due); decided 2026-10-11: block, never warn, on every entry path"
+source = "DFD 4.4 Execute Work Orders, 5.1 IPQC Inspection, 9D step D6 Calibration / Validation; master plan production stage 3 (machine must be within calibration and maintenance due); decided 2026-10-11: block, never warn, on every entry path"
 status = "implemented"
 
 [[requirement]]
 id = "URS-EQP-007"
 module = 38
 title = "The Equipment Care Schedule shows each approved piece of equipment's next calibration, maintenance and requalification dates, each as in date, due soon, overdue, never done or not needed."
-source = "Flowchart (calibration schedule, maintenance plan)"
+source = "D2 Calibration & Maintenance (Calibration Schedule, Maintenance Plan); DFD 9D step D3 Maintenance Schedule; ISO 13485 6.3, 7.6"
 status = "implemented"
 
 [[requirement]]
 id = "URS-EQP-008"
 module = 38
 title = "Calibration, maintenance and requalification falling due within the days QA sets in Quality Settings, and an open out-of-tolerance assessment, also of a calibration withdrawn for correction, are tracked as reminders that only the records showing the work done complete."
-source = "Flowchart (alerts and reminders); DFD 9C; decided 2026-10-12 (plan D-29): a correction does not complete the impact reminder"
+source = "D2 Calibration & Maintenance (Alerts & Reminders); DFD 9C C3 Generate Reminder, C6 Mark Completed; decided 2026-10-12 (plan D-29): a correction does not complete the impact reminder"
 status = "implemented"
 
 [[requirement]]
 id = "URS-EQP-009"
 module = 38
 title = "ERPNext's own asset maintenance plans and logs are not used: saving one is refused."
-source = "Decided 2026-10-11: ERPNext's asset maintenance drops an end-dated task from its schedule after one completion, rewrites completed logs, allows changes after completion, records no as-found or as-left values and is not signed"
+source = "DFD 9D step D4 Maintenance Execution (one signed maintenance record, URS-EQP-004); Decided 2026-10-11: ERPNext's asset maintenance drops an end-dated task from its schedule after one completion, rewrites completed logs, allows changes after completion, records no as-found or as-left values and is not signed"
 status = "implemented"
 
 [[requirement]]
 id = "URS-EQP-010"
 module = 40
 title = "Each installation, operational and performance qualification is recorded against an effective protocol (an SOP or a form) with its tests, each passed or failed, and passes only when every test passes; its performer executes it with an electronic signature, a change after execution needs execution again, and QA, never its performer, approves it with an electronic signature or returns it with a signed reason; it is never deleted; once approved it is corrected only by QA's electronically signed correction with a reason, which cancels it and opens its amendment as a new draft, executed and approved again, and the platform's own cancel is refused."
-source = "Flowchart compliance box (Equipment Qualification IQ/OQ/PQ); ISO 13485 7.5.6, 6.3; decided 2026-10-12 (plan D-29)"
+source = "DFD 9D step D6 Calibration / Validation, D10 Equipment Master; D3 (equipment qualification IQ / OQ / PQ, master plan section 7); ISO 13485 7.5.6, 6.3; decided 2026-10-12 (plan D-29)"
 status = "implemented"
 
 [[requirement]]
 id = "URS-EQP-011"
 module = 40
 title = "An operational qualification is refused without an approved, passed installation qualification; a performance qualification without an approved, passed operational qualification done on or after it."
-source = "ISO 13485 7.5.6"
+source = "DFD 9D step D6 Calibration / Validation; ISO 13485 7.5.6"
 status = "implemented"
 
 [[requirement]]
 id = "URS-EQP-012"
 module = 40
 title = "Equipment that needs qualification is qualified only while its latest approved IQ, OQ and PQ each passed, were done in that order, and the PQ is within the requalification interval QA approved on the equipment, if one is set, and while none of its approved stages is withdrawn for correction with its amendment not yet approved."
-source = "ISO 13485 7.5.6; decided 2026-10-11: a requalification interval on the equipment, under change control; decided 2026-10-12 (plan D-29)"
+source = "DFD 9D step D6 Calibration / Validation; ISO 13485 7.5.6; decided 2026-10-11: a requalification interval on the equipment, under change control; decided 2026-10-12 (plan D-29)"
 status = "implemented"
 
 [[requirement]]
 id = "URS-EQP-013"
 module = 38
 title = "After a completed repair, equipment that needs calibration is not fit until calibrated again and equipment that needs qualification until a PQ is done again; after a move to another place, by an asset movement or a change of its workstation, whichever is later, equipment that needs qualification is not fit until qualified again from the IQ."
-source = "ISO 13485 7.6 (safeguarded from adjustments that would invalidate the measurement), 7.5.6 (revalidation after changes); decided 2026-10-11 by the implementer on the client's instruction to decide the open questions (plan, decisions D-11); decided 2026-10-15: a change of workstation is a move (equipment moved to another line), changed in place (rules section 8)"
+source = "DFD 9D steps D2 History Card, D6 Calibration / Validation; ISO 13485 7.6 (safeguarded from adjustments that would invalidate the measurement), 7.5.6 (revalidation after changes); decided 2026-10-11 by the implementer on the client's instruction to decide the open questions (plan, decisions D-11); decided 2026-10-15: a change of workstation is a move (equipment moved to another line), changed in place (rules section 8)"
 status = "implemented"
 
 [[requirement]]
 id = "URS-TRN-001"
 module = 37
 title = "For each active employee, the system keeps one training record open on each document their job's approved training matrix names, on the revision in effect and on any revision approved to take effect later, opening it when a revision is approved or takes effect, the employee joins or changes job, or the matrix is approved, and closing open records that are no longer needed."
-source = "D2 Training (training records, QMS linkage); ISO 13485 6.2; decided 2026-10-11 (plan D-07): records open at approval, due by the effective date"
+source = "D2 Training Management (Training Matrix, Employee Training); ISO 13485 6.2; decided 2026-10-11 (plan D-07): records open at approval, due by the effective date"
 status = "implemented"
 
 [[requirement]]
 id = "URS-TRN-002"
 module = 37
 title = "A training record is completed only by signatures: the trainee, on their own account, signs Trained, then a named assessor holding the Production Supervisor or QA role, never the trainee, signs Competent or Not Competent; the trainee's signature alone completes it only where the matrix allows reading; QA alone enters paper history, with a private certificate; a record is never cancelled or deleted."
-source = "D2 Training; ISO 13485 6.2; 21 CFR 11.10(i), 11.50, 11.100; decided 2026-10-11 (plan D-08, D-09, D-10)"
+source = "D2 Training Management (Employee Training, Competency Evaluation); ISO 13485 6.2; 21 CFR 11.10(i), 11.50, 11.100; decided 2026-10-11 (plan D-08, D-09, D-10)"
 status = "implemented"
 
 [[requirement]]
 id = "URS-TRN-003"
 module = 37
 title = "A training is valid until the end of the validity its matrix row sets, or indefinitely where it sets none; a refresher record opens when the validity ends within the warning days set in Quality Settings, and open training is a reminder to the trainee, then the assessor, until completed."
-source = "D2 Training (expiry alerts); ISO 13485 6.2(e); decided 2026-10-11 (plan D-07, D-12)"
+source = "D2 Training Management (Expiry Alerts); DFD 9C C3 Generate Reminder, C4 Notify Users; ISO 13485 6.2(e); decided 2026-10-11 (plan D-07, D-12)"
 status = "implemented"
 
 [[requirement]]
 id = "URS-TRN-004"
 module = 37
 title = "A job's training matrix takes effect only when QA approves it with an electronic signature, and is changed only by cancelling and amending it, approved again."
-source = "ISO 13485 6.2; decided 2026-10-11 (plan D-17)"
+source = "D2 Training Management (Training Matrix); ISO 13485 6.2; decided 2026-10-11 (plan D-17)"
 status = "implemented"
 
 [[requirement]]
 id = "URS-TRN-005"
 module = 37
 title = "Time is logged on a job card only by an active operator who holds a completed, unexpired Competent training on the revision in effect of the work instruction of the operation they do, on every path that logs time, including saves that skip validation and ERPNext's time-log method."
-source = "D2 Production stage 3 (trained operator); ISO 13485 6.2, 7.5.1"
+source = "D2 Training Management (Competency Evaluation); DFD 4.4 Execute Work Orders, 4.5 Record Production; master plan section 7 (an operator without valid training is not recorded on the job card); ISO 13485 6.2, 7.5.1"
 status = "implemented"
 
 [[requirement]]
 id = "URS-TRN-006"
 module = 37
 title = "QA may revoke an employee's competence with an electronic signature and a reason; the employee is then refused for that work and a retraining record opens; a Not Competent assessment opens a retraining record likewise."
-source = "ISO 13485 6.2, 8.3; decided 2026-10-11 (plan D-18)"
+source = "D2 Training Management (Competency Evaluation); ISO 13485 6.2, 8.3; decided 2026-10-11 (plan D-18)"
 status = "implemented"
 
 [[requirement]]
 id = "URS-REG-001"
 module = 41
 title = "QA records each licence, registration or certificate of the plant with its type from QA's list, number, issuing authority, site, products covered, validity and its copy as an important file; it counts only once QA verifies it with an electronic signature."
-source = "DFD 9E Regulatory Compliance; CDSCO MDR 2017 Chapter IV; ISO 13485 4.1.1; decided 2026-10-11 (plan D-14): QA owns licences"
+source = "DFD 9A QMS Documentation (A1 Create Document, A2 Assign Category, A4 Approve Document), D9 Documents (QMS), external entity Regulatory Authorities; its copy uploaded as an important file (DFD 9E E3 Upload Document); D3 compliance block (Regulatory Submissions: ISO 13485, CDSCO, CE); CDSCO MDR 2017 Chapter IV; ISO 13485 4.1.1; decided 2026-10-11 (plan D-14): QA owns licences"
 status = "implemented"
 
 [[requirement]]
 id = "URS-REG-002"
 module = 41
 title = "A verified licence is never edited, cancelled or deleted; a renewal is a new licence that supersedes the one it renews when verified, a rejected renewal leaves it unchanged, and QA rejects a draft or withdraws a verified licence with a signed reason."
-source = "ISO 13485 4.2.5; 21 CFR 11.50"
+source = "DFD 9A A6 Revision & Archive (a renewal supersedes); ISO 13485 4.2.5; 21 CFR 11.50"
 status = "implemented"
 
 [[requirement]]
 id = "URS-REG-003"
 module = 41
 title = "Verification pins the version and SHA-256 fingerprint of the licence's copy; a newer version of the copy is shown as not verified."
-source = "21 CFR 11.70; ISO 13485 4.2.5"
+source = "DFD 9A A4 Approve Document, 9E E4 Version Control (the copy's version is pinned); 21 CFR 11.70; ISO 13485 4.2.5"
 status = "implemented"
 
 [[requirement]]
 id = "URS-REG-004"
 module = 41
 title = "QA is alerted once when a verified licence ends, or an obligation of it (retention fee, surveillance audit) falls due, within the lead time set in Quality Settings or is overdue; it stays a reminder until the renewal is verified or QA records the obligation done with its evidence."
-source = "Module 41; DFD 9C alerts; decided 2026-10-11 (plan D-12): 90 days"
+source = "DFD 9C C2 Set Due Date / Frequency, C3 Generate Reminder, C4 Notify Users, C6 Mark Completed, D11 Task / Approval & Reminders; decided 2026-10-11 (plan D-12): 90 days"
 status = "implemented"
 
 [[requirement]]
 id = "URS-REG-005"
 module = 41
 title = "QA records each submission to the authority (device or plant master file, change notification, renewal application) on its licence with its date, the authority's reference and its copy as an important file."
-source = "DFD 9E; CDSCO MDR 2017 Fourth Schedule"
+source = "D3 compliance block (Regulatory Submissions: ISO 13485, CDSCO, CE); DFD 9A QMS Documentation, D9 Documents (QMS), external entity Regulatory Authorities; its copy uploaded as an important file (DFD 9E E3 Upload Document); CDSCO MDR 2017 Fourth Schedule"
 status = "implemented"
 
 [[requirement]]
 id = "URS-REG-006"
 module = 41
 title = "A change request with regulatory impact is assessed only when it lists the licence or registration it affects."
-source = "Master plan: real links between change control and regulatory records"
+source = "D2 Change Control: Impact Assessment; D3 compliance block (Regulatory Submissions); CDSCO MDR 2017 (notification of changes); ISO 13485 7.3.9; master plan section 7 (real links between change control and regulatory records)"
 status = "implemented"
