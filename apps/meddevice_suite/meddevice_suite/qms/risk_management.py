@@ -275,7 +275,9 @@ def scale(rows: list) -> dict[int, str]:
 
 def check_scales(doc: Document, complete: bool = False) -> None:
 	"""Each scale numbered 1, 2, … with a name per level; each pair of the matrix listed once;
-	complete: every pair with its acceptability, never more acceptable as the risk rises."""
+	complete: every pair with its acceptability, never more acceptable as the risk rises. A scale or
+	matrix missing altogether is said first, as such: numbering an empty scale says nothing useful."""
+	require_scales(doc)
 	for table, label in (("severity_levels", _("severity")), ("probability_levels", _("probability"))):
 		rows = doc.get(table) or []
 		levels = [cint(row.level) for row in rows]
