@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 import frappe
 from erpnext.manufacturing.doctype.work_order.work_order import make_stock_entry as make_production_entry
 from frappe.model.document import Document
@@ -7,7 +9,8 @@ from meddevice_suite.compliance.audit_reason import stage_reason
 from meddevice_suite.compliance.esign import verify_signatures
 from meddevice_suite.compliance.signing import sign_action
 from meddevice_suite.compliance.test_esign import PASSWORD
-from meddevice_suite.lot_control import release, stores
+from meddevice_suite.lot_control import lot_status, release, stores
+from meddevice_suite.lot_control import receipt as receipt_module
 from meddevice_suite.lot_control.doctype.lot_release.lot_release import on_doctype_update
 from meddevice_suite.lot_control.lot_status import (
 	APPROVED,
@@ -33,6 +36,7 @@ from meddevice_suite.lot_control.test_lot_status import (
 	company,
 	ensure_parties,
 	lot_item,
+	move,
 	purchase_receive,
 	qty_in,
 	receive,
@@ -47,13 +51,15 @@ from meddevice_suite.setup.fixtures.inspection import (
 	ensure_inspection_template,
 	readings_for,
 )
-from meddevice_suite.setup.fixtures.records import lot_of
+from meddevice_suite.setup.fixtures.records import loaded_as_data_import, lot_of
 from meddevice_suite.setup.install import apply_configuration
 from meddevice_suite.setup.test_stock import (
 	approve_equipment_for_test,
 	approve_for_test,
 	approve_specification_for_test,
 	device_master_record_for_test,
+	operations_done_for_test,
+	production_line_for_test,
 	submit_bom_for_test,
 )
 
@@ -81,8 +87,9 @@ def certificate(receipt: str, version: str = "") -> str:
 
 def made_by_work_order() -> str:
 	"""A lot of FINISHED_ITEM made, as the finished lot is made, by a manufacture entry on a work order
-	released on the product's Current device master record (module 31), from an approved lot of ITEM;
-	returns the finished lot, in the Quarantine store."""
+	released on the product's Current device master record (module 31), from an approved lot of ITEM,
+	once the operations of its routing are done (URS-EQP-006); returns the finished lot, in the
+	Quarantine store."""
 	frappe.set_user("Administrator")
 	material = receive(ITEM, 2, store("Stores"))
 	set_status(material, APPROVED, "Approved material for the test's production")
@@ -98,6 +105,8 @@ def made_by_work_order() -> str:
 					"quantity": 1,
 					"is_active": 1,
 					"is_default": 1,
+					"with_operations": 1,
+					"routing": production_line_for_test()[0],
 					"items": [{"item_code": ITEM, "qty": 1}],
 				}
 			).insert()
@@ -116,8 +125,11 @@ def made_by_work_order() -> str:
 			"wip_warehouse": store("Work In Progress"),
 			"fg_warehouse": store(stores.QUARANTINE),
 		}
-	).insert()
+	)
+	order.get_items_and_operations_from_bom()  # as the form does when the bill is chosen
+	order.insert()
 	order.submit()
+	operations_done_for_test(order.name)
 	entry = frappe.get_doc(make_production_entry(order.name, "Manufacture", 1))
 	for row in entry.items:
 		if row.item_code == ITEM:
@@ -876,6 +888,7 @@ class TestWhereALotCameFrom(ReleaseTestCase):
 		lot = frappe.get_doc(
 			{"doctype": "Batch", "item": ITEM, "batch_id": f"REC-{frappe.generate_hash(length=6)}"}
 		).insert()
+		# Opening stock comes in only through the go-live data load (URS-STK-015), as Data Import runs.
 		reconciliation = frappe.get_doc(
 			{
 				"doctype": "Stock Reconciliation",
@@ -896,8 +909,8 @@ class TestWhereALotCameFrom(ReleaseTestCase):
 					}
 				],
 			}
-		).insert()
-		reconciliation.submit()
+		)
+		loaded_as_data_import(reconciliation)
 		with self.assertRaisesRegex(frappe.ValidationError, "only stock received on a goods receipt"):
 			self.decide(lot.name, "Release", "found in a count")
 
@@ -1098,3 +1111,108 @@ class TestOneLotOneReceiptLine(ReleaseTestCase):
 		)
 		with self.assertRaisesRegex(frappe.ValidationError, "named on more than one line"):
 			receipt.save()
+
+
+@verifies("URS-STK-004", "URS-QC-001")
+class TestOneLotOnOneReceipt(ReleaseTestCase):
+	"""A lot comes in on one receipt. The form says so (`receipt.refuse_existing_lots`); the stock
+	ledger decides, under the lot's lock, so two receipts of one lot submitted at once are not both
+	taken as its first (independent review 2026-10-15)."""
+
+	def scanned(self) -> str:
+		approve_for_test(ITEM)  # module 1: a lot is made only of an approved item
+		return (
+			frappe.get_doc(
+				{"doctype": "Batch", "item": ITEM, "batch_id": f"ONCE-{frappe.generate_hash(length=6)}"}
+			)
+			.insert()
+			.name
+		)
+
+	def receipt_of(self, lot: str) -> Document:
+		receipt = purchase_receive(ITEM, 2, submit=False)
+		receipt.items[0].update({"batch_no": lot, "use_serial_batch_fields": 1})
+		return receipt
+
+	def test_a_second_receipt_of_a_lot_is_refused_at_the_ledger(self):
+		"""The second receipt saved while the first was still a draft passed the form's check; it is
+		refused when submitted after the first."""
+		frappe.set_user("Administrator")
+		lot = self.scanned()
+		first = self.receipt_of(lot)
+		first.save()
+		first.submit()
+		second = self.receipt_of(lot)
+
+		with patch.object(receipt_module, "refuse_existing_lots", lambda doc, method=None: None):
+			second.save()
+			with self.assertRaisesRegex(
+				frappe.ValidationError, f"Lot {lot} came in on Purchase Receipt {first.name}"
+			):
+				second.submit()
+
+		self.assertEqual(receipt_line_of(lot).receipt, first.name)
+
+	def test_the_lot_is_locked_before_its_origin_is_read(self):
+		frappe.set_user("Administrator")
+		lot = self.scanned()
+		first = self.receipt_of(lot)
+		first.save()
+		first.submit()
+		calls: list[str] = []
+		real_status_of, real_origins_of = lot_status.status_of, receipt_module.origins_of
+
+		def status_of(lots, lock=False):
+			calls.append("lock" if lock else "read")
+			return real_status_of(lots, lock)
+
+		def origins_of(lots):
+			calls.append("origin")
+			return real_origins_of(lots)
+
+		second = frappe.get_doc(
+			{
+				"doctype": "Stock Ledger Entry",
+				"item_code": ITEM,
+				"warehouse": store(stores.QUARANTINE),
+				"actual_qty": 2,
+				"voucher_type": "Purchase Receipt",
+				"voucher_no": "PR-NOT-STORED",
+				"batch_no": lot,
+				"is_cancelled": 0,
+			}
+		)
+		with (
+			patch.object(lot_status, "status_of", status_of),
+			patch.object(receipt_module, "origins_of", origins_of),
+			self.assertRaisesRegex(frappe.ValidationError, "new stock comes in as a new lot"),
+		):
+			lot_status.guard_stock_ledger_entry(second)
+
+		# Locked first: a second receipt submitted at once waits for the first before it reads where
+		# the lot came from.
+		self.assertEqual(calls[:2], ["lock", "origin"])
+
+
+@verifies("URS-QC-004", "URS-PLT-017")
+class TestStockSetApartWaitsOnQA(ReleaseTestCase):
+	"""Approved stock Stores sets apart in the hold store was in nobody's queue (independent review
+	2026-10-15): it waits on QA's decision as a held lot does."""
+
+	def test_approved_stock_in_the_hold_store_is_in_the_queue_and_qas_work(self):
+		from meddevice_suite.work_management import my_work
+
+		_receipt, lot = self.ready()
+		self.decide(lot, "Release")
+		frappe.set_user("Administrator")
+		move(ITEM, lot, 2, store("Stores"), store(stores.HOLD))  # Stores sets suspect stock apart
+
+		_columns, rows = queue({"item_code": ITEM})
+
+		listed = [
+			(row["warehouse"], row["lot_status"], row["waiting_for"], row["qty"], row["days"])
+			for row in rows
+			if row["batch_no"] == lot
+		]
+		self.assertEqual(listed, [(store(stores.HOLD), APPROVED, "QA decision on stock set apart", 2, 0)])
+		self.assertIn(("Batch", lot), [(item.doctype, item.name) for item in my_work.waiting_on(self.qa)])

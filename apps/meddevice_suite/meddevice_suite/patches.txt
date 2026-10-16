@@ -8,3 +8,4 @@ meddevice_suite.patches.v0_1.set_initial_lot_status
 meddevice_suite.patches.v0_1.record_reminders_already_told
 meddevice_suite.patches.v0_1.record_changes_made_under_approved_requests
 meddevice_suite.patches.v0_1.approve_specifications_in_use
+meddevice_suite.patches.v0_1.move_audit_anchor_file

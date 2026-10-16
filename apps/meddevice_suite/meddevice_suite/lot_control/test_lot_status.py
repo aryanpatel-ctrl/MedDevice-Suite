@@ -6,6 +6,7 @@ from frappe.model.document import Document
 from frappe.tests import IntegrationTestCase
 from frappe.utils import add_days, flt, today
 
+from meddevice_suite.compliance.audit_reason import stage_reason
 from meddevice_suite.compliance.test_esign import PASSWORD
 from meddevice_suite.lot_control import lot_status, release, stores
 from meddevice_suite.lot_control.lot_status import (
@@ -584,11 +585,11 @@ class TestOnlyAnApprovedLotLeaves(LotTestCase):
 		self.decide(lot, "Reject", "certificate does not match")
 		self.assertEqual(qty_in(lot, store(stores.REJECTED)), 6)
 
-		with self.assertRaises(LotNotApproved):
-			move(RAW, lot, 1, store(stores.REJECTED), store("Stores"))
-		move(RAW, lot, 1, store(stores.REJECTED), store(stores.RETURNS))
+		for kind in ("Stores", stores.RETURNS):
+			with self.subTest(store=kind), self.assertRaises(LotNotApproved):
+				move(RAW, lot, 1, store(stores.REJECTED), store(kind))
 		issue(RAW, lot, 1, store(stores.REJECTED))
-		self.assertEqual(qty_in(lot, store(stores.REJECTED)), 4)
+		self.assertEqual(qty_in(lot, store(stores.REJECTED)), 5)
 
 		# A supplier's lot, once Rejected, goes back on a purchase return from the rejected store. QA's
 		# rejection moves it there; Stores cannot move stock out of quarantine (URS-STK-010).
@@ -612,7 +613,7 @@ class TestOnlyAnApprovedLotLeaves(LotTestCase):
 
 	def test_a_work_order_draws_from_an_approved_store_and_finishes_into_quarantine(self):
 		approve_for_test(PRODUCT, RAW)  # module 1: production uses approved items only
-		bom = frappe.db.get_value("BOM", {"item": PRODUCT, "docstatus": 1}) or (
+		bom = frappe.db.get_value("BOM", {"item": PRODUCT, "docstatus": 1, "is_default": 1}) or (
 			frappe.get_doc(
 				{
 					"doctype": "BOM",
@@ -919,7 +920,9 @@ OUT_OF_A_STORE = {
 INWARD_PURPOSES = frozenset({"Material Receipt", "Receive from Customer", "Subcontracting Return"})
 
 NOTHING: frozenset[str] = frozenset()
-FROM_REJECTED = frozenset({"supplier return", "material issue", f"transfer to {stores.RETURNS}"})
+# Rejected stock goes back to its supplier or is scrapped; never into the returns store, which receives
+# only a customer's goods coming back (independent review 2026-10-15).
+FROM_REJECTED = frozenset({"supplier return", "material issue"})
 # kind of store -> lot status -> the paths stock may leave it by, without QA's signature
 MATRIX = {
 	stores.APPROVED: {
@@ -942,10 +945,10 @@ MATRIX = {
 	stores.RETURNS: dict.fromkeys(lot_status.STATUSES, NOTHING),
 	stores.REJECTED: dict.fromkeys(lot_status.STATUSES, FROM_REJECTED),
 }
-# QA's signed transfer moves stock out of any store but the rejected one, which only ever sends it
-# to the returns store.
-SIGNED = {kind: frozenset(TRANSFERS) for kind in stores.KINDS} | {
-	stores.REJECTED: frozenset({f"transfer to {stores.RETURNS}"})
+# QA's signed transfer moves stock out of any store but the rejected one, and into any store but the
+# returns store, which receives only a customer's goods coming back.
+SIGNED = {kind: frozenset(TRANSFERS) - {f"transfer to {stores.RETURNS}"} for kind in stores.KINDS} | {
+	stores.REJECTED: NOTHING
 }
 INTO_A_STORE = {
 	"material receipt": ("Stock Entry", "Material Receipt", False),
@@ -962,9 +965,10 @@ CUSTOMER_RETURNS = frozenset(name for name in INTO_A_STORE if name.startswith("c
 
 def comes_in(path: str, status: str, kind: str) -> bool:
 	"""Where new stock and returns may come in: a customer's goods into the returns store only, whatever
-	the lot's status (plan D-25); a lot not Approved into any store but an approved one."""
-	if path in CUSTOMER_RETURNS:
-		return kind == stores.RETURNS
+	the lot's status (plan D-25), and nothing else into it; a lot not Approved into any store but an
+	approved one."""
+	if path in CUSTOMER_RETURNS or kind == stores.RETURNS:
+		return path in CUSTOMER_RETURNS and kind == stores.RETURNS
 	return status == APPROVED or kind != stores.APPROVED
 
 
@@ -1085,8 +1089,7 @@ class TestStockKeptApart(LotTestCase):
 		with self.assertRaises(LotNotApproved):
 			move(RAW, lot, 1, store(stores.REJECTED), store("Stores"))
 		issue(RAW, lot, 1, store(stores.REJECTED))  # scrapped
-		move(RAW, lot, 1, store(stores.REJECTED), store(stores.RETURNS))
-		self.assertEqual((qty_in(lot, store(stores.REJECTED)), qty_in(lot, store(stores.RETURNS))), (1, 1))
+		self.assertEqual((qty_in(lot, store(stores.REJECTED)), qty_in(lot, store(stores.RETURNS))), (2, 0))
 
 	def test_approved_stock_does_not_go_into_the_quarantine_or_returns_store(self):
 		lot = self.approved()
@@ -1249,3 +1252,101 @@ class TestAnExpiredLotIsStillDecided(LotTestCase):
 
 		self.assertEqual((held.quantity, qty_in(lot, store(stores.HOLD))), (4, 4))
 		self.assertEqual(qty_in(lot, store("Stores")), 0)
+
+
+@verifies("URS-STK-010")
+class TestTheReturnsStoreReceivesOnlyCustomerReturns(LotTestCase):
+	"""Goods rejected at the door, moved by hand into the returns store, reached usable stock by QA's
+	Return to Stock (independent review 2026-10-15): the returns store receives a customer's goods
+	coming back, nothing else."""
+
+	def test_rejected_stock_is_not_moved_into_the_returns_store(self):
+		lot = self.approved()
+		move(RAW, lot, 2, store("Stores"), store(stores.REJECTED))
+
+		with self.assertRaises(LotNotApproved) as refusal:
+			move(RAW, lot, 1, store(stores.REJECTED), store(stores.RETURNS))
+
+		self.assertIn("receives only goods a customer sends back", str(refusal.exception))
+		self.assertEqual((qty_in(lot, store(stores.REJECTED)), qty_in(lot, store(stores.RETURNS))), (2, 0))
+
+	def test_new_stock_does_not_come_into_the_returns_store(self):
+		with self.assertRaises(LotNotApproved) as refusal:
+			stock_entry(
+				"Material Receipt",
+				[{"item_code": RAW, "qty": 1, "t_warehouse": store(stores.RETURNS), "basic_rate": 10}],
+			)
+		self.assertIn("receives only goods a customer sends back", str(refusal.exception))
+
+
+@verifies("URS-STK-014")
+class TestCancellingFollowsTheStockPath(LotTestCase):
+	"""Cancelling a document posts the reverse of its movement; stock kept apart for QA does not leave
+	that way (independent review 2026-10-15: a transfer of damaged stock into the rejected store,
+	cancelled, put it back in approved stock; a customer's return, cancelled, left QA's queue)."""
+
+	def cancel(self, doctype: str, name: str) -> None:
+		# A request starts with no action in progress; in the test process the cause of a cancellation
+		# refused earlier would stay in the flags and the bundles this one cancels would not find its
+		# reason (as the audit tests reset it, compliance/test_audit.py).
+		frappe.flags.audit_cause = None
+		self.addCleanup(frappe.flags.pop, "audit_cause", None)
+		stage_reason(doctype, name, "cancel", "Entered by mistake (test)")
+		frappe.get_doc(doctype, name).cancel()
+
+	def assert_refused(self, doctype: str, name: str) -> None:
+		with self.assertRaises(LotNotApproved) as refusal:
+			self.cancel(doctype, name)
+		self.assertIn("QA's signed disposition", str(refusal.exception))
+		self.assertEqual(frappe.db.get_value(doctype, name, "docstatus"), 1)
+
+	def test_cancelling_a_move_into_the_rejected_or_hold_store_is_refused(self):
+		lot = self.approved()
+		for kind in (stores.REJECTED, stores.HOLD):
+			with self.subTest(store=kind):
+				moved = move(RAW, lot, 2, store("Stores"), store(kind))
+				self.assert_refused("Stock Entry", moved.name)
+				self.assertEqual(qty_in(lot, store(kind)), 2)
+
+	def test_cancelling_a_customer_return_is_refused(self):
+		lot = self.approved()
+		note = deliver(lot, 3, store("Stores"))
+		back = customer_return(note, 2)
+
+		self.assert_refused("Delivery Note", back.name)
+
+		self.assertEqual(qty_in(lot, store(stores.RETURNS)), 2)
+
+	def test_cancelling_what_brought_in_stock_of_a_held_lot_is_refused(self):
+		lot = self.approved()
+		moved = move(RAW, lot, 2, store("Stores"), store("Finished Goods"))
+		self.decide(lot, "Hold", "customer complaint under investigation")
+
+		self.assert_refused("Stock Entry", moved.name)
+
+	def test_other_cancellations_stay_allowed(self):
+		lot = self.approved()
+		moved = move(RAW, lot, 2, store("Stores"), store("Finished Goods"))
+		issued = issue(RAW, lot, 1, store("Stores"))
+		move(RAW, lot, 2, store("Stores"), store(stores.REJECTED))
+		scrapped = issue(RAW, lot, 1, store(stores.REJECTED))  # stock comes back into the rejected store
+		quarantined = self.quarantined(3)
+		received = frappe.db.get_value("Batch", quarantined, "reference_name")  # a receipt into quarantine
+
+		for doctype, name in (
+			("Stock Entry", moved.name),
+			("Stock Entry", issued.name),
+			("Stock Entry", scrapped.name),
+			("Stock Entry", received),
+		):
+			with self.subTest(document=name):
+				self.cancel(doctype, name)
+				self.assertEqual(frappe.db.get_value(doctype, name, "docstatus"), 2)
+		self.assertEqual(qty_in(lot, store(stores.REJECTED)), 2)
+
+	def test_every_cancellation_is_checked(self):
+		self.assertIn(
+			"meddevice_suite.lot_control.lot_status.guard_cancellation",
+			frappe.get_hooks("doc_events")["*"]["before_cancel"],
+		)
+		lot_status.guard_cancellation(frappe.get_doc({"doctype": "ToDo", "description": "not stock"}))

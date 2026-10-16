@@ -16,9 +16,11 @@ new version renews it or it is archived.
 
 import frappe
 from frappe import _
+from frappe.model import no_value_fields
 from frappe.model.document import Document
 from frappe.utils import now_datetime
 
+from meddevice_suite.compliance.audit import same
 from meddevice_suite.compliance.checks import QA_ROLE, require
 from meddevice_suite.qms.document_control import file_fingerprint
 
@@ -128,13 +130,16 @@ def check_file(doc: Document) -> None:
 		# Compared by value, not by type: the desk sends the record's dates and times back as text,
 		# while the record as stored holds them as dates (a renewal from the form was refused).
 		require(
-			not any(doc.has_value_changed(field) for field in SET_BY_RULES),
+			unchanged(before, doc, SET_BY_RULES),
 			_("The status, the current version and its validity follow from the versions."),
 			frappe.PermissionError,
 		)
 		require(
-			[row.as_dict(no_default_fields=True, convert_dates_to_str=True) for row in before.versions]
-			== [row.as_dict(no_default_fields=True, convert_dates_to_str=True) for row in doc.versions],
+			len(before.versions) == len(doc.versions)
+			and all(
+				unchanged(old, new, data_fields(new))
+				for old, new in zip(before.versions, doc.versions, strict=True)
+			),
 			_("Earlier versions are kept as they were."),
 			frappe.PermissionError,
 		)
@@ -146,6 +151,18 @@ def check_file(doc: Document) -> None:
 			)
 	if doc.new_file:
 		add_version(doc, user)
+
+
+def unchanged(before: Document, doc: Document, fields: tuple[str, ...]) -> bool:
+	"""As stored: a form sends dates and numbers as text, the database returns them as values, so an
+	untouched value would otherwise count as changed (independent review, 2026-10-15)."""
+	return all(
+		same(before.get(field), doc.get(field), doc.meta.get_field(field).fieldtype) for field in fields
+	)
+
+
+def data_fields(row: Document) -> tuple[str, ...]:
+	return tuple(df.fieldname for df in row.meta.fields if df.fieldtype not in no_value_fields)
 
 
 def add_version(doc: Document, user: str) -> None:

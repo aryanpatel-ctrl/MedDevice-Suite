@@ -44,8 +44,14 @@ doc_events = {
 			# The ledger checks read a voucher's header once per document (lot_control/lot_status.py):
 			# a document submitted or cancelled is read afresh.
 			"meddevice_suite.lot_control.lot_status.forget_voucher",
+			# Module 17: a cancellation's reverse movement is held to the stock path rule; stock kept
+			# apart for QA leaves only by QA's disposition (URS-STK-014). Returns at once for a record
+			# type that is not a stock document.
+			"meddevice_suite.lot_control.lot_status.guard_cancellation",
 		],
-		"before_submit": "meddevice_suite.lot_control.lot_status.forget_voucher",
+		# Read afresh, and known as submitted today: goods move when a document is submitted, whatever
+		# date it is posted on (module 18, URS-STK-008).
+		"before_submit": "meddevice_suite.lot_control.lot_status.note_submission",
 		# What an approval forbids is refused first; asking a reason for it would mislead.
 		"before_update_after_submit": [
 			"meddevice_suite.compliance.approvals.before_update_after_submit",
@@ -121,8 +127,10 @@ doc_events = {
 		# record is Current (before_validate runs even when validation is skipped).
 		"before_validate": "meddevice_suite.qms.device_master_record.guard_stock_entry",
 		"validate": [
-			# Plan D-28, first: a finished good that may not come in on it is refused for what it is,
-			# before the lot status rules say where its lot may go.
+			# Opening stock is the go-live data load's alone (URS-STK-015), first.
+			"meddevice_suite.lot_control.finished_goods.guard_opening_stock",
+			# Plan D-28: a finished good that may not come in on it is refused for what it is, before
+			# the lot status rules say where its lot may go.
 			"meddevice_suite.lot_control.finished_goods.guard_document",
 			"meddevice_suite.lot_control.lot_status.guard_stock_entry",
 		],
@@ -155,8 +163,14 @@ doc_events = {
 		"before_rename": "meddevice_suite.master_data.customer_licence.guard_customer_rename",
 	},
 	"Pick List": {"validate": "meddevice_suite.lot_control.lot_status.guard_pick_list"},
-	# Plan D-28: a count brings a new lot of a finished good in only as opening stock at migration.
-	"Stock Reconciliation": {"validate": "meddevice_suite.lot_control.finished_goods.guard_document"},
+	"Stock Reconciliation": {
+		"validate": [
+			# Opening stock is the go-live data load's alone (URS-STK-015).
+			"meddevice_suite.lot_control.finished_goods.guard_opening_stock",
+			# Plan D-28: a count never brings a new lot of a finished good in.
+			"meddevice_suite.lot_control.finished_goods.guard_document",
+		]
+	},
 	"Packing Slip": {"validate": "meddevice_suite.lot_control.lot_status.guard_packing_slip"},
 	"Work Order": {
 		# Module 2: only from an approved, active bill of its own product; module 3: only on approved
@@ -169,6 +183,9 @@ doc_events = {
 			"meddevice_suite.lot_control.lot_status.guard_unvalidated_work_order",
 			"meddevice_suite.master_data.bom.guard_work_order",
 			"meddevice_suite.master_data.routing.guard_work_order",
+			# Modules 38 and 40, at submit: its routing, and the equipment at its workstations fit;
+			# here too, as Frappe skips before_submit when validation is skipped.
+			"meddevice_suite.qms.equipment_care.guard_work_order",
 		],
 		"validate": [
 			"meddevice_suite.lot_control.lot_status.guard_work_order",
@@ -218,6 +235,9 @@ doc_events = {
 			"meddevice_suite.qms.equipment_care.guard_job_card",
 			"meddevice_suite.qms.training.guard_job_card",
 		],
+		# Module 38: submitted after an instrument at its workstation was found out of tolerance, in
+		# the period that finding assessed: added to that calibration, its assessment open again.
+		"on_submit": "meddevice_suite.qms.calibration.add_later_use",
 	},
 	# Module 37: joining, a new job, leaving or returning changes what training is needed.
 	"Employee": {"on_update": "meddevice_suite.qms.training.on_employee_update"},
@@ -250,6 +270,9 @@ doc_events = {
 			"meddevice_suite.master_data.equipment.guard_inspection_instruments",
 		],
 		"before_submit": "meddevice_suite.master_data.specification.check_sample_size",
+		# Module 38: naming an instrument found out of tolerance since, for a day in the period that
+		# finding assessed: added to that calibration, its assessment open again.
+		"on_submit": "meddevice_suite.qms.calibration.add_later_use",
 	},
 	# Version-controlled masters (URS-MST-001): the default bill of materials in force is replaced,
 	# and one is cancelled, only under an approved change request.
@@ -329,7 +352,14 @@ doc_events = {
 	},
 	"Log Settings": {"validate": "meddevice_suite.compliance.retention.protect_login_history"},
 	"File": {"before_validate": "meddevice_suite.compliance.evidence_files.protect"},
-	"Role Profile": {"validate": "meddevice_suite.setup.roles.separate_administration_in_profile"},
+	# Job profiles change only with a release of this app (URS-CMP-014).
+	"Role Profile": {
+		"validate": [
+			"meddevice_suite.setup.roles.refuse_hand_changed_job_profile",
+			"meddevice_suite.setup.roles.separate_administration_in_profile",
+		],
+		"on_trash": "meddevice_suite.setup.roles.refuse_hand_changed_job_profile",
+	},
 	"User": {
 		"validate": "meddevice_suite.setup.roles.separate_administration",
 		"before_rename": "meddevice_suite.compliance.audit.keep_user_id",
@@ -337,8 +367,11 @@ doc_events = {
 		# the "*" handlers and before Frappe's link check.
 		"on_trash": "meddevice_suite.compliance.audit.keep_user_with_history",
 	},
-	# The app's own record types carry their permissions in their definition (URS-CMP-015).
-	"Custom DocPerm": {"before_validate": "meddevice_suite.setup.roles.refuse_hand_added_permission"},
+	# The permissions the role matrix governs change only with a release of this app (URS-CMP-015).
+	"Custom DocPerm": {
+		"before_validate": "meddevice_suite.setup.roles.refuse_hand_added_permission",
+		"on_trash": "meddevice_suite.setup.roles.refuse_hand_removed_permission",
+	},
 }
 
 # A regulated record's audit events in its form timeline, for users who may review them.
@@ -375,6 +408,10 @@ has_permission = {
 	"File": "meddevice_suite.compliance.evidence_files.has_permission",
 	"Training Record": "meddevice_suite.qms.training.has_permission",
 }
+
+# The audit trail's anchor file is never named by a File record (URS-CMP-040): refused before
+# Frappe's File.before_insert reads the named file and stores a copy of it.
+extend_doctype_class = {"File": ["meddevice_suite.compliance.evidence_files.ProtectedFile"]}
 
 scheduler_events = {
 	# The head of the audit trail and of the signatures, so that removed entries are detected

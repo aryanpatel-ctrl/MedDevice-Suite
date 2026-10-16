@@ -151,6 +151,157 @@ class TestPermissionMatrix(ProfileTestCase):
 		self.assertEqual(frappe.db.count("Audit Event"), before)
 
 
+# A regulated record, a lot, a supporting record type and the site configuration: each governed by
+# the matrix, none of them a record type this app defines (independent review, 2026-10-15).
+GOVERNED = ("Item", "Purchase Receipt", "Batch", "Account", "Custom Field")
+
+
+@verifies("URS-CMP-015")
+class TestPermissionsAreNotChangedByHand(ProfileTestCase):
+	"""Undone at the next migrate is not enough: a hand change would be in force until then."""
+
+	def setUp(self):
+		super().setUp()
+		frappe.set_user("Administrator")  # holds System Manager, as Role Permissions Manager requires
+
+	def test_no_row_is_added_by_hand_on_a_governed_record_type(self):
+		from frappe.permissions import add_permission
+
+		for doctype in GOVERNED:
+			with self.subTest(doctype=doctype):
+				before = applied_rows(doctype)
+				with self.assertRaises(frappe.PermissionError):
+					frappe.get_doc(
+						{
+							"doctype": "Custom DocPerm",
+							"parent": doctype,
+							"role": "System Manager",
+							"permlevel": 2,
+							"read": 1,
+							"delete": 1,
+						}
+					).insert(ignore_permissions=True)
+				with self.assertRaises(frappe.PermissionError):  # as Role Permissions Manager adds one
+					add_permission(doctype, "Sales User", permlevel=3)
+				self.assertEqual(applied_rows(doctype), before)
+
+	def test_no_row_is_changed_by_hand_on_a_governed_record_type(self):
+		from frappe.core.page.permission_manager.permission_manager import update
+
+		for doctype in GOVERNED:
+			with self.subTest(doctype=doctype):
+				before = applied_rows(doctype)
+				role = next(role for role, level in before if level == 0)
+				with self.assertRaises(frappe.PermissionError):  # as Role Permissions Manager ticks a box
+					update(doctype, role, 0, "delete", "1")
+				name = frappe.get_all(
+					"Custom DocPerm", filters={"parent": doctype, "role": role, "permlevel": 0}, pluck="name"
+				)[0]
+				row = frappe.get_doc("Custom DocPerm", name)
+				row.share = 1
+				with self.assertRaises(frappe.PermissionError):
+					row.save(ignore_permissions=True)
+				self.assertEqual(applied_rows(doctype), before)
+
+	def test_no_row_is_removed_by_hand_nor_a_record_type_reset_to_the_platforms_defaults(self):
+		from frappe.core.page.permission_manager.permission_manager import remove, reset
+
+		for doctype in GOVERNED:
+			with self.subTest(doctype=doctype):
+				before = applied_rows(doctype)
+				role = next(role for role, level in before if level == 0)
+				with self.assertRaises(frappe.PermissionError):
+					remove(doctype, role, 0)
+				with self.assertRaises(frappe.PermissionError):  # ERPNext's defaults grant delete and share
+					reset(doctype)
+				self.assertEqual(applied_rows(doctype), before)
+
+	def test_the_configuration_still_writes_the_rows_outside_a_migrate(self):
+		row = frappe.get_all(
+			"Custom DocPerm", filters={"parent": "Batch", "role": "Stock User", "permlevel": 0}, pluck="name"
+		)[0]
+		frappe.db.set_value("Custom DocPerm", row, "share", 1)  # past the refusal, straight to the database
+		frappe.db.delete("Custom DocPerm", {"parent": "Batch", "role": "Item Manager"})
+		frappe.get_doc(
+			{
+				"doctype": "Custom DocPerm",
+				"parent": "Batch",
+				"role": "Sales Manager",
+				"permlevel": 2,
+				"read": 1,
+			}
+		).db_insert()
+
+		apply_roles()  # as on every migrate and install, which the refusal leaves alone
+
+		self.assertEqual(applied_rows("Batch"), declared_rows("Batch"))
+
+
+@verifies("URS-CMP-014")
+class TestJobProfilesAreNotChangedByHand(ProfileTestCase):
+	def setUp(self):
+		super().setUp()
+		frappe.set_user("Administrator")
+
+	def test_a_job_profile_cannot_be_given_another_role_or_lose_one(self):
+		for profile, roles in JOB_PROFILES.items():
+			with self.subTest(profile=profile):
+				doc = frappe.get_doc("Role Profile", profile)
+				doc.append(
+					"roles", {"role": "Sales Manager" if "Sales Manager" not in roles else "Stock User"}
+				)
+				with self.assertRaises(frappe.PermissionError):
+					doc.save(ignore_permissions=True)
+				doc = frappe.get_doc("Role Profile", profile)
+				doc.set("roles", [])
+				with self.assertRaises(frappe.PermissionError):
+					doc.save(ignore_permissions=True)
+				self.assertEqual(
+					sorted(
+						frappe.get_all(
+							"Has Role",
+							filters={"parent": profile, "parenttype": "Role Profile"},
+							pluck="role",
+						)
+					),
+					sorted(roles),
+				)
+
+	def test_a_job_profile_cannot_be_changed_through_the_api_or_deleted(self):
+		from frappe.client import set_value
+
+		with self.assertRaises(frappe.PermissionError):
+			set_value("Role Profile", "Stores", "roles", [{"role": "Stock Manager"}])
+		with self.assertRaises(frappe.PermissionError):
+			frappe.delete_doc("Role Profile", "Stores", ignore_permissions=True)
+		self.assertTrue(frappe.db.exists("Role Profile", "Stores"))
+
+	def test_another_role_profile_is_still_kept_by_the_administrator(self):
+		doc = frappe.get_doc(
+			{
+				"doctype": "Role Profile",
+				"role_profile": f"Visitor {frappe.generate_hash(length=6)}",
+				"roles": [{"role": "Sales User"}],
+			}
+		).insert()
+		doc.append("roles", {"role": "Stock User"})
+		doc.save()
+		frappe.delete_doc("Role Profile", doc.name)
+		self.assertFalse(frappe.db.exists("Role Profile", doc.name))
+
+	def test_the_configuration_still_restores_a_job_profile_outside_a_migrate(self):
+		frappe.db.delete("Has Role", {"parent": "QC Inspector", "parenttype": "Role Profile"})
+
+		apply_roles()
+
+		self.assertEqual(
+			frappe.get_all(
+				"Has Role", filters={"parent": "QC Inspector", "parenttype": "Role Profile"}, pluck="role"
+			),
+			["QC Inspector"],
+		)
+
+
 # What each job must still be able to do under least privilege.
 DAILY_WORK = {
 	"Sales": [("Customer", "create"), ("Delivery Note", "submit")],
@@ -301,10 +452,17 @@ class TestAdministrationIsSeparate(ProfileTestCase):
 		)
 
 	def test_a_job_profile_cannot_combine_administration_with_business_roles(self):
-		profile = frappe.get_doc("Role Profile", "Stores")
-		profile.append("roles", {"role": "System Manager"})
+		# The job profiles are not changed by hand at all (TestJobProfilesAreNotChangedByHand); any
+		# other profile is held to the same separation.
+		profile = frappe.get_doc(
+			{
+				"doctype": "Role Profile",
+				"role_profile": f"Combined {frappe.generate_hash(length=6)}",
+				"roles": [{"role": "Stock User"}, {"role": "System Manager"}],
+			}
+		)
 		with self.assertRaises(frappe.PermissionError):
-			profile.save()
+			profile.insert()
 
 	def test_an_administrator_cannot_also_hold_a_business_role(self):
 		for fields in (

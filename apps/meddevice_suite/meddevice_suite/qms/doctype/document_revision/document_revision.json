@@ -93,7 +93,7 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Status",
-   "options": "Draft\nIn Review\nAwaiting Approval\nApproved\nEffective\nSuperseded\nObsolete",
+   "options": "Draft\nIn Review\nAwaiting Approval\nApproved\nEffective\nSuperseded\nObsolete\nAbandoned",
    "read_only": 1,
    "search_index": 1
   },
@@ -143,7 +143,7 @@
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2026-10-15 12:00:00.000000",
+ "modified": "2026-10-16 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "QMS",
  "name": "Document Revision",

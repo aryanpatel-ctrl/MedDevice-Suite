@@ -174,6 +174,19 @@ class TestLotExpiryAlerts(AlertTestCase):
 
 		self.assertEqual(len(self.expiry_alerts(self.stores, lot)), 2)
 
+	def test_an_unchanged_expiry_date_saved_from_the_form_is_not_alerted_again(self):
+		"""Found in the browser walk-through of 2026-10-15: the form sends the date as text, the
+		database returns a date, and the unchanged date counted as a new one."""
+		lot = self.lot(20)
+		self.run_alerts()
+
+		doc = frappe.get_doc("Batch", lot)
+		doc.expiry_date = str(doc.expiry_date)  # as the form sends it
+		doc.save()
+		self.run_alerts()
+
+		self.assertEqual(len(self.expiry_alerts(self.stores, lot)), 1)
+
 	def test_lots_without_stock_disabled_or_without_expiry_raise_no_alert(self):
 		used_up, disabled = self.lot(10, stock=0), self.lot(10, disabled=1)
 		undated = self.lot(10)

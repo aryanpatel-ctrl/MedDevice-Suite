@@ -22,32 +22,47 @@ $(document).on("form-refresh", (event, frm) => {
 					doctype: frm.doctype,
 					name: frm.doc.name,
 				})
-				.then(({ audit_trail, signatures_intact, anchors }) => {
-					const intact = !audit_trail.length && signatures_intact && !anchors.length;
-					const findings = audit_trail.map((problem) =>
-						frappe.utils.escape_html(problem)
-					);
-					if (!signatures_intact) {
-						findings.push(__("The signatures on this record do not verify."));
-					}
-					// Entries removed anywhere in the trail, which no record's chain shows
-					// (URS-CMP-040).
-					if (anchors.length) {
-						findings.push(__("Across the whole audit trail:"));
-						findings.push(
-							...anchors.map((problem) => frappe.utils.escape_html(problem))
+				.then(
+					({ audit_trail, signature_chain, signatures, signatures_intact, anchors }) => {
+						const intact = !audit_trail.length && signatures_intact && !anchors.length;
+						const escaped = (lines) =>
+							lines.map((line) => frappe.utils.escape_html(line));
+						const findings = escaped(audit_trail);
+						findings.push(...escaped(signature_chain));
+						// Each signature and whether the record still holds what it binds (21 CFR 11.70);
+						// the server words each one, a change since signing as a finding.
+						const changed = signatures.filter((signature) => signature.finding);
+						findings.push(...escaped(changed.map((signature) => signature.message)));
+						// Entries removed anywhere in the trail, which no record's chain shows
+						// (URS-CMP-040).
+						if (anchors.length) {
+							findings.push(__("Across the whole audit trail:"));
+							findings.push(...escaped(anchors));
+						}
+						const notes = escaped(
+							signatures
+								.filter((signature) => !signature.finding)
+								.map((signature) => signature.message)
 						);
+						frappe.msgprint({
+							title: intact
+								? __("Integrity verified")
+								: __("Integrity problem found"),
+							indicator: intact ? "green" : "red",
+							message: (intact
+								? [
+										__(
+											"The audit trail and the signatures of {0} are intact.",
+											[frm.doc.name]
+										),
+								  ]
+								: findings
+							)
+								.concat(notes.length ? [__("Signatures:"), ...notes] : [])
+								.join("<br>"),
+						});
 					}
-					frappe.msgprint({
-						title: intact ? __("Integrity verified") : __("Integrity problem found"),
-						indicator: intact ? "green" : "red",
-						message: intact
-							? __("The audit trail and the signatures of {0} are intact.", [
-									frm.doc.name,
-							  ])
-							: findings.join("<br>"),
-					});
-				})
+				)
 				// Frappe has shown the server's refusal; there is nothing to show besides.
 				.catch(() => {}),
 		__("View")

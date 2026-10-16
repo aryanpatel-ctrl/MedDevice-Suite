@@ -1489,45 +1489,60 @@ context("D3 Item / BOM / Routing Master, the browser test sheet", { retries: 0 }
 		no_problems("D3-T24");
 	});
 
-	it("[URS-MST-015] D3-T25 No inspection once the specification's test method is withdrawn", () => {
-		// Step 2: QA withdraws the SOP made only for this run.
-		sign_in(QA);
-		open_form("Controlled Document", d.t25.test_method);
-		cy.get(`${FORM} .inner-group-button[data-label="Actions"] button`).click();
-		// The menu's items render in the open dropdown, outside the button group.
-		cy.get(".dropdown-menu.show")
-			.contains(".dropdown-item", /^\s*Withdraw\s*$/)
-			.click();
-		cy.get(".modal.show").should("have.css", "opacity", "1");
-		cy.window().should((win) => expect(win.cur_dialog?.title).to.equal("Sign: Withdraw"));
-		cy.get('.modal.show textarea[data-fieldname="reason"]').click().type("Replaced (test)");
-		cy.window()
-			.its("cur_dialog")
-			.should((dialog) => expect(dialog.get_value("reason")).to.equal("Replaced (test)"));
-		cy.get('.modal.show input[data-fieldname="password"]')
-			.click()
-			.type(password, { log: false });
-		cy.window()
-			.its("cur_dialog")
-			.should((dialog) => expect(dialog.get_value("password")).to.equal(password));
-		cy.get(".modal:visible .btn-primary").contains("Sign").click();
-		signed();
-		cy.window().should((win) => expect(current(win).status).to.equal("Obsolete"));
+	it("[URS-QMS-006] [URS-MST-015] D3-T25 A test method is withdrawn only once no approved specification names it", () => {
+		// The sheet's step 2 withdrew the method while the approved specification still named it, and
+		// step 3 then refused the inspection. Since the independent review of 2026-10-15 the
+		// withdrawal itself is refused while an approved master names the document as the one
+		// defining it (document_control.withdraw, defining_documents.masters_defined_by), so the
+		// inspection refusal for a method no longer in effect is no longer reached from the desk.
+		const withdraw = () => {
+			sign_in(QA);
+			open_form("Controlled Document", d.t25.test_method);
+			settle();
+			cy.get(`${FORM} .inner-group-button[data-label="Actions"] button`).click();
+			// The menu's items render in the open dropdown, outside the button group.
+			cy.get(".dropdown-menu.show")
+				.contains(".dropdown-item", /^\s*Withdraw\s*$/)
+				.click();
+			cy.get(".modal.show").should("have.css", "opacity", "1");
+			cy.window().should((win) => expect(win.cur_dialog?.title).to.equal("Sign: Withdraw"));
+			cy.get('.modal.show textarea[data-fieldname="reason"]')
+				.click()
+				.type("Replaced (test)");
+			cy.window()
+				.its("cur_dialog")
+				.should((dialog) =>
+					expect(dialog.get_value("reason")).to.equal("Replaced (test)")
+				);
+			cy.get('.modal.show input[data-fieldname="password"]')
+				.click()
+				.type(password, { log: false });
+			cy.window()
+				.its("cur_dialog")
+				.should((dialog) => expect(dialog.get_value("password")).to.equal(password));
+			cy.get(".modal:visible .btn-primary").contains("Sign").click();
+		};
 
-		// Step 3: QC's incoming inspection of the material's lot.
-		sign_in(QC);
-		new_form("Quality Inspection");
-		set({ inspection_type: "Incoming", reference_type: "Purchase Receipt" });
-		set({ reference_name: d.receipt });
-		set({ item_code: d.t25.item });
-		set({ batch_no: d.t25.lot, sample_size: 0 });
-		save_refused(
-			`The test method ${d.t25.test_method} of specification ${d.t25.specification} is no longer in effect. QA names the method in effect and approves the specification again before ${d.t25.item} is inspected.`,
-			"Test method not in effect"
+		// Step 2: QA withdraws the SOP made only for this run; refused, naming the specification.
+		const refusal = `${d.t25.test_method} defines ${SPECIFICATION} ${d.t25.specification}, approved and in use. Point each to another document, or retire it, under change control before withdrawing ${d.t25.test_method}.`;
+		expect_refusal(new RegExp(escaped(refusal.slice(0, 60))));
+		withdraw();
+		refused(refusal);
+		// The signing dialog stays open on a refusal; QA closes it.
+		cy.window().then((win) =>
+			until(() => {
+				if (!win.document.querySelector(".modal.show")) return true;
+				if (win.cur_dialog?.display) win.cur_dialog.hide();
+				return false;
+			}, 10000).then((closed) => expect(closed, "the signing dialog closes").to.be.true)
+		);
+		settle();
+		stored("Controlled Document", d.t25.test_method).then((doc) =>
+			expect(doc.status, "the method stays in effect").to.equal("Effective")
 		);
 
-		// Step 4: the specification still shows Approved; naming the method in effect, under a change
-		// request as it is in use, returns it to draft, and QA approves it again.
+		// Step 3: QA points the specification to the method in effect, under a change request as it
+		// is in use; the change returns it to draft, and QA approves it again.
 		sign_in(QA);
 		open_form(SPECIFICATION, d.t25.specification);
 		cy.window().should((win) =>
@@ -1552,6 +1567,11 @@ context("D3 Item / BOM / Routing Master, the browser test sheet", { retries: 0 }
 		cy.window().should((win) =>
 			expect(current(win).mds_master_approval, "Approval by QA").to.equal("Approved")
 		);
+
+		// Step 4: no approved master names the old SOP now; QA withdraws it.
+		withdraw();
+		signed();
+		cy.window().should((win) => expect(current(win).status).to.equal("Obsolete"));
 		no_problems("D3-T25");
 	});
 });

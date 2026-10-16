@@ -20,6 +20,13 @@ Access-control and settings record types (User, Role, Role Profile, User Permiss
 Custom DocPerm, System Settings, Stock Settings) keep Frappe's own permissions: they
 are changed by configuration code, not by jobs.
 
+The matrix and the job profiles change only with a release of this app (21 CFR 11.10(d), (g);
+engineering rules 1.3, configuration is code). Undoing a hand change at the next migrate is not
+enough: until then a role given delete or share, or a job profile given another role, is in
+force. So on a site nobody, the system administrator included, adds, changes or removes a
+permission row on a record type the matrix governs, or changes a job profile; the configuration
+code marks its own writes (`declared_by_code`), and install and migrate are left alone.
+
 The diagrams do not name job roles; these jobs were decided from their departments
 on the client's instruction of 2026-10-07, which left such choices to us. Job titles
 can be renamed without changing what each job may do.
@@ -501,7 +508,9 @@ def remove_hand_added_permissions() -> None:
 	any written past it, straight to the database, is removed on every migrate, so it does not last."""
 	own = own_doctypes()
 	for name in frappe.get_all("Custom DocPerm", filters={"parent": ["in", own or [""]]}, pluck="name"):
-		frappe.delete_doc("Custom DocPerm", name, ignore_permissions=True)  # setup code
+		frappe.delete_doc(
+			"Custom DocPerm", name, ignore_permissions=True, flags={"declared_by_code": True}
+		)  # setup code
 	if own:
 		frappe.clear_cache()
 
@@ -514,14 +523,28 @@ def own_doctypes() -> list[str]:
 	return frappe.get_all("DocType", filters={"module": ["in", modules or [""]], "custom": 0}, pluck="name")
 
 
+def governed_doctypes() -> set[str]:
+	"""Every record type whose permissions this app declares: the regulated records of the matrix,
+	the supporting record types it adds to, the site configuration it closes, and the app's own
+	record types, whose definitions carry theirs."""
+	return {*PERMISSIONS, *SUPPORTING_PERMISSIONS, *CONFIGURATION_PERMISSIONS, *own_doctypes()}
+
+
+def declared_by_code(doc: Document) -> bool:
+	"""Whether this write is the configuration's own: marked by `apply_roles`, or made while the
+	site installs or migrates, after which `apply_roles` converges on the declared state."""
+	return bool(doc.flags.declared_by_code or frappe.flags.in_install or frappe.flags.in_migrate)
+
+
 def refuse_hand_added_permission(doc: Document, method: str | None = None) -> None:
 	"""Custom DocPerm before_validate, which runs for every insert and save, validation skipped or
-	not: Role Permissions Manager writes its rows through it.
+	not: Role Permissions Manager adds and changes its rows through it.
 
-	A row on one of the app's own record types replaces the permissions its definition declares
-	(URS-CMP-015), so none is made on a site; install and migrate are left alone, and remove any
-	row that got in. On the evidence records no row may let anyone write, at any time: a role
-	allowed to create a signature or an audit event could record one in another person's name.
+	A row on a record type the matrix governs is the validated configuration (URS-CMP-015), so
+	none is added or changed on a site, where it would be in force until the next migrate undid it;
+	install, migrate and `apply_roles` are left alone. On the evidence records no row may let anyone
+	write, at any time: a role allowed to create a signature or an audit event could record one in
+	another person's name.
 	"""
 	from meddevice_suite.compliance.audit_scope import SELF_RECORDING
 
@@ -533,16 +556,40 @@ def refuse_hand_added_permission(doc: Document, method: str | None = None) -> No
 				),
 				frappe.PermissionError,
 			)
-	if frappe.flags.in_install or frappe.flags.in_migrate:
+	refuse_permission_change(doc)
+
+
+def refuse_hand_removed_permission(doc: Document, method: str | None = None) -> None:
+	"""Custom DocPerm on_trash: Role Permissions Manager removes a row, or resets a record type to
+	the platform's defaults, which grant delete and share, by deleting rows."""
+	refuse_permission_change(doc)
+
+
+def refuse_permission_change(doc: Document) -> None:
+	if declared_by_code(doc) or doc.parent not in governed_doctypes():
 		return
-	if doc.parent in own_doctypes():
-		frappe.throw(
-			_(
-				"The permissions on {0} are part of the validated configuration and change only with a "
-				"release of this app."
-			).format(_(doc.parent)),
-			frappe.PermissionError,
-		)
+	frappe.throw(
+		_(
+			"The permissions on {0} are part of the validated configuration and change only with a "
+			"release of this app."
+		).format(_(doc.parent)),
+		frappe.PermissionError,
+	)
+
+
+def refuse_hand_changed_job_profile(doc: Document, method: str | None = None) -> None:
+	"""Role Profile validate and on_trash: a job profile's roles are the validated configuration
+	(URS-CMP-014), changed only by `sync_job_profile`; a role added by hand would be in force for
+	everyone holding the job until the next migrate. Other role profiles stay the administrator's."""
+	if declared_by_code(doc) or (doc.name or doc.get("role_profile")) not in JOB_PROFILES:
+		return
+	frappe.throw(
+		_(
+			"The job profile {0} is part of the validated configuration and changes only with a release "
+			"of this app."
+		).format(doc.name or doc.get("role_profile")),
+		frappe.PermissionError,
+	)
 
 
 def sync_job_profile(profile: str, roles: tuple[str, ...]) -> None:
@@ -554,6 +601,7 @@ def sync_job_profile(profile: str, roles: tuple[str, ...]) -> None:
 	if sorted(row.role for row in doc.roles) == sorted(roles) and not doc.is_new():
 		return
 	doc.set("roles", [{"role": role} for role in roles])
+	doc.flags.declared_by_code = True
 	doc.save(ignore_permissions=True)  # setup code
 
 
@@ -590,17 +638,22 @@ def sync_permissions(doctype: str, declared: dict[tuple[str, int], dict[str, int
 	for key, flags in declared.items():
 		row = existing.pop(key, None)
 		if row is None:
-			frappe.get_doc(
+			doc = frappe.get_doc(
 				{"doctype": "Custom DocPerm", "parent": doctype, "role": key[0], "permlevel": key[1], **flags}
-			).insert(ignore_permissions=True)  # setup code
+			)
+			doc.flags.declared_by_code = True
+			doc.insert(ignore_permissions=True)  # setup code
 			changed = True
 		elif any(int(row[flag] or 0) != value for flag, value in flags.items()):
 			doc = frappe.get_doc("Custom DocPerm", row.name)
 			doc.update(flags)
+			doc.flags.declared_by_code = True
 			doc.save(ignore_permissions=True)  # setup code
 			changed = True
 	for row in existing.values():
-		frappe.delete_doc("Custom DocPerm", row.name, ignore_permissions=True)  # setup code
+		frappe.delete_doc(
+			"Custom DocPerm", row.name, ignore_permissions=True, flags={"declared_by_code": True}
+		)  # setup code
 		changed = True
 	if changed:
 		frappe.clear_cache(doctype=doctype)

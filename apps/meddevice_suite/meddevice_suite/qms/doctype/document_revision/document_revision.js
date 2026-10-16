@@ -46,6 +46,10 @@ frappe.ui.form.on("Document Revision", {
 		if (status === "Awaiting Approval" && qa && user !== author && user !== reviewer) {
 			offer(__("Approve"), "Approve", "Approved", { primary: true });
 		}
+		// QA gives up a revision that will not be finished, before it is approved.
+		if (["Draft", "In Review", "Awaiting Approval"].includes(status) && qa) {
+			offer(__("Abandon Revision"), "Abandon", "Withdrawn", { ask_reason: true });
+		}
 	},
 });
 
@@ -71,6 +75,7 @@ function show_status(frm) {
 		Approved: [__("Approved; takes effect on {0}.", [date(effective_date)]), "blue"],
 		Superseded: [__("Superseded by {0}. Do not use this revision.", [superseded_by]), "red"],
 		Obsolete: [__("The document has been withdrawn. Do not use this revision."), "red"],
+		Abandoned: [__("Abandoned before approval. This revision was never in use."), "gray"],
 	};
 	if (notices[status]) frm.dashboard.set_headline_alert(...notices[status]);
 }

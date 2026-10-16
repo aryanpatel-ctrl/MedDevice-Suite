@@ -17,7 +17,13 @@ validation a caller skips (`flags.ignore_validate`).
 A work order is made only from an approved, active bill of its own product: ERPNext checks the
 bill's product and that it is active, but skips its "must be submitted" check while tests run,
 and accepts a bill that merely contains the product as a component; Production Plan makes its
-work orders without validation. The rule is enforced here on every one of them.
+work orders without validation. The rule is enforced here on every one of them. And only from the
+product's default bill, the one in force, which is replaced only under an approved change request
+(URS-MST-001), for a sub-assembly as for a finished good: a second bill QA approved (to prepare a
+change, say) is not produced on until it becomes the default under change control. A finished
+good's device master record also pins that bill (qms/device_master_record.py). Found in the
+independent review of 2026-10-15: a sub-assembly could be made on any approved bill of it, with no
+change request.
 
 Which bill is in force, and cancelling one, are under change control (URS-MST-001,
 master_data/versioning.py). The acts are registered in compliance.signing.SIGNING_ACTIONS.
@@ -233,10 +239,10 @@ def bom_onload(doc: Document, method: str | None = None) -> None:
 
 def guard_work_order(doc: Document, method: str | None = None) -> None:
 	"""Work Order before_validate: made only from an approved (submitted), active bill of its own
-	product. At `before_validate`, which Production Plan's work orders (made without validation)
-	pass through too."""
+	product, its default (the bill in force, under change control). At `before_validate`, which
+	Production Plan's work orders (made without validation) pass through too."""
 	bom = (
-		frappe.db.get_value("BOM", doc.bom_no, ["docstatus", "is_active", "item"], as_dict=True)
+		frappe.db.get_value("BOM", doc.bom_no, ["docstatus", "is_active", "is_default", "item"], as_dict=True)
 		if doc.get("bom_no")
 		else None
 	)
@@ -245,4 +251,11 @@ def guard_work_order(doc: Document, method: str | None = None) -> None:
 			_(
 				"A work order is made from an approved, active bill of materials of {0}; {1} is not one."
 			).format(doc.production_item, doc.get("bom_no") or _("none was given"))
+		)
+	if not bom.is_default:
+		frappe.throw(
+			_(
+				"{0} is not the default bill of materials of {1}: production runs only on the default, which is replaced only under an approved change request."
+			).format(doc.bom_no, doc.production_item),
+			title=_("Change control"),
 		)

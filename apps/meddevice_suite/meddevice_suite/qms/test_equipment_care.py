@@ -13,8 +13,8 @@ from meddevice_suite.compliance.evidence_files import is_evidence
 from meddevice_suite.compliance.signing import sign_action
 from meddevice_suite.compliance.test_audit import events_for
 from meddevice_suite.compliance.test_esign import PASSWORD
-from meddevice_suite.lot_control.test_lot_status import company
-from meddevice_suite.master_data import equipment
+from meddevice_suite.lot_control.test_lot_status import company, lot_item, store
+from meddevice_suite.master_data import equipment, item_master
 from meddevice_suite.master_data.test_equipment import EquipmentTestCase
 from meddevice_suite.master_data.test_routing import RoutingTestCase
 from meddevice_suite.master_data.versioning import CHANGE_REQUEST
@@ -22,7 +22,13 @@ from meddevice_suite.qa import verifies
 from meddevice_suite.qms import calibration, equipment_care
 from meddevice_suite.qms.test_change_control import approved_change, signer
 from meddevice_suite.qms.test_document_control import private_file
-from meddevice_suite.setup.test_stock import care_in_date_for_test, work_instruction_for_test
+from meddevice_suite.setup.test_stock import (
+	approve_for_test,
+	care_in_date_for_test,
+	production_line_for_test,
+	submit_bom_for_test,
+	work_instruction_for_test,
+)
 from meddevice_suite.work_management import reminders
 
 IN = {"parameter": "Length 100 mm", "unit": "mm", "nominal": 100, "lower_limit": 99.98, "upper_limit": 100.02}
@@ -482,6 +488,30 @@ class TestOutOfTolerance(CareTestCase):
 	def test_in_tolerance_needs_no_assessment(self):
 		self.assertEqual(self.calibrated(self.approved()).impact_status, "Not needed")
 
+	def test_an_inspection_submitted_after_the_finding_is_added_by_its_submit(self):
+		"""Independent review of 2026-10-15: the list was taken only at completion, so an inspection
+		of the period submitted afterwards was never assessed. Through the inspection's own submit."""
+		asset = self.approved()
+		record = self.calibrated(asset, points=[point(found=100.05)])  # its period is today
+		self.assertEqual((record.impact_status, record.impact), ("Open", []))
+		self.sign(self.qa, "Calibration Record", record.name, "Assess: No Product Impact", "Nothing measured")
+		receipt, lot = self.received()
+		self.verified(receipt)
+		saved, self.instrument = self.instrument, asset  # the inspection names this instrument
+		try:
+			inspection = self.inspected(receipt, lot)
+		finally:
+			self.instrument = saved
+		record.reload()
+		self.assertEqual(
+			[(row.reference_doctype, row.reference_name, row.batch_no) for row in record.later_impact],
+			[("Quality Inspection", inspection.name, lot)],
+		)
+		self.assertEqual((record.impact_status, record.impact_decision), ("Open", None))
+		# Another instrument's finding is not this inspection's.
+		other = self.calibrated(self.approved(), points=[point(found=100.05)])
+		self.assertEqual(frappe.get_doc("Calibration Record", other.name).later_impact, [])
+
 
 def on_day(offset: int):
 	"""The day `offset` days from today."""
@@ -592,6 +622,66 @@ class TestImpactFollowsTheInstrument(CareTestCase):
 		self.assertEqual(self.cards(asset, 1, 9), {at_a: a})
 		self.assertNotIn(at_b, self.cards(asset, 1, 9))
 
+	def alerts(self, name: str) -> int:
+		return frappe.db.count(
+			"Notification Log",
+			{"document_type": "Calibration Record", "document_name": name, "for_user": self.qa},
+		)
+
+	def test_a_job_card_submitted_after_the_finding_is_added_and_the_assessment_opens_again(self):
+		"""Independent review of 2026-10-15: a job card drafted before an out-of-tolerance finding and
+		submitted after it was never assessed (ISO 13485 7.6). Its submit adds it, by the same rule
+		as the list taken at completion, and QA assesses again; the submit is not refused."""
+		a, b = self.workstations(2)
+		asset = self.instrument_at(a)
+		listed = self.job_card(a, 5)
+		with freeze_time(f"{on_day(20)} 10:00:00"):
+			record = self.calibrated(asset, points=[point(found=100.05)])
+		self.sign(self.qa, "Calibration Record", record.name, "Assess: No Product Impact", "Readings held")
+		reminders.run()
+		self.assertFalse(frappe.db.exists("Reminder", {"reference_name": record.name, **OPEN_IMPACT}))
+		alerts = self.alerts(record.name)
+
+		late, elsewhere, after = self.job_card(a, 10), self.job_card(b, 10), self.job_card(a, 25)
+		for card in (late, elsewhere, after, late, listed):  # late twice: listed once
+			calibration.add_later_use(frappe.get_doc("Job Card", card), "on_submit")
+
+		record.reload()
+		self.assertEqual([row.reference_name for row in record.impact], [listed])
+		self.assertEqual(
+			[(row.reference_doctype, row.reference_name, row.workstation) for row in record.later_impact],
+			[("Job Card", late, a)],
+		)
+		self.assertEqual(
+			(record.impact_status, record.impact_decision, record.assessed_by), ("Open", None, None)
+		)
+		(event,) = [e for e in events_for("Calibration Record", record.name) if late in (e.reason or "")]
+		self.assertEqual(event.action, "Updated after submission")
+		self.assertGreater(self.alerts(record.name), alerts)
+		# What the performer and QA signed stands: the rows added since are kept out of what they bind.
+		for signature in frappe.get_all(
+			"Electronic Signature",
+			filters={"reference_doctype": "Calibration Record", "reference_name": record.name},
+			pluck="name",
+		):
+			self.assertTrue(is_unchanged_since(frappe.get_doc("Electronic Signature", signature)))
+		self.assertTrue(esign.verify_signatures("Calibration Record", record.name))
+		reminders.run()
+		self.assertTrue(frappe.db.exists("Reminder", {"reference_name": record.name, **OPEN_IMPACT}))
+		self.sign(
+			self.qa, "Calibration Record", record.name, "Assess: Product Action Needed", f"{late} to recheck"
+		)
+		self.assertEqual(
+			frappe.db.get_value("Calibration Record", record.name, ["impact_status", "impact_decision"]),
+			("Assessed", "Product action needed"),
+		)
+
+	def test_the_submits_of_job_cards_and_inspections_add_their_later_use(self):
+		events = frappe.get_hooks("doc_events")
+		for doctype in ("Job Card", "Quality Inspection"):
+			with self.subTest(doctype=doctype):
+				self.assertIn("meddevice_suite.qms.calibration.add_later_use", events[doctype]["on_submit"])
+
 	def test_read_in_a_fixed_number_of_queries_however_often_it_moved(self):
 		a, b, c = self.workstations(3)
 		still, moved = self.instrument_at(a), self.instrument_at(a)
@@ -667,7 +757,11 @@ class TestImpactFollowsTheInstrument(CareTestCase):
 				row.pop("workstation", None)
 			return content
 
-		with patch.object(esign, "record_content", before_the_column):
+		# Fingerprint version 1, the version such a record was signed with.
+		with (
+			patch.object(esign, "record_content", before_the_column),
+			patch.object(esign, "CURRENT_VERSION", 1),
+		):
 			self.sign(self.qa, "Calibration Record", record.name, "Assess: No Product Impact")
 		# By its act: the completion, signed on a day frozen ahead, is the record's latest by creation.
 		assessment = frappe.get_last_doc(
@@ -853,7 +947,7 @@ class TestRefusedAtTheWorkstation(RoutingTestCase):
 	def setUpClass(cls):
 		super().setUpClass()
 		from meddevice_suite.setup.fixtures.inspection import ensure_inspection_masters
-		from meddevice_suite.setup.test_stock import approve_equipment_for_test, approve_for_test
+		from meddevice_suite.setup.test_stock import approve_equipment_for_test
 
 		ensure_inspection_masters(
 			company(), approve_for_test, approve_equipment_for_test
@@ -920,6 +1014,83 @@ class TestRefusedAtTheWorkstation(RoutingTestCase):
 		self.assertEqual(equipment_care.equipment_at([None, ""]), [])
 		equipment_care.refuse_unusable([None], "A work order")  # nothing at no workstation
 
+	def order_on(self, line: str | None) -> frappe.model.document.Document:
+		"""A draft work order of a new sub-assembly on its bill of materials, which has the routing, or
+		none, with the bill's materials and operations as the form takes them."""
+		product, material = lot_item(f"MDS-EC-SA-{self.suffix()}"), lot_item(f"MDS-EC-M-{self.suffix()}")
+		approve_for_test(product, material)
+		frappe.db.set_value("Item", product, item_master.ITEM_TYPE, item_master.SUB_ASSEMBLY)  # test fixture
+		bill = frappe.get_doc(
+			{
+				"doctype": "BOM",
+				"item": product,
+				"company": company(),
+				"quantity": 1,
+				"is_active": 1,
+				"is_default": 1,
+				"rm_cost_as_per": "Valuation Rate",
+				"items": [{"item_code": material, "qty": 1, "rate": 1}],
+				**({"with_operations": 1, "routing": line} if line else {}),
+			}
+		).insert()
+		submit_bom_for_test(bill)
+		order = frappe.get_doc(
+			{
+				"doctype": "Work Order",
+				"production_item": product,
+				"bom_no": bill.name,
+				"qty": 1,
+				"company": company(),
+				"source_warehouse": store("Stores"),
+				"wip_warehouse": store("Work In Progress"),
+				"fg_warehouse": store("Quarantine"),
+			}
+		)
+		order.get_items_and_operations_from_bom()
+		return order.insert()
+
+	def submit(self, name: str, skip_validation: bool) -> None:
+		order = frappe.get_doc("Work Order", name)
+		order.flags.ignore_validate = skip_validation
+		order.submit()
+
+	def test_a_work_order_without_a_routing_is_not_submitted(self):
+		"""Independent review of 2026-10-15: the equipment a work order uses is found through its
+		operations' workstations, so one without operations went into production with none checked.
+		A draft is planning and is kept; it is not submitted, also when validation is skipped."""
+		bare = self.order_on(None)
+		self.assertEqual(bare.operations, [])
+		for skipped in (False, True):
+			with self.subTest(validation_skipped=skipped):
+				with self.assertRaisesRegex(frappe.ValidationError, "has no routing"):
+					self.submit(bare.name, skipped)
+		line, _workstation = production_line_for_test()
+		emptied = self.order_on(line)
+		emptied.set("operations", [])
+		emptied.save()
+		with self.assertRaisesRegex(frappe.ValidationError, "has no operations: take them from"):
+			self.submit(emptied.name, False)
+		routed = self.order_on(line)
+		self.submit(routed.name, False)
+		self.assertEqual(frappe.db.get_value("Work Order", routed.name, "docstatus"), 1)
+
+	def test_a_work_order_is_refused_at_submit_while_its_machine_is_overdue_also_unvalidated(self):
+		"""Frappe skips before_submit when a caller skips validation: the check runs at before_validate
+		of the submit as well (found with the review of 2026-10-15)."""
+		line, workstation = production_line_for_test()
+		asset = self.machine_at(workstation)
+		order = self.order_on(line)
+		frappe.db.set_value("Maintenance Record", {"asset": asset}, "next_due_date", add_days(today(), -1))
+		for skipped in (False, True):
+			with self.subTest(validation_skipped=skipped):
+				with self.assertRaisesRegex(
+					frappe.ValidationError, f"equipment {asset} at its workstation is not fit"
+				):
+					self.submit(order.name, skipped)
+		events = frappe.get_hooks("doc_events")["Work Order"]
+		for event in ("before_validate", "before_submit"):
+			self.assertIn("meddevice_suite.qms.equipment_care.guard_work_order", events[event], event)
+
 	def test_no_time_is_logged_past_the_job_cards_rules(self):
 		ws, op, _line = self.approved_line()
 		asset = self.machine_at(ws)
@@ -975,6 +1146,19 @@ class TestQualification(CareTestCase):
 		doc.save()
 		frappe.set_user("Administrator")
 		self.assertIsNone(frappe.db.get_value("Equipment Qualification", name, "executed_by"))
+
+	@verifies("URS-EQP-001", "URS-EQP-004")
+	def test_no_care_record_is_dated_ahead(self):
+		"""Independent review of 2026-10-15: a qualification could carry a future date, which would
+		qualify the equipment from a day that has not come; calibration and maintenance refused one."""
+		tomorrow = add_days(today(), 1)
+		with self.assertRaisesRegex(frappe.ValidationError, "A qualification is recorded once it is done"):
+			self.stage(self.needing(), "IQ", performed_on=tomorrow)
+		with self.assertRaisesRegex(frappe.ValidationError, "Maintenance is recorded once it is done"):
+			self.maintenance_record(self.machine(), performed_on=tomorrow)
+		with self.assertRaisesRegex(frappe.ValidationError, "A calibration is recorded once it is done"):
+			self.calibration(self.approved(), performed_on=tomorrow)
+		self.assertTrue(self.stage(self.needing(), "IQ"))  # done today: recorded
 
 	def test_the_protocol_is_an_effective_sop_or_form(self):
 		with self.assertRaisesRegex(frappe.ValidationError, "effective SOP or form"):

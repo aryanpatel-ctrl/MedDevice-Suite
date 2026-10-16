@@ -199,6 +199,35 @@ class TestVersions(FilesTestCase):
 		with self.assertRaises(frappe.PermissionError):
 			doc.save()
 
+	def test_a_form_save_sending_dates_and_numbers_as_text_changes_nothing(self):
+		"""Found with the expiry alert in the browser walk-through of 2026-10-15: a form sends dates,
+		times and numbers as text, the database returns them as values, and an untouched value
+		counted as changed, refusing the save."""
+		name = self.upload(valid_until=add_days(today(), 400))
+		self.new_version(name, valid_until=add_days(today(), 500))
+		frappe.set_user(self.purchase)
+		doc = frappe.get_doc("Important File", name)
+		doc.valid_until = str(doc.valid_until)
+		doc.current_version = str(doc.current_version)
+		for row in doc.versions:
+			row.version = str(row.version)
+			row.valid_until = str(row.valid_until)
+			row.uploaded_on = str(row.uploaded_on)
+		doc.description = "Kept by Purchase"
+		doc.save()
+
+		self.assertEqual(frappe.db.get_value("Important File", name, "description"), "Kept by Purchase")
+
+	def test_an_evidence_file_saved_with_its_values_as_text_is_not_refused(self):
+		name = self.upload()
+		file_url = frappe.get_doc("Important File", name).versions[0].file
+		frappe.set_user("Administrator")  # the only account that may save an evidence file at all
+		file = frappe.get_doc("File", {"file_url": file_url})
+		file.is_private = "1"  # as a form sends a check
+		file.save()
+
+		self.assertEqual(frappe.db.get_value("File", file.name, ["is_private", "file_url"]), (1, file_url))
+
 	def test_a_versions_file_is_evidence_nobody_changes_or_deletes(self):
 		name = self.upload()
 		file_url = frappe.get_doc("Important File", name).versions[0].file

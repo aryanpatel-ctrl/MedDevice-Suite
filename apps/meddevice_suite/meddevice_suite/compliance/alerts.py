@@ -23,6 +23,7 @@ from frappe.modules.import_file import import_file
 from frappe.utils import add_days, today
 
 from meddevice_suite.compliance import quality_settings
+from meddevice_suite.compliance.audit import same
 
 MODULE = "Compliance"
 EXPIRING_SOON = "Lot Expiring Soon"
@@ -119,9 +120,10 @@ def send(notification: Document, lot: str, alert: str) -> None:
 
 
 def reset_expiry_alert(doc: Document, method: str | None = None) -> None:
-	"""Batch validate: a new expiry date is alerted afresh."""
+	"""Batch validate: a new expiry date is alerted afresh. Compared as dates: a form sends the
+	date as text, the database returns a date, and an unchanged date must not be alerted again."""
 	before = doc.get_doc_before_save()
-	if before and before.expiry_date != doc.expiry_date:
+	if before and not same(before.expiry_date, doc.expiry_date, "Date"):
 		doc.set(ALERT_FIELD, None)
 
 

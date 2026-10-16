@@ -548,9 +548,9 @@ class TestRenamingAndMerging(CustomerLicenceTestCase):
 		other = self.customer()
 		for customer in (licensed, exempt):
 			with self.subTest(customer=customer):
-				with self.assertRaisesRegex(frappe.PermissionError, "not renamed or merged"):
+				with self.assertRaisesRegex(frappe.PermissionError, "so it is not renamed"):
 					frappe.rename_doc("Customer", customer, f"{customer} renamed")
-				with self.assertRaisesRegex(frappe.PermissionError, "not renamed or merged"):
+				with self.assertRaisesRegex(frappe.PermissionError, "is not merged into"):
 					frappe.rename_doc("Customer", customer, other, merge=True)
 		self.assertTrue(customer_licence.licences_valid_on(licensed, today()))
 		self.assertFalse(customer_licence.licences_valid_on(other, today()))

@@ -1124,8 +1124,14 @@ const NO_INSPECTION_SINCE_HOLD = (lot) =>
 	);
 const NOT_FROM_PRODUCTION = (item, voucher) =>
 	refusal(
-		`${item}: a finished good comes into stock only from production, on its work order's manufacture entry, not on a ${voucher}. Only opening stock at migration comes in otherwise, on a material receipt with Is Opening set to Yes, which QA inspects and releases.`,
+		`${item}: a finished good comes into stock only from production, on its work order's manufacture entry, not on a ${voucher}. Only opening stock at migration comes in otherwise, on a material receipt with Is Opening set to Yes, loaded through Data Import at go-live, which QA inspects and releases.`,
 		"Finished goods come from production"
+	);
+// URS-STK-015: opening stock is the go-live data load's, never a form's or the API's.
+const OPENING_STOCK_LOADED_AT_GO_LIVE = (doctype) =>
+	refusal(
+		`This ${doctype} is opening stock, which is loaded once at go-live through Data Import, not entered on a form or through the API. Receive stock on a goods receipt, or make it on a work order.`,
+		"Opening stock is loaded at go-live"
 	);
 
 // --- The sheet ------------------------------------------------------------------------------
@@ -1546,7 +1552,7 @@ context("D4 Inventory & Batch Ledger: the browser test sheet, as each job", () =
 				kept_apart(
 					made.lot,
 					data.stores.rejected,
-					"It can only be returned to its supplier, scrapped or moved to the Returns store."
+					"It can only be returned to its supplier or scrapped."
 				)
 			);
 			stock_entry_form({
@@ -2610,7 +2616,7 @@ context("D4 Inventory & Batch Ledger: the browser test sheet, as each job", () =
 		no_problems("D4-T23");
 	});
 
-	it("[URS-STK-013] D4-T24 Opening stock of a finished good comes in only as a Material Receipt with Is Opening = Yes", () => {
+	it("[URS-STK-013] [URS-STK-015] D4-T24 Opening stock of a finished good comes in only through the go-live data load, never on the form", () => {
 		sign_in(STORES);
 		stock_entry_form({
 			type: "Material Receipt",
@@ -2621,14 +2627,20 @@ context("D4 Inventory & Batch Ledger: the browser test sheet, as each job", () =
 		});
 		cy.window().should((win) => expect(current(win).is_opening || "No").to.equal("No"));
 		save_refused(NOT_FROM_PRODUCTION(data.product, "Stock Entry"));
+		// Marked as opening stock by hand, as the review of 2026-10-15 found Stores could: refused.
 		fill("is_opening", "Yes", "Select");
 		open_line("items", 1);
 		set_line("expense_account", data.opening_account);
 		close_line();
-		save();
-		submit();
-		cy.window().then((win) =>
-			lots_of("Stock Entry", current(win).name).then((lots) => {
+		save_refused(OPENING_STOCK_LOADED_AT_GO_LIVE("Stock Entry"));
+		// The go-live data load is the way: loaded as Data Import loads it, the stock comes in as a
+		// new Quarantine lot in the Quarantine store, for QA to inspect and release.
+		prepare("prepare_quarantined_product", { qty: 5 }).then((loaded) => {
+			stored("Stock Entry", loaded.entry).then((entry) => {
+				expect(entry.docstatus, "submitted").to.equal(1);
+				expect(entry.is_opening, "opening stock").to.equal("Yes");
+			});
+			lots_of("Stock Entry", loaded.entry).then((lots) => {
 				expect(lots, "a new lot").to.have.length(1);
 				expect(lots[0].to_store).to.equal(data.stores.quarantine);
 				lot_values(lots[0].batch_no, ["item", "mds_lot_status"]).then((values) =>
@@ -2637,8 +2649,8 @@ context("D4 Inventory & Batch Ledger: the browser test sheet, as each job", () =
 						mds_lot_status: "Quarantine",
 					})
 				);
-			})
-		);
+			});
+		});
 		no_problems("D4-T24");
 	});
 
@@ -2659,9 +2671,11 @@ context("D4 Inventory & Batch Ledger: the browser test sheet, as each job", () =
 			fill_line("valuation_rate", 50);
 			close_line();
 			save_refused(refused);
+			// As opening stock on the form: refused as opening stock, which only the go-live data
+			// load brings in (URS-STK-015); a count never brings a new finished lot in either way.
 			fill("purpose", "Opening Stock", "Select");
 			fill("expense_account", data.opening_account, "Link");
-			save_refused(refused);
+			save_refused(OPENING_STOCK_LOADED_AT_GO_LIVE("Stock Reconciliation"));
 			no_problems("D4-T25");
 		});
 	});
