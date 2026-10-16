@@ -2,8 +2,8 @@
 C2 set due date or frequency, C3 generate reminder, C4 notify users, C5 track and escalate, C6 mark
 completed; data store D11 Task, Approval & Reminders).
 
-Every due item the system alerts on is tracked as a Reminder from the day it falls within its lead
-time until its own record shows the work done: a lot used up or kept apart, a certificate or a
+Every due item the system alerts on is tracked as a Due Reminder from the day it falls within its
+lead time until its own record shows the work done: a lot used up or kept apart, a certificate or a
 licence renewed, a document reviewed, a change action done, an effectiveness check closed. The
 categories, what makes an item due and what shows it done are declared here, in code; the lead
 times are QA's, in Quality Settings. A system reminder is never ticked off by hand: only the work
@@ -42,7 +42,9 @@ from frappe.utils import add_days, add_months, cint, date_diff, getdate, now_dat
 from meddevice_suite.compliance import quality_settings
 from meddevice_suite.compliance.checks import QA_ROLE
 
-DOCTYPE = "Reminder"
+# Not "Reminder": that is Frappe's own record type (Automation), with its own table and jobs
+# (rules section 4; renamed on 2026-10-16 by patches/v0_1/rename_reminder_to_due_reminder.py).
+DOCTYPE = "Due Reminder"
 SCHEDULE = "Reminder Schedule"
 OPEN, OVERDUE, ESCALATED, COMPLETED = "Open", "Overdue", "Escalated", "Completed"
 STILL_OPEN = (OPEN, OVERDUE, ESCALATED)
@@ -691,11 +693,14 @@ def make(category: str, item: Due, schedule: str | None = None) -> frappe.model.
 	return reminder.insert()
 
 
-def update(name: str, **values) -> None:
+def update(name: str, reason: str | None = None, **values) -> None:
 	reminder = frappe.get_doc(DOCTYPE, name)
 	reminder.update(values)
 	reminder.flags.reminder = True
 	reminder.flags.ignore_permissions = True  # kept by this service only
+	if reason:
+		# Why a correction was made, on its audit event (compliance/audit.py takes it from here).
+		reminder.flags.audit_reason = reason
 	reminder.save()
 
 
@@ -903,15 +908,15 @@ def complete_occurrence(name: str, remark: str) -> None:
 
 
 def query_conditions(user: str | None = None) -> str:
-	"""Reminder list: QA, management and the administrator see all; everyone else those of their
+	"""Due Reminder list: QA, management and the administrator see all; everyone else those of their
 	jobs and their own."""
 	user = user or frappe.session.user
 	roles = set(frappe.get_roles(user))
 	if roles & SEES_ALL:
 		return ""
 	# The responsible roles are one per line; a role matches a whole line, never part of a name.
-	lines = "concat(char(10), `tabReminder`.`responsible_roles`, char(10))"
-	conditions = [f"`tabReminder`.`responsible_user` = {frappe.db.escape(user)}"]
+	lines = "concat(char(10), `tabDue Reminder`.`responsible_roles`, char(10))"
+	conditions = [f"`tabDue Reminder`.`responsible_user` = {frappe.db.escape(user)}"]
 	for role in sorted(roles):
 		pattern = "%" + "\n" + role + "\n" + "%"
 		conditions.append(f"{lines} like {frappe.db.escape(pattern)}")

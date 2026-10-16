@@ -259,9 +259,9 @@ Actual result: ____  Pass/Fail: ____  Cleanup: restore Next Review.
 ### DC-12 Periodic review: still current (C16)
 Preconditions: an effective document owned by the Production Supervisor with no revision in progress; on a test site, Next Review set to today + 10 (`frappe.db.set_value`, as the automated test does) and the reminders run once (`bench --site <site> execute meddevice_suite.work_management.reminders.run`).
 1. As **Production Supervisor** (process owner): open the document. Expected: no **Review: Still Current** button.
-2. As **QA Manager**: open the document. Expected: orange banner *Periodic review due on <date>.*; **Review: Still Current** is the primary button. **Reminder** list: a *Document Review* reminder for the document, Open.
+2. As **QA Manager**: open the document. Expected: orange banner *Periodic review due on <date>.*; **Review: Still Current** is the primary button. **Due Reminder** list: a *Document Review* reminder for the document, Open.
 3. Click **Review: Still Current**; leave Reason empty. Expected: the dialog requires it. Reason `Read against current practice; still correct`; password; **Sign**. Expected: Next Review = today + Review Every (Years); Status Effective; Effective Revision unchanged; the revision's form unchanged; **Electronic signatures** shows *Reviewed* · *Review · Read against current practice; still correct*; the banner gone and the button no longer primary.
-4. **Reminder** list: the reminder is *Completed*, Completed By = you, completion *Reviewed, still current: revision 00*.
+4. **Due Reminder** list: the reminder is *Completed*, Completed By = you, completion *Reviewed, still current: revision 00*.
 5. As Production Supervisor start a new revision (with a change request); as QA open the document. Expected: no **Review: Still Current** button (the API refuses *Revision … is in progress; the review is settled when it takes effect.*).
 Actual result: ____  Pass/Fail: ____  Cleanup: none (the review is a real record).
 

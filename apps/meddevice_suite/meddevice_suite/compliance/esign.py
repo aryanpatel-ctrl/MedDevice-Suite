@@ -60,6 +60,7 @@ from frappe.utils import (
 from frappe.utils.password import check_password
 
 from meddevice_suite.compliance.audit import as_data, copy_of, history, record_names, undo
+from meddevice_suite.compliance.audit_scope import recorded_as
 from meddevice_suite.compliance.fingerprint import (
 	CURRENT_VERSION,
 	FIRST_VERSION,
@@ -550,7 +551,8 @@ def signature_fingerprint(signature: Document | frappe._dict, previous_hash: str
 def stored_signatures(doctype: str, name: str) -> list[frappe._dict]:
 	return frappe.get_all(
 		"Electronic Signature",
-		filters={"reference_doctype": doctype, "reference_name": name},
+		# Under the record type's former names too: a renamed type keeps its signatures as made.
+		filters={"reference_doctype": ["in", recorded_as(doctype)], "reference_name": name},
 		fields=["name", *FINGERPRINTED, "previous_signature", "signature_hash", "fingerprint_version"],
 		order_by="signed_at asc, creation asc",
 	)

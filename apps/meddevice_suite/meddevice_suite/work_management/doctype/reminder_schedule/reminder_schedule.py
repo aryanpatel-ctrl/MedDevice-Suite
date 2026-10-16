@@ -28,7 +28,7 @@ class ReminderSchedule(Document):
 			frappe.throw(_("The next due date follows from the schedule."), frappe.PermissionError)
 
 	def raised_any(self) -> bool:
-		return bool(frappe.db.exists("Reminder", {"schedule": self.name}))
+		return bool(frappe.db.exists("Due Reminder", {"schedule": self.name}))
 
 	def on_trash(self) -> None:
 		frappe.throw(

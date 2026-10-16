@@ -23,7 +23,7 @@ ITEM = "MDS-REM-RAW"
 
 def reminder_of(category: str, reference_doctype: str, reference_name: str) -> frappe._dict | None:
 	rows = frappe.get_all(
-		"Reminder",
+		"Due Reminder",
 		filters={
 			"category": category,
 			"reference_doctype": reference_doctype,
@@ -48,7 +48,7 @@ def notices(reminder: str, user: str) -> list[str]:
 	"""What the person was told about the reminder, oldest first."""
 	return frappe.get_all(
 		"Notification Log",
-		filters={"document_type": "Reminder", "document_name": reminder, "for_user": user},
+		filters={"document_type": "Due Reminder", "document_name": reminder, "for_user": user},
 		pluck="subject",
 		order_by="creation asc",
 	)
@@ -58,7 +58,11 @@ def told_of_escalation(reminder: str) -> list[str]:
 	"""Who was told the reminder was escalated (the "Reminder Overdue" alert), once per notice."""
 	return frappe.get_all(
 		"Notification Log",
-		filters={"document_type": "Reminder", "document_name": reminder, "subject": ["like", "Overdue:%"]},
+		filters={
+			"document_type": "Due Reminder",
+			"document_name": reminder,
+			"subject": ["like", "Overdue:%"],
+		},
 		pluck="for_user",
 	)
 
@@ -173,7 +177,9 @@ class TestEachCategoryIsTrackedUntilItsRecordShowsItDone(ReminderTestCase):
 		frappe.db.set_value("Batch", lot, "expiry_date", add_days(today(), 10))
 		self.run_reminders()
 		self.run_reminders()
-		self.assertEqual(frappe.db.count("Reminder", {"reference_name": lot, "category": "Lot Expiry"}), 1)
+		self.assertEqual(
+			frappe.db.count("Due Reminder", {"reference_name": lot, "category": "Lot Expiry"}), 1
+		)
 
 
 @verifies("URS-PLT-014")
@@ -219,15 +225,15 @@ class TestTheRecord(ReminderTestCase):
 		self.run_reminders()
 		name = reminder_of("Lot Expiry", "Batch", lot).name
 		with self.assertRaises(frappe.PermissionError):
-			frappe.get_doc({"doctype": "Reminder", "subject": "By hand", "category": "X"}).insert(
+			frappe.get_doc({"doctype": "Due Reminder", "subject": "By hand", "category": "X"}).insert(
 				ignore_permissions=True
 			)
-		doc = frappe.get_doc("Reminder", name)
+		doc = frappe.get_doc("Due Reminder", name)
 		doc.status = COMPLETED
 		with self.assertRaises(frappe.PermissionError):
 			doc.save(ignore_permissions=True)
 		with self.assertRaises(frappe.PermissionError):
-			frappe.delete_doc("Reminder", name, ignore_permissions=True)
+			frappe.delete_doc("Due Reminder", name, ignore_permissions=True)
 
 	def test_a_system_reminder_is_not_completed_by_hand(self):
 		lot = receive(ITEM, 5, store("Stores"))
@@ -253,13 +259,14 @@ class TestTheRecord(ReminderTestCase):
 		):
 			with self.subTest(user=user):
 				frappe.set_user(user)
-				listed = frappe.get_list("Reminder", pluck="name", limit=0)
+				listed = frappe.get_list("Due Reminder", pluck="name", limit=0)
 				self.assertIn(sees, listed)
 				self.assertNotIn(not_sees, listed)
-				self.assertFalse(frappe.has_permission("Reminder", "read", doc=not_sees))
+				self.assertFalse(frappe.has_permission("Due Reminder", "read", doc=not_sees))
 		frappe.set_user(self.qa)
 		self.assertTrue(
-			{lot_reminder, certificate_reminder} <= set(frappe.get_list("Reminder", pluck="name", limit=0))
+			{lot_reminder, certificate_reminder}
+			<= set(frappe.get_list("Due Reminder", pluck="name", limit=0))
 		)
 
 
@@ -312,7 +319,7 @@ class TestRecurringReminders(ReminderTestCase):
 		with self.assertRaisesRegex(frappe.ValidationError, "Say what was done"):
 			reminders.complete_occurrence(occurrence, "  ")
 		reminders.complete_occurrence(occurrence, "Traps checked, none triggered")
-		done = frappe.get_doc("Reminder", occurrence)
+		done = frappe.get_doc("Due Reminder", occurrence)
 		self.assertEqual((done.status, done.completed_by), (COMPLETED, self.stores_user))
 		self.assertEqual(
 			getdate(frappe.db.get_value("Reminder Schedule", name, "next_due_date")),
@@ -407,7 +414,7 @@ class TestEveryCategoryKeepsTheContract(ReminderTestCase):
 				reminders.track(category, due_now)
 				reminders.send_notices()
 			return frappe.get_all(
-				"Reminder",
+				"Due Reminder",
 				filters={"category": category, "subject": subject},
 				fields=["name", "status", "completion", "notified"],
 				order_by="creation asc",
@@ -450,13 +457,13 @@ class TestSettledOnlyWhenTheWorkIsDone(ReminderTestCase):
 		first = reminder_of("Lot Expiry", "Batch", lot).name
 		set_status(lot, HOLD, "Kept apart for the test")
 		self.run_reminders()
-		self.assertEqual(frappe.db.get_value("Reminder", first, "status"), COMPLETED)
+		self.assertEqual(frappe.db.get_value("Due Reminder", first, "status"), COMPLETED)
 		set_status(lot, APPROVED, "Back from hold for the test")
 		self.run_reminders()
 		again = reminder_of("Lot Expiry", "Batch", lot)
 		self.assertNotEqual(again.name, first)
 		self.assertEqual(again.status, OPEN)
-		self.assertEqual(frappe.db.get_value("Reminder", first, "status"), COMPLETED)
+		self.assertEqual(frappe.db.get_value("Due Reminder", first, "status"), COMPLETED)
 
 	def test_a_due_date_moved_in_the_record_says_so(self):
 		document = work_instruction_for_test()
@@ -478,7 +485,7 @@ class TestNotices(ReminderTestCase):
 		item = reminders.Due("User", self.qa, add_days(today(), 5), f"Notice test {tag}", roles, user, tag)
 		frappe.set_user("Administrator")
 		reminders.track(category, lambda: iter([item]))
-		return frappe.db.get_value("Reminder", {"category": category, "subject": item.subject})
+		return frappe.db.get_value("Due Reminder", {"category": category, "subject": item.subject})
 
 	def test_raised_its_jobs_are_told_once_when_it_names_no_person(self):
 		name = self.raised(("Stock User", QA_ROLE))
@@ -505,7 +512,7 @@ class TestNotices(ReminderTestCase):
 			send_expiry_alerts()  # the daily job runs the module's alerts before the reminders
 			self.run_reminders()
 		raised = reminder_of("Lot Expiry", "Batch", lot)
-		self.assertEqual(frappe.db.get_value("Reminder", raised.name, "notified"), RAISED)
+		self.assertEqual(frappe.db.get_value("Due Reminder", raised.name, "notified"), RAISED)
 		for user in (self.stores_user, self.qa):
 			with self.subTest(user=user):
 				lot_alerts = frappe.get_all(
@@ -526,7 +533,7 @@ class TestNotices(ReminderTestCase):
 			self.run_reminders()
 		escalated = reminder_of("Change Action", "Change Request", change)
 		self.assertEqual(escalated.status, ESCALATED)
-		self.assertEqual(frappe.db.get_value("Reminder", escalated.name, "notified"), ESCALATED)
+		self.assertEqual(frappe.db.get_value("Due Reminder", escalated.name, "notified"), ESCALATED)
 		# Its module told the owner of the action as it fell due; the reminder tells the escalation.
 		self.assertEqual(len(notices(escalated.name, self.requester)), 1)
 		for user in (self.requester, self.qa, manager):
@@ -536,7 +543,7 @@ class TestNotices(ReminderTestCase):
 	def test_escalated_its_person_is_told_of_the_escalation_not_raised_again(self):
 		name = self.raised((QA_ROLE,), self.requester)
 		reminders.send_notices()
-		frappe.db.set_value("Reminder", name, "status", ESCALATED)  # as the daily run escalates it
+		frappe.db.set_value("Due Reminder", name, "status", ESCALATED)  # as the daily run escalates it
 		reminders.send_notices()
 		told = notices(name, self.requester)
 		self.assertEqual(
@@ -548,9 +555,9 @@ class TestNotices(ReminderTestCase):
 		name = self.raised(("Stock User",))
 		with patch.object(reminders, "enqueue_create_notification", side_effect=RuntimeError("queue down")):
 			reminders.send_notices()
-		self.assertEqual(frappe.db.get_value("Reminder", name, "status"), OPEN)  # raised, nobody told
+		self.assertEqual(frappe.db.get_value("Due Reminder", name, "status"), OPEN)  # raised, nobody told
 		self.assertEqual(notices(name, self.stores_user), [])
-		self.assertFalse(frappe.db.get_value("Reminder", name, "notified"))
+		self.assertFalse(frappe.db.get_value("Due Reminder", name, "notified"))
 		reminders.send_notices()
 		self.assertEqual(len(notices(name, self.stores_user)), 1)
 
@@ -565,7 +572,7 @@ class TestNotices(ReminderTestCase):
 		escalated = reminder_of("Lot Expiry", "Batch", overdue).name
 		untold = reminder_of("Lot Expiry", "Batch", soon).name
 		for name in (escalated, untold):  # as reminders kept before the upgrade
-			frappe.db.set_value("Reminder", name, "notified", None, update_modified=False)
+			frappe.db.set_value("Due Reminder", name, "notified", None, update_modified=False)
 		record_reminders_already_told.execute()
-		self.assertEqual(frappe.db.get_value("Reminder", escalated, "notified"), ESCALATED)
-		self.assertFalse(frappe.db.get_value("Reminder", untold, "notified"))  # told on the next run
+		self.assertEqual(frappe.db.get_value("Due Reminder", escalated, "notified"), ESCALATED)
+		self.assertFalse(frappe.db.get_value("Due Reminder", untold, "notified"))  # told on the next run

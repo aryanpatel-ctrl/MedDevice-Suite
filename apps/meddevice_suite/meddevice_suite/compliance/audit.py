@@ -55,7 +55,7 @@ from meddevice_suite.compliance.audit_reason import (
 	reason_used,
 	saved_around,
 )
-from meddevice_suite.compliance.audit_scope import is_regulated
+from meddevice_suite.compliance.audit_scope import is_regulated, recorded_as
 from meddevice_suite.compliance.fingerprint import (
 	CURRENT_VERSION,
 	FIRST_VERSION,
@@ -412,7 +412,7 @@ def verify_events(doctype: str, name: str) -> list[str]:
 	(fingerprint.chain_problems, the rule the signatures are verified by too)."""
 	events = frappe.get_all(
 		"Audit Event",
-		filters={"reference_doctype": doctype, "reference_name": name},
+		filters={"reference_doctype": ["in", recorded_as(doctype)], "reference_name": name},
 		fields=[
 			"name",
 			"reference_doctype",
@@ -437,7 +437,11 @@ def record_names(doctype: str, name: str) -> set[str]:
 	carry the name the record had when they were recorded; renaming rewrites their reference only."""
 	renames = frappe.get_all(
 		"Audit Event",
-		filters={"reference_doctype": doctype, "reference_name": name, "action": "Renamed"},
+		filters={
+			"reference_doctype": ["in", recorded_as(doctype)],
+			"reference_name": name,
+			"action": "Renamed",
+		},
 		pluck="changes",
 	)
 	return {name} | {old for changes in renames if (old := (as_data(changes) or {}).get("old_name"))}
@@ -447,7 +451,8 @@ def history(doctype: str, name: str) -> list[frappe._dict]:
 	"""The record's audit events, newest first by their links."""
 	events = frappe.get_all(
 		"Audit Event",
-		filters={"reference_doctype": doctype, "reference_name": name},
+		# Under the record type's former names too, as the chain is read (`audit_scope.recorded_as`).
+		filters={"reference_doctype": ["in", recorded_as(doctype)], "reference_name": name},
 		fields=["name", "action", "user", "event_at", "reason", "changes", "previous_event"],
 		order_by="event_at asc, creation asc",
 	)

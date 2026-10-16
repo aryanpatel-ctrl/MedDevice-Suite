@@ -204,7 +204,7 @@ class TestWhoChangesWhat(TaskTestCase):
 class TestItsDueDateIsTracked(TaskTestCase):
 	def reminder(self, name: str) -> frappe._dict:
 		return frappe.get_all(
-			"Reminder",
+			"Due Reminder",
 			filters={"reference_doctype": "Work Task", "reference_name": name, "status": ["!=", "Completed"]},
 			fields=["name", "responsible_user", "status"],
 		)

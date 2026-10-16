@@ -45,6 +45,8 @@ VERSIONS = (FIRST_VERSION, KEYED_VERSION)
 # site_config.json: when this site began recording version-2 fingerprints.
 KEYED_SINCE = "meddevice_suite_keyed_fingerprints_since"
 
+from meddevice_suite.compliance.audit_scope import recorded_as
+
 # Fields that change without the record's content changing.
 VOLATILE_FIELDS = frozenset(
 	{"modified", "modified_by", "_user_tags", "_comments", "_assign", "_liked_by", "_seen"}
@@ -131,7 +133,8 @@ def chain_head(
 
 	Found by the links rather than by time, which a clock change could reorder, and read with a
 	lock, so that two transactions adding to the same chain at once wait for each other and the
-	second sees the first's entry instead of an old snapshot.
+	second sees the first's entry instead of an old snapshot. Entries recorded under a former name
+	of the record type are part of the chain (`audit_scope.recorded_as`).
 	"""
 	entry = frappe.qb.DocType(doctype)
 	successor = frappe.qb.DocType(doctype).as_("successor")
@@ -140,7 +143,7 @@ def chain_head(
 		.left_join(successor)
 		.on(successor[link_field] == entry.name)
 		.select(entry.name, entry[hash_field])
-		.where(entry.reference_doctype == reference[0])
+		.where(entry.reference_doctype.isin(recorded_as(reference[0])))
 		.where(entry.reference_name == reference[1])
 		.where(successor.name.isnull())
 		.orderby(entry.creation, order=frappe.qb.desc)

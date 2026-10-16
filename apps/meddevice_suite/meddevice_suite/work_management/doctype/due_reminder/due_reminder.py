@@ -6,7 +6,7 @@ from frappe import _
 from frappe.model.document import Document
 
 
-class Reminder(Document):
+class DueReminder(Document):
 	"""A tracked due item (module 60, URS-PLT-014, URS-PLT-015). Made and changed only by
 	`work_management.reminders`; nobody makes, edits or deletes one by hand."""
 

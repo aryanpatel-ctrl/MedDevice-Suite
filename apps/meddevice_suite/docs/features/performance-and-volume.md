@@ -212,7 +212,7 @@ None of its own. The guards and jobs above are steps of the standard flow: recei
 - Audit Event: (reference_doctype, reference_name), previous_event, user, event_at, creation.
 - Electronic Signature: (reference_doctype, reference_name), previous_signature, signer, creation.
 - Audit Anchor: (ledger, creation).
-- Reminder: category, status, reminder_key.
+- Due Reminder: category, status, reminder_key.
 - Work Task: status, assigned_to, approver.
 - Training Record: employee, document_revision, status.
 - Document Revision: controlled_document, status (both added).

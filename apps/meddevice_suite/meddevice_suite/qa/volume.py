@@ -115,9 +115,9 @@ APP_INDEXES: tuple[tuple[str, tuple[str, ...]], ...] = (
 	("Electronic Signature", ("signer",)),
 	("Electronic Signature", ("creation",)),
 	("Audit Anchor", ("ledger", "creation")),
-	("Reminder", ("category",)),  # the daily run, per category
-	("Reminder", ("status",)),  # My Work, follow-ups, notices
-	("Reminder", ("reminder_key",)),
+	("Due Reminder", ("category",)),  # the daily run, per category
+	("Due Reminder", ("status",)),  # My Work, follow-ups, notices
+	("Due Reminder", ("reminder_key",)),
 	("Work Task", ("status",)),
 	("Work Task", ("assigned_to",)),
 	("Work Task", ("approver",)),
@@ -290,7 +290,7 @@ def generate(scale: float = 1) -> dict:
 		),
 		"audit_events": frappe.db.count("Audit Event"),
 		"signatures": frappe.db.count("Electronic Signature"),
-		"reminders": frappe.db.count("Reminder"),
+		"reminders": frappe.db.count("Due Reminder"),
 		"training_records": frappe.db.count("Training Record"),
 		"documents": len(documents),
 	}

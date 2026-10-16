@@ -46,6 +46,7 @@ from frappe.model.document import Document
 from frappe.utils import add_to_date, get_datetime, getdate, now_datetime
 
 from meddevice_suite.compliance.audit import as_data
+from meddevice_suite.compliance.audit_scope import recorded_as
 from meddevice_suite.compliance.retention import LOGIN_HISTORY, RETENTION_SCHEDULE, scheduled_doctypes
 
 PAGE_SIZE = 500
@@ -288,7 +289,8 @@ def deleted_record_file(event: frappe._dict) -> dict:
 
 
 def history(doctype: str, name: str) -> dict:
-	reference = {"reference_doctype": doctype, "reference_name": name}
+	# Under any name the record type has had (audit_scope.FORMER_NAMES).
+	reference = {"reference_doctype": ["in", recorded_as(doctype)], "reference_name": name}
 	return {
 		"audit_events": frappe.get_all(
 			"Audit Event", filters=reference, fields=["*"], order_by="event_at asc, creation asc"

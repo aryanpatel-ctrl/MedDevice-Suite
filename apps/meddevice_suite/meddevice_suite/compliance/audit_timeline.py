@@ -17,7 +17,7 @@ from frappe.utils import escape_html, get_fullname, get_link_to_form
 
 from meddevice_suite.compliance.audit import as_data, verify_events
 from meddevice_suite.compliance.audit_anchor import checked_trail
-from meddevice_suite.compliance.audit_scope import is_regulated
+from meddevice_suite.compliance.audit_scope import is_regulated, recorded_as
 from meddevice_suite.compliance.esign import signature_problems, signed_content_report
 
 # The form loads quickly however long a record's history is; the button lists every event.
@@ -63,7 +63,7 @@ def timeline_content(doctype: str, docname: str) -> list[dict]:
 		return []
 	events = frappe.get_all(
 		"Audit Event",
-		filters={"reference_doctype": doctype, "reference_name": docname},
+		filters={"reference_doctype": ["in", recorded_as(doctype)], "reference_name": docname},
 		fields=["name", "action", "user", "impersonated_by", "event_at", "reason", "changes"],
 		order_by="event_at desc",
 		limit=TIMELINE_LIMIT,

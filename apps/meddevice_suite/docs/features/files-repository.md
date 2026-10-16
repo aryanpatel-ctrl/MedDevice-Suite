@@ -53,7 +53,7 @@ As Purchase: **Important File › New** in CDSCO, attach a private PDF, Valid Un
 As Sales: the file is not in the list. As Stores: opens it, cannot save. As QA: opens and may upload.
 
 ### FR-04 Renewal
-After the daily run: **Reminder** *… is valid until …* for Purchase. Upload a renewed version valid next year: the reminder completes on the next run.
+After the daily run: **Due Reminder** *… is valid until …* for Purchase. Upload a renewed version valid next year: the reminder completes on the next run.
 
 ## 5. End-to-end business workflow
 QA sets up categories → the responsible job uploads each licence or certificate → it is renewed as a new version before it lapses (reminded and escalated) → superseded versions stay as evidence → a surrendered licence is archived with a reason.
