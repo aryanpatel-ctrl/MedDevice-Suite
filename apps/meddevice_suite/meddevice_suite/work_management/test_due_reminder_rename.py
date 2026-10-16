@@ -31,6 +31,7 @@ FIELDS = [
 	"changes",
 	"previous_event",
 	"event_hash",
+	"fingerprint_version",  # each event is fingerprinted again in the version it was made in
 ]
 
 
