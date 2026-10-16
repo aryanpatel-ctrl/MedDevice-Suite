@@ -353,6 +353,24 @@ class TestCalibration(CareTestCase):
 			sorted([record.certificate, data_sheet.file_url]),
 		)
 
+	def test_a_record_with_files_is_corrected_outside_the_tests_too(self):
+		"""Frappe's copy of a document keeps its status only in Frappe's own tests: on a site the
+		copied file had none and the correction failed (found in the browser walk-through of
+		2026-10-15, D10-T10)."""
+		record = self.calibrated(self.approved())
+		with patch.object(frappe, "in_test", False):
+			amendment = self.sign(
+				self.qa, "Calibration Record", record.name, "Correct", "Wrong certificate number"
+			)
+		self.assertEqual(
+			frappe.get_all(
+				"File",
+				filters={"attached_to_doctype": "Calibration Record", "attached_to_name": amendment},
+				pluck="file_url",
+			),
+			[record.certificate],
+		)
+
 
 @verifies("URS-EQP-002")
 class TestReferenceStandards(CareTestCase):

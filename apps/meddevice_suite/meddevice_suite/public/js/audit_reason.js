@@ -57,6 +57,8 @@ function with_reason(frm, action, name) {
 	return requires_reason(frm.doctype).then((required) => {
 		if (!required) return;
 		return ask_reason(TITLES[action](name)).then((reason) =>
+			// The caller handles the refusal: each caller below does not go ahead with the
+			// action, and Frappe has shown the server's message.
 			frappe.xcall("meddevice_suite.compliance.audit_reason.stage_reason", {
 				doctype: frm.doctype,
 				name,

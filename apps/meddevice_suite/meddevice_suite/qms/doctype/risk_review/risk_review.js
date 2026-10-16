@@ -15,6 +15,8 @@ frappe.ui.form.on("Risk Review", {
 					risk_review: frm.doc.name,
 				})
 				.then((name) => frappe.set_route("Form", "Risk Assessment", name))
+				// Frappe has shown the server's refusal; the review stays as it was.
+				.catch(() => {})
 		);
 		frm.add_custom_button(__("Close: No Change"), () =>
 			esign.sign(frm, "Close: No Change", "Reviewed", { ask_reason: true }).catch(() => {})

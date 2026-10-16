@@ -237,6 +237,23 @@ def new_policy(doc: Document) -> None:
 		)
 
 
+def require_scales(doc: Document) -> None:
+	"""validate: a policy holds its severity and probability scales and its matrix. They are not
+	required on the form, as the server fills them for a new policy (`new_policy`): marked required
+	there, the browser refused to save a new policy before the server could fill them (found by the
+	browser walk-through of data store D9, 2026-10-15)."""
+	missing = [
+		_(label)
+		for field, label in (
+			("severity_levels", "Severity"),
+			("probability_levels", "Probability"),
+			("matrix", "Matrix"),
+		)
+		if not doc.get(field)
+	]
+	require(not missing, _("{0} has no {1}.").format(doc.name, ", ".join(missing)))
+
+
 def guard_policy(doc: Document) -> None:
 	"""before_validate: QA edits a draft; it moves on only by its signed acts."""
 	only_by_signature(doc)
@@ -258,7 +275,9 @@ def scale(rows: list) -> dict[int, str]:
 
 def check_scales(doc: Document, complete: bool = False) -> None:
 	"""Each scale numbered 1, 2, … with a name per level; each pair of the matrix listed once;
-	complete: every pair with its acceptability, never more acceptable as the risk rises."""
+	complete: every pair with its acceptability, never more acceptable as the risk rises. A scale or
+	matrix missing altogether is said first, as such: numbering an empty scale says nothing useful."""
+	require_scales(doc)
 	for table, label in (("severity_levels", _("severity")), ("probability_levels", _("probability"))):
 		rows = doc.get(table) or []
 		levels = [cint(row.level) for row in rows]

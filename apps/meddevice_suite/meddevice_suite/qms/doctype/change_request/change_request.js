@@ -64,12 +64,14 @@ frappe.ui.form.on("Change Request Action", {
 });
 
 // The record types a field offers as declared (qms/change_control.py holds the same list),
-// among those the person may look up.
+// among those the person may look up. Reading a type lets one look it up, as on the server: the
+// desk lists under "select" only the types granted it by name (found in the browser walk-through
+// of 2026-10-15: QA was never offered a Document Revision).
 function selectable(doctype, fieldname) {
 	return frappe.meta
 		.get_docfield(doctype, fieldname)
 		.options.split("\n")
-		.filter((type) => type && frappe.model.can_select(type));
+		.filter((type) => type && (frappe.model.can_select(type) || frappe.model.can_read(type)));
 }
 
 function roles() {
@@ -112,6 +114,8 @@ function offer_acts(frm) {
 			frappe
 				.xcall(`${CHANGE_CONTROL}.submit_for_assessment`, { name: frm.doc.name })
 				.then(() => frm.reload_doc())
+				// Frappe has shown the server's refusal; the record stays as it was.
+				.catch(() => {})
 		)
 			.removeClass("btn-default")
 			.addClass("btn-primary");
@@ -169,10 +173,16 @@ function withdraw(frm) {
 		fields: [{ fieldtype: "Small Text", fieldname: "reason", label: __("Reason"), reqd: 1 }],
 		primary_action_label: __("Withdraw"),
 		primary_action({ reason }) {
-			frappe.xcall(`${CHANGE_CONTROL}.withdraw`, { name: frm.doc.name, reason }).then(() => {
-				dialog.hide();
-				frm.reload_doc();
-			});
+			dialog.disable_primary_action();
+			frappe
+				.xcall(`${CHANGE_CONTROL}.withdraw`, { name: frm.doc.name, reason })
+				.then(() => {
+					dialog.hide();
+					frm.reload_doc();
+				})
+				// Frappe has shown the server's refusal: the dialog stays open with the reason
+				// given, to correct and send again.
+				.catch(() => dialog.enable_primary_action());
 		},
 	});
 	dialog.show();
@@ -240,6 +250,7 @@ function record_done(frm, rows) {
 		],
 		primary_action_label: __("Record as Done"),
 		primary_action(values) {
+			dialog.disable_primary_action();
 			frappe
 				.xcall(`${CHANGE_CONTROL}.complete_action`, {
 					name: frm.doc.name,
@@ -253,7 +264,10 @@ function record_done(frm, rows) {
 				.then(() => {
 					dialog.hide();
 					frm.reload_doc();
-				});
+				})
+				// Frappe has shown the server's refusal: the dialog stays open with what was
+				// entered, to correct and record again.
+				.catch(() => dialog.enable_primary_action());
 		},
 	});
 	dialog.show();

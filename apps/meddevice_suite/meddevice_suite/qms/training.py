@@ -33,6 +33,7 @@ from frappe.model.document import Document
 from frappe.utils import add_days, add_months, getdate, now_datetime, today
 
 from meddevice_suite.compliance import quality_settings
+from meddevice_suite.compliance.audit import same
 from meddevice_suite.compliance.checks import QA_ROLE, require
 from meddevice_suite.compliance.esign import sign
 from meddevice_suite.master_data import routing
@@ -454,6 +455,12 @@ def start_history(employee: str, controlled_document: str) -> str:
 	return doc.name
 
 
+def unchanged(before: Document, doc: Document, fieldname: str) -> bool:
+	"""The field holds the same stored value: the form sends a date as text where the database
+	returned a date (found in the browser walk-through of 2026-10-15)."""
+	return same(before.get(fieldname), doc.get(fieldname), doc.meta.get_field(fieldname).fieldtype)
+
+
 def validate_record(doc: Document, method: str | None = None) -> None:
 	"""before_validate and validate: what a record may hold, and who changes what."""
 	if doc.get("_action") == "submit" and not doc.flags.training:
@@ -481,7 +488,7 @@ def validate_record(doc: Document, method: str | None = None) -> None:
 	if before and not doc.flags.training:
 		# A record stays what it was opened for: a coordinator who could turn an open record into
 		# Historical would take it out of `reconcile` and let QA sign it complete without training.
-		opened = [f for f in OPENED_WITH if (before.get(f) or None) != (doc.get(f) or None)]
+		opened = [f for f in OPENED_WITH if not unchanged(before, doc, f)]
 		require(
 			not opened,
 			_("Set when the record was opened: {0}.").format(
@@ -493,7 +500,7 @@ def validate_record(doc: Document, method: str | None = None) -> None:
 			before.status == doc.status, _("The status changes only by a signature."), frappe.PermissionError
 		)
 		if before.status != OPEN:
-			changed = [f for f in PLANNED if (before.get(f) or None) != (doc.get(f) or None)]
+			changed = [f for f in PLANNED if not unchanged(before, doc, f)]
 			require(
 				not changed,
 				_("Fixed once the trainee signed: {0}.").format(

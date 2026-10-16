@@ -4,23 +4,27 @@
 frappe.listview_settings["Audit Anchor"] = {
 	onload(listview) {
 		listview.page.add_inner_button(__("Anchor Now"), () =>
-			frappe.xcall("meddevice_suite.compliance.audit_anchor.anchor_now").then((anchors) => {
-				frappe.show_alert({
-					message: anchors.length
-						? anchors
-								.map((anchor) =>
-									__("{0}: anchor {1}, {2} entries", [
-										__(anchor.ledger),
-										anchor.anchor,
-										anchor.entry_count,
-									])
-								)
-								.join("<br>")
-						: __("There is nothing to anchor yet."),
-					indicator: "green",
-				});
-				listview.refresh();
-			})
+			frappe
+				.xcall("meddevice_suite.compliance.audit_anchor.anchor_now")
+				.then((anchors) => {
+					frappe.show_alert({
+						message: anchors.length
+							? anchors
+									.map((anchor) =>
+										__("{0}: anchor {1}, {2} entries", [
+											__(anchor.ledger),
+											anchor.anchor,
+											anchor.entry_count,
+										])
+									)
+									.join("<br>")
+							: __("There is nothing to anchor yet."),
+						indicator: "green",
+					});
+					listview.refresh();
+				})
+				// Frappe has shown the server's refusal; nothing was anchored.
+				.catch(() => {})
 		);
 		listview.page.add_inner_button(__("Verify Audit Trail"), () =>
 			frappe
@@ -40,6 +44,8 @@ frappe.listview_settings["Audit Anchor"] = {
 							  ),
 					})
 				)
+				// Frappe has shown the server's refusal; there is nothing to show besides.
+				.catch(() => {})
 		);
 	},
 };

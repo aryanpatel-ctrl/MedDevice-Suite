@@ -310,6 +310,22 @@ class TestPolicy(RiskTestCase):
 		with self.assertRaisesRegex(frappe.ValidationError, "more acceptable"):
 			self.sign_as(self.qa, rm.POLICY, inverted, "Review")
 
+	def test_qa_saves_a_new_policy_with_its_title_and_never_without_its_scales(self):
+		"""The form requires no table: the server fills the scales and the matrix of a new policy, and
+		refuses a policy that has lost them (found by the browser walk-through, 2026-10-15)."""
+		meta = frappe.get_meta(rm.POLICY)
+		for table in ("severity_levels", "probability_levels", "matrix"):
+			self.assertFalse(meta.get_field(table).reqd, table)
+		frappe.set_user(self.qa)
+		doc = frappe.get_doc({"doctype": rm.POLICY, "title": "Title only", "policy_statement": "x"}).insert()
+		self.assertEqual(len(doc.matrix), 25)
+		for table in ("severity_levels", "probability_levels", "matrix"):
+			with self.subTest(table=table):
+				emptied = frappe.get_doc(rm.POLICY, doc.name)
+				emptied.set(table, [])
+				with self.assertRaisesRegex(frappe.ValidationError, "has no"):
+					emptied.save()
+
 	def test_the_scales_are_numbered_without_gaps(self):
 		frappe.set_user(self.qa)
 		doc = frappe.get_doc({"doctype": rm.POLICY, "title": "Gaps", "policy_statement": "x"}).insert()

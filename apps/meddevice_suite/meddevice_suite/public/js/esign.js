@@ -98,8 +98,13 @@ esign.sign = (frm, action, meaning, { ask_reason = false, fields = [] } = {}) =>
 					.then((opened) => {
 						signed = true;
 						dialog.hide();
-						frm.reload_doc();
-						resolve(opened);
+						// What follows a signature runs on the record as reloaded: the reload first
+						// drops the record from the desk, and a form opened meanwhile (the amendment a
+						// correction opens) found none (D10-T16, in Chrome, 2026-10-15).
+						Promise.resolve(frm.reload_doc()).then(
+							() => resolve(opened),
+							() => resolve(opened)
+						);
 					})
 					.catch(() => {
 						dialog.set_value("password", "");

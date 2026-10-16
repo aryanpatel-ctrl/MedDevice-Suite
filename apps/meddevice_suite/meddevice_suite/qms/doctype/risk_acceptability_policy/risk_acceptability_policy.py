@@ -18,6 +18,9 @@ class RiskAcceptabilityPolicy(Document):
 	def before_validate(self) -> None:
 		risk_management.guard_policy(self)
 
+	def validate(self) -> None:
+		risk_management.require_scales(self)
+
 	def before_update_after_submit(self) -> None:
 		risk_management.only_by_act(self)
 
