@@ -834,8 +834,8 @@ status = "implemented"
 [[requirement]]
 id = "URS-QMS-009"
 module = 36
-title = "Anyone in a business job can raise a change request, numbered CR-YYYY-####, stating what is to change, why, its type (document, product or BOM, process or routing, equipment, supplier, system) and the records it affects; nothing changes under it until it is approved."
-source = "D2 Change Control: Change Request; ISO 13485 4.1.4, 7.3.9; who may raise decided under the client's instruction of 2026-10-07"
+title = "Anyone in a business job can raise a change request, numbered CR-YYYY-####, stating what is to change, why, its type (document, product or BOM, process or routing, equipment, supplier, customer, regulatory, system), every record it can affect belonging to one of them, and the records it affects; nothing changes under it until it is approved."
+source = "D2 Change Control: Change Request; ISO 13485 4.1.4, 7.3.9; who may raise decided under the client's instruction of 2026-10-07; the customer and regulatory types added from the browser walk-through of 2026-10-15, changed in place (rules section 8)"
 status = "implemented"
 
 [[requirement]]

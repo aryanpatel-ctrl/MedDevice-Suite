@@ -197,6 +197,8 @@ def correct_dates(
 	# Signed with the corrected dates on the lot, so the signature binds what QA approved.
 	sign(lot, "Approved", ACT, password, reason, permission="read")
 	lot.flags.lot_dates_correction = True
+	# The audit trail's update event carries the reason, as every change to a regulated record does.
+	lot.flags.audit_reason = reason
 	# QA's role reads lots and does not write them; this change is the signed act itself, made after
 	# the checks above and recorded in the audit trail under QA, with the reason on the lot.
 	lot.save(ignore_permissions=True)
