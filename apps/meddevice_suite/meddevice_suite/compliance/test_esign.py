@@ -116,7 +116,8 @@ class TestReauthentication(SigningTestCase):
 
 		# Changed, or on its last day, the password signs.
 		frappe.db.set_value("User", SIGNER, "last_password_reset_date", add_days(today(), -days))
-		self.assertEqual(signatures_on(self.todo), [self.sign().name])
+		signature = self.sign()
+		self.assertEqual(signatures_on(self.todo), [signature.name])
 
 	def test_the_lockout_counts_signing_failures_up_to_its_limit(self):
 		frappe.db.set_single_value("System Settings", "allow_consecutive_login_attempts", 3)
