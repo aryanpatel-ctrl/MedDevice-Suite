@@ -555,6 +555,30 @@ class TestTheAnchorFileIsNeverServed(IntegrationTestCase):
 			with self.subTest(address=address):
 				self.assertFalse(audit_anchor.names_anchor_file(address))
 
+	def test_any_file_in_the_anchor_folder_is_recognised(self):
+		"""The anchor folder holds only what the system keeps: a file of any name there is refused, so
+		a rotated or renamed anchor file is not served either (mutation check, 2026-10-16)."""
+		folder = "/" + "/".join(audit_anchor.FOLDER)
+		for address in (f"{folder}/anchors-2026.jsonl", f"{folder}/notes.txt", f"{folder.upper()}/x"):
+			with self.subTest(address=address):
+				self.assertTrue(audit_anchor.names_anchor_file(address))
+
+	def test_a_file_record_named_as_the_anchor_file_is_refused_whatever_its_address(self):
+		"""A File is refused on its name too: Frappe makes a stored file's address from its name, so a
+		record named as the anchor file must not be stored (mutation check, 2026-10-16)."""
+		frappe.set_user(user_with_profile("Stores"))
+		with self.assertRaises(frappe.PermissionError):
+			frappe.get_doc(
+				{
+					"doctype": "File",
+					"file_name": audit_anchor.FILE_NAME,
+					"is_private": 1,
+					"content": "x",
+				}
+			).insert()
+		frappe.set_user("Administrator")
+		self.assertFalse(frappe.db.exists("File", {"file_name": audit_anchor.FILE_NAME}))
+
 
 @verifies("URS-CMP-040")
 class TestTheAnchorFileIsMovedOutOfTheServedFolder(IntegrationTestCase):
