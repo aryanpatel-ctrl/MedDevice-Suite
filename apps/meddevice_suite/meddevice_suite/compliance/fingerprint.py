@@ -182,6 +182,14 @@ def chain_problems(
 	since = keyed_since()
 	for entry in entries:
 		previous = None
+		# First, so that an entry moved here is named as such even when the entry before it stayed
+		# on the record it was moved from.
+		if entry.get(trail.name_at) not in names:
+			problems.append(
+				_(
+					"{0}: it was recorded for {1}, a name this record has never had; it belongs to another record."
+				).format(entry.name, entry.get(trail.name_at))
+			)
 		if link := entry.get(trail.link):
 			previous = by_name.get(link)
 			if previous is None:
@@ -196,12 +204,6 @@ def chain_problems(
 			followed.add(link)
 		else:
 			firsts.append(entry.name)
-		if entry.get(trail.name_at) not in names:
-			problems.append(
-				_(
-					"{0}: it was recorded for {1}, a name this record has never had; it belongs to another record."
-				).format(entry.name, entry.get(trail.name_at))
-			)
 		problems += version_problems(trail, entry, previous, since)
 		if entry.get(trail.fingerprint) != fingerprint_of(
 			entry, previous.get(trail.fingerprint) if previous else ""
