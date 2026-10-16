@@ -1,7 +1,7 @@
 // Reminders (module 60): an occurrence of a recurring reminder is completed by its job, or QA,
 // with a remark. Who may complete it is checked on the server (work_management/reminders.py);
 // a system reminder completes itself when the work is done in its record.
-frappe.ui.form.on("Reminder", {
+frappe.ui.form.on("Due Reminder", {
 	refresh(frm) {
 		if (!frm.doc.schedule || frm.doc.status === "Completed") return;
 		frm.add_custom_button(__("Mark Completed"), () => {

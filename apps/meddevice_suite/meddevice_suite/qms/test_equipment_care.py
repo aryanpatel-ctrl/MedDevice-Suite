@@ -1295,14 +1295,16 @@ class TestReminders(CareTestCase):
 		frappe.set_user("Administrator")
 		reminders.run()
 		raised = frappe.get_all(
-			"Reminder", filters={"reference_name": asset, "category": "Calibration Due"}, fields=["status"]
+			"Due Reminder",
+			filters={"reference_name": asset, "category": "Calibration Due"},
+			fields=["status"],
 		)
 		self.assertTrue(raised and raised[0].status in ("Open", "Overdue", "Escalated"))
 		self.calibrated(asset)
 		reminders.run()
 		self.assertEqual(
 			frappe.get_all(
-				"Reminder",
+				"Due Reminder",
 				filters={
 					"reference_name": asset,
 					"category": "Calibration Due",
@@ -1317,7 +1319,7 @@ class TestReminders(CareTestCase):
 		reminders.run()
 		self.assertTrue(
 			frappe.db.exists(
-				"Reminder",
+				"Due Reminder",
 				{
 					"reference_name": record.name,
 					"category": "Calibration Impact",
@@ -1329,7 +1331,7 @@ class TestReminders(CareTestCase):
 		reminders.run()
 		self.assertFalse(
 			frappe.db.exists(
-				"Reminder",
+				"Due Reminder",
 				{
 					"reference_name": record.name,
 					"category": "Calibration Impact",
@@ -1484,7 +1486,7 @@ class TestCorrection(CareTestCase):
 			(2, "Open"),
 		)
 		# The correction does not complete the reminder: only QA's signed assessment does.
-		self.assertTrue(frappe.db.exists("Reminder", {"reference_name": record.name, **OPEN_IMPACT}))
+		self.assertTrue(frappe.db.exists("Due Reminder", {"reference_name": record.name, **OPEN_IMPACT}))
 		self.sign(
 			self.qa,
 			"Calibration Record",
@@ -1497,7 +1499,7 @@ class TestCorrection(CareTestCase):
 			("Assessed", self.qa),
 		)
 		reminders.run()
-		self.assertFalse(frappe.db.exists("Reminder", {"reference_name": record.name, **OPEN_IMPACT}))
+		self.assertFalse(frappe.db.exists("Due Reminder", {"reference_name": record.name, **OPEN_IMPACT}))
 
 	def test_only_qa_corrects_and_always_says_why(self):
 		record = self.calibrated(self.approved())

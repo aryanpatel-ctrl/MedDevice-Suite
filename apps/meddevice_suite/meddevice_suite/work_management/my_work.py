@@ -52,13 +52,13 @@ def records(
 
 def reminders(user: str, roles: set[str]) -> Iterator[Waiting]:
 	for row in records(
-		"Reminder",
+		"Due Reminder",
 		{"status": ["in", ["Open", "Overdue", "Escalated"]]},
 		("name", "subject", "status", "raised_on", "due_date"),
 	):
 		yield Waiting(
 			_("{0} ({1})").format(row.subject, _(row.status)),
-			"Reminder",
+			"Due Reminder",
 			row.name,
 			row.raised_on,
 			row.due_date,

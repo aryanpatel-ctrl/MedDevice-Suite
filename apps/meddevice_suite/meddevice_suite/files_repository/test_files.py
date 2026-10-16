@@ -260,7 +260,7 @@ class TestVersions(FilesTestCase):
 class TestValidity(FilesTestCase):
 	def reminder(self, name: str) -> frappe._dict | None:
 		rows = frappe.get_all(
-			"Reminder",
+			"Due Reminder",
 			filters={"reference_doctype": "Important File", "reference_name": name},
 			fields=["status", "responsible_roles"],
 			order_by="creation desc",
