@@ -30,6 +30,7 @@ from meddevice_suite.setup.test_stock import (
 	work_instruction_for_test,
 )
 from meddevice_suite.work_management import reminders
+from meddevice_suite.work_management.reminders import DOCTYPE as REMINDER
 
 IN = {"parameter": "Length 100 mm", "unit": "mm", "nominal": 100, "lower_limit": 99.98, "upper_limit": 100.02}
 # A calibration's impact reminder not yet completed.
@@ -639,7 +640,7 @@ class TestImpactFollowsTheInstrument(CareTestCase):
 			record = self.calibrated(asset, points=[point(found=100.05)])
 		self.sign(self.qa, "Calibration Record", record.name, "Assess: No Product Impact", "Readings held")
 		reminders.run()
-		self.assertFalse(frappe.db.exists("Reminder", {"reference_name": record.name, **OPEN_IMPACT}))
+		self.assertFalse(frappe.db.exists(REMINDER, {"reference_name": record.name, **OPEN_IMPACT}))
 		alerts = self.alerts(record.name)
 
 		late, elsewhere, after = self.job_card(a, 10), self.job_card(b, 10), self.job_card(a, 25)
@@ -667,7 +668,7 @@ class TestImpactFollowsTheInstrument(CareTestCase):
 			self.assertTrue(is_unchanged_since(frappe.get_doc("Electronic Signature", signature)))
 		self.assertTrue(esign.verify_signatures("Calibration Record", record.name))
 		reminders.run()
-		self.assertTrue(frappe.db.exists("Reminder", {"reference_name": record.name, **OPEN_IMPACT}))
+		self.assertTrue(frappe.db.exists(REMINDER, {"reference_name": record.name, **OPEN_IMPACT}))
 		self.sign(
 			self.qa, "Calibration Record", record.name, "Assess: Product Action Needed", f"{late} to recheck"
 		)
