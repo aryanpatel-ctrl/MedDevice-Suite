@@ -142,8 +142,8 @@ def guard_opening_stock(doc: Document, method: str | None = None) -> None:
 	if is_opening(doc) and not in_data_load():
 		frappe.throw(
 			_(
-				"{0} is opening stock, which is loaded once at go-live through Data Import, not entered on a form or through the API. Receive stock on a goods receipt, or make it on a work order."
-			).format(doc.name or _(doc.doctype)),
+				"This {0} is opening stock, which is loaded once at go-live through Data Import, not entered on a form or through the API. Receive stock on a goods receipt, or make it on a work order."
+			).format(_(doc.doctype)),
 			frappe.PermissionError,
 			title=_("Opening stock is loaded at go-live"),
 		)

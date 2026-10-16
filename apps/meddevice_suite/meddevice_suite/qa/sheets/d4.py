@@ -15,7 +15,8 @@ step as the job that does it (`acting_as`), so a test never depends on another h
 - an approved lot of the finished good in the finished-goods store, delivered to the customer and
   partly sent back into the Returns store: a raw material is not a sales item, so goods a customer
   sends back are the product's, which comes into stock as opening stock on a material receipt
-  (`finished_goods.as_opening_stock`), approved as the journey's stock already in store is
+  (`finished_goods.as_opening_stock`) loaded as the go-live data load loads it, through Data Import
+  (URS-STK-015; `records.loaded_as_data_import`, by ui_journey.post_stock_entry), approved as the journey's stock already in store is
   (ui_journey.put_later_expiring_lots);
 - two approved lots of a material whose dates QA corrected with signatures, for first expiry,
   first out, after the material's earlier stock is written off;
@@ -489,7 +490,9 @@ def inspect_returned(lot: str, entry: str) -> str:
 @frappe.whitelist(methods=["POST"])
 def prepare_quarantined_product(qty: float = 10) -> dict:
 	"""A new lot of the finished good in quarantine, come in as opening stock on a material receipt
-	(D4-T11): a lot that is not approved, which the sheet tries to move, issue, deliver and pick."""
+	loaded through Data Import (D4-T11: a lot that is not approved, which the sheet tries to move,
+	issue, deliver and pick; D4-T24: the go-live data load is the way opening stock comes in), and
+	the entry."""
 	require_administrator()
 	entry = post_stock_entry(
 		"Material Receipt",
@@ -507,6 +510,7 @@ def prepare_quarantined_product(qty: float = 10) -> dict:
 		"item": PRODUCT,
 		"qty": flt(qty),
 		"lot": lot_of(frappe.get_doc("Stock Entry", entry.name).items[0]),
+		"entry": entry.name,
 	}
 
 
