@@ -241,7 +241,14 @@ class TestReviewersVerifyARecord(ReviewTestCase):
 		frappe.set_user(SIGNER)
 
 		self.assertEqual(
-			verify_record(AUDITED, doc.name), {"audit_trail": [], "signatures_intact": True, "anchors": []}
+			verify_record(AUDITED, doc.name),
+			{
+				"audit_trail": [],
+				"signature_chain": [],
+				"signatures": [],
+				"signatures_intact": True,
+				"anchors": [],
+			},
 		)
 
 	def test_a_reviewer_is_told_what_was_tampered_with(self):

@@ -443,6 +443,8 @@ class TestWorkOrders(BomTestCase):
 		"""ERPNext checks the bill's product and that it is active as well; the app's check does not
 		rely on that (an upgrade may change it)."""
 		product = self.approved_item(FINISHED_GOOD)
+		good = self.draft(product=product, is_default=0)
+		self.approve(good.name)  # the product's first bill: its default
 		inactive = self.draft(product=product, is_default=0)
 		self.approve(inactive.name)
 		frappe.db.set_value("BOM", inactive.name, "is_active", 0)
@@ -456,8 +458,6 @@ class TestWorkOrders(BomTestCase):
 			with self.subTest(case=case):
 				with self.assertRaisesRegex(frappe.ValidationError, "approved, active bill of materials"):
 					bill_of_materials.guard_work_order(self.work_order(product, bom))
-		good = self.draft(product=product, is_default=0)
-		self.approve(good.name)
 		bill_of_materials.guard_work_order(self.work_order(product, good.name))  # the right bill passes
 
 	def test_a_work_order_made_without_validation_is_checked_too(self):
@@ -476,3 +476,39 @@ class TestWorkOrders(BomTestCase):
 		order.flags.ignore_validate = order.flags.ignore_mandatory = True
 		with self.assertRaisesRegex(frappe.ValidationError, "approved, active bill of materials"):
 			order.insert()
+
+	@verifies("URS-MST-001")
+	def test_only_the_default_bill_in_force_is_produced_on(self):
+		"""A second bill QA approved without displacing the default (to prepare a change, say) is not
+		produced on, for a sub-assembly as for a finished good, also when validation is skipped; it
+		becomes the bill produced on only as the default, replaced under an approved change request
+		(independent review of 2026-10-15)."""
+		from meddevice_suite.master_data.versioning import CHANGE_REQUEST
+		from meddevice_suite.qms.test_change_control import approved_change
+
+		for item_type in (SUB_ASSEMBLY, FINISHED_GOOD):
+			with self.subTest(item_type=item_type):
+				product = self.approved_item(item_type)
+				default = self.draft(product=product)
+				self.approve(default.name)
+				second = self.draft(product=product, is_default=0)
+				self.approve(second.name, "Prepared for a change of supplier")  # approved, active
+				self.assertEqual(frappe.db.get_value("BOM", second.name, ["docstatus", "is_active"]), (1, 1))
+				for skipped in (False, True):
+					order = self.work_order(product, second.name)
+					order.flags.ignore_validate = order.flags.ignore_mandatory = skipped
+					with self.assertRaisesRegex(frappe.ValidationError, "not the default bill of materials"):
+						order.insert()
+				bill_of_materials.guard_work_order(self.work_order(product, default.name))
+
+		# Made the default under an approved change request, it is the one produced on.
+		product = self.approved_item(SUB_ASSEMBLY)
+		old = self.draft(product=product)
+		self.approve(old.name)
+		change = approved_change(signer("Production Supervisor"), self.qa, old.name, "BOM", "Product or BOM")
+		frappe.set_user("Administrator")
+		new = self.draft(product=product, **{CHANGE_REQUEST: change})
+		self.approve(new.name, "Replaces the bill in force under the change")
+		bill_of_materials.guard_work_order(self.work_order(product, new.name))
+		with self.assertRaisesRegex(frappe.ValidationError, "not the default bill of materials"):
+			bill_of_materials.guard_work_order(self.work_order(product, old.name))

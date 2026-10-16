@@ -11,12 +11,14 @@ from frappe.utils.password import update_password
 from frappe.www.printview import get_rendered_template
 from pypdf import PdfWriter
 
+from meddevice_suite.compliance import esign
 from meddevice_suite.compliance.esign import (
 	ACT_MAINTAINED,
 	SYSTEM_MAINTAINED,
 	is_unchanged_since,
 	verify_signatures,
 )
+from meddevice_suite.compliance.fingerprint import FIRST_VERSION
 from meddevice_suite.compliance.signing import sign_action
 from meddevice_suite.compliance.test_esign import PASSWORD, reset_lockout
 from meddevice_suite.qa import verifies
@@ -424,6 +426,184 @@ class TestWithdrawal(DocumentControlTestCase):
 		self.draft(document, summary="In progress")
 		with self.assertRaises(frappe.ValidationError):
 			self.withdraw(self.qa, document)
+
+
+@verifies("URS-QMS-002")
+class TestAbandonedRevision(DocumentControlTestCase):
+	"""Independent review 2026-10-15: a revision returned to its author could never be given up, and
+	as the document's one revision in progress it held back the document's withdrawal, its periodic
+	review and its next revision (ISO 13485 4.2.4 b)."""
+
+	def at(self, status: str):
+		"""A revision of a new document brought to `status` by its signed acts."""
+		revision = self.draft(self.register())
+		if status in ("In Review", "Awaiting Approval"):
+			revision = self.act(self.author, revision, "Author")
+		if status == "Awaiting Approval":
+			revision = self.act(self.reviewer, revision, "Review")
+		self.assertEqual(revision.status, status)
+		return revision
+
+	def test_qa_abandons_a_revision_not_yet_approved_with_a_signed_reason(self):
+		for status in ("Draft", "In Review", "Awaiting Approval"):
+			with self.subTest(status=status):
+				revision = self.act(self.qa, self.at(status), "Abandon", "The procedure is no longer needed")
+				self.assertEqual((revision.status, revision.docstatus), ("Abandoned", 0))
+				signature = frappe.get_last_doc(
+					"Electronic Signature",
+					filters={"reference_doctype": "Document Revision", "reference_name": revision.name},
+				)
+				self.assertEqual(
+					(signature.signer, signature.action, signature.meaning, signature.reason),
+					(self.qa, "Abandon", "Withdrawn", "The procedure is no longer needed"),
+				)
+				self.assertTrue(verify_signatures("Document Revision", revision.name))
+				# Not in progress any more: the document is revised afresh.
+				document = frappe.get_doc("Controlled Document", revision.controlled_document)
+				self.assertEqual(self.draft(document).revision, "01")
+
+	def test_only_qa_abandons_with_a_reason_and_only_before_approval(self):
+		revision = self.at("In Review")
+		for user in (self.author, self.reviewer):
+			with self.assertRaises(frappe.PermissionError):
+				self.act(user, revision, "Abandon", "Not needed")
+		with self.assertRaisesRegex(frappe.ValidationError, "Say why the revision is abandoned"):
+			self.act(self.qa, revision, "Abandon")
+		self.assertEqual(frappe.db.get_value("Document Revision", revision.name, "status"), "In Review")
+
+		effective = self.issue(self.register())
+		with self.assertRaisesRegex(frappe.ValidationError, "Only a revision not yet approved"):
+			self.act(self.qa, effective, "Abandon", "Too late")
+		later = self.issue(self.register(), effective_date=add_days(today(), 10))
+		self.assertEqual(later.status, "Approved")
+		with self.assertRaisesRegex(frappe.ValidationError, "Only a revision not yet approved"):
+			self.act(self.qa, later, "Abandon", "Approved already")
+
+	def test_an_abandoned_revision_is_final_and_kept(self):
+		revision = self.act(self.qa, self.at("Draft"), "Abandon", "Not needed")
+		with self.assertRaisesRegex(frappe.ValidationError, "Only a revision not yet approved"):
+			self.act(self.qa, revision, "Abandon", "Again")
+		with self.assertRaises(frappe.ValidationError):
+			self.act(self.author, revision, "Author")
+		self.as_user(self.author)
+		revision.summary_of_change = "Edited after it was abandoned"
+		with self.assertRaises(frappe.PermissionError):
+			revision.save()
+		self.as_user("Administrator")
+		with self.assertRaises(frappe.PermissionError):
+			frappe.delete_doc("Document Revision", revision.name)
+		self.assertTrue(frappe.db.exists("Document Revision", revision.name))
+
+	def test_an_abandoned_revision_no_longer_holds_the_document_back(self):
+		document = self.register()
+		self.issue(document)
+		draft = self.draft(document, summary="A change that will not be made")
+		with self.assertRaisesRegex(frappe.ValidationError, "in progress"):
+			self.as_user(self.qa)
+			sign_action("Controlled Document", document.name, "Review", PASSWORD, "Still correct")
+		self.act(self.qa, draft, "Abandon", "The change was dropped")
+
+		self.as_user(self.qa)
+		sign_action("Controlled Document", document.name, "Review", PASSWORD, "Still correct")
+		sign_action("Controlled Document", document.name, "Withdraw", PASSWORD, "Replaced")
+		self.assertEqual(frappe.db.get_value("Controlled Document", document.name, "status"), "Obsolete")
+		self.assertEqual(frappe.db.get_value("Document Revision", draft.name, "status"), "Abandoned")
+
+
+@verifies("URS-QMS-006", "URS-MST-016")
+class TestWithdrawalOfADefiningDocument(DocumentControlTestCase):
+	"""Independent review 2026-10-15: a document that defines an approved master in use was withdrawn
+	while the master stayed approved, so it went on being bought, made or inspected against an
+	obsolete document (ISO 13485 4.2.4)."""
+
+	@classmethod
+	def setUpClass(cls):
+		from meddevice_suite.setup.install import apply_configuration
+
+		super().setUpClass()
+		apply_configuration()
+
+	def effective(self, document_type: str):
+		document = self.register(f"Defines a master {frappe.generate_hash(length=6)}", document_type)
+		self.issue(document)
+		return frappe.get_doc("Controlled Document", document.name)
+
+	def master(self, doctype: str) -> str:
+		"""A new master of the kind, in draft, as its people set it up."""
+		from meddevice_suite.lot_control.test_lot_status import lot_item
+		from meddevice_suite.master_data.test_specification import template
+		from meddevice_suite.setup.fixtures.inspection import APPEARANCE, DIMENSION
+
+		self.as_user("Administrator")
+		suffix = frappe.generate_hash(length=6).upper()
+		if doctype == "Item":
+			return lot_item(f"MDS-DEF-{suffix}")
+		if doctype == "Operation":
+			return frappe.get_doc({"doctype": "Operation", "name": f"MDS DEF OP {suffix}"}).insert().name
+		for parameter in (APPEARANCE, DIMENSION):  # what the template reads
+			if not frappe.db.exists("Quality Inspection Parameter", parameter):
+				frappe.get_doc({"doctype": "Quality Inspection Parameter", "parameter": parameter}).insert()
+		return template(f"Defined template {suffix}", None).insert().name
+
+	def cite(self, doctype: str, name: str, document: str, approved: bool = True) -> None:
+		"""The master names the document and QA approved it, as the signed approval leaves it."""
+		from meddevice_suite.master_data.defining_documents import approval_of, defined_masters
+
+		defining, _missing = defined_masters()[doctype]
+		approval, approved_value = approval_of(doctype)
+		values = {defining.field: document}
+		if approved:
+			values[approval] = approved_value
+		frappe.db.set_value(doctype, name, values)  # test fixture only
+
+	def withdraw(self, document) -> None:
+		self.as_user(self.qa)
+		sign_action("Controlled Document", document.name, "Withdraw", PASSWORD, "Replaced")
+
+	def test_a_document_defining_an_approved_master_is_not_withdrawn_until_qa_retires_it(self):
+		from meddevice_suite.master_data.defining_documents import approval_of, defined_masters
+
+		kinds = {
+			"Item": "Specification",
+			"Operation": "Work Instruction",
+			"Quality Inspection Template": "SOP",
+		}
+		self.assertEqual(set(defined_masters()), set(kinds), "each master a document defines is covered")
+		for doctype, document_type in kinds.items():
+			with self.subTest(doctype=doctype):
+				document = self.effective(document_type)
+				name = self.master(doctype)
+				self.cite(doctype, name, document.name)
+				with self.assertRaisesRegex(frappe.ValidationError, rf"{document.name} defines .*{name}"):
+					self.withdraw(document)
+				self.assertEqual(
+					frappe.db.get_value("Controlled Document", document.name, "status"), "Effective"
+				)
+
+				# QA retires the master (an item is disabled; another master leaves its approval).
+				if doctype == "Item":
+					frappe.db.set_value("Item", name, "disabled", 1)  # as a change under control leaves it
+				else:
+					approval, _approved = approval_of(doctype)
+					frappe.db.set_value(doctype, name, approval, "Draft")
+				self.withdraw(document)
+				self.assertEqual(
+					frappe.db.get_value("Controlled Document", document.name, "status"), "Obsolete"
+				)
+
+	def test_a_master_in_draft_naming_it_does_not_hold_the_withdrawal(self):
+		document = self.effective("Specification")
+		self.cite("Item", self.master("Item"), document.name, approved=False)
+		self.withdraw(document)
+		self.assertEqual(frappe.db.get_value("Controlled Document", document.name, "status"), "Obsolete")
+
+	def test_the_refusal_names_every_master_it_defines(self):
+		document = self.effective("Specification")
+		items = sorted(self.master("Item") for _ in range(2))
+		for item in items:
+			self.cite("Item", item, document.name)
+		with self.assertRaisesRegex(frappe.ValidationError, rf"Item {items[0]}, Item {items[1]}"):
+			self.withdraw(document)
 
 
 @verifies("URS-QMS-002")
@@ -913,8 +1093,10 @@ class TestPeriodicReview(DocumentControlTestCase):
 		send_review_alerts()
 		self.assertTrue(frappe.db.get_value("Controlled Document", document.name, "review_alerted_for"))
 		before_the_review_act = ("status", "current_revision", "effective_since", "next_review_date")
-		# Signed as it was then: no act of the record type left anything out of what it binds.
+		# Signed as it was then, with fingerprint version 1: no act of the record type left anything
+		# out of what it binds.
 		with (
+			patch.object(esign, "CURRENT_VERSION", FIRST_VERSION),
 			patch.dict(SYSTEM_MAINTAINED, {"Controlled Document": before_the_review_act}),
 			patch.dict(ACT_MAINTAINED, {}, clear=True),
 		):
@@ -925,7 +1107,7 @@ class TestPeriodicReview(DocumentControlTestCase):
 			filters={"reference_doctype": "Controlled Document", "reference_name": document.name},
 		)
 
-		self.assertEqual(signature.action, "Withdraw")
+		self.assertEqual((signature.action, signature.fingerprint_version), ("Withdraw", FIRST_VERSION))
 		self.assertTrue(is_unchanged_since(signature))
 
 	def test_the_form_puts_the_review_first_once_it_is_due(self):

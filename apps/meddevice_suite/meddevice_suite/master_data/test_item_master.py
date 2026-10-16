@@ -43,6 +43,7 @@ from meddevice_suite.qa import verifies
 from meddevice_suite.qms.test_change_control import approved_change
 from meddevice_suite.qms.test_document_control import signer
 from meddevice_suite.setup.fixtures.inspection import ensure_inspection_masters, ensure_inspection_template
+from meddevice_suite.setup.fixtures.records import loaded_as_data_import
 from meddevice_suite.setup.install import apply_configuration
 from meddevice_suite.setup.test_stock import (
 	approve_equipment_for_test,
@@ -460,19 +461,21 @@ class TestSignedApproval(ItemMasterTestCase):
 	def test_pack_sizes_of_an_item_held_before_the_module_are_filled_once(self):
 		item = self.approved_item(FINISHED_GOOD)
 		# In use by its stock, there before the module: a finished good comes in on a material receipt
-		# only as opening stock (plan D-28).
-		as_opening_stock(
-			frappe.get_doc(
-				{
-					"doctype": "Stock Entry",
-					"stock_entry_type": "Material Receipt",
-					"company": company(),
-					"items": [
-						{"item_code": item, "qty": 1, "t_warehouse": store("Quarantine"), "basic_rate": 1}
-					],
-				}
+		# only as opening stock (plan D-28), loaded through the go-live data load (URS-STK-015).
+		loaded_as_data_import(
+			as_opening_stock(
+				frappe.get_doc(
+					{
+						"doctype": "Stock Entry",
+						"stock_entry_type": "Material Receipt",
+						"company": company(),
+						"items": [
+							{"item_code": item, "qty": 1, "t_warehouse": store("Quarantine"), "basic_rate": 1}
+						],
+					}
+				)
 			)
-		).insert().submit()
+		)
 		frappe.db.set_value("Item", item, {APPROVAL_STATUS: DRAFT, UNITS_PER_BOX: 0})  # held before
 		doc = frappe.get_doc("Item", item)
 		doc.set(UNITS_PER_BOX, 12)

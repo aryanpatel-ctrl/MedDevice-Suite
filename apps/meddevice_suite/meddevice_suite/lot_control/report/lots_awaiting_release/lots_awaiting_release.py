@@ -1,13 +1,25 @@
-"""Lots in quarantine or on hold with stock (module 16; URS-QC-004): what each is waiting
-for, and for how many days, so QA and Stores see the queue at any time."""
+"""Lots in quarantine or on hold with stock, and every lot with stock in the hold store whatever its
+status (module 16; URS-QC-004): what each is waiting for, and for how many days, so QA and Stores see
+the queue at any time. Approved stock Stores set apart in the hold store waits on QA's decision as a
+held lot does (independent review 2026-10-15)."""
 
 import frappe
 from frappe import _
 from frappe.utils import date_diff, getdate, today
 
-from meddevice_suite.lot_control.lot_status import HOLD, QUARANTINE, STATUS_FIELD, decided_kinds, stock_by_lot
+from meddevice_suite.lot_control import stores
+from meddevice_suite.lot_control.lot_status import (
+	HOLD,
+	QUARANTINE,
+	STATUS_FIELD,
+	decided_kinds,
+	last_arrivals,
+	stock_by_lot,
+)
 from meddevice_suite.lot_control.receipt import origins_of
 from meddevice_suite.lot_control.stores import kind_of
+
+AWAITING = (QUARANTINE, HOLD)
 
 WAITING_FOR = {
 	"no_certificate": "Supplier certificate",
@@ -16,6 +28,7 @@ WAITING_FOR = {
 	"rejected": "Decision on a rejected inspection",
 	"release": "QA release",
 	"not_releasable": "Nothing: it did not come in on a receipt",
+	"set_apart": "QA decision on stock set apart",
 }
 
 
@@ -39,14 +52,14 @@ def execute(filters: dict | None = None) -> tuple[list[dict], list[dict]]:
 		{"fieldname": "source", "label": _("Came From"), "fieldtype": "Data", "width": 180},
 	]
 	holdings = [h for h in stock_by_lot(filters.get("item_code")) if h.qty > 0]
+	set_apart = {h.batch_no for h in holdings if kind_of(h.warehouse) == stores.HOLD}
 	lots = {
 		row.name: row
 		for row in frappe.get_all(
 			"Batch",
-			filters={
-				"name": ["in", [h.batch_no for h in holdings] or [""]],
-				STATUS_FIELD: ["in", [QUARANTINE, HOLD]],
-			},
+			filters={"name": ["in", [h.batch_no for h in holdings] or [""]]},
+			# A lot awaiting a decision, or with stock in the hold store whatever its status.
+			or_filters={STATUS_FIELD: ["in", list(AWAITING)], "name": ["in", list(set_apart) or [""]]},
 			fields=[
 				"name",
 				STATUS_FIELD,
@@ -85,6 +98,9 @@ def execute(filters: dict | None = None) -> tuple[list[dict], list[dict]]:
 			if lot.reference_doctype == "Stock Entry"
 			else None
 		)
+	# When stock set apart in the hold store came there, for every such lot in one read.
+	hold_stores = {h.warehouse for h in holdings if kind_of(h.warehouse) == stores.HOLD}
+	arrived = last_arrivals(set_apart, hold_stores)
 	inspections = latest_inspections(list(lots))
 	lines = receipt_lines(lots.values())
 	data = []
@@ -92,10 +108,18 @@ def execute(filters: dict | None = None) -> tuple[list[dict], list[dict]]:
 		lot = lots.get(h.batch_no)
 		if lot is None:
 			continue
-		status = lot.get(STATUS_FIELD)
-		if kind_of(h.warehouse) not in decided_kinds(status):
+		status = lot.get(STATUS_FIELD) or QUARANTINE
+		kind = kind_of(h.warehouse)
+		awaiting = status in AWAITING and kind in decided_kinds(status)
+		if not awaiting and kind != stores.HOLD:
 			continue  # rejected at the door, or come back from a customer: not what the release decides
-		since = getdate(lot.mds_status_set_at or lot.creation)
+		if awaiting:
+			since = getdate(lot.mds_status_set_at or lot.creation)
+			waiting = waiting_for(lot, lines.get(lot.name), inspections.get(lot.name))
+		else:
+			# Stock of a lot not awaiting a decision, set apart in the hold store: since it came there.
+			since = getdate(arrived.get(h.batch_no) or lot.mds_status_set_at or lot.creation)
+			waiting = "set_apart"
 		data.append(
 			{
 				"batch_no": h.batch_no,
@@ -103,9 +127,7 @@ def execute(filters: dict | None = None) -> tuple[list[dict], list[dict]]:
 				"lot_status": _(status),
 				"qty": h.qty,
 				"warehouse": h.warehouse,
-				"waiting_for": _(
-					WAITING_FOR[waiting_for(lot, lines.get(lot.name), inspections.get(lot.name))]
-				),
+				"waiting_for": _(WAITING_FOR[waiting]),
 				"days": date_diff(today(), since),
 				"since": since,
 				"source": f"{lot.reference_doctype} {lot.reference_name}" if lot.reference_name else "",

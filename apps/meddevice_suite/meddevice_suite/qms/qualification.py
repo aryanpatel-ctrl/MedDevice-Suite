@@ -2,7 +2,8 @@
 7.5.6, 6.3).
 
 Each stage is an Equipment Qualification against an effective protocol (an SOP or a form), with
-its tests, each passed or failed; it passes only when every test passes. Its performer executes it
+its tests, each passed or failed, recorded once it is done, never dated ahead (as calibration and
+maintenance are: a future date would qualify the equipment from a day that has not come); it passes only when every test passes. Its performer executes it
 with a signature; QA, never the performer, approves it with a signature, which completes it, or
 returns it with a signed reason; once approved, it is never deleted and is corrected only by QA's
 signed Correct (plan D-29, `equipment_care.correct`), which cancels it and opens its amendment, to
@@ -22,6 +23,7 @@ from frappe.utils import add_days, cint, getdate, now_datetime
 from meddevice_suite.compliance.checks import QA_ROLE, require
 from meddevice_suite.compliance.esign import sign
 from meddevice_suite.master_data import equipment
+from meddevice_suite.qms import equipment_care
 
 DOCTYPE = "Equipment Qualification"
 STAGES = ("IQ", "OQ", "PQ")
@@ -62,6 +64,7 @@ def evaluate(doc: Document, method: str | None = None) -> None:
 		_("{0} is not approved equipment.").format(doc.asset),
 	)
 	require(cint(asset.get(equipment.QUALIFICATION)), _("{0} does not need qualification.").format(doc.asset))
+	equipment_care.require_done(doc.performed_on, _("A qualification is recorded once it is done."))
 	protocol = frappe.db.get_value(
 		"Controlled Document", doc.protocol, ["status", "document_type"], as_dict=True
 	)

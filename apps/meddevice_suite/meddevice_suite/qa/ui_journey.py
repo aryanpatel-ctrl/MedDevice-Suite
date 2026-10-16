@@ -58,6 +58,7 @@ from meddevice_suite.setup.fixtures.records import (
 	ensure_item,
 	ensure_licence,
 	ensure_price,
+	loaded_as_data_import,
 )
 
 COMPANY = TEST_COMPANY["company_name"]
@@ -377,7 +378,8 @@ def post_stock_entry(purpose: str, rows: list[dict], opening: bool = False) -> D
 		{"doctype": "Stock Entry", "stock_entry_type": purpose, "company": COMPANY, "items": rows}
 	)
 	if opening:
-		as_opening_stock(entry)
+		# Opening stock comes in only through the go-live data load (URS-STK-015), as Data Import loads it.
+		return loaded_as_data_import(as_opening_stock(entry))
 	# test-site set-up by the Administrator, checked by the caller
 	entry.insert(ignore_permissions=True)
 	entry.submit()

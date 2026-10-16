@@ -17,11 +17,17 @@ decides every movement of every voucher type:
   hold or rejected store;
 - stock of a lot that is not Approved leaves an approved store only by QA's signed move;
 - stock in the quarantine, hold or returns store leaves only by QA's signed decision;
-- stock in the rejected store, whatever the lot's status, goes back to its supplier, is
-  scrapped or is moved to the returns store; never into usable stock, not by a release;
+- stock in the rejected store, whatever the lot's status, goes back to its supplier or is
+  scrapped; never into usable stock, not by a release;
 - new stock of a lot that is not Approved never comes into an approved store, and goods
-  a customer sends back come only into the returns store (plan D-25);
-- a stock count changes only approved stock in an approved store (plan D-24).
+  a customer sends back come only into the returns store (plan D-25), which receives
+  nothing else: goods rejected at the door moved there by hand would reach usable stock by
+  QA's Return to Stock (independent review 2026-10-15);
+- a stock count changes only approved stock in an approved store (plan D-24);
+- cancelling a document is a movement too: one whose reversal would take stock out of the
+  hold, rejected or returns store, or stock of a lot QA has held or rejected, is refused;
+  nonconforming product leaves only by QA's disposition (`guard_cancellation`; ISO 13485
+  8.3; independent review 2026-10-15).
 
 The rule is enforced where every stock movement must pass, the Stock Ledger Entry,
 with the document already stored and the lot row-locked, so a delivery and a hold
@@ -158,7 +164,7 @@ HINT = {
 STORE_HINT = {
 	stores.QUARANTINE: "It leaves only by QA's signed release, hold or rejection.",
 	stores.HOLD: "It leaves only by QA's signed release, after a new inspection, or rejection.",
-	stores.REJECTED: "It can only be returned to its supplier, scrapped or moved to the Returns store.",
+	stores.REJECTED: "It can only be returned to its supplier or scrapped.",
 	stores.RETURNS: "It leaves only by QA's signed disposition: back to stock after an inspection, or to the Rejected store.",
 }
 
@@ -274,13 +280,16 @@ def movement_allowed(status: str, movement: Movement) -> bool:
 	is held to, on the form and on the stock ledger."""
 	if movement.source is None:
 		return may_come_in(status, movement)
+	if movement.target == stores.RETURNS:
+		# The returns store receives only a customer's goods coming back, not stock moved there, not
+		# even by QA: goods rejected at the door moved there would reach usable stock by QA's Return to
+		# Stock (independent review 2026-10-15).
+		return False
 	if movement.source == stores.REJECTED:
 		# Rejected goods, at the door or by QA, whatever the lot's status now: never into usable stock,
-		# not even by a release.
+		# not even by a release; they go back to their supplier or are scrapped.
 		if movement.voucher_type == "Stock Entry":
-			return (movement.purpose == MATERIAL_ISSUE and movement.target is None) or (
-				movement.purpose == MATERIAL_TRANSFER and movement.target == stores.RETURNS
-			)
+			return movement.purpose == MATERIAL_ISSUE and movement.target is None
 		return movement.voucher_type in SUPPLIER_DOCUMENTS and movement.is_return
 	if movement.signed:
 		return True
@@ -298,12 +307,16 @@ def movement_allowed(status: str, movement: Movement) -> bool:
 
 def may_come_in(status: str, movement: Movement) -> bool:
 	"""New stock and returns: goods a customer sends back come into the Returns store, whatever the
-	lot's status, for QA to decide (plan D-25); a lot that is not Approved never comes into an
-	approved store, so a material receipt, production or a count cannot put unreleased stock where it
-	is used."""
-	if movement.voucher_type in CUSTOMER_DOCUMENTS and movement.is_return:
-		return movement.target == stores.RETURNS
+	lot's status, for QA to decide (plan D-25), and nothing else does (independent review
+	2026-10-15); a lot that is not Approved never comes into an approved store, so a material
+	receipt, production or a count cannot put unreleased stock where it is used."""
+	if is_customer_return(movement) or movement.target == stores.RETURNS:
+		return is_customer_return(movement) and movement.target == stores.RETURNS
 	return status == APPROVED or movement.target != stores.APPROVED
+
+
+def is_customer_return(movement: Movement) -> bool:
+	return movement.voucher_type in CUSTOMER_DOCUMENTS and movement.is_return
 
 
 def refuse(lot: str, status: str, store: str | None, movement: Movement | None = None) -> None:
@@ -313,8 +326,12 @@ def refuse(lot: str, status: str, store: str | None, movement: Movement | None =
 
 def refusal(lot: str, status: str, store: str | None, movement: Movement | None) -> tuple[str, str]:
 	"""The title and message of a refused movement: why, and what the stock may still do."""
+	if movement and movement.target == stores.RETURNS and not is_customer_return(movement):
+		return _("Stock returned"), _(
+			"Lot {0} cannot be put in the Returns store; it receives only goods a customer sends back, on a return delivery note or invoice."
+		).format(lot)
 	if movement and movement.source is None:
-		if movement.voucher_type in CUSTOMER_DOCUMENTS and movement.is_return:
+		if is_customer_return(movement):
 			return _("Stock returned"), _(
 				"Lot {0} comes back from a customer into {1}; goods a customer sends back go to the Returns store, where QA decides them."
 			).format(lot, store or _("a store"))
@@ -403,9 +420,14 @@ def hold_to_stock_path(sle: Document, lots: list[str]) -> None:
 	movement = movement_of(sle, inward=flt(sle.actual_qty, qty_precision()) > 0)
 	if movement is None:
 		return  # stock arriving on a move between stores, checked where it left
+	# The lots are locked before anything is read of them: two receipts of one lot submitted at once
+	# would otherwise both find it new, each before the other's ledger entries exist. The second waits
+	# here for the first to finish and is then refused: by the origin check, or by the database, as
+	# the lot's row changed since it began (MariaDB's snapshot isolation), to be submitted again and
+	# refused (independent review 2026-10-15).
+	statuses = status_of(lots, lock=True)
 	if movement.source is None:
 		guard_new_stock(sle, lots, movement)
-	statuses = status_of(lots, lock=True)
 	for lot in lots:
 		status = statuses.get(lot, QUARANTINE)
 		if not movement_allowed(status, movement):
@@ -500,6 +522,21 @@ def forget_voucher(doc: Document, method: str | None = None) -> None:
 	if read:
 		for kind in ("header", "lines"):
 			read.pop((kind, doc.doctype, doc.name), None)
+
+
+def note_submission(doc: Document, method: str | None = None) -> None:
+	"""before_submit of every record type: read the document afresh (`forget_voucher`), and note that
+	it is being submitted now, in this transaction, so the ledger checks know its movement happens
+	today, whatever date it is posted on (`submitted_now`)."""
+	forget_voucher(doc)
+	vouchers_read()[("submitting", doc.doctype, doc.name)] = True
+
+
+def submitted_now(voucher_type: str, voucher_no: str) -> bool:
+	"""Whether the voucher is being submitted in this transaction: goods move when it is submitted,
+	not on the date it is posted on. A ledger ERPNext posts again later (a reposting that recreates
+	the entries) is not a submission."""
+	return bool(vouchers_read().get(("submitting", voucher_type, voucher_no)))
 
 
 def guard_new_stock(sle: Document, lots: list[str], movement: Movement) -> None:
@@ -625,6 +662,54 @@ def refuse_cancel_of_release_transfer(doc: Document, method: str | None = None) 
 			),
 			frappe.PermissionError,
 		)
+
+
+# Stores whose stock is kept apart for QA to decide, and lot statuses QA has decided against use: what
+# a cancellation must not take out (`guard_cancellation`).
+KEPT_APART_KINDS = frozenset({stores.HOLD, stores.REJECTED, stores.RETURNS})
+DECIDED_APART = frozenset({HOLD, REJECTED})
+
+
+def guard_cancellation(doc: Document, method: str | None = None) -> None:
+	"""before_cancel of every record type: cancelling a stock document posts the reverse of its
+	movement, held to the stock path rule as a new movement is (URS-STK-014). Stock it brought into the
+	hold, rejected or returns store, or stock of a lot QA has held or rejected, would leave that way
+	without QA's disposition: a transfer of damaged stock into the rejected store cancelled would put
+	it back in approved stock, a customer's return cancelled would take the goods out of QA's queue
+	(ISO 13485 8.3; independent review 2026-10-15). Every other cancellation stays allowed, a goods
+	receipt into quarantine among them; the lot release's own transfer is refused on its own
+	(`refuse_cancel_of_release_transfer`)."""
+	from erpnext.controllers.stock_controller import StockController
+
+	if not isinstance(doc, StockController) or doc.get(TRANSFER_FIELD):
+		return
+	# What the document brought into a store, which its cancellation takes out again.
+	entries = frappe.get_all(
+		"Stock Ledger Entry",
+		filters={
+			"voucher_type": doc.doctype,
+			"voucher_no": doc.name,
+			"is_cancelled": 0,
+			"actual_qty": [">", 0],
+		},
+		fields=["warehouse", "batch_no", "serial_and_batch_bundle"],
+	)
+	if not entries:
+		return
+	rows = list(zip(entries, lots_of_rows(entries), strict=True))
+	statuses = status_of(lot for _entry, lots in rows for lot in lots)
+	for entry, lots in rows:
+		kind = stores.kind_of(entry.warehouse)
+		for lot in lots:
+			status = statuses.get(lot, QUARANTINE)
+			if kind in KEPT_APART_KINDS or status in DECIDED_APART:
+				frappe.throw(
+					_(
+						"Cancelling {0} {1} would take lot {2} ({3}) out of {4} without QA's decision. Stock kept apart for QA leaves only by QA's signed disposition on a Lot Release; ask QA to decide it."
+					).format(_(doc.doctype), doc.name, lot, _(status), entry.warehouse),
+					LotNotApproved,
+					title=_("Stock kept apart"),
+				)
 
 
 def guard_sales_document(doc: Document, method: str | None = None) -> None:
@@ -859,21 +944,37 @@ def last_arrival(lot: str, warehouses: Collection[str]) -> datetime | None:
 	"""When stock of the lot last came into one of `warehouses`, from the stock ledger (old-style
 	lots on the entry, bundled lots on the bundle's rows): an inspection of goods that came back is
 	one made after they did."""
-	if not warehouses:
-		return None
+	return last_arrivals([lot], warehouses).get(lot)
+
+
+def last_arrivals(lots: Collection[str], warehouses: Collection[str]) -> dict[str, datetime]:
+	"""lot -> when its stock last came into one of `warehouses` (`last_arrival`), for all the lots in
+	two grouped queries, however many they are."""
+	if not warehouses or not lots:
+		return {}
 	sle = frappe.qb.DocType("Stock Ledger Entry")
 	entry = frappe.qb.DocType("Serial and Batch Entry")
 	arrived = (sle.is_cancelled == 0) & (sle.actual_qty > 0) & sle.warehouse.isin(list(warehouses))
-	plain = frappe.qb.from_(sle).select(Max(sle.creation)).where(arrived & (sle.batch_no == lot))
+	plain = (
+		frappe.qb.from_(sle)
+		.select(sle.batch_no, Max(sle.creation))
+		.where(arrived & sle.batch_no.isin(list(lots)))
+		.groupby(sle.batch_no)
+	)
 	bundled = (
 		frappe.qb.from_(sle)
 		.inner_join(entry)
 		.on(entry.parent == sle.serial_and_batch_bundle)
-		.select(Max(sle.creation))
-		.where(arrived & (entry.batch_no == lot))
+		.select(entry.batch_no, Max(sle.creation))
+		.where(arrived & entry.batch_no.isin(list(lots)))
+		.groupby(entry.batch_no)
 	)
-	times = [get_datetime(row[0]) for query in (plain, bundled) for row in query.run() if row[0]]
-	return max(times) if times else None
+	latest: dict[str, datetime] = {}
+	for query in (plain, bundled):
+		for lot, time in query.run():
+			if time and (lot not in latest or get_datetime(time) > latest[lot]):
+				latest[lot] = get_datetime(time)
+	return latest
 
 
 def approved_store(item: str, company: str) -> str:
