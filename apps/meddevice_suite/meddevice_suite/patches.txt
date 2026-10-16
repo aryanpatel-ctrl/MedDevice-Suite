@@ -1,6 +1,7 @@
 [pre_model_sync]
 # Patches added in this section will be executed before doctypes are migrated
 # Read docs to understand patches: https://frappeframework.com/docs/v14/user/en/database-migrations
+meddevice_suite.patches.v0_1.rename_reminder_to_due_reminder
 
 [post_model_sync]
 # Patches added in this section will be executed after doctypes are migrated
@@ -8,3 +9,4 @@ meddevice_suite.patches.v0_1.set_initial_lot_status
 meddevice_suite.patches.v0_1.record_reminders_already_told
 meddevice_suite.patches.v0_1.record_changes_made_under_approved_requests
 meddevice_suite.patches.v0_1.approve_specifications_in_use
+meddevice_suite.patches.v0_1.set_notified_left_as_zero

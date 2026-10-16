@@ -38,7 +38,7 @@ from meddevice_suite.compliance.audit_reason import (
 	reason_used,
 	saved_around,
 )
-from meddevice_suite.compliance.audit_scope import is_regulated
+from meddevice_suite.compliance.audit_scope import is_regulated, recorded_as
 from meddevice_suite.compliance.fingerprint import chain_head, record_content, sha256
 
 NUMBERS = frozenset({"Int", "Check", "Float", "Currency", "Percent"})
@@ -365,7 +365,7 @@ def verify_events(doctype: str, name: str) -> list[str]:
 	"""Problems found in the record's audit chain; an empty list means it is intact."""
 	events = frappe.get_all(
 		"Audit Event",
-		filters={"reference_doctype": doctype, "reference_name": name},
+		filters={"reference_doctype": ["in", recorded_as(doctype)], "reference_name": name},
 		fields=[
 			"name",
 			"reference_doctype",

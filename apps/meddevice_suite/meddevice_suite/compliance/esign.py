@@ -34,6 +34,7 @@ from frappe.model.document import Document
 from frappe.utils import cint, get_datetime, get_fullname, now_datetime
 from frappe.utils.password import check_password
 
+from meddevice_suite.compliance.audit_scope import recorded_as
 from meddevice_suite.compliance.fingerprint import chain_head, plain_text, record_content, sha256
 from meddevice_suite.compliance.signing import declared_meaning
 
@@ -374,7 +375,7 @@ def verify_signatures(doctype: str, name: str) -> bool:
 	"""
 	signatures = frappe.get_all(
 		"Electronic Signature",
-		filters={"reference_doctype": doctype, "reference_name": name},
+		filters={"reference_doctype": ["in", recorded_as(doctype)], "reference_name": name},
 		fields=["name", *FINGERPRINTED, "previous_signature", "signature_hash"],
 	)
 	by_name = {signature.name: signature for signature in signatures}

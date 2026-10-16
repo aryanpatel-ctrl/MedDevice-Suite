@@ -1,7 +1,7 @@
 # Reminders and next due (module 60) — feature document and browser test guide
 
 Requirements: **URS-PLT-014** (system reminders tracked, overdue, escalated, completed by the work), **URS-PLT-015** (recurring reminders QA plans) and **URS-PLT-020** (who is told when a reminder is raised and when it is escalated) (`meddevice_suite/qa/requirements.toml`). Builds on the alerts of modules 4, 5, 18, 30, 36 and 51, and on Quality Settings (URS-PLT-012).
-Code: `meddevice_suite/work_management/reminders.py`; records *Reminder* and *Reminder Schedule* (`work_management/doctype/`); alert `work_management/notification/reminder_overdue/`; hooks (daily job, Reminder list permissions) in `meddevice_suite/hooks.py`; Quality Settings `reminder_escalation_days`.
+Code: `meddevice_suite/work_management/reminders.py`; records *Due Reminder* and *Reminder Schedule* (`work_management/doctype/`); alert `work_management/notification/reminder_overdue/`; hooks (daily job, Due Reminder list permissions) in `meddevice_suite/hooks.py`; Quality Settings `reminder_escalation_days`.
 DFD trace: 9C Reminders / Next Due (C1 define reminder category, C2 set due date or frequency, C3 generate reminder, C4 notify users, C5 track and escalate, C6 mark completed); data store D11 Task, Approval & Reminders; master plan sections 8 and 10.
 
 ## 1. Feature overview
@@ -12,7 +12,7 @@ DFD trace: 9C Reminders / Next Due (C1 define reminder category, C2 set due date
 
 | Job profile | Here |
 | --- | --- |
-| Every job | Sees the reminders of its jobs and its own (Reminder list); is told when a reminder is raised for it |
+| Every job | Sees the reminders of its jobs and its own (Due Reminder list); is told when a reminder is raised for it |
 | QA, Management | See all reminders; are told when one is escalated |
 | QA | Plans recurring activities (Reminder Schedule); changes the escalation days under change control |
 | The responsible job of a recurring activity, or QA | Completes each occurrence with a remark |
@@ -62,11 +62,12 @@ DFD trace: 9C Reminders / Next Due (C1 define reminder category, C2 set due date
 | C6 | Each job sees its own; QA all | `test_each_job_sees_its_own_reminders_qa_sees_all` |
 | C7 | Recurring: raised in its lead time, job told; completed by its job or QA with a remark; next by the calendar; plan names a business job, not deleted, next due set by the system | `TestRecurringReminders.*` |
 | C8 | Escalation days within bounds, under change control | `compliance/test_quality_settings.py` |
+| C9 | The record type is *Due Reminder*, not Frappe's *Reminder*: the rename does nothing where *Reminder* is Frappe's, what names a reminder follows it, the audit trail keeps the name it recorded and reads the history and chain across it; **People Told Of** left as "0" is put right, audited, and its people told once | `work_management/test_due_reminder_rename.py`, `qa/test_doctype_names.py` |
 
 ## 4. Step-by-step browser testing guide
 
 ### RM-01 A system reminder
-On the pilot, a lot with stock whose expiry QA sets 10 days out. Next day (or run the daily job): **Quality › Reminder**: *Lot … expires on …*, Open. As Stores, the same reminder is in the list. Put the lot on hold (QA): the next run completes it.
+On the pilot, a lot with stock whose expiry QA sets 10 days out. Next day (or run the daily job): **Quality › Due Reminder**: *Lot … expires on …*, Open. As Stores, the same reminder is in the list. Put the lot on hold (QA): the next run completes it.
 
 ### RM-02 Escalation
 A reminder past due by more than the escalation days: status *Escalated*; QA and Management have *Overdue: …*; **People Told Of** reads *Escalated*. Run the daily job again: nobody gets a second notice.
@@ -85,8 +86,10 @@ An item falls within its lead time → the alert tells its job and a reminder is
 | Layer | Item |
 | --- | --- |
 | Service | `reminders.CATEGORIES` (each a `Category`: a function yielding what is due now, its lead time read through `within`, and `told_by`, the module alert that tells its people on raise, if any), `run` (daily), `track`, `whole_horizon`, `follow_up`, `send_notices`, `notify`, `raise_occurrence`, `complete_occurrence` (whitelisted), `query_conditions`, `has_permission` |
-| Records | *Reminder* (`reminder_key` unique per category, record, row and due date, held by the open reminder of the item; `notified`: what its people were last told), *Reminder Schedule* |
+| Records | *Due Reminder* (`reminder_key` unique per category, record, row and due date, held by the open reminder of the item; `notified`: what its people were last told), *Reminder Schedule* |
 | Patch | `patches/v0_1/record_reminders_already_told.py`: escalated reminders and raised recurring occurrences recorded as told before the upgrade |
+| Patch | `patches/v0_1/rename_reminder_to_due_reminder.py` (before the sync): *Reminder* of this app renamed *Due Reminder* with its table; what names a reminder follows it, but the audit events and signatures, read under the former name (`audit_scope.FORMER_NAMES`) |
+| Patch | `patches/v0_1/set_notified_left_as_zero.py`: **People Told Of** left as "0" by Frappe's Reminder set as the first patch did, through the service, with a reason |
 | Settings | Quality Settings `reminder_escalation_days` (7, 1–90) |
 | Retention | Quality system records, 10 years |
 
@@ -97,6 +100,7 @@ An item falls within its lead time → the alert tells its job and a reminder is
 - A lot taken off hold and raised again is not told again: its expiry alert went once, and the reminder leaves raise notices to the module for that category.
 - Fixed before release: the reminder also told, on raise, the people its module had just alerted; categories now declare who tells them. The escalation notice is Frappe's standard alert, which logs a failure to send instead of raising it; the reminder then records it as told.
 - Escalation tells people once; the reminder stays escalated until done, visible to QA and Management.
+- Found 2026-10-16 and fixed: the record type was *Reminder*, the name of Frappe's own (Automation). Both shared one table; every migrate synced one definition over the other and left **People Told Of** as "0", so nobody was told and every later change to such a reminder was refused; Frappe's log clearing (30 days) and its own reminder jobs read the same table. It is *Due Reminder* now, Frappe has its Reminder back, and `qa/test_doctype_names.py` fails on any record type named as one of Frappe, ERPNext or India Compliance. Audit events recorded before the rename keep the name *Reminder*: the Audit Event list filtered by record type shows them under *Reminder*; the reminder's form, Verify Integrity and the archive show them with the rest. Frappe's columns left in its table (`user`, `remind_at`, …) are kept and unused.
 
 ## 8. Test results and verification summary
 See the pull request.

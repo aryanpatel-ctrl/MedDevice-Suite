@@ -121,6 +121,25 @@ NOT_AUDITED: dict[str, str] = {
 }
 
 
+# Record types of this app that were renamed, with the names they had before. Their earlier audit
+# events and signatures keep the name they were recorded under: it is part of each entry's
+# fingerprint, so rewriting it would break the chains, and the evidence is never rewritten. A
+# record's history is read under its present name and these (`recorded_as`), and its chain goes on
+# from the last entry recorded under a former name.
+FORMER_NAMES: dict[str, tuple[str, ...]] = {
+	# Shared its name, and table, with Frappe's own Reminder (Automation) until 2026-10-16
+	# (patches/v0_1/rename_reminder_to_due_reminder.py). Frappe's Reminder is not audited, so every
+	# entry recorded under "Reminder" is one of these.
+	"Due Reminder": ("Reminder",),
+}
+
+
+def recorded_as(doctype: str) -> tuple[str, ...]:
+	"""The names a record type's audit events and signatures are recorded under: its own and any
+	former ones."""
+	return (doctype, *FORMER_NAMES.get(doctype, ()))
+
+
 def is_regulated(doctype: str, module: str | None) -> bool:
 	if doctype in SELF_RECORDING:
 		return False

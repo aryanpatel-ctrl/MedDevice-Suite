@@ -328,7 +328,7 @@ SIDEBAR_ADDITIONS: dict[str, tuple[tuple[str, str, str], ...]] = {
 		("Supplier Approval", "DocType", "Supplier Approval"),  # approved suppliers (module 4)
 		("Supplier Rating", "DocType", "Supplier Rating"),  # supplier rating (module 4)
 		("Quality Settings", "DocType", "Quality Settings"),  # adjustable values (URS-PLT-012)
-		("Reminder", "DocType", "Reminder"),  # reminders and next due (module 60)
+		("Due Reminder", "DocType", "Due Reminder"),  # reminders and next due (module 60)
 		("Reminder Schedule", "DocType", "Reminder Schedule"),
 		("File Category", "DocType", "File Category"),
 		("Customer Licence", "DocType", "Customer Licence"),  # customer licences (module 5)

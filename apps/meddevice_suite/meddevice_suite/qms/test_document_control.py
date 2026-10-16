@@ -871,7 +871,7 @@ class TestPeriodicReview(DocumentControlTestCase):
 		frappe.set_user("Administrator")
 		reminders.track("Document Review", reminders.document_reviews_due)
 		reminder = frappe.db.get_value(
-			"Reminder",
+			"Due Reminder",
 			{"category": "Document Review", "reference_name": document.name, "status": "Open"},
 			"name",
 		)
@@ -880,13 +880,13 @@ class TestPeriodicReview(DocumentControlTestCase):
 		self.review(self.qa, document)
 
 		self.assertEqual(
-			frappe.db.get_value("Reminder", reminder, ["status", "completed_by"]), ("Completed", self.qa)
+			frappe.db.get_value("Due Reminder", reminder, ["status", "completed_by"]), ("Completed", self.qa)
 		)
 		frappe.set_user("Administrator")
 		reminders.track("Document Review", reminders.document_reviews_due)
 		self.assertFalse(
 			frappe.db.exists(
-				"Reminder",
+				"Due Reminder",
 				{"category": "Document Review", "reference_name": document.name, "status": "Open"},
 			)
 		)

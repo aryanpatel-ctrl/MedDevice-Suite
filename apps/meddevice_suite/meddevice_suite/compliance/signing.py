@@ -25,7 +25,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
-from meddevice_suite.compliance.audit_scope import is_regulated
+from meddevice_suite.compliance.audit_scope import is_regulated, recorded_as
 
 
 @dataclass(frozen=True)
@@ -232,7 +232,7 @@ def signing_actions(doctype: str) -> dict[str, str]:
 def signatures_of(doctype: str, name: str) -> list[frappe._dict]:
 	return frappe.get_all(
 		"Electronic Signature",
-		filters={"reference_doctype": doctype, "reference_name": name},
+		filters={"reference_doctype": ["in", recorded_as(doctype)], "reference_name": name},
 		fields=["signer", "signer_name", "meaning", "action", "signed_at", "reason"],
 		order_by="signed_at asc, creation asc",
 	)
