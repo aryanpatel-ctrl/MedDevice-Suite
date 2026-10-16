@@ -58,7 +58,7 @@
    "fieldname": "change_type",
    "fieldtype": "Select",
    "label": "Type of Change",
-   "options": "\nDocument\nProduct or BOM\nProcess or Routing\nEquipment\nSupplier\nSystem",
+   "options": "\nDocument\nProduct or BOM\nProcess or Routing\nEquipment\nSupplier\nCustomer\nRegulatory\nSystem",
    "reqd": 1,
    "in_list_view": 1,
    "in_standard_filter": 1

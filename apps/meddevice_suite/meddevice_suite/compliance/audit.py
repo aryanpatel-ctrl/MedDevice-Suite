@@ -148,7 +148,11 @@ def on_change(doc: Document, method: str | None = None) -> None:
 		record(doc.doctype, doc.name, action, changes, reason)
 		reason_used(doc)
 	elif action != "Updated" or changes:
-		record(doc.doctype, doc.name, action, changes)
+		# A change made by a service that states why (a signed act's reason: QA's Correct Dates on a
+		# lot) carries the reason on its event, as a cancellation or amendment does; a change made
+		# on the form, before submission, states none (found by the browser walk-through,
+		# 2026-10-15).
+		record(doc.doctype, doc.name, action, changes, doc.flags.pop("audit_reason", None) or None)
 	doc.flags.audit_last_recorded = frappe._dict(before=before, state=copy_of(current))
 	if not set_by_code:  # the save's own final call
 		action_finished(doc)
