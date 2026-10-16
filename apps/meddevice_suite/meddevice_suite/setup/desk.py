@@ -111,6 +111,12 @@ UNUSED_AREA = ("Administrator",)
 
 
 def apply_desk_configuration() -> None:
+	# ERPNext's setup tutorials ("Getting Started") are for configuring a new ERPNext, not for the
+	# plant's jobs: their panel opened over the forms people fill in and covered a table's columns
+	# (found by the browser walk-through, 2026-10-15). The configuration is code (rules section 1).
+	if frappe.db.get_single_value("System Settings", "enable_onboarding"):
+		frappe.db.set_single_value("System Settings", "enable_onboarding", 0)
+		frappe.clear_cache(doctype="System Settings")
 	for label in frappe.get_all("Desktop Icon", pluck="name"):
 		set_desktop_icon_visibility(label, label in DESKTOP_ICONS_SHOWN)
 	# Areas no job uses stay closed even to someone typing their address: their dashboards

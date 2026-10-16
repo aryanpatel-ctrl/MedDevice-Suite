@@ -1,5 +1,7 @@
 """Warehouses (module 7, URS-MST-013): tests derived from the requirement's clauses."""
 
+from unittest.mock import patch
+
 import frappe
 from frappe.tests import IntegrationTestCase
 
@@ -113,10 +115,15 @@ class TestApproval(WarehouseTestCase):
 	def test_an_approved_stores_role_and_company_change_only_under_change_control(self):
 		from meddevice_suite.lot_control.stores import HOLD, ROLE_FIELD, store_for
 
-		hold = store_for(HOLD, company())  # approved, holding no stock
+		hold = store_for(HOLD, company())  # approved
 		doc = frappe.get_doc("Warehouse", hold)
 		doc.set(ROLE_FIELD, None)  # its purpose changed
-		with self.assertRaisesRegex(frappe.ValidationError, "is in use"):
+		# Holding no stock, whatever earlier runs on the site left in it (a stocked store is refused
+		# first, by its own rule, tested in lot_control): change control is what is checked here.
+		with (
+			patch("meddevice_suite.lot_control.stores.holds_stock", return_value=False),
+			self.assertRaisesRegex(frappe.ValidationError, "is in use"),
+		):
 			doc.save()
 		other = frappe.get_all("Company", filters={"name": ["!=", company()]}, pluck="name", limit=1)
 		if other:

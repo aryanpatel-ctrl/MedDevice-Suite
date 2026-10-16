@@ -6,8 +6,8 @@ const esign = frappe.provide("meddevice_suite.esign");
 
 frappe.ui.form.on("Lot Release", {
 	refresh(frm) {
-		if (frm.is_new() || frm.docstatus === 1 || frm.is_dirty()) {
-			if (frm.docstatus === 1) show_decision(frm);
+		if (frm.is_new() || frm.doc.docstatus === 1 || frm.is_dirty()) {
+			if (frm.doc.docstatus === 1) show_decision(frm);
 			return;
 		}
 		const lot = frm.doc.__onload?.lot || {};

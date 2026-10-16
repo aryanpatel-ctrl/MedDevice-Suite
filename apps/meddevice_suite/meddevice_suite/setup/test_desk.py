@@ -84,6 +84,12 @@ class TestDeskConfiguration(IntegrationTestCase):
 		self.assertEqual(DESKTOP_ICONS_SHOWN - set(icons()), set())
 
 	@verifies("URS-PLT-002")
+	@verifies("URS-PLT-001")
+	def test_erpnext_setup_tutorials_are_off(self):
+		frappe.db.set_single_value("System Settings", "enable_onboarding", 1)  # as ERPNext's setup leaves it
+		apply_desk_configuration()
+		self.assertEqual(frappe.db.get_single_value("System Settings", "enable_onboarding"), 0)
+
 	def test_reapplying_is_idempotent(self):
 		apply_desk_configuration()
 		apply_desk_configuration()
