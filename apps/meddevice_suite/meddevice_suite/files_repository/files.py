@@ -125,14 +125,16 @@ def check_file(doc: Document) -> None:
 	else:
 		before = doc.get_doc_before_save()
 		require(before.status != ARCHIVED, _("{0} is archived.").format(doc.name), frappe.PermissionError)
+		# Compared by value, not by type: the desk sends the record's dates and times back as text,
+		# while the record as stored holds them as dates (a renewal from the form was refused).
 		require(
-			all(before.get(field) == doc.get(field) for field in SET_BY_RULES),
+			not any(doc.has_value_changed(field) for field in SET_BY_RULES),
 			_("The status, the current version and its validity follow from the versions."),
 			frappe.PermissionError,
 		)
 		require(
-			[row.as_dict(no_default_fields=True) for row in before.versions]
-			== [row.as_dict(no_default_fields=True) for row in doc.versions],
+			[row.as_dict(no_default_fields=True, convert_dates_to_str=True) for row in before.versions]
+			== [row.as_dict(no_default_fields=True, convert_dates_to_str=True) for row in doc.versions],
 			_("Earlier versions are kept as they were."),
 			frappe.PermissionError,
 		)
