@@ -2088,60 +2088,74 @@ context("D9 Quality Records: risk, licences and training, as each job", () => {
 		});
 	});
 
-	it("[URS-TRN-006] [URS-TRN-005] D9-TRN-04 QA revokes a competence; the operator is refused at the job card", () => {
-		prepare("prepare_revocation", { password }).then((t) => {
-			const reason = "Nonconformity NC-test";
-			sign_in(QA);
-			open_list(RECORD, {
-				status: "Competent",
-				employee: t.operator,
-				controlled_document: t.instruction,
-			});
-			listed().then((names) =>
-				expect(names, "the operator's competence").to.include(t.record)
-			);
-			open_form(RECORD, t.record);
-			sign("Revoke Competence", reason, "Revoke");
-			status_is("Revoked", 1);
-			cy.window().should((win) => {
-				expect(current(win).revoked_by, "Revoked By").to.equal(users[QA]);
-				expect(current(win).revoked_on?.slice(0, 10), "Revoked At").to.equal(today(win));
-				expect(current(win).outcome_reason).to.equal(reason);
-			});
-			signed_as("Revoke", "Rejected", reason);
-			open_records_of(t.operator, t.revision, "Retraining").then((opened) =>
-				expect(opened, "the retraining opened").to.have.length(1)
-			);
-			no_problems("D9-TRN-04, QA revokes the competence");
+	// Not tried again: a first attempt that revoked the competence leaves none to list, and the
+	// second attempt would fail on that instead of what failed first (found in Chrome, 2026-10-16).
+	it(
+		"[URS-TRN-006] [URS-TRN-005] D9-TRN-04 QA revokes a competence; the operator is refused at the job card",
+		{ retries: 0 },
+		() => {
+			prepare("prepare_revocation", { password }).then((t) => {
+				const reason = "Nonconformity NC-test";
+				sign_in(QA);
+				open_list(RECORD, {
+					status: "Competent",
+					employee: t.operator,
+					controlled_document: t.instruction,
+				});
+				listed().then((names) =>
+					expect(names, "the operator's competence").to.include(t.record)
+				);
+				open_form(RECORD, t.record);
+				sign("Revoke Competence", reason, "Revoke");
+				status_is("Revoked", 1);
+				cy.window().should((win) => {
+					expect(current(win).revoked_by, "Revoked By").to.equal(users[QA]);
+					expect(current(win).revoked_on?.slice(0, 10), "Revoked At").to.equal(
+						today(win)
+					);
+					expect(current(win).outcome_reason).to.equal(reason);
+				});
+				signed_as("Revoke", "Rejected", reason);
+				open_records_of(t.operator, t.revision, "Retraining").then((opened) =>
+					expect(opened, "the retraining opened").to.have.length(1)
+				);
+				no_problems("D9-TRN-04, QA revokes the competence");
 
-			sign_in(OPERATOR);
-			open_form("Job Card", t.job_card);
-			reveal("time_logs");
-			rows_up_to("time_logs", 1);
-			// The time the operation was planned for (standard_flow.js).
-			cy.window().then((win) => {
-				const card = current(win);
-				const planned = card.scheduled_time_logs[0];
-				fill_row("time_logs", 1, "from_time", planned.from_time.slice(0, 19), "Datetime");
-				fill_row("time_logs", 1, "to_time", planned.to_time.slice(0, 19), "Datetime");
-				fill_row("time_logs", 1, "completed_qty", card.for_quantity);
-			});
-			fill_row("time_logs", 1, "employee", t.operator, "Link");
-			save_refused(
-				refusal(
-					`Job card ${t.job_card}: work is logged only by trained, competent operators: ${t.operator} is not competent in ${t.instruction} revision ${t.revision_no}.`,
-					"Operator not competent"
-				)
-			);
-			stored("Job Card", t.job_card).then(
-				(card) => expect(card.time_logs, "no time logged").to.be.empty
-			);
-			no_problems("D9-TRN-04");
+				sign_in(OPERATOR);
+				open_form("Job Card", t.job_card);
+				reveal("time_logs");
+				rows_up_to("time_logs", 1);
+				// The time the operation was planned for (standard_flow.js).
+				cy.window().then((win) => {
+					const card = current(win);
+					const planned = card.scheduled_time_logs[0];
+					fill_row(
+						"time_logs",
+						1,
+						"from_time",
+						planned.from_time.slice(0, 19),
+						"Datetime"
+					);
+					fill_row("time_logs", 1, "to_time", planned.to_time.slice(0, 19), "Datetime");
+					fill_row("time_logs", 1, "completed_qty", card.for_quantity);
+				});
+				fill_row("time_logs", 1, "employee", t.operator, "Link");
+				save_refused(
+					refusal(
+						`Job card ${t.job_card}: work is logged only by trained, competent operators: ${t.operator} is not competent in ${t.instruction} revision ${t.revision_no}.`,
+						"Operator not competent"
+					)
+				);
+				stored("Job Card", t.job_card).then(
+					(card) => expect(card.time_logs, "no time logged").to.be.empty
+				);
+				no_problems("D9-TRN-04");
 
-			// The operator trained again, for the tests that log work on the journey's operations.
-			prepare("restore_operator_training", { password });
-		});
-	});
+				// The operator trained again, for the tests that log work on the journey's operations.
+				prepare("restore_operator_training", { password });
+			});
+		}
+	);
 
 	it("[URS-TRN-002] D9-TRN-05 QA records paper training history from the Training Record list", () => {
 		prepare("prepare_training", { password, stage: "history" }).then((t) => {
