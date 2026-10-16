@@ -393,10 +393,19 @@ def approve(name: str, password: str) -> None:
 
 
 def implement(name: str) -> None:
-	"""The Production Supervisor records the action done."""
+	"""The Production Supervisor records the action done, marking as needing no change each listed
+	record the sheet's change leaves as it was, as the Record Action Done dialog does (URS-QMS-032)."""
 	with act_as(PRODUCTION):
-		action = frappe.get_doc("Change Request", name).actions[0].name
-		change_control.complete_action(name, action, "Done (browser test D9)")
+		doc = frappe.get_doc("Change Request", name)
+		left_as_it_was = set(change_control.listed_not_changed(doc))
+		no_change = [
+			row.name
+			for row in doc.affected_records
+			if change_control.record_label(row.reference_doctype, row.reference_name) in left_as_it_was
+		]
+		change_control.complete_action(
+			name, doc.actions[0].name, "Done (browser test D9)", no_change=no_change or None
+		)
 
 
 def approved_change(password: str, records: list[tuple[str, str]], change_type: str = "Document") -> str:
