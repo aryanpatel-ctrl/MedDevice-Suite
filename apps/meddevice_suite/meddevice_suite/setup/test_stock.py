@@ -89,6 +89,63 @@ def approve_masters_for_test(*masters: tuple[str, str]) -> None:
 		frappe.db.set_value(doctype, name, values)
 
 
+def production_line_for_test() -> tuple[str, str]:
+	"""A routing of one operation at one workstation, each approved as QA's signed acts leave them
+	(module 3), for other modules' tests to make their products on: a work order is submitted only
+	on a bill of materials with its routing, whose workstations name the equipment the work uses
+	(URS-EQP-006). Returns the routing and its workstation, new on each call so a test may put
+	equipment at it. Approving them is tested in master_data/test_routing.py."""
+	from meddevice_suite.master_data import routing
+
+	suffix = frappe.generate_hash(length=6).upper()
+	workstation = (
+		frappe.get_doc({"doctype": "Workstation", "workstation_name": f"MDS Test WS {suffix}"}).insert().name
+	)
+	operation = (
+		frappe.get_doc(
+			{
+				"doctype": "Operation",
+				"name": f"MDS Test OP {suffix}",
+				"workstation": workstation,
+				routing.WORK_INSTRUCTION: work_instruction_for_test(),
+				routing.IN_PROCESS_CHECK: "No",
+			}
+		)
+		.insert()
+		.name
+	)
+	approve_masters_for_test(("Workstation", workstation), ("Operation", operation))
+	line = (
+		frappe.get_doc(
+			{
+				"doctype": "Routing",
+				"routing_name": f"MDS Test Line {suffix}",
+				"operations": [
+					{"operation": operation, "workstation": workstation, "time_in_mins": 10, "sequence_id": 1}
+				],
+			}
+		)
+		.insert()
+		.name
+	)
+	approve_masters_for_test(("Routing", line))
+	return line, workstation
+
+
+def operations_done_for_test(work_order: str) -> None:
+	"""The submitted work order's operations done for its whole quantity, as its completed job cards
+	leave them (ERPNext rolls each submitted job card's quantity up to the order's operation), so a
+	test can make the product on it. Logging time on a job card, by competent operators at fit
+	equipment, is tested in qms/test_training.py and qms/test_equipment_care.py."""
+	qty = frappe.db.get_value("Work Order", work_order, "qty")
+	for row in frappe.get_all(
+		"Work Order Operation", filters={"parent": work_order, "parenttype": "Work Order"}, pluck="name"
+	):
+		frappe.db.set_value(  # test fixture only
+			"Work Order Operation", row, {"completed_qty": qty, "status": "Completed"}
+		)
+
+
 def work_instruction_for_test() -> str:
 	"""A work instruction in effect for other modules' tests; issuing one through document control
 	is tested in qms/test_document_control.py."""

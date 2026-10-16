@@ -183,6 +183,9 @@ doc_events = {
 			"meddevice_suite.lot_control.lot_status.guard_unvalidated_work_order",
 			"meddevice_suite.master_data.bom.guard_work_order",
 			"meddevice_suite.master_data.routing.guard_work_order",
+			# Modules 38 and 40, at submit: its routing, and the equipment at its workstations fit;
+			# here too, as Frappe skips before_submit when validation is skipped.
+			"meddevice_suite.qms.equipment_care.guard_work_order",
 		],
 		"validate": [
 			"meddevice_suite.lot_control.lot_status.guard_work_order",
@@ -232,6 +235,9 @@ doc_events = {
 			"meddevice_suite.qms.equipment_care.guard_job_card",
 			"meddevice_suite.qms.training.guard_job_card",
 		],
+		# Module 38: submitted after an instrument at its workstation was found out of tolerance, in
+		# the period that finding assessed: added to that calibration, its assessment open again.
+		"on_submit": "meddevice_suite.qms.calibration.add_later_use",
 	},
 	# Module 37: joining, a new job, leaving or returning changes what training is needed.
 	"Employee": {"on_update": "meddevice_suite.qms.training.on_employee_update"},
@@ -264,6 +270,9 @@ doc_events = {
 			"meddevice_suite.master_data.equipment.guard_inspection_instruments",
 		],
 		"before_submit": "meddevice_suite.master_data.specification.check_sample_size",
+		# Module 38: naming an instrument found out of tolerance since, for a day in the period that
+		# finding assessed: added to that calibration, its assessment open again.
+		"on_submit": "meddevice_suite.qms.calibration.add_later_use",
 	},
 	# Version-controlled masters (URS-MST-001): the default bill of materials in force is replaced,
 	# and one is cancelled, only under an approved change request.

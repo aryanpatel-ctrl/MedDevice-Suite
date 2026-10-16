@@ -58,6 +58,8 @@ from meddevice_suite.setup.test_stock import (
 	approve_for_test,
 	approve_specification_for_test,
 	device_master_record_for_test,
+	operations_done_for_test,
+	production_line_for_test,
 	submit_bom_for_test,
 )
 
@@ -85,8 +87,9 @@ def certificate(receipt: str, version: str = "") -> str:
 
 def made_by_work_order() -> str:
 	"""A lot of FINISHED_ITEM made, as the finished lot is made, by a manufacture entry on a work order
-	released on the product's Current device master record (module 31), from an approved lot of ITEM;
-	returns the finished lot, in the Quarantine store."""
+	released on the product's Current device master record (module 31), from an approved lot of ITEM,
+	once the operations of its routing are done (URS-EQP-006); returns the finished lot, in the
+	Quarantine store."""
 	frappe.set_user("Administrator")
 	material = receive(ITEM, 2, store("Stores"))
 	set_status(material, APPROVED, "Approved material for the test's production")
@@ -102,6 +105,8 @@ def made_by_work_order() -> str:
 					"quantity": 1,
 					"is_active": 1,
 					"is_default": 1,
+					"with_operations": 1,
+					"routing": production_line_for_test()[0],
 					"items": [{"item_code": ITEM, "qty": 1}],
 				}
 			).insert()
@@ -120,8 +125,11 @@ def made_by_work_order() -> str:
 			"wip_warehouse": store("Work In Progress"),
 			"fg_warehouse": store(stores.QUARANTINE),
 		}
-	).insert()
+	)
+	order.get_items_and_operations_from_bom()  # as the form does when the bill is chosen
+	order.insert()
 	order.submit()
+	operations_done_for_test(order.name)
 	entry = frappe.get_doc(make_production_entry(order.name, "Manufacture", 1))
 	for row in entry.items:
 		if row.item_code == ITEM:

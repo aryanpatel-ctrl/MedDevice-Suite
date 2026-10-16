@@ -6,7 +6,7 @@ DFD trace: D3 Item / BOM / Routing Master; 2.2 MRP Calculation; 4.1 Create Produ
 
 ## 1. Feature overview
 
-**Purpose.** A bill of materials says what a product is made of. Production drafts it; QA approves it with an electronic signature, and that signature is the only way it is submitted. QA can approve it only when it is complete, and a work order is made only from an approved, active bill of its own product.
+**Purpose.** A bill of materials says what a product is made of. Production drafts it; QA approves it with an electronic signature, and that signature is the only way it is submitted. QA can approve it only when it is complete, and a work order is made only from the approved, active default bill of its own product, the one in force.
 
 **Why it matters.** ISO 13485 7.5.1 requires production to follow documented, approved requirements; the BOM is part of the device master record (4.2.3; FDA's medical device file). A work order built on an unapproved or wrong bill produces a non-conforming device.
 
@@ -23,12 +23,12 @@ DFD trace: D3 Item / BOM / Routing Master; 2.2 MRP Calculation; 4.1 Create Produ
 - **Approval.** QA clicks **Approve BOM**, gives a reason and the password (meaning *Approved*). The bill is submitted by that act, and the signature is taken inside that submit, after ERPNext has validated the bill and every other check has passed. A refused approval keeps nothing: no signature and no submit. A plain Submit is refused for everyone, QA, Production and the Administrator alike, on the form, through the API, by saving or inserting a bill as submitted, or with validation skipped. The form does not offer it.
 - **What the signature binds:** the recipe of the device, as stored. That is the product, quantity, unit, company and process loss; the routing, operations (sequence, workstation, times, batch size, semi-finished goods, inspection) and how materials are transferred; the components (quantities, units, conversion, sub-bill, operation, alternatives, explosion, supplier-sourced); secondary items such as scrap and co-products; whether alternatives or inspection are allowed. ERPNext's later cost updates do not alter it. A change to any bound field after signing shows as a change since signing. A field ERPNext renames in an upgrade fails a test.
 - **In force and cancelled.** Making another bill the default, or cancelling one, needs an approved change request (URS-MST-001). An amended bill is a new draft awaiting its own signature.
-- **Work orders.** A work order is refused unless its bill is approved (submitted), active and of its own product. ERPNext skips its "must be submitted" check while tests run, and accepts a bill that merely contains the product as a component. Production Plan makes its work orders with validation skipped. The app's check runs on every one of them.
+- **Work orders.** A work order is refused unless its bill is approved (submitted), active and of its own product. ERPNext skips its "must be submitted" check while tests run, and accepts a bill that merely contains the product as a component. Production Plan makes its work orders with validation skipped. The app's check runs on every one of them. And the bill must be the product's **default**, the one in force, for a sub-assembly as for a finished good (independent review 2026-10-15; URS-MST-001, ISO 13485 4.2.3, 7.5.1): QA may approve a second bill without displacing the default (to prepare a change), but nothing is produced on it until it becomes the default under an approved change request (*… is not the default bill of materials of …*). Before, a sub-assembly could be made on any approved bill with no change request; a finished good was already held to the bill its device master record pins, which is the default. A work order is also submitted only with the operations of its bill's routing (calibration-and-qualification.md, URS-EQP-006).
 - **The form.** A submitted bill shows *Approved by QA*, or *Approved by QA but inactive* when it is no longer active.
 
 ## 3. Requirements and acceptance criteria
 
-> **URS-MST-007** A bill of materials is drafted by Production and approved by QA with an electronic signature, which is its only submit, for the Administrator too; QA approves it only when its product is a QA-approved finished good or sub-assembly, it has at least one component, every component is a QA-approved item with a quantity above zero, and its process-loss allowance is between 0 and 100 percent; the signature binds what was approved (product, quantity, components, operations, process loss), not the costs ERPNext updates; a work order is made only from an approved, active bill of its own product.
+> **URS-MST-007** A bill of materials is drafted by Production and approved by QA with an electronic signature, which is its only submit, for the Administrator too; QA approves it only when its product is a QA-approved finished good or sub-assembly, it has at least one component, every component is a QA-approved item with a quantity above zero, and its process-loss allowance is between 0 and 100 percent; the signature binds what was approved (product, quantity, components, operations, process loss), not the costs ERPNext updates; a work order is made only from an approved, active bill of its own product that is the product's default bill of materials, the one in force, for a sub-assembly as for a finished good.
 
 | # | Criterion | Verification (`master_data/test_bom.py`) |
 | --- | --- | --- |
@@ -42,6 +42,7 @@ DFD trace: D3 Item / BOM / Routing Master; 2.2 MRP Calculation; 4.1 Create Produ
 | C7a | Plain submit refused also when saved or inserted as submitted, or with validation skipped | `test_the_signed_approval_is_the_only_submit`, `test_a_bill_inserted_as_submitted_is_refused` |
 | C7b | An approval refused in the submit leaves no signature | `test_an_approval_refused_after_the_password_leaves_no_signature` |
 | C8 | Work order only from an approved, active bill of its product, also when made without validation (Production Plan) | `TestWorkOrders.*` |
+| C8a | Work order only on the product's default bill: a second approved bill refused for a sub-assembly and a finished good, also without validation; produced on once it replaces the default under a change request (MST-001) | `TestWorkOrders.test_only_the_default_bill_in_force_is_produced_on` |
 | C9 | Pilot and journey approve their bills by the signed act | `pilot/test_standard_flow.py`, `qa/test_ui_journey.py` |
 | C10 | On the form: the draft offers no Submit; QA approves with **Approve BOM** and a signature | `cypress/integration/bill_of_materials.js` |
 
@@ -62,7 +63,7 @@ Role: QA Manager.
 Role: QA Manager. A bill whose product is a raw material shows *Still needed: a finished good or sub-assembly as its product* and no Approve button. Process loss 120 % → refused on save by ERPNext, or listed as needed.
 
 ### BOM-04 Work orders
-Role: Production Supervisor. A work order on a draft bill → refused, *A work order is made from an approved, active bill of materials of …*. On the approved bill → saved.
+Role: Production Supervisor. A work order on a draft bill → refused, *A work order is made from an approved, active bill of materials of …*. On the approved bill → saved. QA approves a second bill of the same product, not as default; a work order on it → refused, *… is not the default bill of materials of …*.
 
 ### BOM-05 Changing the bill in force
 Role: QA Manager. Make a second bill default, or cancel the first → refused without an approved change request listing them (VC-04 of the master data guide).
