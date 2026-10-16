@@ -1112,6 +1112,7 @@ class TestOneLotOnOneReceipt(ReleaseTestCase):
 	taken as its first (independent review 2026-10-15)."""
 
 	def scanned(self) -> str:
+		approve_for_test(ITEM)  # module 1: a lot is made only of an approved item
 		return (
 			frappe.get_doc(
 				{"doctype": "Batch", "item": ITEM, "batch_id": f"ONCE-{frappe.generate_hash(length=6)}"}

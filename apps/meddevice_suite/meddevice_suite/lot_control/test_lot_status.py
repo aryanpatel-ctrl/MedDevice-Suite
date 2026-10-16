@@ -1286,6 +1286,11 @@ class TestCancellingFollowsTheStockPath(LotTestCase):
 	cancelled, put it back in approved stock; a customer's return, cancelled, left QA's queue)."""
 
 	def cancel(self, doctype: str, name: str) -> None:
+		# A request starts with no action in progress; in the test process the cause of a cancellation
+		# refused earlier would stay in the flags and the bundles this one cancels would not find its
+		# reason (as the audit tests reset it, compliance/test_audit.py).
+		frappe.flags.audit_cause = None
+		self.addCleanup(frappe.flags.pop, "audit_cause", None)
 		stage_reason(doctype, name, "cancel", "Entered by mistake (test)")
 		frappe.get_doc(doctype, name).cancel()
 

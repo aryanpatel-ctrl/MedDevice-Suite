@@ -298,6 +298,11 @@ class TestOpeningStockIsTheDataLoads(ReleaseTestCase):
 	good in outside production, or a material from no approved supplier, for QA to release on an
 	incoming inspection. Opening stock is the go-live data load's alone."""
 
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		lot_item(FINISHED_ITEM, "Products")
+
 	def opening_count(self) -> Document:
 		approve_for_test(ITEM)
 		return frappe.get_doc(
@@ -319,9 +324,10 @@ class TestOpeningStockIsTheDataLoads(ReleaseTestCase):
 	def test_opening_stock_is_refused_on_the_form_and_through_the_api(self):
 		for item in (ITEM, FINISHED_ITEM):
 			frappe.set_user(self.stores_user)
-			with self.subTest(item=item), self.assertRaises(frappe.PermissionError) as refused:
-				material_receipt(item, store(stores.QUARANTINE), opening=True).insert()
-			self.assertIn("loaded once at go-live through Data Import", str(refused.exception))
+			with self.subTest(item=item):
+				with self.assertRaises(frappe.PermissionError) as refused:
+					material_receipt(item, store(stores.QUARANTINE), opening=True).insert()
+				self.assertIn("loaded once at go-live through Data Import", str(refused.exception))
 		frappe.set_user("Administrator")  # not even the Administrator, outside the data load
 		with self.assertRaises(frappe.PermissionError):
 			material_receipt(ITEM, store(stores.QUARANTINE), opening=True).insert()
