@@ -1663,10 +1663,10 @@ context("D9 Quality Records: risk, licences and training, as each job", () => {
 			).to.have.length.at.least(1);
 		});
 		sign_in(QA);
-		cy.then(() => open_list("Reminder", { reference_name: made.licence }));
+		cy.then(() => open_list("Due Reminder", { reference_name: made.licence }));
 		cy.then(() =>
 			records(
-				"Reminder",
+				"Due Reminder",
 				{ reference_doctype: LICENCE, reference_name: made.licence, status: "Open" },
 				["name", "subject", "due_date", "category"]
 			)

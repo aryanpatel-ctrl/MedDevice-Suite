@@ -2466,7 +2466,7 @@ context(
 				signature_shows("Reviewed", "Review", reason);
 				cy.contains(`${FORM} .form-message`, "Periodic review due").should("not.exist");
 
-				open_form("Reminder", due.reminder);
+				open_form("Due Reminder", due.reminder);
 				cy.window().should((win) => {
 					const doc = current(win);
 					expect(doc.category).to.equal("Document Review");

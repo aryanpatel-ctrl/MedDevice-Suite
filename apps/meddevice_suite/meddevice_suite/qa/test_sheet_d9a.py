@@ -22,6 +22,7 @@ from meddevice_suite.qa.ui_users import email_for, prepare_job_users
 from meddevice_suite.qms import device_master_record as dmr
 from meddevice_suite.qms import document_control, risk_management
 from meddevice_suite.setup.roles import apply_roles
+from meddevice_suite.work_management.reminders import DOCTYPE as REMINDER
 
 QA, QC, PRODUCTION, PURCHASE = d9a.QA, d9a.QC, d9a.PRODUCTION, d9a.PURCHASE
 
@@ -229,7 +230,7 @@ class TestSheetD9DocumentsChangesAndDeviceMasterRecord(IntegrationTestCase):
 			("Effective", due["revision"]),
 		)
 		self.assertEqual(due["next_review"], str(add_days(today(), 10)))
-		reminder = frappe.get_doc("Reminder", due["reminder"])
+		reminder = frappe.get_doc(REMINDER, due["reminder"])
 		self.assertEqual(
 			(reminder.category, reminder.reference_name, reminder.status, getdate(reminder.due_date)),
 			("Document Review", due["document"], "Open", getdate(due["next_review"])),

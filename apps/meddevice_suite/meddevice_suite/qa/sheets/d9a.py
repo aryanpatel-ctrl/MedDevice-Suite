@@ -315,7 +315,7 @@ def prepare_review_due(password: str) -> dict:
 		**issued,
 		"next_review": str(review_on),
 		"reminder": frappe.db.get_value(
-			"Reminder",
+			reminders.DOCTYPE,
 			{
 				"category": "Document Review",
 				"reference_doctype": "Controlled Document",

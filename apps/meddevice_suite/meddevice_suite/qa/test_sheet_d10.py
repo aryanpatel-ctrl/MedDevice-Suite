@@ -26,6 +26,7 @@ from meddevice_suite.qa.ui_users import email_for, prepare_job_users
 from meddevice_suite.qms import calibration
 from meddevice_suite.qms.equipment_care import unfit
 from meddevice_suite.setup.fixtures.inspection import INSTRUMENT_ITEM, INSTRUMENT_NAME, LABORATORY
+from meddevice_suite.work_management.reminders import DOCTYPE as REMINDER
 
 QA, QC, MAINTENANCE = "QA Manager", "QC Inspector", "Maintenance"
 
@@ -332,11 +333,11 @@ class TestSheetD10EquipmentMaster(SheetTestCase):
 
 		d10.run_impact_reminders()
 		reminder = {"category": "Calibration Impact", "reference_name": name}
-		self.assertEqual(frappe.db.get_value("Reminder", reminder, "status"), "Open")
+		self.assertEqual(frappe.db.get_value(REMINDER, reminder, "status"), "Open")
 		with d10.act_as(QA):
 			sign_action("Calibration Record", name, "Assess: No Product Impact", self.password, "Re-checked")
 		d10.run_impact_reminders()
-		self.assertEqual(frappe.db.get_value("Reminder", reminder, "status"), "Completed")
+		self.assertEqual(frappe.db.get_value(REMINDER, reminder, "status"), "Completed")
 		bound = d10.signatures_bind("Calibration Record", name)
 		self.assertEqual(
 			[(s["action"], s["unchanged"]) for s in bound["signatures"]],

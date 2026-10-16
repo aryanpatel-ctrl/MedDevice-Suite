@@ -1579,9 +1579,9 @@ context("D10 Equipment Master: the browser test sheet, as each job", () => {
 						)
 					)
 			);
-			open_list("Reminder", { reference_name: made.draft });
+			open_list("Due Reminder", { reference_name: made.draft });
 			cy.call("frappe.client.get_list", {
-				doctype: "Reminder",
+				doctype: "Due Reminder",
 				filters: { category: "Calibration Impact", reference_name: made.draft },
 				fields: ["subject", "status"],
 			}).then(({ message }) =>
@@ -1620,7 +1620,7 @@ context("D10 Equipment Master: the browser test sheet, as each job", () => {
 			prepare("run_impact_reminders");
 			sign_in(QA);
 			cy.call("frappe.client.get_list", {
-				doctype: "Reminder",
+				doctype: "Due Reminder",
 				filters: { category: "Calibration Impact", reference_name: made.draft },
 				fields: ["status"],
 			}).then(({ message }) =>
