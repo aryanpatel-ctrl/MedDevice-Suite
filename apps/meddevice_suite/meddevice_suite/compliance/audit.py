@@ -6,7 +6,9 @@ the old and new values, or the whole record on creation and deletion. Values tha
 code sets on the record with `db_set` are recorded too. Cancelling, amending and
 changing after submission need a reason (see `audit_reason`). A record's events form a
 chain: each one is fingerprinted together with the fingerprint of the event
-before it, so altering, removing or inserting an event breaks the chain.
+before it, so altering, removing or inserting an event breaks the chain. The
+fingerprint is keyed with a key kept outside the database (fingerprint.py, version 2),
+so database access alone cannot rewrite an event and compute the chain again.
 
 Not recorded: totals and statuses that ERPNext recalculates with
 `frappe.db.set_value` from other records (a purchase order's received
@@ -54,7 +56,20 @@ from meddevice_suite.compliance.audit_reason import (
 	saved_around,
 )
 from meddevice_suite.compliance.audit_scope import is_regulated
-from meddevice_suite.compliance.fingerprint import chain_head, record_content, sha256
+from meddevice_suite.compliance.fingerprint import (
+	CURRENT_VERSION,
+	FIRST_VERSION,
+	KEYED_VERSION,
+	Trail,
+	chain_head,
+	chain_problems,
+	in_chain_order,
+	keyed_sha256,
+	keyed_since,
+	record_content,
+	sha256,
+	version_of,
+)
 
 NUMBERS = frozenset({"Int", "Check", "Float", "Currency", "Percent"})
 COMPARED_AS_VALUES = NUMBERS | {"Date", "Datetime", "Time"}
@@ -65,6 +80,14 @@ ACTION_FOR = {
 	"update_after_submit": "Updated after submission",
 	"discard": "Discarded",
 }
+
+TRAIL = Trail(
+	"Audit Event",
+	link="previous_event",
+	fingerprint="event_hash",
+	recorded_at="event_at",
+	name_at="document_name_at_event",
+)
 
 
 def before_insert(doc: Document, method: str | None = None) -> None:
@@ -344,8 +367,10 @@ def record(doctype: str, name: str, action: str, changes: dict, reason: str | No
 			"reason": reason,
 			"changes": changes,
 			"previous_event": previous.name if previous else None,
+			"fingerprint_version": CURRENT_VERSION,
 		}
 	)
+	keyed_since()  # recorded before the first keyed event, if the migrate has not recorded it
 	event.event_hash = event_fingerprint(event, previous.event_hash if previous else "")
 	# No role may create audit events; this service is the only writer, and the record refuses
 	# an insert without this mark, which a request cannot set on a document.
@@ -358,26 +383,33 @@ def last_event(doctype: str, name: str) -> frappe._dict | None:
 	return chain_head("Audit Event", "previous_event", "event_hash", (doctype, name))
 
 
-def event_fingerprint(event: Document | frappe._dict, previous_hash: str) -> str:
-	# The name as it was at the event: renaming a record rewrites `reference_name`
-	# in its events, which must not read as tampering.
-	return sha256(
-		[
-			previous_hash,
-			event.reference_doctype,
-			event.document_name_at_event,
-			event.action,
-			event.user,
-			event.impersonated_by or "",
-			str(get_datetime(event.event_at)),
-			event.reason or "",
-			as_data(event.changes),
-		]
-	)
+def event_fingerprint(event: Document | frappe._dict, previous_hash: str) -> str | None:
+	"""The event's fingerprint in its own version (fingerprint.py); None for an unknown version.
+
+	The name as it was at the event: renaming a record rewrites `reference_name` in its events, which
+	must not read as tampering; verification checks that name is one the record has had."""
+	content = [
+		previous_hash,
+		event.reference_doctype,
+		event.document_name_at_event,
+		event.action,
+		event.user,
+		event.impersonated_by or "",
+		str(get_datetime(event.event_at)),
+		event.reason or "",
+		as_data(event.changes),
+	]
+	version = version_of(event)
+	if version == FIRST_VERSION:
+		return sha256(content)
+	if version == KEYED_VERSION:
+		return keyed_sha256(TRAIL.doctype, [version, *content])
+	return None
 
 
 def verify_events(doctype: str, name: str) -> list[str]:
-	"""Problems found in the record's audit chain; an empty list means it is intact."""
+	"""Problems found in the record's audit chain; an empty list means it is intact
+	(fingerprint.chain_problems, the rule the signatures are verified by too)."""
 	events = frappe.get_all(
 		"Audit Event",
 		filters={"reference_doctype": doctype, "reference_name": name},
@@ -393,26 +425,52 @@ def verify_events(doctype: str, name: str) -> list[str]:
 			"changes",
 			"previous_event",
 			"event_hash",
+			"fingerprint_version",
 		],
 		order_by="event_at asc, creation asc",
 	)
-	by_name = {event.name: event for event in events}
-	problems, successors = [], {}
-	for event in events:
-		previous = None
-		if event.previous_event:
-			previous = by_name.get(event.previous_event)
-			if previous is None:
-				problems.append(f"{event.name}: the event before it is missing")
-				continue
-			if event.previous_event in successors:
-				problems.append(
-					f"{event.name}: a second event claims {event.previous_event} as its predecessor"
-				)
-			successors[event.previous_event] = event.name
-		if event.event_hash != event_fingerprint(event, previous.event_hash if previous else ""):
-			problems.append(f"{event.name}: content does not match its fingerprint")
-	return problems
+	return chain_problems(TRAIL, events, record_names(doctype, name), event_fingerprint)
+
+
+def record_names(doctype: str, name: str) -> set[str]:
+	"""Every name the record has had: its name now and each one its Renamed events record. Entries
+	carry the name the record had when they were recorded; renaming rewrites their reference only."""
+	renames = frappe.get_all(
+		"Audit Event",
+		filters={"reference_doctype": doctype, "reference_name": name, "action": "Renamed"},
+		pluck="changes",
+	)
+	return {name} | {old for changes in renames if (old := (as_data(changes) or {}).get("old_name"))}
+
+
+def history(doctype: str, name: str) -> list[frappe._dict]:
+	"""The record's audit events, newest first by their links."""
+	events = frappe.get_all(
+		"Audit Event",
+		filters={"reference_doctype": doctype, "reference_name": name},
+		fields=["name", "action", "user", "event_at", "reason", "changes", "previous_event"],
+		order_by="event_at asc, creation asc",
+	)
+	return list(reversed(in_chain_order(events, TRAIL.link)))
+
+
+def undo(doc: Document, changes: dict) -> None:
+	"""Set `doc` back to what it was before an event, from what the event recorded: the inverse of
+	`differences`. Used to tell whether the audit trail accounts for a change since a signature."""
+	for field, old, _new in changes.get("changed", []):
+		if field != "name":  # a rename is its own event, and no signature binds the name
+			doc.set(field, old)
+	for table, row_name, row_changes in changes.get("row_changed", []):
+		for row in doc.get(table) or []:
+			if row.name == row_name:
+				for field, old, _new in row_changes:
+					row.set(field, old)
+	added = {(table, row.get("name")) for table, row in changes.get("added", [])}
+	removed = changes.get("removed", [])
+	for table in {table for table, _row in added} | {table for table, _row in removed}:
+		rows = [row for row in doc.get(table) or [] if (table, row.name) not in added]
+		rows += [doc.append(table, dict(row)) for removed_from, row in removed if removed_from == table]
+		doc.set(table, sorted(rows, key=lambda row: cint(row.idx)))
 
 
 def as_data(value: Any) -> Any:

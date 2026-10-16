@@ -739,7 +739,11 @@ class TestImpactFollowsTheInstrument(CareTestCase):
 				row.pop("workstation", None)
 			return content
 
-		with patch.object(esign, "record_content", before_the_column):
+		# Fingerprint version 1, the version such a record was signed with.
+		with (
+			patch.object(esign, "record_content", before_the_column),
+			patch.object(esign, "CURRENT_VERSION", 1),
+		):
 			self.sign(self.qa, "Calibration Record", record.name, "Assess: No Product Impact")
 		# By its act: the completion, signed on a day frozen ahead, is the record's latest by creation.
 		assessment = frappe.get_last_doc(

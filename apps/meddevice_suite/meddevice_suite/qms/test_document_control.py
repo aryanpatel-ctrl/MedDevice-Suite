@@ -11,12 +11,14 @@ from frappe.utils.password import update_password
 from frappe.www.printview import get_rendered_template
 from pypdf import PdfWriter
 
+from meddevice_suite.compliance import esign
 from meddevice_suite.compliance.esign import (
 	ACT_MAINTAINED,
 	SYSTEM_MAINTAINED,
 	is_unchanged_since,
 	verify_signatures,
 )
+from meddevice_suite.compliance.fingerprint import FIRST_VERSION
 from meddevice_suite.compliance.signing import sign_action
 from meddevice_suite.compliance.test_esign import PASSWORD, reset_lockout
 from meddevice_suite.qa import verifies
@@ -1091,8 +1093,10 @@ class TestPeriodicReview(DocumentControlTestCase):
 		send_review_alerts()
 		self.assertTrue(frappe.db.get_value("Controlled Document", document.name, "review_alerted_for"))
 		before_the_review_act = ("status", "current_revision", "effective_since", "next_review_date")
-		# Signed as it was then: no act of the record type left anything out of what it binds.
+		# Signed as it was then, with fingerprint version 1: no act of the record type left anything
+		# out of what it binds.
 		with (
+			patch.object(esign, "CURRENT_VERSION", FIRST_VERSION),
 			patch.dict(SYSTEM_MAINTAINED, {"Controlled Document": before_the_review_act}),
 			patch.dict(ACT_MAINTAINED, {}, clear=True),
 		):
@@ -1103,7 +1107,7 @@ class TestPeriodicReview(DocumentControlTestCase):
 			filters={"reference_doctype": "Controlled Document", "reference_name": document.name},
 		)
 
-		self.assertEqual(signature.action, "Withdraw")
+		self.assertEqual((signature.action, signature.fingerprint_version), ("Withdraw", FIRST_VERSION))
 		self.assertTrue(is_unchanged_since(signature))
 
 	def test_the_form_puts_the_review_first_once_it_is_due(self):

@@ -409,8 +409,8 @@ status = "implemented"
 [[requirement]]
 id = "URS-CMP-004"
 module = 49
-title = "A signature is bound to the exact content of the record at signing and to the previous signature on the same record, so that altering the signed record or any signature is detectable by verification, which follows the links between signatures so that a server clock set back does not read as tampering."
-source = "D2 System Foundation: Electronic Signature (21 CFR Part 11); DFD approval steps signed (6.5 QA Review & Approval, 9A A4 Approve Document, 9B B5 Approve / Reject); 21 CFR 11.70; verification by links decided 2026-10-12 (foundation review)"
+title = "A signature is bound to the record's type and name at signing, to the content its signers approve as declared for each record type with a signed act (so that a field added to the record type changes no signature), and to the previous signature on the same record, with a fingerprint keyed by a secret kept outside the database; verification, which reviewers run on the record and which follows the links between signatures so that a server clock set back does not read as tampering, reports a signature altered, removed, inserted or moved from another record, and for each signature whether the record still holds what it binds, was changed and signed again, or has changed since signing, through the system or outside the audit trail; signatures recorded before the keyed fingerprint still verify as they were made."
+source = "D2 System Foundation: Electronic Signature (21 CFR Part 11); DFD approval steps signed (6.5 QA Review & Approval, 9A A4 Approve Document, 9B B5 Approve / Reject); 21 CFR 11.70; verification by links decided 2026-10-12 (foundation review); Independent review 2026-10-15, 21 CFR 11.70, 11.10(e): verification never compared the record with what was signed, a signature moved to another record verified, a new field broke earlier signatures, and the chain was unkeyed (decided: per-signature content check, declared signed content, keyed version 2 with version 1 kept)"
 status = "implemented"
 
 [[requirement]]
@@ -460,8 +460,8 @@ status = "implemented"
 [[requirement]]
 id = "URS-CMP-010"
 module = 50
-title = "Each record's audit entries form a fingerprinted chain, so that an altered entry, and an entry removed or inserted before the newest, is detected by a verification that authorised reviewers can run on the record; the removal of the newest entries is detected by the anchors of URS-CMP-040."
-source = "DFD 9F F3 Action / Data Logging, D12 Audit Logs; D2 System Foundation: Audit Trail & System Logs; Data integrity (ALCOA+); 21 CFR 11.10(e); daily seal dropped by decision of 2026-10-06; verification on the record and the wording on the newest entries after the robustness review of 2026-10-07; newest entries anchored, found in the foundation review of 2026-10-12"
+title = "Each record's audit entries form one fingerprinted chain, keyed by a secret kept outside the database, so that an altered entry, an entry removed or inserted before the newest, a second start of the chain, an entry moved from another record and a chain rewritten with database access alone are detected by a verification that authorised reviewers can run on the record; entries recorded before the keyed fingerprint still verify as they were made; the removal of the newest entries is detected by the anchors of URS-CMP-040."
+source = "DFD 9F F3 Action / Data Logging, D12 Audit Logs; D2 System Foundation: Audit Trail & System Logs; Data integrity (ALCOA+); 21 CFR 11.10(e); daily seal dropped by decision of 2026-10-06; verification on the record and the wording on the newest entries after the robustness review of 2026-10-07; newest entries anchored, found in the foundation review of 2026-10-12; Independent review 2026-10-15, 21 CFR 11.10(e): the chain was unkeyed SHA-256 and accepted a second start (decided: keyed version 2, version 1 kept, one rule for events and signatures)"
 status = "implemented"
 
 [[requirement]]
