@@ -11,11 +11,12 @@ or QA), never deleted, and corrected only by QA's signed Correct (plan D-29,
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import add_days, cint, flt, getdate, today
+from frappe.utils import add_days, cint, flt
 
 from meddevice_suite.compliance.checks import require
 from meddevice_suite.compliance.esign import sign
 from meddevice_suite.master_data import equipment
+from meddevice_suite.qms import equipment_care
 
 DOCTYPE = "Maintenance Record"
 SATISFACTORY, NOT_SATISFACTORY = "Satisfactory", "Not satisfactory"
@@ -49,7 +50,7 @@ def evaluate(doc: Document, method: str | None = None) -> None:
 		cint(asset.get(equipment.MAINTENANCE)),
 		_("{0} does not need preventive maintenance.").format(doc.asset),
 	)
-	require(getdate(doc.performed_on) <= getdate(today()), _("Maintenance is recorded once it is done."))
+	equipment_care.require_done(doc.performed_on, _("Maintenance is recorded once it is done."))
 	require(flt(doc.downtime_hours) >= 0, _("Downtime is a number of hours."))
 	require(doc.checks, _("Record the checks made."))
 	require(all(row.outcome for row in doc.checks), _("Each check is OK or not."))

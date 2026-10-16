@@ -23,6 +23,13 @@ releases: opening stock is loaded as material receipts and inspected on them (de
 DFD 3.1-3.5). It comes in as new lots in Quarantine (modules 16, 17). A stock reconciliation of
 purpose Opening Stock would bring a lot in that QA's release does not take, so it never brings a
 finished lot in.
+
+Opening stock is part of the go-live data load, not daily work (URS-STK-015; independent review
+2026-10-15): Is Opening is a free field on a material receipt, and set by hand it would bring in a
+finished good outside production, or a material from no approved supplier, for QA to release on an
+inspection like any other. So an opening entry, a stock entry with Is Opening = Yes or a stock
+reconciliation of purpose Opening Stock, is accepted only inside the data load: Frappe's Data Import,
+or a migration or installation (`in_data_load`), never a form or API submit (`guard_opening_stock`).
 """
 
 import frappe
@@ -37,6 +44,7 @@ from meddevice_suite.master_data.item_master import FINISHED_GOOD, ITEM_TYPE
 STOCK_ENTRY, STOCK_RECONCILIATION = "Stock Entry", "Stock Reconciliation"
 MATERIAL_RECEIPT = "Material Receipt"
 OPENING = "Yes"  # ERPNext's Is Opening on a stock entry
+OPENING_STOCK = "Opening Stock"  # ERPNext's stock reconciliation purpose for opening stock
 
 # How stock of a finished good may come in on a voucher.
 PRODUCED = "made by production"
@@ -128,6 +136,33 @@ def way_in(voucher_type: str, values: Document | frappe._dict) -> tuple[str | No
 	return None, False, bool(values.get("is_return"))
 
 
+def guard_opening_stock(doc: Document, method: str | None = None) -> None:
+	"""Stock Entry and Stock Reconciliation validate: opening stock only inside the go-live data load
+	(URS-STK-015)."""
+	if is_opening(doc) and not in_data_load():
+		frappe.throw(
+			_(
+				"This {0} is opening stock, which is loaded once at go-live through Data Import, not entered on a form or through the API. Receive stock on a goods receipt, or make it on a work order."
+			).format(_(doc.doctype)),
+			frappe.PermissionError,
+			title=_("Opening stock is loaded at go-live"),
+		)
+
+
+def is_opening(doc: Document) -> bool:
+	if doc.doctype == STOCK_ENTRY:
+		return doc.get("is_opening") == OPENING
+	if doc.doctype == STOCK_RECONCILIATION:
+		return doc.get("purpose") == OPENING_STOCK
+	return False
+
+
+def in_data_load() -> bool:
+	"""Whether the go-live data load is running: Frappe's Data Import (which sets `in_import` while it
+	inserts and submits each row), or a migration or installation, never a desk or API request."""
+	return bool(frappe.flags.in_import or frappe.flags.in_migrate or frappe.flags.in_install)
+
+
 def guard_document(doc: Document, method: str | None = None) -> None:
 	"""Stock Entry, Purchase Receipt and Stock Reconciliation validate: refused on the form, before
 	submit, when a finished good would come in on it."""
@@ -191,7 +226,7 @@ def is_new(lots: list[str], origins: dict[str, frappe._dict], voucher_no: str | 
 def refuse(items: list[str], voucher_type: str) -> None:
 	frappe.throw(
 		_(
-			"{0}: a finished good comes into stock only from production, on its work order's manufacture entry, not on a {1}. Only opening stock at migration comes in otherwise, on a material receipt with Is Opening set to Yes, which QA inspects and releases."
+			"{0}: a finished good comes into stock only from production, on its work order's manufacture entry, not on a {1}. Only opening stock at migration comes in otherwise, on a material receipt with Is Opening set to Yes, loaded through Data Import at go-live, which QA inspects and releases."
 		).format(", ".join(items), _(voucher_type)),
 		FinishedGoodNotProduced,
 		title=_("Finished goods come from production"),
@@ -199,7 +234,8 @@ def refuse(items: list[str], voucher_type: str) -> None:
 
 
 def as_opening_stock(doc: Document) -> Document:
-	"""Make a material receipt opening stock at migration: Is Opening = Yes, with each line's difference
+	"""Make a material receipt opening stock at migration, for the go-live data load to submit
+	(`guard_opening_stock`): Is Opening = Yes, with each line's difference
 	posted to the company's temporary opening account, as ERPNext requires of an opening entry (an
 	expense account would put the opening value in the profit and loss). Opening stock comes in on a
 	material receipt only, the path QA inspects and releases."""

@@ -154,7 +154,7 @@ def prepare_sheet(password: str) -> dict:
 	draft_item = new_material(f"TEST-D3-RMD-{suffix}")
 
 	# D3-T25: a raw material inspected against a test method made only for this run, which QA
-	# withdraws on the screen.
+	# withdraws on the screen once the approved specification no longer names it.
 	withdrawn_method = ensure_work_instruction(
 		f"Test method withdrawn in D3-T25 {suffix} (browser test)", act_as, email_for, password, "SOP"
 	)

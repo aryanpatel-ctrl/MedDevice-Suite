@@ -8,6 +8,7 @@ Each step must be idempotent.
 from meddevice_suite.compliance.access_policy import apply_access_policy
 from meddevice_suite.compliance.alerts import apply_alerts
 from meddevice_suite.compliance.archive import ensure_indexes as apply_archive_indexes
+from meddevice_suite.compliance.fingerprint import keyed_since
 from meddevice_suite.compliance.retention import apply_retention
 from meddevice_suite.lot_control.expiry import apply_expiry_fields
 from meddevice_suite.lot_control.lot_dates import apply_lot_dates_fields
@@ -56,3 +57,6 @@ def apply_configuration() -> None:
 	apply_indexes()  # after the fields it indexes exist (receipt, evidence)
 	apply_alerts()
 	apply_access_policy()
+	# When the keyed fingerprints began on this site, recorded once in site_config.json: a version-1
+	# entry dated after it was rewritten (compliance/fingerprint.py).
+	keyed_since()

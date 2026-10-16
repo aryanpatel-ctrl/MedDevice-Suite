@@ -13,7 +13,8 @@ from unittest.mock import patch
 import frappe
 from frappe.client import insert as insert_from_request
 from frappe.email.doctype.notification.notification import Notification
-from frappe.utils import CallbackManager, now_datetime
+from frappe.tests import IntegrationTestCase
+from frappe.utils import CallbackManager, get_files_path, now_datetime
 
 from meddevice_suite.compliance import audit_anchor
 from meddevice_suite.compliance.alerts import apply_alerts
@@ -481,3 +482,150 @@ class TestProblemsAreAlerted(AnchorTestCase):
 			finding.save(ignore_permissions=True)
 		with self.assertRaises(frappe.PermissionError):
 			frappe.delete_doc(FINDING, finding.name, ignore_permissions=True, force=True)
+
+
+@verifies("URS-CMP-040")
+class TestTheAnchorFileIsNeverServed(IntegrationTestCase):
+	"""Found in the independent review of 2026-10-15: kept in `private/files`, the anchor file could be
+	read by any desk user who made a File record naming it, as Frappe serves a private file to whoever
+	may read a File record that names it."""
+
+	def setUp(self):
+		super().setUp()
+		self.addCleanup(frappe.set_user, "Administrator")
+
+	def test_the_anchor_file_is_kept_outside_every_folder_frappe_serves(self):
+		path = audit_anchor.anchor_file().resolve()
+		self.assertTrue(path.is_relative_to(Path(frappe.get_site_path("private")).resolve()))
+		for served in (
+			get_files_path(is_private=1),  # private files, served through File records
+			get_files_path(),  # public files
+			frappe.get_site_path("private", "backups"),  # served to System Managers at /backups
+		):
+			with self.subTest(served=served):
+				self.assertFalse(path.is_relative_to(Path(served).resolve()))
+
+	def test_no_file_record_may_name_the_anchor_file_where_it_was_kept(self):
+		former = audit_anchor.former_anchor_file()
+		if not former.exists():  # as on a site not yet migrated, with the anchors still there
+			former.parent.mkdir(parents=True, exist_ok=True)
+			former.write_text(f'{{"test": "{frappe.generate_hash(length=12)}"}}\n')
+			self.addCleanup(former.unlink, missing_ok=True)
+		frappe.set_user(user_with_profile("Stores"))  # any desk user
+		with self.assertRaises(frappe.PermissionError):
+			frappe.get_doc(
+				{"doctype": "File", "file_url": f"/private/files/{audit_anchor.FILE_NAME}", "is_private": 1}
+			).insert()
+		frappe.set_user("Administrator")
+		self.assertFalse(frappe.db.exists("File", {"file_url": f"/private/files/{audit_anchor.FILE_NAME}"}))
+		# Refused before Frappe reads it: no copy of it under another name either.
+		self.assertEqual(list(former.parent.glob("audit-anchors?*.jsonl")), [])
+
+	def test_no_file_record_may_name_the_anchor_file_where_it_is_kept(self):
+		address = "/" + "/".join((*audit_anchor.FOLDER, audit_anchor.FILE_NAME))
+		with self.assertRaises(frappe.PermissionError):
+			frappe.get_doc({"doctype": "File", "file_url": address, "is_private": 1}).insert()
+		self.assertFalse(frappe.db.exists("File", {"file_url": address}))
+
+	def test_an_existing_file_record_cannot_be_pointed_at_the_anchor_file(self):
+		doc = frappe.get_doc(
+			{
+				"doctype": "File",
+				"file_name": f"note-{frappe.generate_hash(length=8)}.txt",
+				"is_private": 1,
+				"content": "x",
+			}
+		).insert()
+		doc.file_url = f"/private/files/{audit_anchor.FILE_NAME}"
+		with self.assertRaises(frappe.PermissionError):
+			doc.save()
+
+	def test_every_spelling_of_the_anchor_files_address_is_recognised(self):
+		for address in (
+			f"/private/files/{audit_anchor.FILE_NAME}",
+			"/private/files/audit%2Danchors.jsonl",
+			"/private/files/Audit-Anchors.JSONL",
+			f"/private/files/{audit_anchor.FILE_NAME}?fid=1",
+			f"/private/audit/{audit_anchor.FILE_NAME}",
+			audit_anchor.FILE_NAME,
+		):
+			with self.subTest(address=address):
+				self.assertTrue(audit_anchor.names_anchor_file(address))
+		for address in (None, "", "/private/files/audit-report.pdf", "/files/anchors.jsonl"):
+			with self.subTest(address=address):
+				self.assertFalse(audit_anchor.names_anchor_file(address))
+
+	def test_any_file_in_the_anchor_folder_is_recognised(self):
+		"""The anchor folder holds only what the system keeps: a file of any name there is refused, so
+		a rotated or renamed anchor file is not served either (mutation check, 2026-10-16)."""
+		folder = "/" + "/".join(audit_anchor.FOLDER)
+		for address in (f"{folder}/anchors-2026.jsonl", f"{folder}/notes.txt", f"{folder.upper()}/x"):
+			with self.subTest(address=address):
+				self.assertTrue(audit_anchor.names_anchor_file(address))
+
+	def test_a_file_record_named_as_the_anchor_file_is_refused_whatever_its_address(self):
+		"""A File is refused on its name too: Frappe makes a stored file's address from its name, so a
+		record named as the anchor file must not be stored (mutation check, 2026-10-16)."""
+		with self.assertRaisesRegex(frappe.PermissionError, "anchor file"):
+			frappe.get_doc(
+				{
+					"doctype": "File",
+					"file_name": audit_anchor.FILE_NAME,
+					"is_private": 1,
+					"content": "x",
+				}
+			).insert()
+		self.assertFalse(frappe.db.exists("File", {"file_name": audit_anchor.FILE_NAME}))
+
+
+@verifies("URS-CMP-040")
+class TestTheAnchorFileIsMovedOutOfTheServedFolder(IntegrationTestCase):
+	def setUp(self):
+		super().setUp()
+		folder = Path(tempfile.mkdtemp())
+		self.addCleanup(shutil.rmtree, folder, ignore_errors=True)
+		self.former, self.current = (
+			folder / "files" / audit_anchor.FILE_NAME,
+			folder / "audit" / audit_anchor.FILE_NAME,
+		)
+		self.former.parent.mkdir()
+		self.enterContext(patch.object(audit_anchor, "former_anchor_file", return_value=self.former))
+		self.enterContext(patch.object(audit_anchor, "anchor_file", return_value=self.current))
+
+	def migrate(self) -> None:
+		from meddevice_suite.patches.v0_1 import move_audit_anchor_file
+
+		move_audit_anchor_file.execute()
+
+	def test_the_anchors_are_moved_and_the_former_file_removed(self):
+		self.former.write_text('{"anchor": 1}\n{"anchor": 2}\n')
+
+		self.migrate()
+
+		self.assertFalse(self.former.exists())
+		self.assertEqual(self.current.read_text(), '{"anchor": 1}\n{"anchor": 2}\n')
+
+	def test_anchors_written_at_the_new_place_before_the_migrate_follow_the_moved_ones(self):
+		self.former.write_text('{"anchor": 1}')  # its last line cut short
+		self.current.parent.mkdir()
+		self.current.write_text('{"anchor": 2}\n')
+
+		self.migrate()
+
+		self.assertEqual(self.current.read_text(), '{"anchor": 1}\n{"anchor": 2}\n')
+
+	def test_running_it_again_or_after_a_move_cut_short_copies_nothing_twice(self):
+		self.current.parent.mkdir()
+		self.current.write_text('{"anchor": 1}\n{"anchor": 2}\n')
+		self.former.write_text('{"anchor": 1}\n')  # moved, but not yet removed
+
+		self.migrate()
+		self.migrate()
+
+		self.assertFalse(self.former.exists())
+		self.assertEqual(self.current.read_text(), '{"anchor": 1}\n{"anchor": 2}\n')
+
+	def test_a_site_without_a_former_file_is_left_as_it_is(self):
+		self.migrate()
+
+		self.assertFalse(self.current.exists())

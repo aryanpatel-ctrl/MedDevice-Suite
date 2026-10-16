@@ -858,6 +858,11 @@ class TestSheetD4InventoryAndBatchLedger(SheetTestCase):
 		self.assertEqual(frappe.db.get_value("Batch", lot["lot"], "item"), PRODUCT)
 		self.assertEqual(held(lot["lot"]), {self.sheet["stores"]["quarantine"]: 8})
 		self.assertEqual(status_of([lot["lot"]])[lot["lot"]], QUARANTINE)
+		# Loaded through the go-live data load, the one way opening stock comes in (URS-STK-015).
+		self.assertEqual(
+			frappe.db.get_value("Stock Entry", lot["entry"], ["docstatus", "stock_entry_type", "is_opening"]),
+			(1, "Material Receipt", "Yes"),
+		)
 
 	def test_a_new_lot_of_the_product_with_no_stock(self):
 		lot = d4.prepare_new_product_lot()

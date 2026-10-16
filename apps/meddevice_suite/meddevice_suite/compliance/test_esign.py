@@ -1,7 +1,7 @@
 import frappe
 from frappe.auth import get_login_attempt_tracker
 from frappe.tests import IntegrationTestCase, UnitTestCase
-from frappe.utils import add_to_date, now_datetime, time_diff_in_seconds
+from frappe.utils import add_days, add_to_date, cint, now_datetime, time_diff_in_seconds, today
 from frappe.utils.user import UserPermissions
 
 from meddevice_suite.compliance.esign import (
@@ -98,6 +98,26 @@ class TestReauthentication(SigningTestCase):
 				{"user": SIGNER, "status": "Failed", "subject": ["like", f"%ToDo {self.todo.name}"]},
 			)
 		)
+
+	@verifies("URS-CMP-037")
+	def test_an_expired_password_cannot_sign_until_it_is_changed(self):
+		"""Found in the independent review of 2026-10-15: Frappe asks for a new password only at
+		login, so a session opened before the password expired still signed with it (11.300(b))."""
+		apply_lockout()  # the access policy, with the password age QA set
+		days = cint(frappe.get_system_settings("force_user_to_reset_password"))
+		self.assertTrue(days)
+		self.addCleanup(frappe.db.set_value, "User", SIGNER, "last_password_reset_date", None)
+
+		frappe.db.set_value("User", SIGNER, "last_password_reset_date", add_days(today(), -(days + 1)))
+		with self.assertRaises(SigningRefused) as refused:
+			self.sign()
+		self.assertIn("password has expired", str(refused.exception))
+		self.assertEqual(signatures_on(self.todo), [])
+
+		# Changed, or on its last day, the password signs.
+		frappe.db.set_value("User", SIGNER, "last_password_reset_date", add_days(today(), -days))
+		signature = self.sign()
+		self.assertEqual(signatures_on(self.todo), [signature.name])
 
 	def test_the_lockout_counts_signing_failures_up_to_its_limit(self):
 		frappe.db.set_single_value("System Settings", "allow_consecutive_login_attempts", 3)

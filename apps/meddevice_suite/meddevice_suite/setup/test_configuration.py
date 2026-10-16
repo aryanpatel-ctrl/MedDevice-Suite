@@ -80,7 +80,7 @@ class TestNobodyConfiguresBySiteHand(IntegrationTestCase):
 		)
 
 	def test_a_permission_added_by_hand_does_not_last(self):
-		frappe.get_doc(
+		row = frappe.get_doc(
 			{
 				"doctype": "Custom DocPerm",
 				"parent": "Custom Field",
@@ -91,7 +91,10 @@ class TestNobodyConfiguresBySiteHand(IntegrationTestCase):
 				"read": 1,
 				"write": 1,
 			}
-		).insert(ignore_permissions=True)
+		)
+		with self.assertRaises(frappe.PermissionError):  # refused as it is made (URS-CMP-015)
+			frappe.get_doc(row.as_dict()).insert(ignore_permissions=True)
+		row.db_insert()  # one written straight to the database is removed on migrate
 		apply_configuration()
 		rows = frappe.get_all("Custom DocPerm", filters={"parent": "Custom Field"}, fields=["role", "write"])
 		self.assertEqual(

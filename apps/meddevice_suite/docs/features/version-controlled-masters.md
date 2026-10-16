@@ -66,7 +66,8 @@ The form's lookup for the request offers only approved change requests that list
 - **Cancelling** a submitted BOM or Asset takes it out of force: needs the staged request (*X is in use: name the approved change request that lists it to cancel it.*); the request's own link to the record does not block the cancel.
 - **BOM Update Tool › Replace BOM** is refused (*A bill of materials is not replaced inside approved ones; make the changed one as a new bill of materials under an approved change request.*); *Update Cost* stays allowed. Decided 2026-10-09.
 - **Item variants.** A template item is in use when any variant is. A controlled change of the template under a request reaches its variants under that request (each variant's version raised, Last Changed Under = the template's request). Only the fields changed on the template in that save are copied; a field a variant was changed on by itself under its own request is kept unless the template's request also lists that variant. Table fields (UOMs, taxes, defaults) copied by ERPNext are compared by content. This copy runs inside the save (not ERPNext's background job) for templates whose variants are in use.
-- **Rename / merge.** A master in use keeps its name and is never merged into another (*… is in use: it keeps its name and is never merged into another.*); a Quality Inspection Parameter read by an in-use specification likewise.
+- **Rename.** A master in use keeps its name (*… is in use: it keeps its name.*); a Quality Inspection Parameter read by an in-use specification likewise. A master not in use can be renamed.
+- **Merge (URS-MST-017).** No master of the table above (the specification included) and no Quality Inspection Parameter is ever merged into another, in use or not, approved or not, even during migration: a merge would move the approvals and history of the record merged away (a supplier's approval, an item's specification and supplier rows, a customer's licence) onto the record kept, past QA (*Supplier X is not merged into Y: approvals and history stay with the record they were made for. Disable the duplicate instead.*). One rule, `versioning.refuse_merge`, run by the before_rename of every record; the customer's own licence guard leaves merging to it. Found by the independent review of 2026-10-15; ISO 13485 4.2.5, 7.4.1.
 
 ### 2.5 Intended but not implemented / outside this feature
 
@@ -87,7 +88,7 @@ URS-MST-001: *Each of the nine masters … carries a version number and an effec
 | C5 | BOM: default switch and cancel under control; audit of the displaced default; inactive default needs none | `guard_new_default_bom`, `record_displaced_default`, `guard_cancel` | `test_a_submitted_bill_of_materials_changes_which_is_in_force_under_control`, `test_a_new_default_bill_of_materials_replaces_the_one_in_force_only_under_control`, `test_a_bill_of_materials_is_cancelled_only_under_control` |
 | C6 | Asset: name change after submit and cancel under control | `version_master`, `guard_cancel`, `let_change_requests_not_block_cancel` | `test_an_equipment_record_in_use_is_cancelled_only_under_control`, `TestWiredIn.test_a_submitted_assets_name_changes_only_under_a_request` |
 | C7 | BOM Update Tool replace refused (real path) | `refuse_bom_replace` | `test_the_bom_update_tool_does_not_replace_a_bill_of_materials`, `TestWiredIn.test_the_bom_update_tool_is_refused_its_replace` |
-| C8 | Rename / merge refused in use | `refuse_rename_in_use` | `test_a_master_in_use_keeps_its_name` |
+| C8 | Rename refused in use; merge refused always (URS-MST-017) | `refuse_rename_in_use`, `refuse_merge` | `test_a_master_in_use_keeps_its_name`, `TestNoControlledMasterIsMerged.*` |
 | C9 | Variants follow the template's controlled change; hand edits need their own request; a variant's own decision survives; template tables reach variants | `update_variants_under_control`, `following_template` | `test_a_variant_follows_its_templates_controlled_change`, `test_a_variant_edited_by_hand_does_not_ride_on_its_templates_request`, `test_a_template_saves_after_a_variant_was_changed_on_its_own`, `test_a_variants_own_decision_survives_a_controlled_change_of_its_template`, `test_a_templates_table_change_reaches_its_variants_in_use` |
 | C10 | In-use checks return true for every master once a submitted record depends on it | `MASTERS[*].in_use` | `test_each_masters_in_use_check_runs_on_a_record_not_yet_used`, `test_a_routings_operations_are_controlled`, `test_a_warehouse_with_stock_movements_is_in_use` |
 | C11 | Form offers only approved requests listing the record | `approved_changes_for` | `test_the_form_offers_the_approved_change_requests_that_list_the_record` |
@@ -133,9 +134,10 @@ Role: Maintenance / QA.
 Actual result: ____  Pass/Fail: ____
 
 ### VC-05 Rename, merge (C8)
-1. On RM-SILICONE: menu › Rename to `RM-SILICONE-2`. Expected: refused *Item RM-SILICONE is in use: it keeps its name and is never merged into another.*
+1. On RM-SILICONE: menu › Rename to `RM-SILICONE-2`. Expected: refused *Item RM-SILICONE is in use: it keeps its name.*
 2. On TEST-ITEM-FREE (not in use): Rename. Expected: renamed.
 3. Quality › Quality Inspection Parameter › *Dimension (mm)* › Rename. Expected: refused (read by an in-use specification).
+4. On TEST-ITEM-FREE: Rename to the code of another item with *Merge with existing* ticked. Expected: refused *Item … is not merged into …: approvals and history stay with the record they were made for. Disable the duplicate instead.* The same on a supplier with an approval merged into one without, and on any customer.
 Actual result: ____  Pass/Fail: ____
 
 ### VC-06 Variants (C9)

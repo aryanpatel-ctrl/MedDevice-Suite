@@ -9,8 +9,8 @@ from frappe.utils import today
 from meddevice_suite.compliance import quality_settings
 from meddevice_suite.compliance.audit import same
 from meddevice_suite.qms.change_control import (
-	CHANGE_RECORD_FIELDS,
 	IMPACT_AREAS,
+	LISTING_OUTCOME_FIELDS,
 	in_business_job,
 	is_qa,
 )
@@ -79,7 +79,7 @@ class ChangeRequest(Document):
 			for field in COMPLETION_FIELDS:
 				row.set(field, 0 if field == "done" else None)
 		for row in self.affected_records:
-			for field in CHANGE_RECORD_FIELDS:
+			for field in LISTING_OUTCOME_FIELDS:
 				row.set(field, None)
 
 	def before_validate(self) -> None:
@@ -99,8 +99,9 @@ class ChangeRequest(Document):
 			frappe.throw(
 				_("An action is recorded as done only once the change is approved."), frappe.PermissionError
 			)
-		if any(row.get(field) for row in self.affected_records for field in CHANGE_RECORD_FIELDS):
-			# Recorded by change control as each change is made, never typed (qms/change_control.py).
+		if any(row.get(field) for row in self.affected_records for field in LISTING_OUTCOME_FIELDS):
+			# Recorded by change control as each change is made, or as an action finds a record needs
+			# no change, never typed (qms/change_control.py).
 			frappe.throw(
 				_("The change made to a listed record is recorded only as the change is made."),
 				frappe.PermissionError,
