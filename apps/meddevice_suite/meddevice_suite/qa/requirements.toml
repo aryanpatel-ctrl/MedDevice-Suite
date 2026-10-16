@@ -781,8 +781,8 @@ status = "implemented"
 [[requirement]]
 id = "URS-QMS-002"
 module = 30
-title = "A revision is signed by its author, reviewed by someone other than the author and approved by QA, never by its author or its reviewer, each with an electronic signature; the reviewer or QA can return it for changes with a reason, and every revision after the first states what changed."
-source = "DFD 9A QMS Documentation (A3 Review Document, A4 Approve Document, A6 Revision); D2 Document Control: Review & Approval, Version Control; ISO 13485 4.2.4 a), b); 21 CFR 11.50; approver other than the reviewer decided on the client's instruction of 2026-10-07"
+title = "A revision is signed by its author, reviewed by someone other than the author and approved by QA, never by its author or its reviewer, each with an electronic signature; the reviewer or QA can return it for changes with a reason; QA can abandon a revision not yet approved with an electronic signature and a reason, which ends it as Abandoned, kept and no longer in progress; and every revision after the first states what changed."
+source = "DFD 9A QMS Documentation (A3 Review Document, A4 Approve Document, A6 Revision); D2 Document Control: Review & Approval, Version Control; ISO 13485 4.2.4 a), b); 21 CFR 11.50; approver other than the reviewer decided on the client's instruction of 2026-10-07; abandoning a revision: Independent review 2026-10-15, ISO 13485 4.2.4 b)"
 status = "implemented"
 
 [[requirement]]
@@ -809,8 +809,8 @@ status = "implemented"
 [[requirement]]
 id = "URS-QMS-006"
 module = 30
-title = "QA can withdraw a document with an electronic signature and a reason, once no revision is in progress; the document and its effective revision become obsolete and are kept."
-source = "DFD 9A QMS Documentation (A6 Revision & Archive); D2 Document Control; ISO 13485 4.2.4 g), h); 4.2.5"
+title = "QA can withdraw a document with an electronic signature and a reason, once no revision is in progress and no approved master in use (an item, an operation or a specification not disabled) names it as the document that defines it, the refusal naming each such master; the document and its effective revision become obsolete and are kept."
+source = "DFD 9A QMS Documentation (A6 Revision & Archive); D2 Document Control; ISO 13485 4.2.4 g), h); 4.2.5; refused while it defines an approved master: Independent review 2026-10-15, ISO 13485 4.2.4 (no unintended use of obsolete documents)"
 status = "implemented"
 
 
@@ -890,15 +890,15 @@ status = "implemented"
 [[requirement]]
 id = "URS-QMS-032"
 module = 36
-title = "A change request becomes Implemented only when everything changed under it is in force: each document revision made under it effective, each risk assessment approved, each record its actions produced approved where it needs QA's approval, and each device master record the change put out of date approved again; until then recording its last action is refused, naming each record not yet in force."
-source = "D2 Change Control: Implementation; ISO 13485 7.3.9 (changes verified before implementation), 4.2.4, 4.2.3; found in the foundation review of 2026-10-12"
+title = "A change request becomes Implemented only when everything changed under it is in force: each document revision made under it effective, each risk assessment approved, each record its actions produced approved where it needs QA's approval, and each device master record the change put out of date approved again; and only when each record it lists has been changed under it or recorded, by the person recording an action, as needing no change, the action's note being the reason; until then recording its last action is refused, naming each record not yet in force or not changed."
+source = "D2 Change Control: Implementation; ISO 13485 7.3.9 (changes verified before implementation), 4.2.4, 4.2.3; found in the foundation review of 2026-10-12; each listed record changed or found to need no change: Independent review 2026-10-15, ISO 13485 7.3.9, 4.2.4"
 status = "implemented"
 
 [[requirement]]
 id = "URS-QMS-033"
 module = 36
-title = "An approved change request authorises one change of each record it lists: the record the change was made in is recorded against the listing once the change is saved, a further change of that record under the same request is refused, a record is listed once, and a change given up before it took effect (a withdrawn risk assessment) leaves the listing unused."
-source = "D2 Change Control: Review & Approval, Implementation; ISO 13485 7.3.9, 4.2.4 (changes reviewed and approved before implementation); found in the foundation review of 2026-10-12"
+title = "An approved change request authorises one change of each record it lists: the record the change was made in is recorded against the listing once the change is saved, a further change of that record under the same request is refused, a record is listed once, and a change given up before it took effect (a withdrawn risk assessment or an abandoned document revision) leaves the listing unused."
+source = "D2 Change Control: Review & Approval, Implementation; ISO 13485 7.3.9, 4.2.4 (changes reviewed and approved before implementation); found in the foundation review of 2026-10-12; abandoned document revision: Independent review 2026-10-15"
 status = "implemented"
 
 # --- Module 30: periodic review (added 2026-10-12) ------------------------------
@@ -1246,6 +1246,13 @@ id = "URS-MST-016"
 module = 1
 title = "A raw material, a packaging item and a finished good name the controlled document that defines them, a document of type Specification (the material specification of what is bought, the product specification or drawing of what is sold); QA approves such an item only while that document is in effect, and any master whose approval names a controlled document is approved only while it is in effect; an item approved before this rule keeps its approval, is given its document once without a change request, and is held to the rule at its next approval."
 source = "D2 All masters are version controlled and linked with Document Control; DFD D3 Item / BOM / Routing Master; ISO 13485 4.2.3, 4.2.4, 7.4.2; foundation hardening plan D-34, decided 2026-10-14"
+status = "implemented"
+
+[[requirement]]
+id = "URS-MST-017"
+module = 1
+title = "No master (item, bill of materials, routing, operation, workstation, supplier, customer, warehouse, equipment, specification) and no inspection parameter is ever merged into another, whether in use or not, approved or not, so that approvals and history stay with the record they were made for; the refusal says to disable the duplicate instead, and a master not in use can still be renamed without a merge."
+source = "Independent review 2026-10-15 (merging an approved supplier or item into another moved its approval past QA); D2 All masters are version controlled and linked with Document Control; ISO 13485 4.2.5, 7.4.1"
 status = "implemented"
 
 [[requirement]]

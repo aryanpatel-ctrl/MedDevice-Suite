@@ -765,3 +765,75 @@ class TestWiredIn(VersioningTestCase):
 		stage_reason("Asset", asset.name, "update_after_submit", "Renamed under the change request")
 		asset.save()
 		self.assertEqual(frappe.db.get_value("Asset", asset.name, [VERSION, CHANGED_UNDER]), (2, change))
+
+
+@verifies("URS-MST-017")
+class TestNoControlledMasterIsMerged(VersioningTestCase):
+	"""Independent review 2026-10-15: merging moved the approvals and history of the record merged
+	away onto the record kept, past QA's approval of the one kept (ISO 13485 4.2.5, 7.4.1)."""
+
+	def merged(self, doctype: str, old: str, new: str) -> None:
+		with self.assertRaisesRegex(frappe.PermissionError, "Disable the duplicate instead"):
+			frappe.rename_doc(doctype, old, new, merge=True)
+		self.assertTrue(frappe.db.exists(doctype, old), f"{doctype} {old} was merged away")
+
+	def test_an_approved_supplier_is_not_merged_into_one_never_approved(self):
+		from meddevice_suite.master_data.supplier_approval import current_approval
+		from meddevice_suite.master_data.test_supplier_approval import approved_for, ensure_supplier
+
+		material = lot_item(new_item_code())
+		approve_for_test(material)  # module 1: a supplier is approved for approved items
+		approved, unapproved = (f"MDS Merge Supplier {frappe.generate_hash(length=6)}" for _ in range(2))
+		ensure_supplier(approved)
+		ensure_supplier(unapproved)
+		approval = approved_for(approved, [material])
+		self.merged("Supplier", approved, unapproved)
+		self.assertEqual(frappe.db.get_value("Supplier Approval", approval, "supplier"), approved)
+		self.assertIsNone(current_approval(unapproved))
+
+	def test_a_draft_item_is_not_merged_into_an_approved_one(self):
+		approved, draft = lot_item(new_item_code()), lot_item(new_item_code())
+		approve_for_test(approved)
+		self.merged("Item", draft, approved)
+		self.merged("Item", approved, draft)
+
+	def test_a_master_not_in_use_is_not_merged_either(self):
+		first, second = lot_item(new_item_code()), lot_item(new_item_code())
+		self.merged("Item", first, second)
+		customers = []
+		for _ in range(2):
+			customer = frappe.get_doc(
+				{
+					"doctype": "Customer",
+					"customer_name": f"MDS Merge Customer {frappe.generate_hash(length=6)}",
+					"customer_group": "Commercial",
+					"territory": "India",
+				}
+			).insert()
+			customers.append(customer.name)
+		self.merged("Customer", *customers)
+
+	def test_every_controlled_master_and_inspection_parameter_is_refused_a_merge(self):
+		from meddevice_suite.master_data.versioning import NEVER_MERGED, refuse_rename_in_use
+
+		self.assertTrue(
+			set(MASTERS)
+			| {"Quality Inspection Parameter", "Supplier", "Customer", "Quality Inspection Template"}
+			<= set(NEVER_MERGED)
+		)
+		for doctype in NEVER_MERGED:
+			for migrating in (0, 1):  # even while the system is being set up
+				with self.subTest(doctype=doctype, migrating=migrating):
+					frappe.flags.in_migrate = migrating
+					try:
+						with self.assertRaisesRegex(frappe.PermissionError, "is not merged into"):
+							refuse_rename_in_use(
+								frappe._dict(doctype=doctype), "before_rename", "A", "B", True
+							)
+					finally:
+						frappe.flags.in_migrate = False
+
+	def test_a_master_not_in_use_is_still_renamed_without_a_merge(self):
+		free = lot_item(new_item_code())
+		frappe.rename_doc("Item", free, f"{free}-R")
+		self.assertTrue(frappe.db.exists("Item", f"{free}-R"))

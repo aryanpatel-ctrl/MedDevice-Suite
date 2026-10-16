@@ -180,6 +180,9 @@ function withdraw(frm) {
 
 function record_done(frm, rows) {
 	const date = (value) => frappe.datetime.str_to_user(value);
+	// The listed records not yet marked as needing no change; the server refuses one changed under
+	// the request (a change given up aside).
+	const listed = (frm.doc.affected_records || []).filter((row) => !row.no_change_needed);
 	const dialog = new frappe.ui.Dialog({
 		title: __("Record an action as done"),
 		fields: [
@@ -211,6 +214,29 @@ function record_done(frm, rows) {
 				options: "result_doctype",
 				depends_on: "result_doctype",
 			},
+			...(listed.length
+				? [
+						{
+							fieldtype: "MultiCheck",
+							fieldname: "no_change",
+							label: __("Listed records found to need no change"),
+							sort_options: false,
+							options: listed.map((row) => ({
+								label: row.change_record
+									? __("{0} {1} (changed in {2})", [
+											__(row.reference_doctype),
+											row.reference_name,
+											row.change_record,
+									  ])
+									: `${__(row.reference_doctype)} ${row.reference_name}`,
+								value: row.name,
+							})),
+							description: __(
+								"Tick a record only if, carrying out the change, you found it needs no change; what was done is the reason. The change is implemented once each listed record is changed under it or ticked here."
+							),
+						},
+				  ]
+				: []),
 		],
 		primary_action_label: __("Record as Done"),
 		primary_action(values) {
@@ -221,6 +247,8 @@ function record_done(frm, rows) {
 					note_text: values.note,
 					result_doctype: values.result_doctype || null,
 					result_name: values.result_name || null,
+					// Sent only when ticked: a form post would send an empty value as "".
+					...(values.no_change?.length ? { no_change: values.no_change } : {}),
 				})
 				.then(() => {
 					dialog.hide();

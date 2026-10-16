@@ -939,7 +939,7 @@ context("D1 Customer Master: the browser test sheet, as each job", { retries: 0 
 		no_problems("D1-T12");
 	});
 
-	it("[URS-MST-008] D1-T13 A customer with a decided licence is not renamed", () => {
+	it("[URS-MST-008] [URS-MST-017] D1-T13 A customer with a decided licence is not renamed or merged", () => {
 		const customer = () => sheet.licensed_customer;
 		sign_in("Sales");
 		cy.then(() => open_form("Customer", customer()));
@@ -956,7 +956,7 @@ context("D1 Customer Master: the browser test sheet, as each job", { retries: 0 
 				.its("cur_dialog")
 				.should((dialog) => expect(dialog.get_value("new_name")).to.equal(renamed));
 			const refusal = exactly(
-				`${customer()} holds a licence or an exemption QA has decided, so it is not renamed or merged. Record a new customer and its licence instead.`
+				`${customer()} holds a licence or an exemption QA has decided, so it is not renamed. Record a new customer and its licence instead.`
 			);
 			expect_refusal(refusal);
 			cy.get(".modal.show .btn-primary").contains("Rename").click();
@@ -969,6 +969,43 @@ context("D1 Customer Master: the browser test sheet, as each job", { retries: 0 
 				doctype: "Customer",
 				filters: { name: customer() },
 			}).then(({ message }) => expect(message, "under its old name").to.equal(1));
+		});
+
+		// Nor merged into another customer, decided or not (URS-MST-017): its licence would move to
+		// a customer QA never verified it for.
+		cy.then(() => open_form("Customer", customer()));
+		settle();
+		cy.get(`${FORM} .menu-btn-group > button`).click();
+		cy.get(".dropdown-menu.show")
+			.contains(".dropdown-item", /^\s*Rename\s*$/)
+			.click();
+		open_dialog().should("contain", "New Name");
+		cy.then(() => {
+			const other = sheet.exempt_customer;
+			cy.get('.modal.show input[data-fieldname="new_name"]').clear().type(other);
+			cy.get('.modal.show input[data-fieldname="merge"]').check();
+			cy.window()
+				.its("cur_dialog")
+				.should((dialog) => {
+					expect(dialog.get_value("new_name")).to.equal(other);
+					expect(dialog.get_value("merge")).to.equal(1);
+				});
+			const refusal = exactly(
+				`Customer ${customer()} is not merged into ${other}: approvals and history stay with the record they were made for. Disable the duplicate instead.`
+			);
+			expect_refusal(refusal);
+			cy.get(".modal.show .btn-primary").contains("Rename").click();
+			refused_with(refusal);
+			cy.call("frappe.client.get_count", {
+				doctype: "Customer",
+				filters: { name: ["in", [customer(), other]] },
+			}).then(({ message }) => expect(message, "both customers kept").to.equal(2));
+			cy.call("frappe.client.get_count", {
+				doctype: "Customer Licence",
+				filters: { customer: customer(), docstatus: 1 },
+			}).then(({ message }) =>
+				expect(message, "its verified licence stays with it").to.be.at.least(1)
+			);
 		});
 		no_problems("D1-T13");
 	});

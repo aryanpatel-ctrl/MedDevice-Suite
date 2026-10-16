@@ -15,15 +15,18 @@ through the acts below; those marked ✍ are electronic signatures (21 CFR Part 
   people, and never by the person who raised it; QA, or Management for a Major change awaiting
   it, can return the change to the person who raised it or reject it, with a reason;
 - the actions are part of what is approved: once approved they are only completed, each by its
-  owner or QA with a note, and the change is implemented when every one is done and what it
+  owner or QA with a note, and the change is implemented when every one is done, each record it
+  lists was changed under it or marked, by whoever records an action, as needing no change with
+  the note as the reason (`listed_not_changed`; independent review 2026-10-15), and what it
   changed is in force (`not_in_force`): a revision effective, a risk assessment approved, an item
   or other master QA approves approved, and each device master record the change put out of date
   approved again (found in the foundation review of 2026-10-12);
 - an approved request authorises the change of each record it lists, once (ISO 13485 7.3.9,
   4.2.4): the record the change is made in is recorded against the listing once the change is
   saved (`require_approved_change`, `record_changes_made`), and the request authorises no further
-  change of that record; a change abandoned before it took effect (a withdrawn risk assessment)
-  leaves the listing unspent (found in the foundation review of 2026-10-12);
+  change of that record; a change abandoned before it took effect (a withdrawn risk assessment,
+  or an abandoned document revision) leaves the listing unspent (found in the foundation review of
+  2026-10-12 and the independent review of 2026-10-15);
 - QA closes the change with a signed effectiveness check, on or after its check date;
 - nothing is deleted or cancelled; until it is approved, the person who raised it may withdraw it;
 - a new revision of an effective controlled document needs an approved change request that
@@ -94,12 +97,23 @@ CHANGE_TYPE_OF = {
 # risk file's assessment, a master itself). Set only by `record_changes_made`.
 CHANGE_RECORD_TYPE, CHANGE_RECORD, CHANGED_ON = "change_record_type", "change_record", "changed_on"
 CHANGE_RECORD_FIELDS = (CHANGE_RECORD_TYPE, CHANGE_RECORD, CHANGED_ON)
+# On each listed record the change did not need to change after all: set only by `complete_action`,
+# when the person recording an action marks it so, the action's note being the reason (independent
+# review 2026-10-15).
+NO_CHANGE_NEEDED, NO_CHANGE_REASON = "no_change_needed", "no_change_reason"
+NO_CHANGE_FIELDS = (NO_CHANGE_NEEDED, NO_CHANGE_REASON)
+# Everything on a listing that change control sets and nobody types.
+LISTING_OUTCOME_FIELDS = (*CHANGE_RECORD_FIELDS, *NO_CHANGE_FIELDS)
 # Pending on the record being saved: (change request, listed type, listed name) of each change the
 # save makes under a request, recorded once the save has gone through.
 PENDING_FLAG = "changes_under_request"
 # A record a change was started in that was given up before it took effect; the listing it spent
-# is free again (module 39: a withdrawn assessment no longer holds the change request back).
-ABANDONED: dict[str, tuple[str, ...]] = {"Risk Assessment": ("Withdrawn",)}
+# is free again (module 39: a withdrawn assessment no longer holds the change request back; module
+# 30: an abandoned document revision, independent review 2026-10-15).
+ABANDONED: dict[str, tuple[str, ...]] = {
+	"Risk Assessment": ("Withdrawn",),
+	"Document Revision": ("Abandoned",),
+}
 
 IMPACT_AREAS = (
 	"impact_product_quality",
@@ -309,9 +323,15 @@ def verify(doc: Document, outcome: str, act: str, password: str, reason: str | N
 
 @frappe.whitelist(methods=["POST"])
 def complete_action(
-	name: str, action: str, note_text: str, result_doctype: str | None = None, result_name: str | None = None
+	name: str,
+	action: str,
+	note_text: str,
+	result_doctype: str | None = None,
+	result_name: str | None = None,
+	no_change: str | list[str] | None = None,
 ) -> None:
-	"""The owner of an approved action, or QA, records that it is done."""
+	"""The owner of an approved action, or QA, records that it is done. `no_change` names the listed
+	records (their rows) the action found need no change after all, the note saying why."""
 	doc = locked(name)
 	frappe.has_permission(DOCTYPE, "read", doc=doc, throw=True)
 	require(
@@ -343,6 +363,7 @@ def complete_action(
 			"result_name": result_name or None,
 		}
 	)
+	mark_no_change_needed(doc, no_change, row.completion_note)
 	if all(each.done for each in doc.actions):
 		# Implemented means the change is in use: nothing it changed may still wait for its approval
 		# or its effective date (found in the foundation review of 2026-10-12).
@@ -353,11 +374,67 @@ def complete_action(
 				"{0} is implemented once what it changed is in force. Not yet in force: {1}. Record action {2} as done once it is."
 			).format(doc.name, "; ".join(pending), row.idx),
 		)
+		# And each listed record was changed as approved, or found to need no change, with the
+		# reason (ISO 13485 7.3.9, 4.2.4; independent review 2026-10-15).
+		unchanged = listed_not_changed(doc)
+		require(
+			not unchanged,
+			_(
+				"{0} is implemented once each record it lists is changed under it, or recorded as needing no change with the reason. Not changed: {1}. Record action {2} as done once it is, marking any that need no change."
+			).format(doc.name, "; ".join(unchanged), row.idx),
+		)
 		doc.status = "Implemented"
 		doc.implemented_on = today()
 		doc.effectiveness_due_on = add_days(doc.implemented_on, cint(doc.effectiveness_check_days))
 	doc.flags.audit_reason = _("Action {0} done: {1}").format(row.idx, row.completion_note)
 	save(doc)
+
+
+def mark_no_change_needed(doc: Document, rows: str | list[str] | None, reason: str) -> None:
+	"""The listed records `rows` (their row names) need no change after all, for `reason`: each one
+	the request lists, not changed under it (a change given up aside) and not marked already."""
+	# From the desk a JSON list, or an empty value when nothing was ticked (a form post sends a null
+	# as ""); a single row's name is taken as it is.
+	if isinstance(rows, str):
+		rows = rows.strip()
+		rows = frappe.parse_json(rows) if rows.startswith("[") else ([rows] if rows else None)
+	names = rows
+	if not names:
+		return
+	require(isinstance(names, list), _("Name the listed records that need no change."))
+	listed = {row.name: row for row in doc.get("affected_records") or []}
+	made = [(row.get(CHANGE_RECORD_TYPE), row.get(CHANGE_RECORD)) for row in listed.values()]
+	given_up = abandoned(made)
+	for name in dict.fromkeys(names):
+		row = listed.get(name)
+		require(row, _("{0} lists no such record.").format(doc.name))
+		described = record_label(row.reference_doctype, row.reference_name)
+		require(
+			not changed_under(row, given_up),
+			_("{0} was changed under {1}; it cannot also need no change.").format(described, doc.name),
+		)
+		require(
+			not row.get(NO_CHANGE_NEEDED), _("{0} is already marked as needing no change.").format(described)
+		)
+		row.update({NO_CHANGE_NEEDED: 1, NO_CHANGE_REASON: reason})
+
+
+def changed_under(row: Document | frappe._dict, given_up: set[tuple[str, str]]) -> bool:
+	"""The listed record was changed under the request, by a change not given up since."""
+	made = (row.get(CHANGE_RECORD_TYPE), row.get(CHANGE_RECORD))
+	return bool(row.get(CHANGE_RECORD)) and made not in given_up
+
+
+def listed_not_changed(doc: Document) -> list[str]:
+	"""The records the request lists that were neither changed under it nor marked as needing no
+	change, in words."""
+	rows = doc.get("affected_records") or []
+	given_up = abandoned([(row.get(CHANGE_RECORD_TYPE), row.get(CHANGE_RECORD)) for row in rows])
+	return [
+		record_label(row.reference_doctype, row.reference_name)
+		for row in rows
+		if not row.get(NO_CHANGE_NEEDED) and not changed_under(row, given_up)
+	]
 
 
 # --- In force ------------------------------------------------------------------------------------
@@ -511,6 +588,12 @@ def require_approved_change(
 	)
 	listing = listing_of(change_request, doctype, name)
 	require(listing, _("Change request {0} does not list {1}.").format(change_request, name))
+	require(
+		not listing.get(NO_CHANGE_NEEDED),
+		_(
+			"Change request {0} records that {1} needs no change; each change has its own approved change request."
+		).format(change_request, record_label(doctype, name)),
+	)
 	made = (listing.get(CHANGE_RECORD_TYPE), listing.get(CHANGE_RECORD))
 	if listing.get(CHANGE_RECORD) and made != part_of and made not in abandoned([made]):
 		described = record_label(doctype, name)
@@ -538,7 +621,7 @@ def listing_of(change_request: str, doctype: str, name: str) -> frappe._dict | N
 			"reference_doctype": doctype,
 			"reference_name": name,
 		},
-		fields=["name", *CHANGE_RECORD_FIELDS],
+		fields=["name", *LISTING_OUTCOME_FIELDS],
 		order_by="idx asc",
 		limit=1,
 	)
@@ -613,7 +696,7 @@ def approved_changes_for(
 			"reference_doctype": record_type,
 			"reference_name": document,
 		},
-		fields=["parent", *CHANGE_RECORD_FIELDS],
+		fields=["parent", *LISTING_OUTCOME_FIELDS],
 		order_by="idx asc",
 	):
 		first_rows.setdefault(row.parent, row)  # a record listed twice is one listing, its first row
@@ -621,7 +704,7 @@ def approved_changes_for(
 	listing = [
 		parent
 		for parent, row in first_rows.items()
-		if not row.change_record or (row.change_record_type, row.change_record) in given_up
+		if not row.get(NO_CHANGE_NEEDED) and not changed_under(row, given_up)
 	]
 	if not listing:
 		return []

@@ -229,12 +229,16 @@ def guard_sales_invoice(doc: Document, method: str | None = None) -> None:
 
 def guard_customer_rename(doc: Document, method: str, old: str, new: str, merge: bool = False) -> None:
 	"""Customer before_rename: a customer with a decided licence or exemption keeps its name, so a
-	verified licence never passes to another party, or a renamed one, without QA's signature."""
+	verified licence never passes to a renamed party without QA's signature. No customer is merged
+	into another, decided or not: that is the rule of every controlled master
+	(master_data.versioning.refuse_merge, which the before_rename of every record runs next)."""
+	if merge:
+		return
 	decided = frappe.db.exists(DOCTYPE, {"customer": old, "docstatus": 1}) or buys_without_licence(old)
 	if decided:
 		frappe.throw(
 			_(
-				"{0} holds a licence or an exemption QA has decided, so it is not renamed or merged. "
+				"{0} holds a licence or an exemption QA has decided, so it is not renamed. "
 				"Record a new customer and its licence instead."
 			).format(old),
 			frappe.PermissionError,

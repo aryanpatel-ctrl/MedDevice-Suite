@@ -67,6 +67,9 @@ SIGNING_ACTIONS: dict[tuple[str, str], SignedAct] = {
 	("Document Revision", "Review"): SignedAct("Reviewed", f"{DOCUMENT_CONTROL}.review"),
 	("Document Revision", "Return"): SignedAct("Rejected", f"{DOCUMENT_CONTROL}.return_for_changes"),
 	("Document Revision", "Approve"): SignedAct("Approved", f"{DOCUMENT_CONTROL}.approve"),
+	# QA gives up a revision before approval (independent review 2026-10-15): withdrawn from the
+	# document's life before it takes effect, as a document is withdrawn from use.
+	("Document Revision", "Abandon"): SignedAct("Withdrawn", f"{DOCUMENT_CONTROL}.abandon"),
 	("Controlled Document", "Withdraw"): SignedAct("Withdrawn", f"{DOCUMENT_CONTROL}.withdraw"),
 	# The periodic review: QA finds the effective revision still current (ISO 13485 4.2.4 b).
 	("Controlled Document", "Review"): SignedAct("Reviewed", f"{DOCUMENT_CONTROL}.review_document"),

@@ -8,6 +8,7 @@ const REVISION_COLOURS = {
 	Effective: "green",
 	Superseded: "gray",
 	Obsolete: "gray",
+	Abandoned: "gray",
 };
 
 frappe.listview_settings["Document Revision"] = {
