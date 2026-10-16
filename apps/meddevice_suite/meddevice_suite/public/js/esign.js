@@ -23,6 +23,20 @@ const esign = frappe.provide("meddevice_suite.esign");
 // the same dialog so that what is signed is what the signer entered there.
 esign.sign = (frm, action, meaning, { ask_reason = false, fields = [] } = {}) =>
 	new Promise((resolve, reject) => {
+		// A signature binds the record as saved (21 CFR 11.50): signed with changes on the screen
+		// not yet saved, the signer would approve one thing and the record would hold another,
+		// and the reload after signing would drop the changes.
+		if (frm.is_dirty()) {
+			frappe.msgprint({
+				title: __("Save first"),
+				message: __(
+					"Save your changes before you sign: a signature binds the record as it is saved."
+				),
+				indicator: "orange",
+			});
+			reject();
+			return;
+		}
 		let signed = false;
 		const dialog = new frappe.ui.Dialog({
 			title: __("Sign: {0}", [__(action)]),
