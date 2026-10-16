@@ -320,6 +320,37 @@ class TestOneStartPerChain(IntegrityTestCase):
 		self.assertEqual(len(problems), 1)
 		self.assertIn(forged.name, problems[0])
 
+	def test_a_second_entry_following_the_same_entry_is_detected(self):
+		"""An entry inserted after an earlier one, fingerprinted as the trail would with the key, makes
+		a fork: two entries follow one. Only the fork gives it away (mutation check, 2026-10-16)."""
+		frappe.set_user("Administrator")
+		self.doc.qty = 2
+		self.doc.save()
+		first, follower = events_for(AUDITED, self.doc.name)[:2]
+		self.assertEqual(follower.previous_event, first.name)
+		forged = frappe.get_doc(
+			{
+				"doctype": "Audit Event",
+				"reference_doctype": AUDITED,
+				"reference_name": self.doc.name,
+				"document_name_at_event": self.doc.name,
+				"action": "Updated",
+				"user": "Administrator",
+				"event_at": now_datetime(),
+				"changes": {"changed": [["qty", 2.0, 200.0]]},
+				"previous_event": first.name,
+				"fingerprint_version": fingerprint.CURRENT_VERSION,
+			}
+		)
+		forged.event_hash = event_fingerprint(forged, first.event_hash)
+		forged.db_insert()
+
+		problems = verify_events(AUDITED, self.doc.name)
+
+		self.assertTrue(
+			any(first.name in problem and "already follows" in problem for problem in problems), problems
+		)
+
 	def test_an_event_moved_from_another_record_is_detected(self):
 		frappe.set_user("Administrator")
 		other = self.new_record(title="Lot L-004")
