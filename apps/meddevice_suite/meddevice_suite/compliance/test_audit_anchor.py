@@ -566,8 +566,7 @@ class TestTheAnchorFileIsNeverServed(IntegrationTestCase):
 	def test_a_file_record_named_as_the_anchor_file_is_refused_whatever_its_address(self):
 		"""A File is refused on its name too: Frappe makes a stored file's address from its name, so a
 		record named as the anchor file must not be stored (mutation check, 2026-10-16)."""
-		frappe.set_user(user_with_profile("Stores"))
-		with self.assertRaises(frappe.PermissionError):
+		with self.assertRaisesRegex(frappe.PermissionError, "anchor file"):
 			frappe.get_doc(
 				{
 					"doctype": "File",
@@ -576,7 +575,6 @@ class TestTheAnchorFileIsNeverServed(IntegrationTestCase):
 					"content": "x",
 				}
 			).insert()
-		frappe.set_user("Administrator")
 		self.assertFalse(frappe.db.exists("File", {"file_name": audit_anchor.FILE_NAME}))
 
 
