@@ -15,11 +15,17 @@ asks (before an inspection, for example).
 
 Where it is kept. A database-level deletion of audit rows can delete anchor rows with them, so
 every anchor is kept twice: as an Audit Anchor record, which no one may create, change or delete
-(like the Audit Event), and as a line appended to a file in the site's private files directory,
-which this app only ever appends to and which Frappe never serves (no File record names it).
-Removing entries without it being reported then needs write access to the server's file system as
-well as to the database. Backups of the site's files and the period archives of module 54 (which
-copy the anchors) keep further copies; on Linux the file can also be made append-only for every
+(like the Audit Event), and as a line appended to a file, which this app only ever appends to.
+The file is kept in the site's `private/audit` folder, outside every folder Frappe serves: Frappe
+sends a private file only from `private/files`, and only one a File record names, and backups only
+from `private/backups`; a File record cannot name a path outside the files folders, and the File
+hook refuses one naming the anchor file wherever it is (compliance/evidence_files.py). Until
+2026-10-15 it was kept in `private/files`, where any desk user could make a File record name it and
+read it; the patch move_audit_anchor_file moves it (`move_former_anchor_file`). Removing entries
+without it being reported then needs write access to the server's file system as well as to the
+database. The period archives of module 54 (which copy the anchors as records) keep further copies;
+Frappe's file backups (`bench backup --with-files`) copy only the files folders, so the server's
+own backup must include `private/audit`; on Linux the file can also be made append-only for every
 user with `chattr +a`. The line is written only once the anchor is committed, so an anchor that is
 rolled back never reaches the file.
 
@@ -44,6 +50,7 @@ from collections.abc import Iterator
 from functools import partial
 from pathlib import Path
 from typing import NamedTuple
+from urllib.parse import unquote
 
 import frappe
 from frappe import _
@@ -57,6 +64,10 @@ DOCTYPE = "Audit Anchor"
 LEDGERS: dict[str, str] = {"Audit Event": "event_hash", "Electronic Signature": "signature_hash"}
 SCHEDULED, ON_REQUEST = "Scheduled", "On request"
 FILE_NAME = "audit-anchors.jsonl"
+# The anchor file's folder in the site: under its private folder, outside every folder Frappe serves.
+FOLDER = ("private", "audit")
+# Where the file was kept until 2026-10-15, in the private files folder Frappe serves.
+FORMER_FOLDER = ("private", "files")
 # What an anchor holds, in its record and in its line of the file.
 ANCHORED = (
 	"ledger",
@@ -99,7 +110,46 @@ TAIL_BLOCK = 64 << 10
 
 
 def anchor_file() -> Path:
-	return Path(frappe.get_site_path("private", "files", FILE_NAME))
+	return Path(frappe.get_site_path(*FOLDER, FILE_NAME))
+
+
+def former_anchor_file() -> Path:
+	return Path(frappe.get_site_path(*FORMER_FOLDER, FILE_NAME))
+
+
+def names_anchor_file(address: str | None) -> bool:
+	"""Whether a File's address or name points at the anchor file, where it is kept or was kept. Any
+	file of its name is refused, in whatever folder, so no spelling of the address gets past."""
+	if not address:
+		return False
+	# Letter case too: a file system may ignore it (macOS does).
+	path = unquote(address).split("?", 1)[0].replace("\\", "/").lower()
+	return path.rstrip("/").rsplit("/", 1)[-1] == FILE_NAME or "/".join(FOLDER) in path
+
+
+def move_former_anchor_file() -> None:
+	"""Patch move_audit_anchor_file (2026-10-15): bring the anchors kept in `private/files` to the
+	anchor file's place. Anchors written there already, by the hourly job between the release and
+	the migrate, follow the moved ones, so the file stays in the order the anchors were made. Run
+	again, or after a move cut short, it copies nothing twice. A file made append-only (`chattr +a`)
+	cannot be moved: the patch then fails, naming it, until the attribute is removed."""
+	former, current = former_anchor_file(), anchor_file()
+	if not former.exists():
+		return
+	moved = former.read_bytes()
+	if moved and not moved.endswith(b"\n"):
+		moved += b"\n"
+	held = current.read_bytes() if current.exists() else b""
+	if not held.startswith(moved):
+		current.parent.mkdir(mode=0o750, parents=True, exist_ok=True)
+		staged = current.with_name(f"{current.name}.moving")
+		descriptor = os.open(staged, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o640)
+		with os.fdopen(descriptor, "wb") as file:
+			file.write(moved + held)
+			file.flush()
+			os.fsync(file.fileno())
+		os.replace(staged, current)  # in one step: the anchor file is never seen half written
+	former.unlink()
 
 
 def anchor_trail(trigger: str = SCHEDULED) -> list[Document]:

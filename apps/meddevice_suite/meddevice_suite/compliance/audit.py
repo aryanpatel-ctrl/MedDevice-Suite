@@ -14,6 +14,21 @@ percentage, for example). They are derived by the system, not entered, and the
 transaction that changed them is itself audited. Code in this app never writes
 a regulated record that way.
 
+Known system writes (engineering rules 5: documented system processes; independent review of
+2026-10-15). ERPNext maintains these links on regulated records directly, without an event of
+their own; each is caused by an act that is itself audited, with who, when and, for a cancel, the
+reason, and that names the record written:
+- Quality Inspection submit writes its name into `quality_inspection` of the inspected rows, of
+  the Purchase Receipt Item or the Stock Entry Detail (the row of its item, and lot when it names
+  one), or of the Job Card, and sets that record's `modified`; its cancel, and deleting a draft
+  inspection, clear the link the same way (erpnext quality_inspection.py,
+  `update_qc_reference`). Audited act: the inspection's submit, cancel or deletion.
+- Cancelling a stock transaction (Purchase Receipt, Stock Entry, Delivery Note, and any other
+  voucher with lots) clears `serial_and_batch_bundle` (and `rejected_serial_and_batch_bundle`)
+  on its rows, on a delivery's packed items too, and sets `is_cancelled` on its Serial and Batch
+  Bundle and that bundle's entries (erpnext serial_batch_bundle.py,
+  `delink_serial_and_batch_bundle`). Audited act: the transaction's cancel, with its reason.
+
 Scale: one insert and one indexed read per audited write. Frappe already loads
 and row-locks the record before a save, which also serialises the chain per
 record; there is no lock shared between records.

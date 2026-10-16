@@ -388,8 +388,8 @@ status = "implemented"
 [[requirement]]
 id = "URS-CMP-001"
 module = 49
-title = "Signing requires the signer to re-enter their own password at the moment of signing; a wrong password records no signature and counts towards the same account lockout as a failed login, and a locked account cannot sign."
-source = "21 CFR 11.200(a)(1), 11.300(d); D1 E-sign points; D2 System Foundation: Electronic Signature (21 CFR Part 11); DFD approval steps signed (6.5 QA Review & Approval, 9A A4 Approve Document, 9B B5 Approve / Reject)"
+title = "Signing requires the signer to re-enter their own password at the moment of signing; a wrong password records no signature and counts towards the same account lockout as a failed login; a locked account cannot sign, nor can one whose password is older than the days QA set until the password is changed."
+source = "21 CFR 11.200(a)(1), 11.300(b), 11.300(d); D1 E-sign points; D2 System Foundation: Electronic Signature (21 CFR Part 11); DFD approval steps signed (6.5 QA Review & Approval, 9A A4 Approve Document, 9B B5 Approve / Reject); expired password refused: Independent review 2026-10-15, 21 CFR 11.300(b)"
 status = "implemented"
 
 [[requirement]]
@@ -495,8 +495,8 @@ status = "implemented"
 [[requirement]]
 id = "URS-CMP-040"
 module = 50
-title = "Every hour, and whenever a reviewer asks, the system anchors the audit trail and the electronic signatures: it records each one's newest entry, that entry's fingerprint and the number of entries, in the database and in a file that the system only ever appends to; anchors are made only this way and cannot be changed or deleted; and the verification reviewers run reports when entries have been removed: an anchored entry is missing or changed, fewer entries remain up to it than were anchored, or an anchor in the file is missing from the database or differs from it."
-source = "DFD 9F F3 Action / Data Logging, D12 Audit Logs; D2 System Foundation: Audit Trail & System Logs; 21 CFR 11.10(e); data integrity (ALCOA+ complete, enduring); found in the foundation review of 2026-10-12: deleting the newest audit events or signatures left a shorter chain that still verified"
+title = "Every hour, and whenever a reviewer asks, the system anchors the audit trail and the electronic signatures: it records each one's newest entry, that entry's fingerprint and the number of entries, in the database and in a file that the system only ever appends to and that no user can read or download through the system; anchors are made only this way and cannot be changed or deleted; and the verification reviewers run reports when entries have been removed: an anchored entry is missing or changed, fewer entries remain up to it than were anchored, or an anchor in the file is missing from the database or differs from it."
+source = "DFD 9F F3 Action / Data Logging, D12 Audit Logs; D2 System Foundation: Audit Trail & System Logs; 21 CFR 11.10(e); data integrity (ALCOA+ complete, enduring); found in the foundation review of 2026-10-12: deleting the newest audit events or signatures left a shorter chain that still verified; file never served: Independent review 2026-10-15, 21 CFR 11.10(c), (d)"
 status = "implemented"
 
 [[requirement]]
@@ -517,15 +517,15 @@ status = "implemented"
 [[requirement]]
 id = "URS-CMP-014"
 module = 47
-title = "Each person is given a job profile that grants exactly the roles that job needs; the job profiles and the roles in them are declared in code and applied on every site."
-source = "DFD 9F F1 User Management, F2 Role / Permission; D2 System Foundation: Role Based Access (RBAC); 21 CFR 11.10(d); design approved 2026-10-06; jobs decided on the client's instruction of 2026-10-07"
+title = "Each person is given a job profile that grants exactly the roles that job needs; the job profiles and the roles in them are declared in code and applied on every site, and on a site nobody, the system administrator included, changes or deletes a job profile."
+source = "DFD 9F F1 User Management, F2 Role / Permission; D2 System Foundation: Role Based Access (RBAC); 21 CFR 11.10(d); design approved 2026-10-06; jobs decided on the client's instruction of 2026-10-07; job profiles not changed by hand: Independent review 2026-10-15, 21 CFR 11.10(d), (g), engineering rules 1.3"
 status = "implemented"
 
 [[requirement]]
 id = "URS-CMP-015"
 module = 47
-title = "For every regulated business record type, which roles may read, create, submit, cancel and amend it is declared in code and applied exactly, replacing the platform's default permissions, and any manual change is undone on the next migrate; on this app's own record types a permission cannot be changed by hand at all."
-source = "DFD 9F F1 User Management, F2 Role / Permission; D2 System Foundation: Role Based Access (RBAC); 21 CFR 11.10(d), (g); ISO 13485 4.2.4; hand changes on the app's own record types refused decided 2026-10-12 (foundation review)"
+title = "For every regulated business record type, which roles may read, create, submit, cancel and amend it is declared in code and applied exactly, replacing the platform's default permissions; on every record type whose permissions this app declares (the regulated records, the supporting record types it adds permissions to, the site configuration and this app's own record types) a permission cannot be added, changed, removed or reset by hand at all, and any change written past that is undone on the next migrate."
+source = "DFD 9F F1 User Management, F2 Role / Permission; D2 System Foundation: Role Based Access (RBAC); 21 CFR 11.10(d), (g); ISO 13485 4.2.4; hand changes on the app's own record types refused decided 2026-10-12 (foundation review); extended to every record type the matrix governs: Independent review 2026-10-15, 21 CFR 11.10(d), (g), engineering rules 1.3"
 status = "implemented"
 
 [[requirement]]
@@ -667,8 +667,8 @@ status = "implemented"
 [[requirement]]
 id = "URS-CMP-027"
 module = 51
-title = "Stores and QA are alerted once when a lot with stock remaining is 30 days or less from its expiry date, including a lot received that close to it, and once when it has expired, even after a day the alerts did not run; a changed expiry date is alerted afresh; lots with no stock and disabled lots raise no alert."
-source = "DFD 9C C3 Generate Reminder, C4 Notify Users, D4 Inventory & Batch Ledger; D2 Alerts & Notifications; module 51 lot expiry; 30 days decided on the client's instruction of 2026-10-07; exact-date gaps found in the robustness review of 2026-10-07"
+title = "Stores and QA are alerted once when a lot with stock remaining is 30 days or less from its expiry date, including a lot received that close to it, and once when it has expired, even after a day the alerts did not run; a changed expiry date is alerted afresh, and a lot saved with its expiry date unchanged is not alerted again; lots with no stock and disabled lots raise no alert."
+source = "DFD 9C C3 Generate Reminder, C4 Notify Users, D4 Inventory & Batch Ledger; D2 Alerts & Notifications; module 51 lot expiry; 30 days decided on the client's instruction of 2026-10-07; exact-date gaps found in the robustness review of 2026-10-07; unchanged date re-alerted on a form save: Independent review 2026-10-15 (browser walk-through)"
 status = "implemented"
 
 [[requirement]]

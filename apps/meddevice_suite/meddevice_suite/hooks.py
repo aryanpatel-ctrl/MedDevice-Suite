@@ -352,7 +352,14 @@ doc_events = {
 	},
 	"Log Settings": {"validate": "meddevice_suite.compliance.retention.protect_login_history"},
 	"File": {"before_validate": "meddevice_suite.compliance.evidence_files.protect"},
-	"Role Profile": {"validate": "meddevice_suite.setup.roles.separate_administration_in_profile"},
+	# Job profiles change only with a release of this app (URS-CMP-014).
+	"Role Profile": {
+		"validate": [
+			"meddevice_suite.setup.roles.refuse_hand_changed_job_profile",
+			"meddevice_suite.setup.roles.separate_administration_in_profile",
+		],
+		"on_trash": "meddevice_suite.setup.roles.refuse_hand_changed_job_profile",
+	},
 	"User": {
 		"validate": "meddevice_suite.setup.roles.separate_administration",
 		"before_rename": "meddevice_suite.compliance.audit.keep_user_id",
@@ -360,8 +367,11 @@ doc_events = {
 		# the "*" handlers and before Frappe's link check.
 		"on_trash": "meddevice_suite.compliance.audit.keep_user_with_history",
 	},
-	# The app's own record types carry their permissions in their definition (URS-CMP-015).
-	"Custom DocPerm": {"before_validate": "meddevice_suite.setup.roles.refuse_hand_added_permission"},
+	# The permissions the role matrix governs change only with a release of this app (URS-CMP-015).
+	"Custom DocPerm": {
+		"before_validate": "meddevice_suite.setup.roles.refuse_hand_added_permission",
+		"on_trash": "meddevice_suite.setup.roles.refuse_hand_removed_permission",
+	},
 }
 
 # A regulated record's audit events in its form timeline, for users who may review them.
@@ -398,6 +408,10 @@ has_permission = {
 	"File": "meddevice_suite.compliance.evidence_files.has_permission",
 	"Training Record": "meddevice_suite.qms.training.has_permission",
 }
+
+# The audit trail's anchor file is never named by a File record (URS-CMP-040): refused before
+# Frappe's File.before_insert reads the named file and stores a copy of it.
+extend_doctype_class = {"File": ["meddevice_suite.compliance.evidence_files.ProtectedFile"]}
 
 scheduler_events = {
 	# The head of the audit trail and of the signatures, so that removed entries are detected
