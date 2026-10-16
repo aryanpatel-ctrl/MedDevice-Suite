@@ -12,12 +12,21 @@
 // type: any field the desk shows can go from a value to empty this way. Only an empty value over
 // an empty value is ignored: setting, changing or clearing a value is an edit and goes through as
 // before, a caller that forces the value (`set_value(value, true)`) still does, and 0 is a value.
+// Only a field of a record's form: a list filter or a dialog field holds no record, reads as
+// empty always, and its change event is what applies the filter, so clearing it must still fire
+// (found in Chrome, 2026-10-16: a cleared list filter no longer refreshed the list).
 if (frappe.ui?.form?.Control) {
 	const is_empty = (value) => value === undefined || value === null || value === "";
 	const prototype = frappe.ui.form.Control.prototype;
 	const validate_and_set_in_model = prototype.validate_and_set_in_model;
 	prototype.validate_and_set_in_model = function (value, e, force_set_value = false) {
-		if (!force_set_value && is_empty(value) && is_empty(this.get_model_value())) {
+		if (
+			this.frm &&
+			this.doc &&
+			!force_set_value &&
+			is_empty(value) &&
+			is_empty(this.get_model_value())
+		) {
 			return Promise.resolve();
 		}
 		return validate_and_set_in_model.call(this, value, e, force_set_value);
