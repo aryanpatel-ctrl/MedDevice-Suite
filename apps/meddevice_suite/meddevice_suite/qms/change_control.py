@@ -374,12 +374,12 @@ def complete_action(
 def mark_no_change_needed(doc: Document, rows: str | list[str] | None, reason: str) -> None:
 	"""The listed records `rows` (their row names) need no change after all, for `reason`: each one
 	the request lists, not changed under it (a change given up aside) and not marked already."""
-	# From the form a JSON list; a single row's name is taken as it is.
-	names = (
-		(frappe.parse_json(rows) if rows.lstrip().startswith("[") else [rows])
-		if isinstance(rows, str)
-		else rows
-	)
+	# From the desk a JSON list, or an empty value when nothing was ticked (a form post sends a null
+	# as ""); a single row's name is taken as it is.
+	if isinstance(rows, str):
+		rows = rows.strip()
+		rows = frappe.parse_json(rows) if rows.startswith("[") else ([rows] if rows else None)
+	names = rows
 	if not names:
 		return
 	require(isinstance(names, list), _("Name the listed records that need no change."))

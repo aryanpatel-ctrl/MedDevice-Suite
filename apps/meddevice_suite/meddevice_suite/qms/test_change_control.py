@@ -1296,6 +1296,10 @@ class TestImplementedOnlyOnceEachListedRecordIsSettled(ChangeControlTestCase):
 			complete_action(doc.name, doc.actions[0].name, "Not needed", no_change=[changed])
 		with self.assertRaisesRegex(frappe.ValidationError, "lists no such record"):
 			complete_action(doc.name, doc.actions[0].name, "Not needed", no_change=["not-a-listing"])
+		# What the desk posts when nothing is ticked marks nothing (found in CI, 2026-10-15).
+		for empty in ("", " ", "[]", None, []):
+			self.assertIsNone(change_control.mark_no_change_needed(doc, empty, "Nothing ticked"))
+		self.assertFalse(any(row.no_change_needed for row in doc.affected_records))
 		complete_action(doc.name, doc.actions[0].name, "Not needed after all", no_change=unchanged)
 		with self.assertRaisesRegex(frappe.ValidationError, "already marked"):
 			complete_action(doc.name, doc.actions[1].name, "Again", no_change=[unchanged])

@@ -247,7 +247,8 @@ function record_done(frm, rows) {
 					note_text: values.note,
 					result_doctype: values.result_doctype || null,
 					result_name: values.result_name || null,
-					no_change: values.no_change?.length ? values.no_change : null,
+					// Sent only when ticked: a form post would send an empty value as "".
+					...(values.no_change?.length ? { no_change: values.no_change } : {}),
 				})
 				.then(() => {
 					dialog.hide();
