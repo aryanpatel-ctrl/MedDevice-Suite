@@ -1147,8 +1147,12 @@ function poll(check, timeout = TIMEOUT) {
 // The desk's alert (a System Notification) with `subject` has come for the signed-in person, or,
 // signed in as the Administrator, for anyone. Alerts are made in the background, so it is looked
 // for until it has come.
+// Frappe makes the Notification Log of a System Notification in a background job enqueued after the
+// request commits (notification_log.enqueue_create_notification), so on a busy test site it can come
+// well after the act: it is looked for for up to ALERT_TIMEOUT.
+const ALERT_TIMEOUT = 180000;
 function alerted(subject) {
-	cy.window().then({ timeout: TIMEOUT + 5000 }, (win) => {
+	cy.window().then({ timeout: ALERT_TIMEOUT + 10000 }, (win) => {
 		const user = win.frappe.session.user;
 		const filters = { subject: ["like", `%${subject}%`] };
 		if (user !== "Administrator") filters.for_user = user;
@@ -1161,7 +1165,7 @@ function alerted(subject) {
 					limit_page_length: 1,
 				})
 				.then((rows) => rows.length > 0);
-		return poll(look).then(
+		return poll(look, ALERT_TIMEOUT).then(
 			(found) => expect(found, `${user} is alerted: ${subject}`).to.be.true
 		);
 	});
@@ -1800,11 +1804,37 @@ context(
 				open_form(FILE, file);
 				button("Archive").click();
 				open_dialog().should("contain", `Archive ${title}`);
-				cy.get('.modal.show textarea[data-fieldname="reason"]').click().type(why);
+				// One prompt, its reason typed and left (the field takes it as it is left), then its own
+				// Submit pressed (found in Chrome, 2026-10-16: the prompt said Why was missing).
+				dialogs_shown().then((shown) => expect(shown, "dialogs open").to.have.length(1));
 				cy.window()
 					.its("cur_dialog")
-					.should((dialog) => expect(dialog.get_value("reason")).to.equal(why));
-				cy.get(".modal.show .btn-primary").click();
+					.then((dialog) =>
+						cy
+							.wrap(
+								dialog.$wrapper.find('textarea[data-fieldname="reason"]:visible')
+							)
+							.click()
+							.type(why)
+					);
+				cy.window()
+					.its("cur_dialog")
+					.then((dialog) =>
+						dialog.$wrapper.find('textarea[data-fieldname="reason"]').trigger("blur")
+					);
+				settle();
+				cy.window()
+					.its("cur_dialog")
+					.should((dialog) => {
+						expect(dialog.get_value("reason")).to.equal(why);
+						expect(
+							dialog.get_values(true)?.reason,
+							"the reason the prompt sends"
+						).to.equal(why);
+					});
+				cy.window()
+					.its("cur_dialog")
+					.then((dialog) => cy.wrap(dialog.get_primary_btn()).click());
 				settle(RELOAD_DELAY_MS + QUIET_MS);
 				dialogs_shown().then((shown) =>
 					expect(shown.join("\n"), "dialogs left on screen after Archive").to.equal("")

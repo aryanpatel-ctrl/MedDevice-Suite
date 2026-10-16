@@ -583,6 +583,17 @@ function rows(win, table) {
 function rows_up_to(table, count) {
 	settle();
 	reveal(table);
+	// The table offers Add Row: it is editable and no row is ticked (Frappe hides the button while
+	// one is). Said plainly when it does not (found in Chrome, 2026-10-16, on an amended matrix).
+	cy.window().should((win) => {
+		const grid = win.cur_frm.fields_dict[table].grid;
+		const state = `display ${grid.display_status}, static rows ${grid.static_rows}`;
+		expect(grid.is_editable(), `${table} can be edited (${state})`).to.be.true;
+		expect(grid.get_selected_children(), `${table}: rows ticked`).to.have.length(0);
+	});
+	cy.get(
+		`${FORM} .frappe-control[data-fieldname="${table}"] .grid-footer:first`
+	).scrollIntoView();
 	cy.window().then((win) => {
 		const missing = count - rows(win, table).length;
 		for (let i = 0; i < missing; i++) {
@@ -1894,70 +1905,81 @@ context("D9 Quality Records: risk, licences and training, as each job", () => {
 
 	// --- Training (module 37) -----------------------------------------------------------------
 
-	it("[URS-TRN-004] [URS-TRN-001] D9-TRN-01 QA changes the Machine Operator matrix by cancel and amend and approves it", () => {
-		prepare("prepare_training", { password, stage: "new_instruction" }).then((t) => {
-			const made = {};
-			const reason = "Work instruction added to the job";
-			sign_in(QA);
-			new_form(MATRIX);
-			fill("designation", sheet.operator_job, "Link");
-			rows_up_to("items", 1);
-			fill_row("items", 1, "controlled_document", t.instruction, "Link");
-			save();
-			sign_refused(
-				"Approve",
-				reason,
-				refusal(
-					`${t.matrix} is the approved matrix of ${sheet.operator_job}; cancel it first.`
-				)
-			);
-			no_problems("D9-TRN-01, a second matrix of the job");
+	// Not tried again: a first attempt that cancelled the approved matrix leaves the job without one,
+	// and the second attempt's refusal would never come (found in Chrome, 2026-10-16).
+	it(
+		"[URS-TRN-004] [URS-TRN-001] D9-TRN-01 QA changes the Machine Operator matrix by cancel and amend and approves it",
+		{ retries: 0 },
+		() => {
+			prepare("prepare_training", { password, stage: "new_instruction" }).then((t) => {
+				expect(t.matrix, "the Machine Operator job's approved matrix").to.be.ok;
+				const made = {};
+				const reason = "Work instruction added to the job";
+				sign_in(QA);
+				new_form(MATRIX);
+				fill("designation", sheet.operator_job, "Link");
+				rows_up_to("items", 1);
+				fill_row("items", 1, "controlled_document", t.instruction, "Link");
+				save();
+				sign_refused(
+					"Approve",
+					reason,
+					refusal(
+						`${t.matrix} is the approved matrix of ${sheet.operator_job}; cancel it first.`
+					)
+				);
+				no_problems("D9-TRN-01, a second matrix of the job");
 
-			open_form(MATRIX, t.matrix);
-			button("Cancel").click();
-			give_reason_if_asked(reason, (win) =>
-				/Permanently Cancel/.test(win.cur_dialog?.$wrapper?.text() || "")
-			);
-			open_dialog().should("contain", "Permanently Cancel");
-			cy.get(".modal.show .btn-primary").contains("Yes").click();
-			cy.window().should((win) => expect(current(win).docstatus, "cancelled").to.equal(2));
-			settle();
-			primary_action().should("contain", "Amend").click();
-			form_is(MATRIX, (doc) => doc.__islocal && doc.amended_from === t.matrix);
-			settle();
-			cy.window().then((win) => {
-				made.count = rows(win, "items").length + 1;
-				rows_up_to("items", made.count);
-				fill_row("items", made.count, "controlled_document", t.instruction, "Link");
-			});
-			primary_action().should("contain", "Save").click();
-			give_reason_if_asked(reason, (win) => !win.cur_frm.is_new());
-			saved();
-			cy.window().then((win) => {
-				made.matrix = current(win).name;
-			});
-			sign("Approve", reason);
-			cy.window().should((win) => {
-				expect(current(win).docstatus, "approved").to.equal(1);
-				expect(current(win).approved_by, "Approved By").to.equal(users[QA]);
-			});
-			signed_as("Approve", "Approved", reason);
-			no_problems("D9-TRN-01, the amended matrix approved");
+				open_form(MATRIX, t.matrix);
+				button("Cancel").click();
+				give_reason_if_asked(reason, (win) =>
+					/Permanently Cancel/.test(win.cur_dialog?.$wrapper?.text() || "")
+				);
+				open_dialog().should("contain", "Permanently Cancel");
+				cy.get(".modal.show .btn-primary").contains("Yes").click();
+				cy.window().should((win) =>
+					expect(current(win).docstatus, "cancelled").to.equal(2)
+				);
+				settle();
+				primary_action().should("contain", "Amend").click();
+				form_is(MATRIX, (doc) => doc.__islocal && doc.amended_from === t.matrix);
+				settle();
+				cy.window().then((win) => {
+					made.count = rows(win, "items").length + 1;
+					rows_up_to("items", made.count);
+					fill_row("items", made.count, "controlled_document", t.instruction, "Link");
+				});
+				primary_action().should("contain", "Save").click();
+				give_reason_if_asked(reason, (win) => !win.cur_frm.is_new());
+				saved();
+				cy.window().then((win) => {
+					made.matrix = current(win).name;
+				});
+				sign("Approve", reason);
+				cy.window().should((win) => {
+					expect(current(win).docstatus, "approved").to.equal(1);
+					expect(current(win).approved_by, "Approved By").to.equal(users[QA]);
+				});
+				signed_as("Approve", "Approved", reason);
+				no_problems("D9-TRN-01, the amended matrix approved");
 
-			open_list(RECORD, { controlled_document: t.instruction });
-			cy.then(() => open_records_of(t.operator, t.revision, "New Assignment")).then(
-				(opened) => {
-					expect(opened, "the operator's training opened").to.have.length(1);
-					cy.window().then((win) =>
-						expect(opened[0].due_date, "due").to.equal(in_days(win, t.due_days))
-					);
-					listed().then((names) => expect(names).to.include(opened[0].name));
-				}
-			);
-			cy.then(() => expect(t.due_days, "the days a new training is due in").to.equal(14));
-			no_problems("D9-TRN-01");
-		});
-	});
+				open_list(RECORD, { controlled_document: t.instruction });
+				cy.then(() => open_records_of(t.operator, t.revision, "New Assignment")).then(
+					(opened) => {
+						expect(opened, "the operator's training opened").to.have.length(1);
+						cy.window().then((win) =>
+							expect(opened[0].due_date, "due").to.equal(in_days(win, t.due_days))
+						);
+						listed().then((names) => expect(names).to.include(opened[0].name));
+					}
+				);
+				cy.then(() =>
+					expect(t.due_days, "the days a new training is due in").to.equal(14)
+				);
+				no_problems("D9-TRN-01");
+			});
+		}
+	);
 
 	it("[URS-TRN-002] D9-TRN-02 The operator signs Trained and the Production Supervisor signs Competent", () => {
 		prepare("prepare_training", { password, stage: "open" }).then((t) => {

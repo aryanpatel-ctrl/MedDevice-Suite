@@ -1135,6 +1135,24 @@ function report_summary() {
 		);
 }
 
+// Frappe's notice that the maintenance team's fields cannot be fetched is on screen; it is
+// closed, and so is the same notice again if a second fetch (the lookup's choice, then leaving the
+// field) shows it once more. Any other message stays, for the test's checks to report.
+function cannot_fetch_from_team() {
+	const notice = exact(
+		`Cannot Fetch Values: You need Read permission to fetch values from Asset Maintenance Team ${data.maintenance_team}`
+	);
+	refused_with(notice);
+	settle();
+	cy.window().then({ timeout: 10000 }, (win) => {
+		const shown = message_dialog(win);
+		if (!shown || !/^Cannot Fetch Values:/.test(shown.text)) return;
+		expect(shown.text, "the same notice again").to.match(notice);
+		return close_message(win).then((closed) => expect(closed, "it closes").to.be.true);
+	});
+	settle();
+}
+
 // --- The sheet ------------------------------------------------------------------------------
 
 context("D10 Equipment Master: the browser test sheet, as each job", () => {
@@ -2162,6 +2180,14 @@ context("D10 Equipment Master: the browser test sheet, as each job", () => {
 				stored_as(current(win).asset_name, made.asset, "asset_name")
 			);
 			fill("maintenance_team", data.maintenance_team, "Link");
+			// The team is taken, but ERPNext's form fetches its manager from the team record, which
+			// no job reads now that ERPNext's maintenance is not used: Frappe says so in an orange
+			// notice (frappe.client.validate_link_and_fetch) and leaves the manager empty (found in
+			// Chrome, 2026-10-16). The person reads it and closes it.
+			cannot_fetch_from_team();
+			cy.window().should((win) =>
+				stored_as(current(win).maintenance_team, data.maintenance_team, "maintenance_team")
+			);
 			rows_up_to("asset_maintenance_tasks", 1);
 			open_line("asset_maintenance_tasks", 1);
 			fill_line("maintenance_task", "Monthly lubrication");
