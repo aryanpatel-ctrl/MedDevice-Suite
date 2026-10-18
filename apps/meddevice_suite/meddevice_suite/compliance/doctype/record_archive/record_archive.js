@@ -30,6 +30,8 @@ frappe.ui.form.on("Record Archive", {
 								),
 						  })
 				)
+				// Frappe has shown the server's refusal; there is nothing to show besides.
+				.catch(() => {})
 		);
 	},
 });

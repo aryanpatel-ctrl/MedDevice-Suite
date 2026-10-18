@@ -299,6 +299,9 @@ def copy_attachments(amendment: Document) -> None:
 		pluck="name",
 	):
 		copy = frappe.copy_doc(frappe.get_doc("File", name))
+		# Frappe's copy clears the status outside its tests, and a raw insert stores no default
+		# (found in the browser walk-through of 2026-10-15: every correction with a file failed).
+		copy.docstatus = 0
 		copy.attached_to_name = amendment.name
 		copy.set_new_name()
 		copy.set_user_and_timestamp()

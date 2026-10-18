@@ -127,6 +127,8 @@ def check_file(doc: Document) -> None:
 	else:
 		before = doc.get_doc_before_save()
 		require(before.status != ARCHIVED, _("{0} is archived.").format(doc.name), frappe.PermissionError)
+		# Compared by value, not by type: the desk sends the record's dates and times back as text,
+		# while the record as stored holds them as dates (a renewal from the form was refused).
 		require(
 			unchanged(before, doc, SET_BY_RULES),
 			_("The status, the current version and its validity follow from the versions."),

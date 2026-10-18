@@ -433,6 +433,20 @@ class TestSignedCompletion(TrainingTestCase):
 		with self.assertRaisesRegex(frappe.PermissionError, "Fixed once the trainee signed"):
 			doc.save()
 
+	def test_a_date_sent_as_text_is_not_a_change(self):
+		"""The form sends a date as text where the database returned a date: the same day is no
+		change (found in the browser walk-through of 2026-10-15, D9-TRN-02)."""
+		document, _r = self.sop()
+		emp, user = self.operator(self.job_with(document))
+		name = self.open_record(emp)
+		self.plan(name)
+		self.sign(user, RECORD, name, "Trained")
+		doc = frappe.get_doc(RECORD, name)
+		self.assertNotIsInstance(doc.training_date, str)
+		doc.training_date = str(doc.training_date)
+		doc.save()
+		self.assertEqual(frappe.db.get_value(RECORD, name, "training_date"), getdate(doc.training_date))
+
 	def test_qa_alone_enters_paper_history_with_a_private_certificate(self):
 		document, revision = self.sop()
 		emp, user = self.operator(self.job_with(document))

@@ -26,15 +26,23 @@ frappe.ui.form.on("Risk Management File", {
 });
 
 function start_revision(frm) {
+	// Resolves with the name of the new revision.
 	const begin = (values = {}) =>
-		frappe
-			.xcall("meddevice_suite.qms.risk_management.start_revision", {
-				risk_management_file: frm.doc.name,
-				change_request: values.change_request || null,
-				risk_review: values.risk_review || null,
-			})
-			.then((name) => frappe.set_route("Form", "Risk Assessment", name));
-	if (!frm.doc.current_revision) return begin();
+		// The caller handles the refusal: the first revision leaves the form as it was, and the
+		// dialog stays open.
+		frappe.xcall("meddevice_suite.qms.risk_management.start_revision", {
+			risk_management_file: frm.doc.name,
+			change_request: values.change_request || null,
+			risk_review: values.risk_review || null,
+		});
+	const open = (name) => frappe.set_route("Form", "Risk Assessment", name);
+	if (!frm.doc.current_revision) {
+		// Frappe has shown the server's refusal; the file stays as it was.
+		begin()
+			.then(open)
+			.catch(() => {});
+		return;
+	}
 	const dialog = new frappe.ui.Dialog({
 		title: __("Start New Revision"),
 		fields: [
@@ -69,8 +77,15 @@ function start_revision(frm) {
 		],
 		primary_action_label: __("Start"),
 		primary_action(values) {
-			dialog.hide();
-			begin(values);
+			dialog.disable_primary_action();
+			begin(values)
+				.then((name) => {
+					dialog.hide();
+					open(name);
+				})
+				// Frappe has shown the server's refusal: the dialog stays open with the change
+				// request or review named, to correct and start again.
+				.catch(() => dialog.enable_primary_action());
 		},
 	});
 	dialog.show();

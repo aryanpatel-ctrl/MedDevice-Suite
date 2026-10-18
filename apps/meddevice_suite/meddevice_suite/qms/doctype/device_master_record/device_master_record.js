@@ -57,6 +57,8 @@ frappe.ui.form.on("Device Master Record", {
 				frappe
 					.xcall(`${DMR}.revise`, { item: frm.doc.item })
 					.then((name) => frappe.set_route("Form", "Device Master Record", name))
+					// Frappe has shown the server's refusal; the record stays as it was.
+					.catch(() => {})
 			);
 		}
 	},

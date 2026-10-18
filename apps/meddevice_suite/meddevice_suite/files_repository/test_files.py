@@ -167,6 +167,21 @@ class TestVersions(FilesTestCase):
 		self.assertEqual((doc.current_version, doc.current_file), (2, doc.versions[1].file))
 		self.assertNotEqual(doc.versions[0].file_sha256, doc.versions[1].file_sha256)
 
+	def test_a_new_version_is_added_from_the_form(self):
+		# The desk sends the record back as JSON, its dates and times as text; the stored record has
+		# them as dates. A file with a validity and a version is renewed from the form all the same.
+		name = self.upload(valid_until=add_days(today(), 30))
+		frappe.set_user(self.purchase)
+		sent = frappe.parse_json(frappe.as_json(frappe.get_doc("Important File", name).as_dict()))
+		sent.update(
+			new_file=private_file("Licence, renewed"),
+			new_note="Renewed",
+			new_valid_until=add_days(today(), 400),
+		)
+		doc = frappe.get_doc(sent).save()
+		self.assertEqual([row.version for row in doc.versions], [1, 2])
+		self.assertEqual(str(doc.valid_until), add_days(today(), 400))
+
 	def test_earlier_versions_and_what_follows_from_them_never_change_by_hand(self):
 		name = self.upload()
 		self.new_version(name)
