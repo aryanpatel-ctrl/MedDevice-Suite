@@ -139,13 +139,21 @@ def apply_lockout() -> None:
 @dataclass(frozen=True)
 class SignedFields:
 	"""A record type's signed content, declared as the fields its signers approve and, for each
-	child table, the columns of its rows. Called like a content function: content(doc) -> dict."""
+	child table, the columns of its rows. Called like a content function: content(doc) -> dict.
+
+	`bound_once_set` are fields added to the declaration after records of the type were signed: each
+	is bound only once it holds a value, so a signature taken before it was declared keeps verifying
+	(21 CFR 11.70)."""
 
 	fields: tuple[str, ...]
 	tables: dict[str, tuple[str, ...]] = field(default_factory=dict)
+	bound_once_set: tuple[str, ...] = ()
 
 	def __call__(self, doc: Document) -> dict:
 		content = {name: signed_value(doc, name) for name in self.fields}
+		for name in self.bound_once_set:
+			if (value := signed_value(doc, name)) not in (None, 0):
+				content[name] = value
 		for table, columns in self.tables.items():
 			content[table] = [
 				{column: signed_value(row, column) for column in columns} for row in doc.get(table) or []

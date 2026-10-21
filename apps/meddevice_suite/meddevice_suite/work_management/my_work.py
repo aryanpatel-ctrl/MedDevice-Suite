@@ -152,7 +152,7 @@ def lots(user: str, roles: set[str]) -> Iterator[Waiting]:
 		execute,
 	)
 
-	for_qc = {WAITING_FOR["verification"], WAITING_FOR["inspection"]}
+	for_qc = {WAITING_FOR["verification"], WAITING_FOR["inspection"], WAITING_FOR["final_inspection"]}
 	for_qa = {WAITING_FOR["release"], WAITING_FOR["rejected"], WAITING_FOR["set_apart"]}
 	_columns, rows = execute({})
 	for row in rows:
@@ -164,6 +164,23 @@ def lots(user: str, roles: set[str]) -> Iterator[Waiting]:
 				"Batch",
 				row["batch_no"],
 				row.get("since"),
+			)
+
+
+def concessions(user: str, roles: set[str]) -> Iterator[Waiting]:
+	"""A held lot's release by concession QA approved, waiting for a second person's approval from
+	Management, never QA's signer's (plan D-35)."""
+	if not set(MANAGEMENT) & roles or not frappe.has_permission("Lot Release", "read"):
+		return
+	from meddevice_suite.lot_control.release import pending_concessions
+
+	for lot, row in pending_concessions().items():
+		if row.decided_by != user:
+			yield Waiting(
+				_("Approve the release of lot {0} by concession").format(lot),
+				"Lot Release",
+				row.name,
+				row.decided_at,
 			)
 
 
@@ -361,6 +378,7 @@ SOURCES: tuple[Source, ...] = (
 	revisions,
 	change_requests,
 	lots,
+	concessions,
 	customer_returns,
 	waiting_for_qa,
 	approvals,
@@ -388,6 +406,9 @@ LISTED_BY: dict[tuple[str, str], Source] = {
 	("Lot Release", "Hold"): lots,
 	("Lot Release", "Return to Stock"): customer_returns,
 	("Lot Release", "Reject Return"): customer_returns,
+	# QA releases a held lot by concession from the lot's queue line; Management approves it from its own.
+	("Lot Release", "Release by Concession"): lots,
+	("Lot Release", "Approve Concession"): concessions,
 	("Supplier Approval", "Approve"): waiting_for_qa,
 	("Supplier Approval", "Approve Conditionally"): waiting_for_qa,
 	("Supplier Approval", "Not Approve"): waiting_for_qa,
