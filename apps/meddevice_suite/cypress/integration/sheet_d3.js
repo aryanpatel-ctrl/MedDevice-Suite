@@ -14,7 +14,10 @@
 // controlled documents the masters name) from meddevice_suite/qa/sheets/d3.py, named with the run's
 // own suffix. Where the sheet's order leaves a row's precondition to a later row (D3-T05 needs the
 // specification D3-T21 approves; D3-T22 needs the specification D3-T19 approves again in draft),
-// the row makes its precondition itself, as the sheet describes it.
+// the row makes its precondition itself, as the sheet describes it. D3-T26 and D3-T27 start from
+// records of their own the set-up makes: QA reads the audit trail of an approved finished good
+// changed under a change request and of its bill of materials, and an item, a bill of materials and
+// a specification are never merged, deleted or cancelled, not even by the Administrator.
 
 const USERS = "meddevice_suite.qa.ui_users";
 const SHEET = "meddevice_suite.qa.sheets.d3";
@@ -495,6 +498,152 @@ function console_call(method, args) {
 
 function wrong_password() {
 	return `${password}-wrong`;
+}
+
+// --- Reading the audit trail and what a record keeps ----------------------------------------
+
+function today_text(win) {
+	return win.frappe.datetime.str_to_user(win.frappe.datetime.get_today());
+}
+
+// The form's button group `group` (View, say), and its item `label`.
+function from_menu(group, label) {
+	const menu = `${FORM} .inner-group-button[data-label="${encodeURIComponent(group)}"]`;
+	cy.get(`${menu} > button`).click();
+	cy.get(`${menu} .dropdown-item[data-label="${encodeURIComponent(label)}"]`).click();
+}
+
+function open_dialog() {
+	cy.get(".modal.show").should("have.css", "opacity", "1");
+	cy.window().should((win) => {
+		expect(win.cur_dialog?.display, "the dialog has finished opening").to.equal(true);
+		expect(win.cur_dialog.$wrapper.is(".modal.show"), "it is the dialog shown").to.equal(true);
+	});
+	return cy.get(".modal.show").last();
+}
+
+// The electronic signatures shown on the form (esign.js), first signed first.
+function signature_rows() {
+	return cy.get(`${FORM} .mds-signatures`).last().find("tbody tr");
+}
+
+// A server call the signed-in user makes that must be refused, as a script or another tool would
+// send it past the form; returns the refusal.
+function refused_call(method, args) {
+	// The desk's token, as the other sheets send it; a test site that does not check it has none.
+	return cy
+		.window()
+		.then((win) => win.frappe?.csrf_token)
+		.then((csrf_token) =>
+			cy.request({
+				method: "POST",
+				url: `/api/method/${method}`,
+				body: args,
+				headers: { Accept: "application/json", "X-Frappe-CSRF-Token": csrf_token },
+				failOnStatusCode: false,
+			})
+		)
+		.then((response) => {
+			expect(response.status, `${method} is refused`).to.be.within(400, 499);
+			return { status: response.status, message: server_message(response.body) };
+		});
+}
+
+// The form's menu (⋯) offers `label`, or does not; the menu is closed again when it is not.
+function in_menu(label, expected) {
+	settle();
+	cy.get(`${FORM} .menu-btn-group > button`).click();
+	cy.get(".dropdown-menu.show").should("be.visible");
+	// By its label: an item with a keyboard shortcut (Delete) shows the shortcut beside it.
+	const items = () =>
+		cy
+			.get(".dropdown-menu.show .dropdown-item")
+			.filter(
+				(_, item) =>
+					plain((item.querySelector(".menu-item-label") ?? item).textContent) === label
+			);
+	if (expected) {
+		items().should("have.length", 1).click();
+		return;
+	}
+	items().should("have.length", 0);
+	cy.get(`${FORM} .menu-btn-group > button`).click();
+	cy.get(".dropdown-menu.show").should("not.exist");
+}
+
+// What a record holds that a merge, a deletion or a cancellation would change, as stored.
+function as_stored(doctype, name, fields) {
+	return stored(doctype, name).then((doc) =>
+		Object.fromEntries(fields.map((field) => [field, doc[field]]))
+	);
+}
+
+const ITEM_KEPT = [
+	"item_name",
+	"disabled",
+	"mds_approval_status",
+	"mds_version",
+	"default_bom",
+	"quality_inspection_template",
+	"modified",
+];
+const BOM_KEPT = ["item", "docstatus", "is_active", "is_default", "mds_version", "modified"];
+const SPECIFICATION_KEPT = ["mds_item", "mds_master_approval", "mds_version", "modified"];
+
+// An entry of the record's audit trail on its form (compliance/audit_timeline.py describe) that
+// shows every one of `lines`, recorded today: its time is shown with it.
+function audit_entry_shown(lines) {
+	cy.window().then((win) =>
+		cy.get(`${FORM} .timeline-item`).should(($items) => {
+			const entries = $items
+				.toArray()
+				.filter((item) => lines.every((line) => plain(item.textContent).includes(line)));
+			expect(
+				entries,
+				`an entry of the audit trail showing: ${lines.join(" | ")}`
+			).to.have.length.at.least(1);
+			const [entry] = entries;
+			expect(entry.dataset.timestamp?.slice(0, 10), "recorded today").to.equal(
+				win.frappe.datetime.get_today()
+			);
+			// "… ago", its date and time on hover, or the date and time where the site shows them so.
+			const time = entry.querySelector(".frappe-timestamp");
+			expect(
+				time?.title.includes(today_text(win)) ||
+					plain(entry.textContent).includes(today_text(win)),
+				"its time shown"
+			).to.be.true;
+		})
+	);
+}
+
+// The record's own audit trail, opened with the form's View > Audit Trail (public/js/audit_trail.js):
+// the Audit Event list of that record only, showing each of `actions`.
+function open_audit_trail(doctype, name, actions) {
+	from_menu("View", "Audit Trail");
+	cy.window().should((win) => {
+		expect(win.frappe.get_route()[0], "a list is open").to.equal("List");
+		expect(win.cur_list?.doctype).to.equal("Audit Event");
+	});
+	settle();
+	cy.window().should((win) => {
+		const filters = win.cur_list.filter_area.get().map((filter) => [filter[1], filter[3]]);
+		expect(filters, "the list is of this record").to.deep.include.members([
+			["reference_doctype", doctype],
+			["reference_name", name],
+		]);
+	});
+	cy.get(".page-container:visible .list-row-container:not(:has(.list-row-head))").should(
+		($rows) => {
+			const shown = $rows.toArray().map((row) => plain(row.textContent));
+			for (const action of actions) {
+				expect(
+					shown.some((row) => row.includes(action)),
+					`an entry "${action}" listed`
+				).to.be.true;
+			}
+		}
+	);
 }
 
 // --- The sheet ------------------------------------------------------------------------------
@@ -1573,5 +1722,365 @@ context("D3 Item / BOM / Routing Master, the browser test sheet", { retries: 0 }
 		signed();
 		cy.window().should((win) => expect(current(win).status).to.equal("Obsolete"));
 		no_problems("D3-T25");
+	});
+
+	// 21 CFR 11.10(e): QA reads who changed an approved item, when, from what to what and under which
+	// change request, and who approved the item and its bill of materials with a signature, when and
+	// why, on the forms and in the audit trail. The records are the set-up's own (qa/sheets/d3.py
+	// audited_product), so the row runs whatever the rows before it did.
+	it("[URS-MST-001] [URS-CMP-012] D3-T26 QA reads the audit trail of an approved item and its bill of materials", () => {
+		const item = () => d.audited.item;
+		const bom = () => d.audited.bom;
+		const change = () => d.audited.change_request;
+		const shelf_life = () => d.audited.shelf_life;
+		const qa = () => d.full_names[QA];
+		const audit = {};
+		sign_in(QA);
+		cy.visit("/desk"); // the server calls below take their token from a desk page
+
+		// The entry of the record's audit trail for `action` whose changes name `naming`, opened
+		// from the audit trail's list.
+		const open_event = (doctype, name, action, naming) => {
+			cy.call("frappe.client.get_list", {
+				doctype: "Audit Event",
+				filters: { reference_doctype: doctype, reference_name: name, action },
+				fields: ["name", "changes"],
+				limit_page_length: 0,
+			}).then(({ message }) => {
+				const naming_it = message.filter((event) =>
+					(typeof event.changes === "string"
+						? event.changes
+						: JSON.stringify(event.changes)
+					).includes(naming)
+				);
+				expect(naming_it, `one ${action} entry names ${naming}`).to.have.length(1);
+				audit.event = naming_it[0].name;
+			});
+			cy.then(() =>
+				cy.get(`.page-container:visible .list-row a[data-name="${audit.event}"]`).click()
+			);
+			cy.then(() => form_is("Audit Event", (doc) => doc.name === audit.event));
+			settle();
+		};
+
+		// Who (QA), when, and the old and new values, on the entry's form.
+		const event_shows = (doctype, name, action, values) => {
+			cy.window().should((win) => {
+				const doc = current(win);
+				expect([doc.reference_doctype, doc.reference_name]).to.deep.equal([doctype, name]);
+				expect(doc.action).to.equal(action);
+				expect(doc.user, "who").to.equal(users[QA]);
+				expect(doc.event_at.slice(0, 10), "when").to.equal(
+					win.frappe.datetime.get_today()
+				);
+			});
+			cy.get(`${FORM} .frappe-control[data-fieldname="action"]`).should("contain", action);
+			cy.get(`${FORM} .frappe-control[data-fieldname="user"]`).should(
+				($control) =>
+					expect(
+						[users[QA], qa()].some((who) => $control.text().includes(who)),
+						"who, shown"
+					).to.be.true
+			);
+			cy.window().then((win) =>
+				cy
+					.get(`${FORM} .frappe-control[data-fieldname="event_at"]`)
+					.should("contain", today_text(win))
+			);
+			reveal("changes");
+			cy.get(`${FORM} .frappe-control[data-fieldname="changes"]`).should(($control) => {
+				const text = $control.text();
+				for (const value of values) {
+					expect(text, "the old and new values, as stored").to.contain(value);
+				}
+			});
+		};
+
+		// QA's signature on the form: who signed, when and why.
+		const signed_by_qa = (reason) =>
+			cy.window().then((win) =>
+				signature_rows().should(($rows) => {
+					expect($rows).to.have.length(1);
+					expect($rows.eq(0).text())
+						.to.contain("Approved")
+						.and.to.contain(qa())
+						.and.to.contain(today_text(win))
+						.and.to.contain(reason);
+				})
+			);
+
+		// On the item's form: who changed its shelf life, when, the old and new value, and the
+		// approved change request it was changed under; and QA's signed approval.
+		cy.then(() => open_form("Item", item()));
+		cy.window().should((win) => {
+			const doc = current(win);
+			expect(doc.mds_approval_status, "QA Approval").to.equal("Approved");
+			expect(doc.shelf_life_in_days).to.equal(shelf_life().after);
+			expect(doc.mds_version, "Version").to.equal(2);
+			expect(doc.mds_changed_under, "Last Changed Under").to.equal(change());
+		});
+		cy.then(() =>
+			audit_entry_shown([
+				`Updated by ${qa()}`,
+				`Shelf Life In Days: ${shelf_life().before} → ${shelf_life().after}`,
+				`Last Changed Under: empty → ${change()}`,
+			])
+		);
+		cy.then(() => signed_by_qa(d.audited.item_approval_reason));
+		cy.then(() => audit_entry_shown([`Updated by ${qa()}`, "QA Approval: Draft → Approved"]));
+
+		// Its whole audit trail, from the form's View menu: the entry of the change, then the entry
+		// of the approval, opened.
+		cy.then(() => open_audit_trail("Item", item(), ["Created", "Updated"]));
+		cy.then(() => open_event("Item", item(), "Updated", change()));
+		cy.then(() =>
+			event_shows("Item", item(), "Updated", [
+				"shelf_life_in_days",
+				String(shelf_life().before),
+				String(shelf_life().after),
+				"mds_changed_under",
+				change(),
+			])
+		);
+		cy.then(() => open_form("Item", item()));
+		cy.then(() => open_audit_trail("Item", item(), ["Updated"]));
+		cy.then(() => open_event("Item", item(), "Updated", "mds_approval_status"));
+		cy.then(() =>
+			event_shows("Item", item(), "Updated", [
+				"mds_approval_status",
+				"Draft",
+				"Approved",
+				"mds_approved_by",
+				users[QA],
+			])
+		);
+
+		// Why: the approved change request the item was changed under.
+		cy.then(() => open_form("Change Request", change()));
+		cy.window().should((win) => {
+			expect(current(win).status).to.equal("Approved");
+			expect(current(win).reason).to.equal(d.audited.change_reason);
+		});
+		reveal("reason");
+		cy.then(() =>
+			cy
+				.get(`${FORM} .frappe-control[data-fieldname="reason"]`)
+				.should("contain", d.audited.change_reason)
+		);
+
+		// The item's bill of materials: QA's Approved signature, and its approval (its submit) in
+		// its audit trail.
+		cy.then(() => open_form("BOM", bom()));
+		cy.window().should((win) => {
+			expect(current(win).item).to.equal(item());
+			expect(current(win).docstatus, "approved").to.equal(1);
+		});
+		banner_says(BOM_APPROVED);
+		cy.then(() => signed_by_qa(d.audited.bom_approval_reason));
+		cy.then(() => audit_entry_shown([`Submitted by ${qa()}`]));
+		cy.then(() => open_audit_trail("BOM", bom(), ["Created", "Submitted"]));
+		cy.then(() => open_event("BOM", bom(), "Submitted", ""));
+		cy.then(() => event_shows("BOM", bom(), "Submitted", []));
+		no_problems("D3-T26");
+	});
+
+	// ISO 13485 4.2.4, 4.2.5: an item, a bill of materials and a specification are never merged into
+	// another, which would move what QA approved to a record QA never approved it for; and they are
+	// kept: no role holds delete on them, so no one is offered Delete, not even the Administrator,
+	// and a call past the form is refused. Only a bill of materials is cancelled, by QA and only
+	// under an approved change request that lists it (master_data/versioning.py guard_cancel), so
+	// Cancel is offered on it and refused without one. The records are the set-up's own (qa/sheets/
+	// d3.py), so the row runs whatever the rows before it did.
+	it("[URS-MST-001] [URS-MST-017] [URS-CMP-016] D3-T27 An item, a bill of materials and a specification are never merged, deleted or cancelled", () => {
+		const k = () => d.kept;
+		const never_merged = (doctype, old, into) =>
+			`${doctype} ${old} is not merged into ${into}: approvals and history stay with the record they were made for. Disable the duplicate instead.`;
+		const cancelled_only_under_change = (bom) =>
+			`${bom} is in use: name the approved change request that lists it to cancel it.`;
+		// Neither an item nor a specification is ever submitted, so neither is cancelled.
+		const draft_not_cancelled = /Cannot change docstatus from 0 \(Draft\) to 2 \(Cancelled\)/;
+		// Frappe refuses to delete a submitted record before any rule of the bill's is reached.
+		const submitted_not_deleted = /Submitted Record cannot be deleted/;
+		// What keeps an approved item: the records that name it (its bill, its specification).
+		const item_kept = /You can disable this Item instead of deleting it\./;
+		const records = () => [
+			["Item", k().item, ITEM_KEPT],
+			["Item", k().duplicate, ITEM_KEPT],
+			["BOM", k().bom, BOM_KEPT],
+			["BOM", k().duplicate_bom, BOM_KEPT],
+			[SPECIFICATION, k().specification, SPECIFICATION_KEPT],
+			[SPECIFICATION, k().duplicate_specification, SPECIFICATION_KEPT],
+		];
+		const merges = () => [
+			["Item", k().item, k().duplicate],
+			["BOM", k().bom, k().duplicate_bom],
+			[SPECIFICATION, k().specification, k().duplicate_specification],
+		];
+		const merge_refused = (who) => {
+			for (const [doctype, old_name, new_name] of merges()) {
+				cy.then(() =>
+					refused_call("frappe.client.rename_doc", {
+						doctype,
+						old_name,
+						new_name,
+						merge: 1,
+					})
+				).then(({ message }) =>
+					expect(message, `${doctype} merged by a call, as ${who}`).to.contain(
+						never_merged(doctype, old_name, new_name)
+					)
+				);
+			}
+		};
+		const target = (doctype, name) => ({ doctype, name });
+		const before = {};
+
+		// QA, who keeps items (Item Manager): Rename with "Merge with existing" into another
+		// approved item, on the form.
+		sign_in(QA);
+		cy.visit("/desk"); // the server calls below take their token from a desk page
+		cy.then(() => {
+			for (const [doctype, name, fields] of records()) {
+				as_stored(doctype, name, fields).then((kept) => {
+					before[`${doctype} ${name}`] = kept;
+				});
+			}
+		});
+		cy.then(() => open_form("Item", k().item));
+		cy.window().should((win) =>
+			expect(current(win).mds_approval_status, "QA Approval").to.equal("Approved")
+		);
+		settle();
+		cy.get(`${FORM} .menu-btn-group > button`).click();
+		// Frappe draws the menu outside its button group: the visible menu's item, by its text.
+		cy.get(".dropdown-menu.show")
+			.contains(".dropdown-item", /^\s*Rename\s*$/)
+			.click();
+		open_dialog().should("contain", "New Name");
+		cy.then(() => {
+			cy.get('.modal.show input[data-fieldname="new_name"]').clear().type(k().duplicate);
+			cy.get('.modal.show input[data-fieldname="merge"]').check();
+			cy.window()
+				.its("cur_dialog")
+				.should((dialog) => {
+					expect(dialog.get_value("new_name")).to.equal(k().duplicate);
+					expect(dialog.get_value("merge")).to.equal(1);
+				});
+			expect_refusal(/is not merged into/);
+			cy.get(".modal.show .btn-primary").contains("Rename").click();
+			refused(never_merged("Item", k().item, k().duplicate));
+		});
+		// Nor by a call past the form: the item, its bill of materials or its specification.
+		merge_refused("QA");
+
+		// The approved item and its specification: neither Delete nor Cancel, and a call past the
+		// form is refused.
+		for (const [doctype, name] of [
+			["Item", () => k().item],
+			[SPECIFICATION, () => k().specification],
+		]) {
+			cy.then(() => open_form(doctype, name()));
+			offered("Cancel", false);
+			in_menu("Delete", false);
+			cy.then(() => refused_call("frappe.client.delete", target(doctype, name()))).then(
+				({ status, message }) => {
+					expect(status, `deleting the ${doctype} as QA`).to.equal(403);
+					expect(message).to.match(/PermissionError/);
+				}
+			);
+			cy.then(() => refused_call("frappe.client.cancel", target(doctype, name()))).then(
+				({ message }) => expect(message).to.match(draft_not_cancelled)
+			);
+		}
+		cy.then(() => open_form(SPECIFICATION, k().specification));
+		banner_says(SPECIFICATION_APPROVED);
+
+		// The approved bill of materials: no Delete on a submitted record. QA holds cancel, which
+		// takes a bill out of force under an approved change request that lists it; without one,
+		// QA's Cancel is refused, on the form and past it.
+		cy.then(() => open_form("BOM", k().bom));
+		banner_says(BOM_APPROVED);
+		in_menu("Delete", false);
+		offered("Cancel", true);
+		button("Cancel").click();
+		cy.then(() => open_dialog().should("contain", `Reason for cancelling ${k().bom}`));
+		cy.get('.modal.show textarea[data-fieldname="reason"]')
+			.click()
+			.type("Bill no longer used (browser test)");
+		cy.window()
+			.its("cur_dialog")
+			.should((dialog) =>
+				expect(dialog.get_value("reason")).to.equal("Bill no longer used (browser test)")
+			);
+		cy.get(".modal.show .btn-primary").contains("Continue").click();
+		open_dialog().should("contain", "Permanently Cancel");
+		expect_refusal(/name the approved change request that lists it to cancel it/);
+		cy.get(".modal.show .btn-primary").contains("Yes").click();
+		cy.then(() => refused(cancelled_only_under_change(k().bom), "Change control"));
+		cy.then(() => stored("BOM", k().bom)).then((doc) =>
+			expect(doc.docstatus, "still approved").to.equal(1)
+		);
+		cy.then(() => refused_call("frappe.client.cancel", target("BOM", k().bom))).then(
+			({ message }) => expect(message).to.contain(cancelled_only_under_change(k().bom))
+		);
+		cy.then(() => refused_call("frappe.client.delete", target("BOM", k().bom))).then(
+			({ status, message }) => {
+				expect(status, "deleting the bill as QA").to.equal(403);
+				expect(message).to.match(/PermissionError/);
+			}
+		);
+		no_problems("D3-T27, QA");
+
+		// The Administrator, who holds every role.
+		sign_in_as_administrator();
+		merge_refused("the Administrator");
+		// No role holds delete on an item: the menu offers it to nobody, and a call past the form is
+		// refused while records name the item.
+		cy.then(() => open_form("Item", k().item));
+		offered("Cancel", false);
+		in_menu("Delete", false);
+		cy.then(() => refused_call("frappe.client.delete", target("Item", k().item))).then(
+			({ message }) => expect(message).to.match(item_kept)
+		);
+		cy.then(() => refused_call("frappe.client.cancel", target("Item", k().item))).then(
+			({ message }) => expect(message).to.match(draft_not_cancelled)
+		);
+		// The specification in use: refused by its own rule (master_data/specification.py).
+		cy.then(() => open_form(SPECIFICATION, k().specification));
+		offered("Cancel", false);
+		in_menu("Delete", false);
+		cy.then(() =>
+			refused_call("frappe.client.delete", target(SPECIFICATION, k().specification))
+		).then(({ message }) =>
+			expect(message).to.contain(
+				`Specification ${k().specification} is in use and is never deleted.`
+			)
+		);
+		cy.then(() =>
+			refused_call("frappe.client.cancel", target(SPECIFICATION, k().specification))
+		).then(({ message }) => expect(message).to.match(draft_not_cancelled));
+		// The bill of materials: the Administrator holds QA's role, so Cancel is offered, and refused
+		// without an approved change request; a submitted record is never deleted.
+		cy.then(() => open_form("BOM", k().bom));
+		in_menu("Delete", false);
+		offered("Cancel", true);
+		cy.then(() => refused_call("frappe.client.cancel", target("BOM", k().bom))).then(
+			({ message }) => expect(message).to.contain(cancelled_only_under_change(k().bom))
+		);
+		cy.then(() => refused_call("frappe.client.delete", target("BOM", k().bom))).then(
+			({ message }) => expect(message).to.match(submitted_not_deleted)
+		);
+
+		// Every record is still there, as it was.
+		cy.then(() => {
+			for (const [doctype, name, fields] of records()) {
+				as_stored(doctype, name, fields).then((kept) =>
+					expect(kept, `${doctype} ${name}, unchanged`).to.deep.equal(
+						before[`${doctype} ${name}`]
+					)
+				);
+			}
+		});
+		no_problems("D3-T27");
 	});
 });
