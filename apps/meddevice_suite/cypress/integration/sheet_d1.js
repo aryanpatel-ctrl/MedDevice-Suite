@@ -1342,6 +1342,7 @@ context("D1 Customer Master: the browser test sheet, as each job", { retries: 0 
 
 		// QA, who decides licences: the form offers neither, and a call past the form is refused.
 		sign_in("QA Manager");
+		cy.visit("/desk"); // the server calls below take their token from a desk page
 		cy.then(() => licence_as_stored(verified())).then((kept) => {
 			expect([kept.docstatus, kept.status], "verified").to.deep.equal([1, "Verified"]);
 			before.verified = kept;
