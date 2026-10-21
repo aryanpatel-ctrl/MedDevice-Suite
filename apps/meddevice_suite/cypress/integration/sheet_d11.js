@@ -733,6 +733,9 @@ function close_dialogs() {
 			}
 			if (shown) win.frappe.hide_msgprint(true);
 			else if (win.cur_dialog?.display) win.cur_dialog.hide();
+			// A dialog that is no longer the desk's current one (an earlier prompt) is closed by
+			// its own cross, as the person closes it.
+			else win.$(".modal.show").last().modal("hide");
 			return false;
 		}).then((closed) => expect(closed, "no dialog left over the form").to.be.true);
 	});
@@ -916,19 +919,44 @@ function task_form({ subject, assigned_to, approver, description = data.task_des
 	fill("description", description);
 }
 
+// Opens the prompt behind the form's button, once nothing is left open over the form.
+function open_prompt(label) {
+	close_dialogs();
+	button(label).click();
+}
+
 // A prompt the form opens (frappe.prompt): the person types into its own field and presses its own
-// primary button; the form reloads the record the call changed.
+// primary button; the form reloads the record the call changed. The prompt closes as it sends the
+// call (frappe.prompt hides it first); a message answering the call, or anything else left open
+// over the form, is closed as the person closes it, and a red or orange one is reported as a
+// problem of the step (close_dialogs). Found in Chrome, 2026-10-21 (D11-T03, T06, T11): two dialogs
+// were still open after the prompt was answered, and the step waited on them instead of closing
+// them.
 function answer_prompt(fieldname, text) {
+	let asked;
 	open_dialog();
-	cy.get(`.modal.show textarea[data-fieldname="${fieldname}"]`).last().click();
-	cy.get(`.modal.show textarea[data-fieldname="${fieldname}"]`).last().clear();
-	cy.get(`.modal.show textarea[data-fieldname="${fieldname}"]`).last().type(text);
-	cy.window()
-		.its("cur_dialog")
-		.should((dialog) => expect(dialog.get_value(fieldname)).to.equal(text));
-	cy.get(".modal.show .btn-modal-primary:visible").last().click();
-	cy.get(".modal.show").should("not.exist");
+	cy.window().then((win) => {
+		asked = win.cur_dialog;
+	});
+	const field = `.modal.show textarea[data-fieldname="${fieldname}"]`;
+	cy.get(field).last().click();
+	cy.get(field).last().clear();
+	cy.get(field).last().type(text);
+	cy.window().should(() => expect(asked.get_value(fieldname)).to.equal(text));
+	cy.then(() => cy.wrap(asked.$wrapper.find(".btn-modal-primary:visible").first()).click());
+	// The prompt has gone, or a message answers it (a refusal, values it found missing).
+	cy.window().should((win) => {
+		const shown = message_dialog(win);
+		expect(
+			!asked.display || Boolean(shown),
+			`the prompt is answered${shown ? `: ${shown.text}` : ""}`
+		).to.be.true;
+	});
+	close_dialogs();
+	cy.window().should(() => expect(asked.display, "the prompt is closed").to.not.be.ok);
 	settle(RELOAD_DELAY_MS + QUIET_MS);
+	close_dialogs();
+	cy.get(".modal.show").should("not.exist");
 }
 
 // Every field of the form is shown read-only to the person.
@@ -1220,7 +1248,7 @@ context("D11 Task / Approval & Reminders: the browser test sheet, as each job", 
 			// Reloaded: the refused change is gone; the operator submits the task.
 			open_form(TASK, task);
 			cy.window().should((win) => expect(current(win).subject).to.equal(subject));
-			button("Submit for Approval").click();
+			open_prompt("Submit for Approval");
 			answer_prompt("result", "Die cleaned, no damage found");
 			cy.window().should((win) => {
 				const doc = current(win);
@@ -1273,7 +1301,7 @@ context("D11 Task / Approval & Reminders: the browser test sheet, as each job", 
 			sign_in(OPERATOR);
 			my_work_lists(TASK, task, [`Do the task again: ${subject}`]);
 			open_record(TASK, task);
-			button("Submit for Approval").click();
+			open_prompt("Submit for Approval");
 			answer_prompt("result", "Die cleaned; die lip inspected, no nicks");
 			cy.window().should((win) => {
 				const doc = current(win);
@@ -1372,7 +1400,7 @@ context("D11 Task / Approval & Reminders: the browser test sheet, as each job", 
 
 		sign_in(PRODUCTION);
 		cy.then(() => open_form(TASK, made.task));
-		button("Withdraw").click();
+		open_prompt("Withdraw");
 		answer_prompt("reason", "Die replaced instead");
 		cy.window().should((win) => {
 			const doc = current(win);
@@ -1601,7 +1629,7 @@ context("D11 Task / Approval & Reminders: the browser test sheet, as each job", 
 		cy.then(() => {
 			open_form(REMINDER, made.reminder);
 			cy.window().should((win) => expect(current(win).schedule).to.equal(made.schedule));
-			button("Mark Completed").click();
+			open_prompt("Mark Completed");
 			answer_prompt("remark", remark);
 			cy.window().should((win) => {
 				const doc = current(win);
