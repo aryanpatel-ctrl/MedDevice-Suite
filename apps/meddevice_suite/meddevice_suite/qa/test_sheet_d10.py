@@ -13,7 +13,7 @@ signs.
 from unittest.mock import patch
 
 import frappe
-from frappe.utils import getdate, today
+from frappe.utils import add_days, getdate, today
 
 from meddevice_suite.compliance.signing import sign_action
 from meddevice_suite.master_data import equipment, item_master
@@ -40,6 +40,7 @@ def set_ups(password: str) -> list[tuple]:
 		(d10.prepare_change, {"password": password, "asset": "Any asset"}),
 		(d10.prepare_inspection, {"password": password}),
 		(d10.prepare_measured_instrument, {"password": password}),
+		(d10.prepare_assessed_finding, {"password": password}),
 		(d10.run_impact_reminders, {}),
 		(d10.signatures_bind, {"doctype": "Asset", "name": "Any asset"}),
 		(d10.unique_tag, {}),
@@ -79,6 +80,7 @@ class TestSheetD10SetUpRefusals(SheetTestCase):
 			(d10.prepare_change, {"asset": "Any asset"}),
 			(d10.prepare_inspection, {}),
 			(d10.prepare_measured_instrument, {}),
+			(d10.prepare_assessed_finding, {}),
 		]
 		made = ("Asset", "Change Request", "Purchase Receipt", "Workstation", "Asset Category")
 		before = {doctype: frappe.db.count(doctype) for doctype in made}
@@ -201,6 +203,61 @@ class TestSheetD10EquipmentMaster(SheetTestCase):
 		)
 		self.assertEqual((draft.out_of_tolerance, draft.result), (1, calibration.PASS))
 		self.assertEqual(signed("Calibration Record", made["draft"]), [])
+
+	@verifies("URS-EQP-002")
+	def test_an_instrument_whose_calibration_is_overdue(self):
+		made = d10.prepare_instrument(self.password, "overdue")
+
+		self.assertCalibrated(made["calibration"], made["asset"])
+		record = frappe.get_doc("Calibration Record", made["calibration"])
+		due = add_days(today(), 365 - d10.OVERDUE_DAYS)
+		self.assertEqual(
+			(getdate(record.performed_on), getdate(record.next_due_date)),
+			(getdate(add_days(today(), -d10.OVERDUE_DAYS)), getdate(due)),
+		)
+		day = frappe.format_value(due, {"fieldtype": "Date"})
+		self.assertIn(f"its calibration was due on {day}", unfit([made["asset"]])[made["asset"]])
+
+	@verifies("URS-EQP-003")
+	def test_a_finding_out_of_tolerance_assessed_by_qa_and_an_inspection_to_name_it_in(self):
+		made = d10.prepare_assessed_finding(self.password)
+
+		asset = made["asset"]
+		self.assertCalibrated(made["calibration"], asset)
+		record = frappe.get_doc("Calibration Record", made["finding"])
+		self.assertEqual(
+			(record.asset, record.docstatus, record.out_of_tolerance, record.result, record.completed_by),
+			(asset, 1, 1, calibration.PASS, email_for(MAINTENANCE)),
+		)
+		self.assertEqual(
+			(record.impact_status, record.impact_decision, record.assessed_by),
+			(calibration.ASSESSED, calibration.NO_IMPACT, email_for(QA)),
+		)
+		self.assertEqual((record.impact, record.later_impact), ([], []))
+		self.assertSignedBy(
+			"Calibration Record",
+			record.name,
+			[("Complete", MAINTENANCE), ("Assess: No Product Impact", QA)],
+		)
+		self.assertEqual(made["assessment_reason"], d10.ASSESSMENT_REASON)
+		self.assertNotIn(asset, unfit([asset]))  # left in tolerance: fit to be named
+		inspection = frappe.get_doc("Quality Inspection", made["inspection"])
+		self.assertEqual(
+			(inspection.docstatus, inspection.owner, inspection.batch_no, getdate(inspection.report_date)),
+			(0, email_for(QC), made["lot"], getdate(today())),
+		)
+		self.assertEqual(
+			[row.mds_instrument for row in inspection.readings if row.mds_instrument],
+			[self.sheet["journey_instrument"]],
+		)
+
+	def test_a_finding_assessed_without_an_inspection(self):
+		made = d10.prepare_assessed_finding(self.password, with_inspection=0)
+
+		self.assertNotIn("inspection", made)
+		self.assertEqual(
+			frappe.db.get_value("Calibration Record", made["finding"], "impact_status"), calibration.ASSESSED
+		)
 
 	def test_a_machine_needing_maintenance_approved_never_maintained(self):
 		made = d10.prepare_machine(self.password, "maintenance")
