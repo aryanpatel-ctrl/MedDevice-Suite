@@ -25,8 +25,10 @@ SPECS = (
 # sweep 15, D2 13, D1 and D3 5 each; every other spec together about 7 min.
 NAMED: dict[int, tuple[str, ...]] = {
     1: ("sheet_d4.js",),
-    2: ("sheet_d10.js",),
-    3: ("sheet_d9a.js",),
+    # D12 tampers with the audit trail on purpose and puts it back; it shares a shard with one
+    # spec that runs before it, never with the catch-all shard of many specs.
+    2: ("sheet_d10.js", "sheet_d12.js"),
+    3: ("sheet_d9a.js", "sheet_d11.js"),
     4: ("sheet_d9b.js", "sheet_d1.js"),
     5: ("screen_sweep.js", "sheet_d2.js", "sheet_d3.js"),
 }
