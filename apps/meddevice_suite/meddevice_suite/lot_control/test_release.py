@@ -603,7 +603,13 @@ class TestTheSignedDecision(ReleaseTestCase):
 		record.run_method("onload")
 		self.assertEqual(
 			record.get_onload("lot"),
-			{"status": QUARANTINE, "from_supplier": False, "certificate_verified": False, "returned": 0},
+			{
+				"status": QUARANTINE,
+				"from_supplier": False,
+				"certificate_verified": False,
+				"returned": 0,
+				"approves_concession": False,  # only Management, on a concession QA signed (D-35)
+			},
 		)
 		# A role that could create the record but is not QA is still refused before insert.
 		frappe.set_user(self.qc)
