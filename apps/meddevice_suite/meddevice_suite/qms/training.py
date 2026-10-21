@@ -25,6 +25,12 @@ whether reading is enough) is set by the system there too, never typed. Records 
 
 At the workstation, every operator logging time on a job card is competent, on the revision in
 effect, in the work instruction of the operation they do (URS-TRN-005); block, never warn.
+
+The employee master (module 9, URS-TRN-007 to URS-TRN-009) is ERPNext's Employee: one record per
+person, holding their job and the user account they sign in with. What training relies on is
+held here: an active employee holds a job; a user account belongs to one active employee (ERPNext's
+own check); the trainee signs on the account their employee record links to when they sign, and
+their open training follows a change of account; nobody who is not active is trained or booked.
 """
 
 import frappe
@@ -55,6 +61,7 @@ NEW_ASSIGNMENT, NEW_REVISION, REFRESHER, RETRAINING, HISTORICAL = (
 READ_AND_UNDERSTAND = "Read and Understand"
 ACTIVE = "Active"
 RECONCILE_SAVEPOINT = "training_reconcile"
+FOLLOW_SAVEPOINT = "training_follow_account"
 # What the trainee plans and signs for: fixed once trained.
 PLANNED = ("training_method", "training_date", "trainer", "assessor", "assessment_method", "certificate")
 # What the system sets when it opens a record: what it is for, and what the job's matrix says of it.
@@ -300,10 +307,59 @@ def on_document_change(document: str) -> None:
 
 
 def on_employee_update(doc: Document, method: str | None = None) -> None:
-	"""Employee on_update: joining, a new job, leaving or returning."""
+	"""Employee on_update: joining, a new job, leaving or returning, or a new user account."""
 	before = doc.get_doc_before_save()
+	if before is not None and before.user_id != doc.user_id:
+		follow_account_safely(doc.name)
 	if before is None or (before.status, before.designation) != (doc.status, doc.designation):
 		reconcile_safely([doc.name], _("employee {0}").format(doc.name))
+
+
+# --- The employee master (module 9) --------------------------------------------------------------
+
+
+def validate_employee(doc: Document, method: str | None = None) -> None:
+	"""Employee validate (URS-TRN-007): an active employee holds a job. Their job's matrix is what
+	determines the training they need (ISO 13485 6.2 a); an active employee without a job would need
+	none, silently, and never be trained. ERPNext's setup wizard records its user's own employee with
+	mandatory fields skipped: that record is asked for its job at its next save."""
+	if frappe.flags.in_setup_wizard:
+		return
+	require(
+		doc.status != ACTIVE or doc.designation,
+		_("{0} is active: set their designation, the job that decides their training.").format(
+			doc.employee_name or doc.name
+		),
+	)
+
+
+def follow_account(employee: str) -> None:
+	"""A training not yet completed is the trainee's under the account their employee record links
+	to now (URS-TRN-008): who sees it and whom it reminds follow a change of account. A completed
+	record keeps the account that signed it."""
+	user = frappe.db.get_value("Employee", employee, "user_id")
+	for row in frappe.get_all(
+		RECORD,
+		filters={"employee": employee, "docstatus": 0, "status": ["in", IN_PROGRESS]},
+		fields=["name", "trainee_user"],
+	):
+		if row.trainee_user == user:
+			continue
+		doc = frappe.get_doc(RECORD, row.name)
+		doc.flags.training = True
+		doc.flags.ignore_permissions = True  # kept by the system for whoever changed the account
+		doc.save()  # `validate_record` copies the account from the employee
+
+
+def follow_account_safely(employee: str) -> None:
+	"""Without holding back the change of account: signing is judged on the account linked at the
+	time of signing whatever this does, and a failure is logged."""
+	frappe.db.savepoint(FOLLOW_SAVEPOINT)
+	try:
+		follow_account(employee)
+	except Exception:
+		frappe.db.rollback(save_point=FOLLOW_SAVEPOINT)
+		frappe.log_error(title=_("Training records not moved to the new account of {0}").format(employee))
 
 
 def daily() -> None:
@@ -553,18 +609,19 @@ def sign_trained(doc: Document, password: str, reason: str | None = None) -> Non
 	understood a document their job allows reading for (D-08, D-10)."""
 	require(doc.docstatus == 0 and doc.status == OPEN, _("{0} is not open.").format(doc.name))
 	require(doc.trigger != HISTORICAL, _("QA records history; the trainee does not sign it."))
+	# Judged on the employee record as it stands now (URS-TRN-008): the account it links to may have
+	# changed since the training record was last saved, and only that account is the trainee's.
+	staff = frappe.db.get_value("Employee", doc.employee, ["user_id", "status"], as_dict=True)
+	require(staff, _("Employee {0} does not exist.").format(doc.employee))
 	require(
-		doc.trainee_user, _("{0} has no user account to sign with.").format(doc.employee_name or doc.employee)
+		staff.user_id, _("{0} has no user account to sign with.").format(doc.employee_name or doc.employee)
 	)
 	require(
-		frappe.session.user == doc.trainee_user,
+		frappe.session.user == staff.user_id,
 		_("Only the trainee signs that they were trained."),
 		frappe.PermissionError,
 	)
-	require(
-		frappe.db.get_value("Employee", doc.employee, "status") == ACTIVE,
-		_("{0} is not active.").format(doc.employee),
-	)
+	require(staff.status == ACTIVE, _("{0} is not active.").format(doc.employee))
 	require(doc.training_method and doc.training_date, _("Record how and when the training was given."))
 	reading = doc.training_method == READ_AND_UNDERSTAND
 	if not reading:
@@ -594,14 +651,16 @@ def assess(doc: Document, status: str, meaning: str, action: str, password: str,
 	require(
 		frappe.session.user == doc.assessor, _("Only the named assessor assesses."), frappe.PermissionError
 	)
-	# Judged as things stand now: the employee's account and the assessor's roles may have changed
-	# since the training was planned.
+	# Judged as things stand now: the employee's account, status and the assessor's roles may have
+	# changed since the training was planned.
+	staff = frappe.db.get_value("Employee", doc.employee, ["user_id", "status"], as_dict=True)
+	require(staff, _("Employee {0} does not exist.").format(doc.employee))
 	require(
-		frappe.session.user
-		not in (doc.trainee_user, frappe.db.get_value("Employee", doc.employee, "user_id")),
+		frappe.session.user not in (doc.trainee_user, staff.user_id),
 		_("The trainee does not assess their own training."),
 		frappe.PermissionError,
 	)
+	require(staff.status == ACTIVE, _("{0} is not active.").format(doc.employee))
 	require(
 		ASSESSOR_ROLES & roles_of(frappe.session.user),
 		_("The Production Supervisor or QA assesses."),

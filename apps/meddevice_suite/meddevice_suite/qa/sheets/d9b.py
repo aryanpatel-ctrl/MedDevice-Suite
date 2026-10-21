@@ -447,12 +447,20 @@ def revision_of(document: str) -> frappe._dict:
 	return frappe._dict(name=name, number=frappe.db.get_value("Document Revision", name, "revision"))
 
 
+QA_JOB = "Quality Manager (browser test)"
+
+
 def ensure_qa_employee() -> str:
 	"""The QA Manager's own employee record, without the user permission ERPNext would add, which
-	would let the QA Manager see no other employee."""
+	would let the QA Manager see no other employee. Active, so in a job (URS-TRN-007): one no matrix
+	names, so QA's own training needs stay out of the test."""
 	user = email_for(QA)
 	if employee := frappe.db.get_value("Employee", {"user_id": user}):
 		return employee
+	if not frappe.db.exists("Designation", QA_JOB):
+		frappe.get_doc({"doctype": "Designation", "designation_name": QA_JOB}).insert(
+			ignore_permissions=True  # test-site set-up by the Administrator, checked by the caller
+		)
 	return (
 		frappe.get_doc(
 			{
@@ -464,6 +472,7 @@ def ensure_qa_employee() -> str:
 				"date_of_joining": add_days(today(), -730),
 				"company": COMPANY,
 				"status": "Active",
+				"designation": QA_JOB,
 				"user_id": user,
 				"create_user_permission": 0,
 			}
