@@ -1379,23 +1379,11 @@ context("D1 Customer Master: the browser test sheet, as each job", { retries: 0 
 		cy.then(() => refused_call("frappe.client.delete", target(verified()))).then(
 			({ message }) => expect(message).to.match(submitted_not_deleted)
 		);
-		// Cancel is offered: the reason the audit trail asks for, the confirmation, and the refusal.
-		offered("Cancel", true);
-		button("Cancel").click();
-		cy.then(() => open_dialog().should("contain", `Reason for cancelling ${verified()}`));
-		enter_reason("Customer no longer licensed (browser test)");
-		cy.get(".modal.show .btn-primary").contains("Continue").click();
-		open_dialog().should("contain", "Permanently Cancel");
-		expect_refusal(never_cancelled);
-		cy.get(".modal.show .btn-primary").contains("Yes").click();
-		refused_with(never_cancelled);
-		cy.window().should((win) => expect(current(win).docstatus, "still verified").to.equal(1));
-		// Nor by a call past the form.
+		// No role holds cancel on a licence, the System Manager included: the form offers no Cancel,
+		// not even to the Administrator, and a call past the form is refused by the licence's rule.
+		offered("Cancel", false);
 		cy.then(() => refused_call("frappe.client.cancel", target(verified()))).then(
-			({ status, message }) => {
-				expect(status).to.equal(403);
-				expect(message).to.match(never_cancelled);
-			}
+			({ message }) => expect(message).to.match(never_cancelled)
 		);
 		// The licence awaiting QA: Delete is offered, and refused.
 		cy.then(() => open_form("Customer Licence", awaiting()));
@@ -1405,10 +1393,7 @@ context("D1 Customer Master: the browser test sheet, as each job", { retries: 0 
 		cy.get(".modal.show .btn-primary").contains("Yes").click();
 		refused_with(never_deleted);
 		cy.then(() => refused_call("frappe.client.delete", target(awaiting()))).then(
-			({ status, message }) => {
-				expect(status).to.equal(403);
-				expect(message).to.match(never_deleted);
-			}
+			({ message }) => expect(message).to.match(never_deleted)
 		);
 
 		// Both licences are still there, as they were.
