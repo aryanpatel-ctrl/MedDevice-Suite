@@ -1898,7 +1898,9 @@ context("D3 Item / BOM / Routing Master, the browser test sheet", { retries: 0 }
 		const cancelled_only_under_change = (bom) =>
 			`${bom} is in use: name the approved change request that lists it to cancel it.`;
 		// Neither an item nor a specification is ever submitted, so neither is cancelled.
-		const draft_not_cancelled = /Cannot change docstatus from 0 \(Draft\) to 2 \(Cancelled\)/;
+		// Frappe refuses cancelling a draft; its reply names the error or words it.
+		const draft_not_cancelled =
+			/DocstatusTransitionError|Cannot change docstatus from 0 \(Draft\) to 2 \(Cancelled\)/;
 		// Frappe refuses to delete a submitted record before any rule of the bill's is reached.
 		const submitted_not_deleted = /Submitted Record cannot be deleted/;
 		// What keeps an approved item: the records that name it (its bill, its specification).
