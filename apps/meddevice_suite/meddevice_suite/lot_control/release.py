@@ -324,7 +324,7 @@ def approve_concession(doc: Document, password: str, reason: str | None = None) 
 	doc.concession_approved_at = now_datetime()
 	# Management reads lot releases and writes none; the signature is its act on the record.
 	sign(doc, "Approved", "Approve Concession", password, reason, permission="read")
-	moved = lot_status.move_to_role(lot, None, doc.reason, stock)
+	moved = lot_status.move_to_role(lot, None, doc.reason, stock, by_service=True)
 	lot_status.set_status(lot.name, APPROVED, doc.reason, release=doc.name)
 	doc.stock_entry = moved.name if moved else None
 	doc.flags.lot_release = True
