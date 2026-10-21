@@ -6,7 +6,11 @@
 // copy, rejected, renewed and withdrawn, with their obligations and submissions; a change with
 // regulatory impact naming its licence; the training matrix changed by cancel and amend; training
 // signed Trained, Competent and Not Competent; a competence revoked and the operator refused at the
-// job card; and paper training history entered by QA from the Training Record list
+// job card; and paper training history entered by QA from the Training Record list. Proved after
+// the sheet (D9-RISK-08 to 10, D9-LIC-06 and 07, D9-TRN-07): a file's periodic review raised by the
+// daily run and closed by QA; the audit trail and signatures of a risk assessment and of a licence;
+// and a risk assessment, its report and review, a licence and a training record never deleted or
+// cancelled, not even by the Administrator
 // (meddevice_suite/qms/risk_management.py, regulatory_licence.py, training.py; signed acts in
 // compliance/signing.py). One test per line of the sheet, in its order, each signed in as the job
 // the sheet names and done on the screens as that person would. Refusals are checked word for word;
@@ -316,9 +320,10 @@ function refused_with(pattern) {
 
 // A server call the signed-in user makes that must be refused; yields the status and the refusal.
 function refused_call(method, args) {
+	// The desk's token, as the other sheets send it; a test site that does not check it has none.
 	return cy
 		.window()
-		.its("frappe.csrf_token")
+		.then((win) => win.frappe?.csrf_token ?? "")
 		.then((csrf_token) =>
 			cy.request({
 				method: "POST",
@@ -742,6 +747,31 @@ function offered(label, expected) {
 	);
 }
 
+// A menu of the form's toolbar (View), opened, and its item `label` chosen.
+function from_menu(group, label) {
+	settle();
+	const menu = `${FORM} .inner-group-button[data-label="${encodeURIComponent(group)}"]`;
+	cy.get(`${menu} > button`).click();
+	cy.get(`${menu} .dropdown-item[data-label="${encodeURIComponent(label)}"]`).click();
+}
+
+// The form's ⋯ menu, opened to read what it offers, then closed again. Its items are drawn in a
+// dropdown of their own, outside the menu's button group (sheet_d4.js).
+function form_menu_offers(label, expected) {
+	settle();
+	cy.get(`${FORM} .menu-btn-group > button:visible:first`).click();
+	cy.get(".dropdown-menu.show").should("be.visible");
+	cy.get(".dropdown-menu.show .dropdown-item").should(($items) => {
+		// By its label: an item with a keyboard shortcut (Delete) shows the shortcut beside it.
+		const labels = $items
+			.toArray()
+			.map((item) => plain((item.querySelector(".menu-item-label") ?? item).textContent));
+		if (expected) expect(labels, "the menu").to.include(label);
+		else expect(labels, "the menu").to.not.include(label);
+	});
+	cy.get(`${FORM} .menu-btn-group > button:visible:first`).click();
+}
+
 function primary_action() {
 	settle(); // the toolbar has finished redrawing
 	return cy.get(`${FORM} .page-actions .primary-action:visible`);
@@ -980,6 +1010,196 @@ function records(doctype, filters, fields = ["name"]) {
 	return cy
 		.call("frappe.client.get_list", { doctype, filters, fields, limit_page_length: 0 })
 		.then((r) => r.message);
+}
+
+// What a deletion or a cancellation would change on a record, as stored.
+const KEPT_FIELDS = ["docstatus", "status", "modified"];
+
+function as_kept(doctype, name) {
+	return stored(doctype, name).then((doc) =>
+		Object.fromEntries(KEPT_FIELDS.map((field) => [field, doc[field]]))
+	);
+}
+
+// A job's form of the record offers neither Cancel (on a signed record) nor Delete, and a call past
+// the form is refused: no role holds either permission on a regulated record.
+function kept_from_job(doctype, name, signed) {
+	open_form(doctype, name);
+	if (signed) offered("Cancel", false);
+	form_menu_offers("Delete", false);
+	const methods = ["frappe.client.delete", ...(signed ? ["frappe.client.cancel"] : [])];
+	for (const method of methods) {
+		refused_call(method, { doctype, name }).then(({ status, message }) => {
+			expect(status, `${method} of ${name}`).to.equal(403);
+			expect(message).to.match(/^PermissionError/);
+		});
+	}
+}
+
+// Frappe refuses to delete a signed (submitted) record before the record's own rule is reached.
+const SUBMITTED_NOT_DELETED = /Submitted Record cannot be deleted/;
+
+// The Administrator, who holds every permission: the form offers neither, as no role holds either
+// (the System Manager included); a call past the form is refused, a cancellation of a signed record
+// by its rule `never_cancelled`, a deletion of an unsigned one by its rule `never_deleted`.
+function kept_from_administrator(doctype, name, { never_cancelled = null, never_deleted = null }) {
+	open_form(doctype, name);
+	if (never_cancelled) offered("Cancel", false);
+	form_menu_offers("Delete", false);
+	refused_call("frappe.client.delete", { doctype, name }).then(({ message }) =>
+		expect(message, `deleting ${name}`).to.match(
+			never_deleted ? exact(never_deleted) : SUBMITTED_NOT_DELETED
+		)
+	);
+	if (never_cancelled) {
+		refused_call("frappe.client.cancel", { doctype, name }).then(({ message }) =>
+			expect(message, `cancelling ${name}`).to.match(exact(never_cancelled))
+		);
+	}
+}
+
+// --- The audit trail and the signatures (sheet_d1.js, sheet_d2.js, sheet_d4.js) --------------
+
+function today_text(win) {
+	return user_date(win, win.frappe.datetime.get_today());
+}
+
+// The electronic signatures shown on the form (esign.js): meaning, signed by, date and time, act.
+function signature_rows() {
+	return cy.get(`${FORM} .mds-signatures`).last().find("tbody tr");
+}
+
+// Each of `expected` ([meaning, printed name, act]) is a signature shown on the form, made today.
+function signatures_shown(expected) {
+	cy.window().then((win) =>
+		signature_rows().should(($rows) => {
+			const shown = $rows.toArray().map((row) => plain(row.textContent));
+			expect(shown, "the signatures").to.have.length(expected.length);
+			for (const [meaning, who, act] of expected) {
+				expect(
+					shown.some(
+						(row) =>
+							row.includes(meaning) &&
+							row.includes(who) &&
+							row.includes(today_text(win)) &&
+							row.includes(act)
+					),
+					`${meaning} by ${who} (${act}), today`
+				).to.be.true;
+			}
+		})
+	);
+}
+
+// An entry of the record's audit trail on its form (compliance/audit_timeline.py describe) that
+// shows every one of `lines`, recorded today: its time is shown with it.
+function audit_entry_shown(lines) {
+	cy.window().then((win) =>
+		cy.get(`${FORM} .timeline-item`).should(($items) => {
+			const entries = $items
+				.toArray()
+				.filter((item) => lines.every((line) => plain(item.textContent).includes(line)));
+			expect(
+				entries,
+				`an entry of the audit trail showing: ${lines.join(" | ")}`
+			).to.have.length.at.least(1);
+			const [entry] = entries;
+			expect(entry.dataset.timestamp?.slice(0, 10), "recorded today").to.equal(
+				win.frappe.datetime.get_today()
+			);
+			// "… ago", its date and time on hover, or the date and time where the site shows them so.
+			const time = entry.querySelector(".frappe-timestamp");
+			expect(
+				time?.title.includes(today_text(win)) ||
+					plain(entry.textContent).includes(today_text(win)),
+				"its time shown"
+			).to.be.true;
+		})
+	);
+}
+
+// The record's own audit trail, opened with the form's View > Audit Trail (public/js/audit_trail.js):
+// the Audit Event list of that record only, showing each of `actions`.
+function open_audit_trail(doctype, name, actions) {
+	from_menu("View", "Audit Trail");
+	cy.window().should((win) => {
+		expect(win.frappe.get_route()[0], "a list is open").to.equal("List");
+		expect(win.cur_list?.doctype).to.equal("Audit Event");
+	});
+	settle();
+	cy.window().should((win) => {
+		const filters = win.cur_list.filter_area.get().map((filter) => [filter[1], filter[3]]);
+		expect(filters, "the list is of this record").to.deep.include.members([
+			["reference_doctype", doctype],
+			["reference_name", name],
+		]);
+	});
+	cy.get(`${FORM} .list-row-container:not(:has(.list-row-head))`).should(($rows) => {
+		const shown = $rows.toArray().map((row) => plain(row.textContent));
+		for (const action of actions) {
+			expect(
+				shown.some((row) => row.includes(action)),
+				`an entry "${action}" listed`
+			).to.be.true;
+		}
+	});
+}
+
+// The one entry of the record's audit trail for `action` whose changes `holds`, opened from the
+// audit trail's list.
+function open_audit_event(doctype, name, action, holds) {
+	const found = {};
+	cy.call("frappe.client.get_list", {
+		doctype: "Audit Event",
+		filters: { reference_doctype: doctype, reference_name: name, action },
+		fields: ["name", "changes"],
+		limit_page_length: 0,
+	}).then(({ message }) => {
+		const matching = message.filter((event) =>
+			holds(typeof event.changes === "string" ? JSON.parse(event.changes) : event.changes)
+		);
+		expect(matching, `one ${action} entry of ${name} as expected`).to.have.length(1);
+		found.event = matching[0].name;
+	});
+	cy.then(() => cy.get(`${FORM} .list-row a[data-name="${found.event}"]`).click());
+	cy.then(() => form_is("Audit Event", (doc) => doc.name === found.event));
+	settle();
+}
+
+// Who, when, and the old and new values, on the audit entry's form.
+function audit_event_shows(doctype, name, action, user, full_name, values) {
+	cy.window().should((win) => {
+		const doc = current(win);
+		expect([doc.reference_doctype, doc.reference_name]).to.deep.equal([doctype, name]);
+		expect(doc.action).to.equal(action);
+		expect(doc.user, "who").to.equal(user);
+		expect(doc.event_at.slice(0, 10), "when").to.equal(win.frappe.datetime.get_today());
+	});
+	cy.get(`${FORM} .frappe-control[data-fieldname="action"]`).should("contain", action);
+	cy.get(`${FORM} .frappe-control[data-fieldname="user"]`).should(
+		($control) =>
+			expect(
+				[user, full_name].some((who) => $control.text().includes(who)),
+				"who, shown"
+			).to.be.true
+	);
+	cy.window().then((win) =>
+		cy
+			.get(`${FORM} .frappe-control[data-fieldname="event_at"]`)
+			.should("contain", today_text(win))
+	);
+	reveal("changes");
+	cy.get(`${FORM} .frappe-control[data-fieldname="changes"]`).should(($control) => {
+		const text = $control.text();
+		for (const value of values) {
+			expect(text, "the old and new values, as stored").to.contain(value);
+		}
+	});
+}
+
+// [field, old, new] of a field an audit entry records as changed.
+function changed_field(changes, fieldname) {
+	return (changes?.changed || []).find(([field]) => field === fieldname);
 }
 
 // A private file uploaded by the signed-in user, as the attach control does; its address.
@@ -2317,5 +2537,374 @@ context("D9 Quality Records: risk, licences and training, as each job", () => {
 			});
 			no_problems("D9-TRN-06");
 		});
+	});
+
+	// --- Clauses proved after the sheet (review of 2026-10-21) ----------------------------------
+
+	// ISO 14971 10.3, 10.4: the production and post-production information is reviewed at the
+	// period set in Quality Settings. The daily run raises the file's periodic review once when it
+	// falls due; it is QA's reminder until QA closes it with a signed rationale, and the file's next
+	// review is then due a period on.
+	it("[URS-QMS-025] D9-RISK-08 The daily run raises a file's periodic review once; QA closes it with no change", () => {
+		prepare("prepare_risk_file", { password, stage: "periodic_due" }).then((risk) => {
+			const made = {};
+			const reason =
+				"Complaints, returns and post-market surveillance of the period reviewed: no new hazard";
+			const reminders_of_review = () =>
+				prepare("run_daily_reminders", {
+					category: "Risk Review",
+					reference_doctype: REVIEW,
+					reference_name: made.review,
+				});
+			prepare("run_periodic_reviews", { file: risk.file }).then((reviews) => {
+				expect(reviews, "the periodic review the daily run raised").to.have.length(1);
+				expect(reviews[0].status).to.equal("Open");
+				made.review = reviews[0].name;
+			});
+			cy.then(() => prepare("run_periodic_reviews", { file: risk.file })).then((reviews) =>
+				expect(
+					reviews.map((row) => row.name),
+					"raised once, however often the run goes"
+				).to.deep.equal([made.review])
+			);
+			cy.then(() => reminders_of_review()).then((reminders) => {
+				expect(
+					reminders.map((row) => [row.status, row.subject]),
+					"QA's reminder of the review"
+				).to.deep.equal([
+					["Open", `Risk review ${made.review} of ${risk.family}: Periodic`],
+				]);
+				made.reminder = reminders[0].name;
+			});
+
+			sign_in(QA);
+			cy.then(() => open_list("Due Reminder", { reference_name: made.review }));
+			listed().then((names) =>
+				expect(names, "the reminder in QA's list").to.include(made.reminder)
+			);
+			cy.then(() => open_form(REVIEW, made.review));
+			cy.window().should((win) => {
+				const doc = current(win);
+				expect(doc.status).to.equal("Open");
+				expect(doc.trigger).to.equal("Periodic");
+				expect([doc.source_doctype, doc.source_name], "the file reviewed").to.deep.equal([
+					FILE,
+					risk.file,
+				]);
+				expect(doc.details).to.equal(
+					`The periodic review was due on ${user_date(win, risk.due_on)}.`
+				);
+				expect(doc.due_date, "answered within the days QA set").to.equal(
+					in_days(win, risk.review_due_days)
+				);
+			});
+			sign("Close: No Change", reason);
+			cy.window().should((win) => {
+				const doc = current(win);
+				expect([doc.docstatus, doc.status], "closed").to.deep.equal([1, "Closed"]);
+				expect(doc.outcome).to.equal("No change");
+				expect(doc.rationale).to.equal(reason);
+				expect(doc.closed_by).to.equal(users[QA]);
+			});
+			signed_as("Close: No Change", "Reviewed", reason);
+			cy.window().then((win) =>
+				stored(FILE, risk.file).then((file) =>
+					expect(file.next_periodic_review, "the next periodic review").to.equal(
+						in_months(win, today(win), risk.review_months)
+					)
+				)
+			);
+			no_problems("D9-RISK-08, QA closes the review");
+
+			cy.then(() => reminders_of_review()).then((reminders) => {
+				expect(reminders.map((row) => row.name)).to.include(made.reminder);
+				expect(
+					reminders.filter((row) => row.status !== "Completed"),
+					"no reminder of the review left open"
+				).to.be.empty;
+			});
+			no_problems("D9-RISK-08");
+		});
+	});
+
+	// 21 CFR 11.10(e), 11.50: QA reads who authored, reviewed and approved a revision of the risk
+	// analysis, when, and the status each signed act moved it to, on its form and in its audit
+	// trail; and its signatures, each with the signer's printed name, its date and time, and its
+	// meaning. The revision is the set-up's, signed by three people.
+	it("[URS-QMS-022] [URS-CMP-012] D9-RISK-09 QA reads the audit trail of an approved risk assessment and its three signatures", () => {
+		prepare("prepare_risk_file", { password, stage: "in_force" }).then((risk) => {
+			const who = sheet.full_names;
+			sign_in(QA);
+			open_form(ASSESSMENT, risk.revision);
+			status_is("Approved", 1);
+			signatures_shown([
+				["Authored", who[QA], "Author"],
+				["Reviewed", who[PRODUCTION], "Review"],
+				["Approved", who[SECOND_QA], "Approve"],
+			]);
+			audit_entry_shown([`Updated by ${who[QA]}`, "Status: Draft → In Review"]);
+			audit_entry_shown([
+				`Updated by ${who[PRODUCTION]}`,
+				"Status: In Review → Awaiting Approval",
+			]);
+			audit_entry_shown([
+				`Submitted by ${who[SECOND_QA]}`,
+				"Status: Awaiting Approval → Approved",
+			]);
+
+			// Its whole audit trail, from the form's View menu, and the approval's entry opened: the
+			// status, the approver and each control's pinned version, as stored.
+			open_audit_trail(ASSESSMENT, risk.revision, ["Created", "Updated", "Submitted"]);
+			open_audit_event(ASSESSMENT, risk.revision, "Submitted", (changes) => {
+				const status = changed_field(changes, "status");
+				return status?.[1] === "Awaiting Approval" && status?.[2] === "Approved";
+			});
+			audit_event_shows(
+				ASSESSMENT,
+				risk.revision,
+				"Submitted",
+				sheet.second_qa,
+				who[SECOND_QA],
+				[
+					"status",
+					"Awaiting Approval",
+					"Approved",
+					"approver",
+					sheet.second_qa,
+					"pinned_version",
+				]
+			);
+			no_problems("D9-RISK-09");
+		});
+	});
+
+	// ISO 13485 4.2.5, ISO 14971 4.5: the risk management file's records are kept as signed: a
+	// revision is superseded by the next, a report likewise, and a review is closed. No role holds
+	// delete or cancel on them, so their forms offer neither to anyone, the Administrator included;
+	// a call past the form is refused by the record's own rule.
+	it("[URS-QMS-022] [URS-QMS-023] [URS-CMP-016] D9-RISK-10 An approved risk assessment, its report and its review are never deleted or cancelled, not even by the Administrator", () => {
+		prepare("prepare_risk_file", { password, stage: "revision_in_progress" }).then((risk) => {
+			const kept = [
+				[ASSESSMENT, risk.revision],
+				[ASSESSMENT, risk.draft],
+				[REPORT, risk.report],
+				[REVIEW, risk.review],
+			];
+			const before = {};
+
+			// QA, who writes and approves them.
+			sign_in(QA);
+			for (const [doctype, name] of kept) {
+				as_kept(doctype, name).then((record) => {
+					before[name] = record;
+				});
+			}
+			cy.then(() => {
+				expect(before[risk.revision], "the revision in force").to.include({
+					docstatus: 1,
+					status: "Approved",
+				});
+				expect(before[risk.draft], "the next revision").to.include({
+					docstatus: 0,
+					status: "Draft",
+				});
+				expect(before[risk.report], "its report").to.include({
+					docstatus: 1,
+					status: "Approved",
+				});
+				expect(before[risk.review], "the review").to.include({
+					docstatus: 0,
+					status: "Open",
+				});
+			});
+			kept_from_job(ASSESSMENT, risk.revision, true);
+			kept_from_job(ASSESSMENT, risk.draft, false);
+			kept_from_job(REPORT, risk.report, true);
+			kept_from_job(REVIEW, risk.review, false);
+			no_problems("D9-RISK-10, QA");
+
+			as_administrator();
+			kept_from_administrator(ASSESSMENT, risk.revision, {
+				never_cancelled: "An approved risk assessment is superseded, never cancelled.",
+			});
+			kept_from_administrator(ASSESSMENT, risk.draft, {
+				never_deleted: "A risk assessment is never deleted.",
+			});
+			kept_from_administrator(REPORT, risk.report, {
+				never_cancelled: "An approved report is superseded, never cancelled.",
+			});
+			kept_from_administrator(REVIEW, risk.review, {
+				never_deleted: "A risk review is never deleted.",
+			});
+
+			// Every record is still there, as it was.
+			for (const [doctype, name] of kept) {
+				as_kept(doctype, name).then((record) =>
+					expect(record, `${name}, unchanged`).to.deep.equal(before[name])
+				);
+			}
+			no_problems("D9-RISK-10");
+		});
+	});
+
+	// 21 CFR 11.10(e), 11.50: QA reads who recorded the plant's licence, who verified it, when and
+	// why, and each change made to it after verification with its reason, on its form and in its
+	// audit trail. The verification is the set-up's; QA adds an obligation on the screen.
+	it("[URS-REG-001] [URS-REG-004] [URS-CMP-012] D9-LIC-06 QA reads the audit trail of a verified licence", () => {
+		prepare("prepare_licence", { password, stage: "verified" }).then((lic) => {
+			const qa = sheet.full_names[QA];
+			sign_in(QA);
+			open_form(LICENCE, lic.licence);
+			button("Add Obligation").click();
+			open_dialog().should("contain", "Add an obligation of the licence");
+			dialog_fill("obligation", "Surveillance audit");
+			cy.window().then((win) =>
+				dialog_fill("due_date", in_months(win, today(win), 6), "Date")
+			);
+			press_dialog("Submit");
+			cy.get(".modal.show").should("not.exist");
+			settle(RELOAD_DELAY_MS + QUIET_MS);
+			cy.window().should((win) =>
+				expect(
+					rows(win, "obligations").map((row) => row.obligation),
+					"the new obligation"
+				).to.include("Surveillance audit")
+			);
+			no_problems("D9-LIC-06, QA adds an obligation");
+
+			// QA's Verified signature: who signed, when, the act and why.
+			cy.window().then((win) =>
+				signature_rows().should(($rows) => {
+					expect($rows, "one signature").to.have.length(1);
+					expect(plain($rows.eq(0).text()))
+						.to.contain("Verified")
+						.and.to.contain(qa)
+						.and.to.contain(today_text(win))
+						.and.to.contain("Verify")
+						.and.to.contain(lic.reason);
+				})
+			);
+			audit_entry_shown([`Submitted by ${qa}`, "Status: Draft → Verified"]);
+			audit_entry_shown([
+				`Updated after submission by ${qa}`,
+				"Reason: Obligation Surveillance audit added",
+				"Obligations: 1 rows added, 0 changed, 0 removed",
+			]);
+
+			// Its whole audit trail, from the form's View menu, and the verification's entry opened:
+			// the status, the copy's fingerprint, who decided and why, as stored.
+			open_audit_trail(LICENCE, lic.licence, [
+				"Created",
+				"Submitted",
+				"Updated after submission",
+			]);
+			open_audit_event(LICENCE, lic.licence, "Submitted", (changes) => {
+				const status = changed_field(changes, "status");
+				return status?.[1] === "Draft" && status?.[2] === "Verified";
+			});
+			audit_event_shows(LICENCE, lic.licence, "Submitted", users[QA], qa, [
+				"status",
+				"Draft",
+				"Verified",
+				"verified_file_sha256",
+				"decided_by",
+				users[QA],
+				lic.reason,
+			]);
+			no_problems("D9-LIC-06");
+		});
+	});
+
+	// ISO 13485 4.2.5, CDSCO MDR 2017: the plant's licence is kept as decided. QA withdraws a
+	// verified licence and a renewal supersedes it; no role holds delete or cancel on a licence, so
+	// its form offers neither to anyone, the Administrator included, and a call past the form is
+	// refused by the licence's own rule.
+	it("[URS-REG-002] [URS-CMP-016] D9-LIC-07 A licence is never deleted or cancelled, not even by the Administrator", () => {
+		prepare("prepare_licence", { password, stage: "verified" }).then((verified) =>
+			prepare("prepare_licence", { password, stage: "draft" }).then((draft) => {
+				const before = {};
+				sign_in(QA);
+				as_kept(LICENCE, verified.licence).then((record) => {
+					expect(record, "verified").to.include({ docstatus: 1, status: "Verified" });
+					before.verified = record;
+				});
+				as_kept(LICENCE, draft.licence).then((record) => {
+					expect(record, "saved, not verified").to.include({
+						docstatus: 0,
+						status: "Draft",
+					});
+					before.draft = record;
+				});
+				kept_from_job(LICENCE, verified.licence, true);
+				kept_from_job(LICENCE, draft.licence, false);
+				no_problems("D9-LIC-07, QA");
+
+				as_administrator();
+				kept_from_administrator(LICENCE, verified.licence, {
+					never_cancelled: "A licence is never cancelled; QA withdraws it.",
+				});
+				kept_from_administrator(LICENCE, draft.licence, {
+					never_deleted: "A licence is never deleted.",
+				});
+				as_kept(LICENCE, verified.licence).then((record) =>
+					expect(record, "the verified licence, unchanged").to.deep.equal(
+						before.verified
+					)
+				);
+				as_kept(LICENCE, draft.licence).then((record) =>
+					expect(record, "the draft, unchanged").to.deep.equal(before.draft)
+				);
+				no_problems("D9-LIC-07");
+			})
+		);
+	});
+
+	// ISO 13485 4.2.5, 6.2(e): training records are kept. A competence is revoked by QA, never
+	// cancelled; no role holds delete or cancel on a training record, so its form offers neither to
+	// anyone, the Administrator included, and a call past the form is refused by its own rule.
+	it("[URS-TRN-002] [URS-CMP-016] D9-TRN-07 A training record is never deleted or cancelled, not even by the Administrator", () => {
+		prepare("prepare_training", { password, stage: "signed_competent" }).then((done) =>
+			prepare("prepare_training", { password, stage: "planned_without_assessor" }).then(
+				(planned) => {
+					const before = {};
+					sign_in(QA);
+					as_kept(RECORD, done.record).then((record) => {
+						expect(record, "signed Competent").to.include({
+							docstatus: 1,
+							status: "Competent",
+						});
+						before.done = record;
+					});
+					as_kept(RECORD, planned.record).then((record) => {
+						expect(record, "planned, not signed").to.include({
+							docstatus: 0,
+							status: "Open",
+						});
+						before.planned = record;
+					});
+					kept_from_job(RECORD, done.record, true);
+					kept_from_job(RECORD, planned.record, false);
+					no_problems("D9-TRN-07, QA");
+
+					as_administrator();
+					kept_from_administrator(RECORD, done.record, {
+						never_cancelled:
+							"A training record is never cancelled; QA revokes a competence.",
+					});
+					kept_from_administrator(RECORD, planned.record, {
+						never_deleted: "Training records are never deleted.",
+					});
+					as_kept(RECORD, done.record).then((record) =>
+						expect(record, "the competence, unchanged").to.deep.equal(before.done)
+					);
+					as_kept(RECORD, planned.record).then((record) =>
+						expect(record, "the planned training, unchanged").to.deep.equal(
+							before.planned
+						)
+					);
+					no_problems("D9-TRN-07");
+				}
+			)
+		);
 	});
 });

@@ -10,13 +10,14 @@ so a test never depends on another having run:
 - a risk management file of its own finished good, its first risk assessment authored by QA,
   reviewed by the Production Supervisor and approved by the second QA person, and, as far as the
   test needs, its report approved, an approved change request that lists the file (which raises a
-  risk review) and a new revision QA started under it; a draft acceptability policy QA started;
-- an important file holding a licence copy, and a licence QA verified against its copy, with the
-  important files the test names as evidence and as a submission's copy; a change request a
+  risk review) and a new revision QA started under it, or its periodic review fallen due; a draft
+  acceptability policy QA started;
+- an important file holding a licence copy, and a licence QA saved or verified against its copy,
+  with the important files the test names as evidence and as a submission's copy; a change request a
   Production Supervisor raised and sent for assessment;
 - a new work instruction issued through document control, put on the Machine Operator job's
-  training matrix by QA's cancel, amend and signed approval, which opens the operator's training;
-  the operator's competence on a journey operation's work instruction with a job card of that
+  training matrix by QA's cancel, amend and signed approval, which opens the operator's training,
+  planned or signed Competent; the operator's competence on a journey operation's work instruction with a job card of that
   operation, and the training restored after the test revokes it.
 
 The journey's masters (ui_journey.prepare_journey) are made first: its product, operations, the
@@ -29,7 +30,7 @@ from contextlib import AbstractContextManager
 
 import frappe
 from frappe import _
-from frappe.utils import add_days, now_datetime, today
+from frappe.utils import add_days, get_fullname, now_datetime, today
 
 from meddevice_suite.compliance import quality_settings
 from meddevice_suite.master_data import routing
@@ -77,8 +78,8 @@ SPECIFICATION_TITLE = "Balloon burst specification (browser test)"
 # QA's list of licence types and the category QA keeps licence copies in.
 LICENCE_TYPE = "Manufacturing licence (browser test D9)"
 LICENCE_CATEGORY = "Licences (browser test D9)"
-RISK_STAGES = ("in_force", "change_approved", "revision_in_progress")
-LICENCE_STAGES = ("copy", "verified")
+RISK_STAGES = ("in_force", "periodic_due", "change_approved", "revision_in_progress")
+LICENCE_STAGES = ("copy", "draft", "verified")
 # How far a training is prepared, and how many months the matrix row keeps it valid.
 TRAINING_VALIDITY = {
 	"new_instruction": 0,
@@ -86,9 +87,10 @@ TRAINING_VALIDITY = {
 	"planned_without_assessor": 0,
 	"history": 24,
 	"history_refusals": 0,
+	"signed_competent": 12,
 }
 # The reminders the sheet runs the daily job for, and the alert that tells QA of a licence's due.
-REMINDER_CATEGORIES = ("Regulatory Licence", "Training Due")
+REMINDER_CATEGORIES = ("Regulatory Licence", "Training Due", "Risk Review")
 
 
 def require_administrator() -> None:
@@ -142,6 +144,11 @@ def prepare_sheet(password: str) -> dict:
 		"training_due_days": quality_settings.value("training_due_days"),
 		"licence_warning_days": quality_settings.value("regulatory_licence_warning_days"),
 		"documents": risk_documents(password),
+		# Who the audit trail and the signatures name, as the forms show them.
+		"full_names": {
+			**{job: get_fullname(email_for(job)) for job in (QA, PRODUCTION)},
+			SECOND_QA: get_fullname(second_qa),
+		},
 	}
 
 
@@ -198,6 +205,8 @@ def prepare_risk_file(password: str, stage: str) -> dict:
 	`stage`:
 
 	- in_force: nothing more; the file has no report;
+	- periodic_due: as in_force, its periodic review fallen due yesterday, as if the review period set
+	  in Quality Settings had passed; the daily run (`run_periodic_reviews`) has not raised it yet;
 	- change_approved: its report approved, and an approved change request listing the file, which
 	  raised an open risk review;
 	- revision_in_progress: as change_approved, and the next revision QA started under it, a draft.
@@ -214,6 +223,18 @@ def prepare_risk_file(password: str, stage: str) -> dict:
 	revision = ensure_assessment(file, documents["specification"], act_as, email_for, password, TAG)
 	made = {"file": file, "family": family, "item": item, "revision": revision, **documents}
 	if stage == "in_force":
+		return made
+	if stage == "periodic_due":
+		# The review period passing: the approval set the next review a period from today.
+		due_on = str(add_days(today(), -1))
+		frappe.db.set_value(rm.FILE, file, "next_periodic_review", due_on)
+		made.update(
+			{
+				"due_on": due_on,
+				"review_months": quality_settings.value("risk_periodic_review_months"),
+				"review_due_days": quality_settings.value("risk_review_due_days"),
+			}
+		)
 		return made
 	made["report"] = ensure_report(file, revision, documents["sop"], act_as, email_for, password, TAG)
 	request = raise_change(
@@ -234,6 +255,20 @@ def prepare_risk_file(password: str, stage: str) -> dict:
 		with act_as(QA):
 			made["draft"] = rm.start_revision(file, change_request=request)
 	return made
+
+
+@frappe.whitelist(methods=["POST"])
+def run_periodic_reviews(file: str) -> list[dict]:
+	"""The daily run that raises each periodic risk review fallen due (risk_management
+	.raise_periodic_reviews), as the scheduler runs it; the file's periodic reviews afterwards."""
+	require_administrator()
+	rm.raise_periodic_reviews()
+	return frappe.get_all(
+		rm.REVIEW,
+		filters={"risk_management_file": file, "trigger": rm.PERIODIC},
+		fields=["name", "status", "docstatus", "source_doctype", "source_name", "details", "due_date"],
+		order_by="creation asc",
+	)
 
 
 def new_finished_good(code: str, name: str) -> str:
@@ -332,9 +367,10 @@ def new_copy(title: str) -> str:
 
 @frappe.whitelist(methods=["POST"])
 def prepare_licence(password: str, stage: str) -> dict:
-	"""copy: a licence copy in the important files repository; verified: a licence of the plant QA
-	verified against its copy with a signature, valid two years, and two more important files, the
-	evidence of an obligation and the copy of a submission."""
+	"""copy: a licence copy in the important files repository; draft: a licence of the plant QA saved
+	with that copy, valid two years, not verified; verified: such a licence QA verified against its
+	copy with a signature, the reason it was signed with, and two more important files, the evidence
+	of an obligation and the copy of a submission."""
 	require_administrator()
 	require_password(password)
 	require_stage(stage, LICENCE_STAGES)
@@ -343,6 +379,7 @@ def prepare_licence(password: str, stage: str) -> dict:
 	if stage == "copy":
 		return made
 	number = f"MFG/MD-5/D9-{unique()}"
+	reason = f"{REASON}: checked against the copy"
 	with act_as(QA):
 		licence = frappe.get_doc(
 			{
@@ -355,12 +392,20 @@ def prepare_licence(password: str, stage: str) -> dict:
 				"important_file": made["copy"],
 			}
 		).insert()
-		regulatory_licence.verify(licence, password=password, reason=f"{REASON}: checked against the copy")
+		if stage == "verified":
+			regulatory_licence.verify(licence, password=password, reason=reason)
 	made.update(
 		{
 			"licence": licence.name,
 			"number": number,
 			"valid_until": str(frappe.db.get_value(regulatory_licence.DOCTYPE, licence.name, "valid_until")),
+		}
+	)
+	if stage == "draft":
+		return made
+	made.update(
+		{
+			"reason": reason,
 			"evidence": new_copy("Surveillance audit report"),
 			"submission_copy": new_copy("Change notification"),
 		}
@@ -485,7 +530,10 @@ def prepare_training(password: str, stage: str) -> dict:
 	- history: on the matrix (valid 24 months), the training opened by the system, for QA to record
 	  from paper;
 	- history_refusals: on the matrix, plus an effective document on no matrix and the QA Manager's own
-	  employee record.
+	  employee record;
+	- signed_competent: on the matrix (valid 12 months), the training planned by the Training
+	  Coordinator with the Production Supervisor as assessor, signed Trained by the operator and
+	  Competent by the Production Supervisor.
 	"""
 	require_administrator()
 	require_password(password)
@@ -514,7 +562,8 @@ def prepare_training(password: str, stage: str) -> dict:
 	)
 	if stage == "open":
 		made["reminders"] = run_daily_reminders("Training Due", training.RECORD, made["record"])
-	elif stage == "planned_without_assessor":
+	elif stage in ("planned_without_assessor", "signed_competent"):
+		assessed = stage == "signed_competent"
 		with act_as(COORDINATOR):
 			record = frappe.get_doc(training.RECORD, made["record"])
 			record.update(
@@ -522,9 +571,19 @@ def prepare_training(password: str, stage: str) -> dict:
 					"training_method": "On-the-job",
 					"training_date": today(),
 					"trainer": "Production Supervisor (browser test D9)",
+					**(
+						{"assessor": email_for(PRODUCTION), "assessment_method": "Practical Demonstration"}
+						if assessed
+						else {}
+					),
 				}
 			)
 			record.save()
+		if assessed:
+			with act_as(OPERATOR):
+				training.sign_trained(frappe.get_doc(training.RECORD, made["record"]), password=password)
+			with act_as(PRODUCTION):
+				training.sign_competent(frappe.get_doc(training.RECORD, made["record"]), password=password)
 	elif stage == "history_refusals":
 		made["outside"] = new_instruction("outside the matrix", password)
 		made["qa_employee"] = ensure_qa_employee()
@@ -621,6 +680,7 @@ SET_UPS: tuple[Callable, ...] = (
 	prepare_sheet,
 	prepare_draft_policy,
 	prepare_risk_file,
+	run_periodic_reviews,
 	prepare_licence,
 	prepare_regulatory_change,
 	run_daily_reminders,
