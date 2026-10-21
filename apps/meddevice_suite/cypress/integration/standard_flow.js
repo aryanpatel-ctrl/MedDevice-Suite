@@ -1262,6 +1262,12 @@ context("The standard flow, through the screens of each job", { retries: 0 }, ()
 		expect_refusal(/has no accepted final inspection on .* made after it was put on hold/);
 		sign("Release", "Looked fine (browser test)");
 		refused_with(/has no accepted final inspection on .* made after it was put on hold/);
+		// The signing dialog stays open after a refusal, so a person can correct it; QA closes it
+		// and chooses the concession instead.
+		cy.window().then((win) => {
+			while (win.cur_dialog?.display) win.cur_dialog.hide();
+		});
+		cy.get(".modal.show").should("not.exist");
 		cy.window().should((win) => expect(current(win).docstatus).to.equal(0));
 		sign("Release by Concession", "Released under deviation (browser test)", {
 			justification,
