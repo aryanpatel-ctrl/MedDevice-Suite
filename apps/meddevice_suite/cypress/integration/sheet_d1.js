@@ -1385,13 +1385,10 @@ context("D1 Customer Master: the browser test sheet, as each job", { retries: 0 
 		cy.then(() => refused_call("frappe.client.cancel", target(verified()))).then(
 			({ message }) => expect(message).to.match(never_cancelled)
 		);
-		// The licence awaiting QA: Delete is offered, and refused.
+		// The licence awaiting QA: no role holds delete, so the menu offers it to nobody, not even
+		// the Administrator; a call past the form is refused by the licence's own rule.
 		cy.then(() => open_form("Customer Licence", awaiting()));
-		in_menu("Delete", true);
-		open_dialog().should("contain", "Permanently delete");
-		expect_refusal(never_deleted);
-		cy.get(".modal.show .btn-primary").contains("Yes").click();
-		refused_with(never_deleted);
+		in_menu("Delete", false);
 		cy.then(() => refused_call("frappe.client.delete", target(awaiting()))).then(
 			({ message }) => expect(message).to.match(never_deleted)
 		);
