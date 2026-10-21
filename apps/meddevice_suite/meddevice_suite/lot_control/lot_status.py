@@ -851,7 +851,11 @@ def locked(lot: str) -> Document:
 
 
 def move_to_role(
-	batch: Document, role: str | None, reason: str, holdings: list[frappe._dict]
+	batch: Document,
+	role: str | None,
+	reason: str,
+	holdings: list[frappe._dict],
+	by_service: bool = False,
 ) -> Document | None:
 	"""Move `holdings`, the stock of the lot a signed decision acts on, into the store of `role`
 	(None: the item's approved store), one transfer row for every store holding some. Stock already in
@@ -892,7 +896,11 @@ def move_to_role(
 	)
 	transfer.flags.lot_control = True
 	# Posted under the QA user with QA's own permissions (setup/roles.py), so the audit trail
-	# attributes the move to the person who released the lot.
+	# attributes the move to the person who released the lot. `by_service`: a release by concession
+	# that Management completes (plan D-35): Management holds no stock permission and is given none;
+	# the release service posts the move after its own checks (two signatures, the lot's lock), still
+	# under Management's name, so the audit trail attributes it to the person who released the lot.
+	transfer.flags.ignore_permissions = by_service
 	transfer.insert()
 	frappe.flags.lot_release_transfer = transfer.name
 	try:

@@ -1,7 +1,9 @@
 """Lots in quarantine or on hold with stock, and every lot with stock in the hold store whatever its
 status (module 16; URS-QC-004): what each is waiting for, and for how many days, so QA and Stores see
 the queue at any time. Approved stock Stores set apart in the hold store waits on QA's decision as a
-held lot does (independent review 2026-10-15)."""
+held lot does (independent review 2026-10-15). A held lot production made waits for its final
+inspection when its item is re-inspected after a hold, and a lot QA approved a concession for waits
+for Management's approval (plan D-35, URS-QC-005)."""
 
 import frappe
 from frappe import _
@@ -16,8 +18,10 @@ from meddevice_suite.lot_control.lot_status import (
 	last_arrivals,
 	stock_by_lot,
 )
-from meddevice_suite.lot_control.receipt import origins_of
+from meddevice_suite.lot_control.receipt import INCOMING, OUTGOING, origins_of
+from meddevice_suite.lot_control.release import pending_concessions
 from meddevice_suite.lot_control.stores import kind_of
+from meddevice_suite.master_data.item_master import reinspected_after_hold
 
 AWAITING = (QUARANTINE, HOLD)
 
@@ -29,6 +33,8 @@ WAITING_FOR = {
 	"release": "QA release",
 	"not_releasable": "Nothing: it did not come in on a receipt",
 	"set_apart": "QA decision on stock set apart",
+	"final_inspection": "Final inspection",
+	"concession": "Management approval of a concession",
 }
 
 
@@ -62,6 +68,7 @@ def execute(filters: dict | None = None) -> tuple[list[dict], list[dict]]:
 			or_filters={STATUS_FIELD: ["in", list(AWAITING)], "name": ["in", list(set_apart) or [""]]},
 			fields=[
 				"name",
+				"item",
 				STATUS_FIELD,
 				"creation",
 				"mds_status_set_at",
@@ -102,6 +109,11 @@ def execute(filters: dict | None = None) -> tuple[list[dict], list[dict]]:
 	hold_stores = {h.warehouse for h in holdings if kind_of(h.warehouse) == stores.HOLD}
 	arrived = last_arrivals(set_apart, hold_stores)
 	inspections = latest_inspections(list(lots))
+	final = latest_inspections(list(lots), OUTGOING)
+	reinspected = reinspected_after_hold(
+		{lot.item for lot in lots.values() if lot.origin == "production" and lot.get(STATUS_FIELD) == HOLD}
+	)
+	concessions = pending_concessions(list(lots))
 	lines = receipt_lines(lots.values())
 	data = []
 	for h in holdings:
@@ -115,7 +127,12 @@ def execute(filters: dict | None = None) -> tuple[list[dict], list[dict]]:
 			continue  # rejected at the door, or come back from a customer: not what the release decides
 		if awaiting:
 			since = getdate(lot.mds_status_set_at or lot.creation)
-			waiting = waiting_for(lot, lines.get(lot.name), inspections.get(lot.name))
+			if lot.name in concessions:
+				waiting = "concession"
+			elif lot.origin == "production" and lot.item in reinspected:
+				waiting = held_production_waits_for(lot, final.get((lot.name, lot.reference_name)))
+			else:
+				waiting = waiting_for(lot, lines.get(lot.name), inspections.get(lot.name))
 		else:
 			# Stock of a lot not awaiting a decision, set apart in the hold store: since it came there.
 			since = getdate(arrived.get(h.batch_no) or lot.mds_status_set_at or lot.creation)
@@ -157,17 +174,32 @@ def waiting_for(lot: frappe._dict, line: frappe._dict | None, inspection: frappe
 	return "release"
 
 
-def latest_inspections(lots: list[str]) -> dict[str, frappe._dict]:
-	"""lot -> its newest submitted incoming inspection, read through the index on the inspection's
-	lot that this app configures (setup/indexes.py)."""
-	latest: dict[str, frappe._dict] = {}
+def held_production_waits_for(lot: frappe._dict, inspection: frappe._dict | None) -> str:
+	"""A held lot production made, whose item is re-inspected after a hold (plan D-35): released after
+	an accepted final inspection on its manufacture entry made after the hold, as the release
+	requires."""
+	if lot.get(STATUS_FIELD) != HOLD:
+		return "release"
+	if inspection is None or (lot.mds_status_set_at and inspection.creation <= lot.mds_status_set_at):
+		return "final_inspection"
+	if inspection.status == "Rejected":
+		return "rejected"
+	return "release"
+
+
+def latest_inspections(lots: list[str], inspection_type: str = INCOMING) -> dict:
+	"""For the incoming type, lot -> its newest submitted incoming inspection; for the final
+	(Outgoing) type, (lot, document inspected on) -> the newest on that document. Read through the
+	index on the inspection's lot that this app configures (setup/indexes.py)."""
+	latest: dict = {}
 	for row in frappe.get_all(
 		"Quality Inspection",
-		filters={"batch_no": ["in", lots or [""]], "inspection_type": "Incoming", "docstatus": 1},
-		fields=["batch_no", "status", "creation"],
+		filters={"batch_no": ["in", lots or [""]], "inspection_type": inspection_type, "docstatus": 1},
+		fields=["batch_no", "reference_name", "status", "creation"],
 		order_by="creation asc",
 	):
-		latest[row.batch_no] = row
+		key = row.batch_no if inspection_type == INCOMING else (row.batch_no, row.reference_name)
+		latest[key] = row
 	return latest
 
 

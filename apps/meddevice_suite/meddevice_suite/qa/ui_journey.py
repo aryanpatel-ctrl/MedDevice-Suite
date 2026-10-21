@@ -144,6 +144,8 @@ def prepare_journey(password: str | None = None) -> dict:
 			"approved": store("Stores"),
 			"work_in_progress": store("Work In Progress"),
 			"finished_goods": store("Finished Goods"),
+			# Where QA's Hold puts the finished lot before its release by concession (plan D-35).
+			"hold": stores.store_for(stores.HOLD, COMPANY),
 		},
 		"bom": frappe.db.get_value("BOM", {"item": PRODUCT, "is_default": 1, "docstatus": 1}),
 		# Module 31: the record the work order is submitted on.
