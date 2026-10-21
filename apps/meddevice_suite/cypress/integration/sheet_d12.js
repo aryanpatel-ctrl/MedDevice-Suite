@@ -2458,7 +2458,7 @@ context("D12 Audit Logs: the browser test sheet, as each job", () => {
 		}
 	);
 
-	it("[URS-CMP-041] [URS-CMP-011] D12-T23 A sales order is audited; Update Items asks for a reason first", () => {
+	it("[URS-CMP-041] [URS-CMP-011] [URS-CMP-008] D12-T23 A sales order is audited; Update Items asks for a reason first", () => {
 		const made = {};
 		const reason = "Customer ordered a second unit";
 		sign_in(SALES);
@@ -2543,16 +2543,12 @@ context("D12 Audit Logs: the browser test sheet, as each job", () => {
 				const updates = by_sales("Updated after submission");
 				expect(updates, "Updated after submission").to.have.length.at.least(1);
 				// ERPNext's Update Items saves the order's line on its own before the order
-				// (erpnext accounts_controller.update_child_qty_rate), and a line is recorded in its
-				// order's events, so the order's event holds the old and new quantity as its total.
-				const update = updates.find((event) => {
-					const changes = as_data(event.changes);
-					return (
-						String(row_change(changes, "items", "qty")) === "1,2" ||
-						String(field_change(changes, "total_qty")) === "1,2"
-					);
-				});
-				expect(update, "the update with the old and new quantity").to.be.ok;
+				// (erpnext accounts_controller.update_child_qty_rate); the order's event still
+				// records the line's old and new quantity (compliance/audit.py, URS-CMP-008).
+				const update = updates.find(
+					(event) => String(row_change(as_data(event.changes), "items", "qty")) === "1,2"
+				);
+				expect(update, "the update with the line's old and new quantity").to.be.ok;
 				expect(update.reason, "its reason").to.equal(reason);
 			});
 			no_problems("D12-T23");
