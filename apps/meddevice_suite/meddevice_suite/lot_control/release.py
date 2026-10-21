@@ -1,15 +1,23 @@
-"""The signed decision on a lot (modules 16 and 17; URS-STK-004, URS-STK-010, URS-QC-003, URS-QC-004):
+"""The signed decision on a lot (modules 16 and 17; URS-STK-004, URS-STK-010, URS-QC-003 to URS-QC-005):
 QA releases, rejects or holds a lot, or disposes of goods a customer sent back, through a Lot
 Release record, each act an electronic signature (21 CFR Part 11).
 
 - Release: a lot from a supplier needs its newest incoming inspection, made after any hold, to be
   accepted; the lot becomes Approved and its stock moves to the approved store in the same
   transaction. A lot a work order made is released on the same signature until final QC and batch
-  release (modules 25, 26) take over.
+  release (modules 25, 26) take over; once held, it is released only after a new accepted final
+  inspection on its manufacture entry, unless its item says otherwise (plan D-35, below).
 - Reject: the lot becomes Rejected, its stock moves to the rejected store, and a draft return
   to the supplier of that stock is made for Purchase to send.
 - Hold: the lot becomes Hold and its stock moves to the hold store; a held lot is released
-  only after a new accepted inspection (decided 2026-10-08).
+  only after a new accepted inspection (decided 2026-10-08): incoming for a lot that came in, final
+  for a lot production made whose item is re-inspected after a hold (the default; plan D-35,
+  decided 2026-10-20 after SAP QM's inspection type per material and its usage decision).
+- Release by Concession (plan D-35; ISO 13485 8.3.2): a held lot, of any origin, released without
+  that inspection. QA signs it Approved with a written justification besides the reason; a second
+  person holding a Management role (as for a Major change) then signs it Approved, and only then is
+  the lot released, Approved and moved as a release moves it. A concession whose lot was decided or
+  held again in between no longer applies.
 - Return to Stock and Reject Return (plan D-25, decided 2026-10-12): goods a customer sent back
   wait in the Returns store; QA sends them back to the approved store, once the lot is Approved
   and an inspection made after they came back is accepted, or to the Rejected store. The lot's
@@ -42,6 +50,7 @@ from frappe.utils import flt, get_datetime, getdate, now_datetime
 
 from meddevice_suite.compliance.checks import require
 from meddevice_suite.compliance.esign import sign
+from meddevice_suite.compliance.fingerprint import plain_text
 from meddevice_suite.lot_control import lot_status, stores
 from meddevice_suite.lot_control.lot_status import (
 	APPROVED,
@@ -59,10 +68,13 @@ from meddevice_suite.lot_control.receipt import (
 	material_receipt_of,
 	receipt_line_of,
 )
+from meddevice_suite.master_data.item_master import reinspected_after_hold
 
 DOCTYPE = "Lot Release"
 RELEASE, REJECT, HOLD_DECISION = "Release", "Reject", "Hold"
 RETURN_TO_STOCK, REJECT_RETURN = "Return to Stock", "Reject Return"
+# Plan D-35: QA's signed approval of a release by concession, then Management's, which releases.
+RELEASE_BY_CONCESSION, APPROVE_CONCESSION = "Release by Concession", "Approve Concession"
 # Goods that came back are inspected against the item's incoming or final specification.
 RETURN_INSPECTIONS = (INCOMING, OUTGOING)
 
@@ -81,6 +93,7 @@ DECISIONS = {
 	HOLD_DECISION: Decision((QUARANTINE, APPROVED), HOLD, stores.HOLD),
 	RETURN_TO_STOCK: Decision((APPROVED,), None, None, returns=True),
 	REJECT_RETURN: Decision(STATUSES, None, stores.REJECTED, returns=True),
+	RELEASE_BY_CONCESSION: Decision((HOLD,), APPROVED, None),
 }
 
 
@@ -107,6 +120,7 @@ def reject_return(doc: Document, password: str, reason: str | None = None) -> No
 def decide(doc: Document, decision: str, meaning: str, password: str, reason: str | None) -> None:
 	doc = locked(doc.name)
 	require(doc.docstatus == 0, _("{0} has been decided.").format(doc.name))
+	require_no_concession(doc)
 	require(lot_status.is_qa(), _("Only QA decides a lot."), frappe.PermissionError)
 	rule = DECISIONS[decision]
 	require(
@@ -130,26 +144,8 @@ def decide(doc: Document, decision: str, meaning: str, password: str, reason: st
 	doc.describe_lot()
 	stock = decided_stock(decision, lot.name, status)
 	doc.quantity = sum(flt(holding.qty) for holding in stock)
-	# A lot not made by production is released only after an accepted incoming inspection on the
-	# document that brought it in, a goods receipt or a material receipt (decided 2026-10-09); a lot
-	# that came in any other way is not released at all.
-	if decision == RELEASE and not made_by_production(lot.name):
-		require(
-			doc.source_doctype == "Purchase Receipt" or material_receipt_of(lot.name),
-			_(
-				"Lot {0} came in on {1} {2}; only stock received on a goods receipt or a material receipt is released."
-			).format(lot.name, _(doc.source_doctype or "an unknown document"), doc.source_name or ""),
-		)
-		inspection = accepted_inspection(lot.name, doc.held_since, doc.source_doctype, doc.source_name)
-		missing = (
-			_(
-				"Lot {0} has no accepted incoming inspection made after it was put on hold; it cannot be released."
-			)
-			if status == HOLD
-			else _("Lot {0} has no accepted incoming inspection; it cannot be released.")
-		)
-		require(inspection, missing.format(lot.name))
-		doc.quality_inspection = inspection
+	if decision == RELEASE:
+		doc.quality_inspection = inspection_releasing(doc, lot, status)
 	if rule.returns:
 		require(stock, _("Lot {0} has no stock in the Returns store to decide on.").format(lot.name))
 	if decision == RETURN_TO_STOCK:
@@ -183,6 +179,189 @@ def decide(doc: Document, decision: str, meaning: str, password: str, reason: st
 	# No role holds Frappe's submit permission on a lot release; the signed act is the submit.
 	doc.flags.ignore_permissions = True
 	doc.submit()
+
+
+def inspection_releasing(doc: Document, lot: Document, status: str) -> str | None:
+	"""The accepted inspection a release rests on, or the refusal saying which is missing.
+
+	A lot not made by production is released only after an accepted incoming inspection on the
+	document that brought it in, a goods receipt or a material receipt (decided 2026-10-09); a lot that
+	came in any other way is not released at all. A lot production made is released on QA's signature
+	until final QC and batch release (modules 25, 26) take over; once held, only after an accepted final
+	inspection against the item's final specification on its manufacture entry, made after the hold,
+	unless its item is not re-inspected after a hold (plan D-35)."""
+	if made_by_production(lot.name):
+		if status != HOLD or not reinspected_after_hold([lot.item]):
+			return None
+		inspection = accepted_inspection(
+			lot.name, doc.held_since, "Stock Entry", doc.source_name, (OUTGOING,)
+		)
+		require(
+			inspection,
+			_(
+				"Lot {0} has no accepted final inspection on {1} made after it was put on hold; it cannot be released."
+			).format(lot.name, doc.source_name),
+		)
+		return inspection
+	require_known_origin(doc, lot)
+	inspection = accepted_inspection(lot.name, doc.held_since, doc.source_doctype, doc.source_name)
+	missing = (
+		_("Lot {0} has no accepted incoming inspection made after it was put on hold; it cannot be released.")
+		if status == HOLD
+		else _("Lot {0} has no accepted incoming inspection; it cannot be released.")
+	)
+	require(inspection, missing.format(lot.name))
+	return inspection
+
+
+def require_known_origin(doc: Document, lot: Document) -> None:
+	"""Stock is released only if it came in on a goods receipt, a material receipt or production."""
+	if made_by_production(lot.name):
+		return
+	require(
+		doc.source_doctype == "Purchase Receipt" or material_receipt_of(lot.name),
+		_(
+			"Lot {0} came in on {1} {2}; only stock received on a goods receipt or a material receipt is released."
+		).format(lot.name, _(doc.source_doctype or "an unknown document"), doc.source_name or ""),
+	)
+
+
+def require_no_concession(doc: Document) -> None:
+	"""A draft on which QA approved a concession is Management's to approve; the lot is decided
+	otherwise on a new Lot Release, which makes the concession stale."""
+	require(
+		doc.decision != RELEASE_BY_CONCESSION,
+		_(
+			"QA has approved the release of {0} by concession; it waits for Management's approval. Decide the lot otherwise on a new Lot Release."
+		).format(doc.name),
+	)
+
+
+# --- Release by concession (plan D-35) ----------------------------------------------------------
+
+
+def release_by_concession(
+	doc: Document, password: str, reason: str | None = None, justification: str | None = None
+) -> None:
+	"""QA's signed approval of releasing a held lot without the inspection its hold requires, with a
+	written justification besides the reason (ISO 13485 8.3.2). Nothing moves yet: Management's
+	approval releases it (`approve_concession`)."""
+	doc = locked(doc.name)
+	require(doc.docstatus == 0, _("{0} has been decided.").format(doc.name))
+	require_no_concession(doc)
+	require(lot_status.is_qa(), _("Only QA decides a lot."), frappe.PermissionError)
+	require(reason, _("Say why the lot is approved."))
+	justification = plain_text((justification or "").strip())
+	require(
+		justification,
+		_(
+			"Write the justification for releasing the lot without the inspection its hold requires: a concession is justified in writing."
+		),
+	)
+	require(
+		len(justification) <= lot_status.MAX_REASON,
+		_("Keep the justification within {0} characters.").format(lot_status.MAX_REASON),
+	)
+	lot = lot_status.locked(doc.batch)
+	status = lot.get(STATUS_FIELD) or QUARANTINE
+	require(
+		status == HOLD,
+		_("Lot {0} is {1}; only a lot on hold is released by concession.").format(lot.name, _(status)),
+	)
+	doc.describe_lot()
+	require_known_origin(doc, lot)
+	doc.quantity = sum(flt(holding.qty) for holding in decided_stock(RELEASE_BY_CONCESSION, lot.name, status))
+	doc.lot_status_before = status
+	doc.decision = RELEASE_BY_CONCESSION
+	doc.reason = reason
+	doc.concession_justification = justification
+	doc.decided_by = frappe.session.user
+	doc.decided_at = now_datetime()
+	sign(doc, "Approved", "Release by Concession", password, reason)
+	doc.flags.lot_release = True
+	doc.save()
+
+
+def approve_concession(doc: Document, password: str, reason: str | None = None) -> None:
+	"""Management's signed approval of a release by concession QA approved: a second person, holding a
+	Management role, never QA's signer. Only now is the lot released: Approved and moved to the item's
+	approved store as a release moves it, the decision submitted."""
+	from meddevice_suite.qms.change_control import is_management  # the roles of a Major change
+
+	doc = locked(doc.name)
+	require(doc.docstatus == 0, _("{0} has been decided.").format(doc.name))
+	require(
+		doc.decision == RELEASE_BY_CONCESSION,
+		_("{0} has no release by concession approved by QA to approve.").format(doc.name),
+	)
+	require(is_management(), _("Only Management approves a release by concession."), frappe.PermissionError)
+	user = frappe.session.user
+	require(
+		user != doc.decided_by,
+		_("{0} needs a second approver from Management; you have approved it for QA.").format(doc.name),
+	)
+	require(reason, _("Say why Management approves the concession."))
+	lot = lot_status.locked(doc.batch)
+	status = lot.get(STATUS_FIELD) or QUARANTINE
+	require(
+		status == HOLD,
+		_("Lot {0} is {1} now; the concession QA approved while it was on hold no longer applies.").format(
+			lot.name, _(status)
+		),
+	)
+	since = held_since(lot)
+	require(
+		not since or since <= get_datetime(doc.decided_at),
+		_(
+			"Lot {0} was put on hold again after QA approved the concession; QA decides it afresh on a new Lot Release."
+		).format(lot.name),
+	)
+	# What the release acts on is read again now, under the lot's lock, as a decision's is.
+	doc.describe_lot()
+	stock = decided_stock(RELEASE_BY_CONCESSION, lot.name, status)
+	doc.quantity = sum(flt(holding.qty) for holding in stock)
+	doc.concession_approved_by = user
+	doc.concession_approved_at = now_datetime()
+	# Management reads lot releases and writes none; the signature is its act on the record.
+	sign(doc, "Approved", "Approve Concession", password, reason, permission="read")
+	moved = lot_status.move_to_role(lot, None, doc.reason, stock)
+	lot_status.set_status(lot.name, APPROVED, doc.reason, release=doc.name)
+	doc.stock_entry = moved.name if moved else None
+	doc.flags.lot_release = True
+	# No role holds Frappe's submit permission on a lot release; the signed act is the submit.
+	doc.flags.ignore_permissions = True
+	doc.submit()
+
+
+def pending_concessions(lots: list[str] | None = None) -> dict[str, frappe._dict]:
+	"""lot -> the release by concession QA approved and Management has not yet, for each lot still on
+	hold since before QA's approval; one whose lot was decided or held again since waits on nobody.
+	`lots` None: every lot. Two queries."""
+	filters = {"docstatus": 0, "decision": RELEASE_BY_CONCESSION}
+	if lots is not None:
+		filters["batch"] = ["in", list(lots) or [""]]
+	rows = frappe.get_all(
+		DOCTYPE,
+		filters=filters,
+		fields=["name", "batch", "item", "decided_by", "decided_at"],
+		order_by="decided_at asc",
+	)
+	held = {
+		row.name: row
+		for row in frappe.get_all(
+			"Batch",
+			filters={"name": ["in", [row.batch for row in rows] or [""]], STATUS_FIELD: HOLD},
+			fields=["name", "mds_status_set_at"],
+		)
+	}
+	pending = {}
+	for row in rows:
+		lot = held.get(row.batch)
+		if lot and (
+			not lot.mds_status_set_at or get_datetime(lot.mds_status_set_at) <= get_datetime(row.decided_at)
+		):
+			pending[row.batch] = row
+	return pending
 
 
 def decided_stock(decision: str | None, lot: str, status: str) -> list[frappe._dict]:

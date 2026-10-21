@@ -91,7 +91,9 @@ LOT_RELEASE = SignedFields(
 		"decided_by",
 		"decided_at",
 		"amended_from",
-	)
+	),
+	# A release by concession (plan D-35, 2026-10-20): its justification and Management's approval.
+	bound_once_set=("concession_justification", "concession_approved_by", "concession_approved_at"),
 )
 
 # Module 4: the decision on a supplier; not the certificate alert's bookkeeping.

@@ -88,6 +88,13 @@ SIGNING_ACTIONS: dict[tuple[str, str], SignedAct] = {
 	("Lot Release", "Hold"): SignedAct("Held", f"{LOT_RELEASE}.hold"),
 	("Lot Release", "Return to Stock"): SignedAct("Released", f"{LOT_RELEASE}.return_to_stock"),
 	("Lot Release", "Reject Return"): SignedAct("Rejected", f"{LOT_RELEASE}.reject_return"),
+	# Plan D-35 (ISO 13485 8.3.2): a held lot released without the inspection its hold requires, as a
+	# concession. QA approves it with its written justification, entered with the act; a second
+	# person from Management approves it, which releases the lot.
+	("Lot Release", "Release by Concession"): SignedAct(
+		"Approved", f"{LOT_RELEASE}.release_by_concession", inputs=("justification",)
+	),
+	("Lot Release", "Approve Concession"): SignedAct("Approved", f"{LOT_RELEASE}.approve_concession"),
 	# Module 18 (foundation hardening plan H6): QA corrects the dates of a lot that has stock, entering
 	# them with the act. "Approved": QA approves a change to the lot's controlled data and answers for
 	# it, as it approves a master; "Verified" is a check of another person's record against its source,
