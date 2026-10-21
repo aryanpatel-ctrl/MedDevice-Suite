@@ -54,6 +54,10 @@ def apply_access_policy() -> None:
 	"""Site configuration (on install and every migrate) and whenever QA changes the settings."""
 	for field, wanted in system_values().items():
 		frappe.db.set_single_value("System Settings", field, wanted)
+		# As System Settings' own save does (set_defaults): the desk shows a setting from the
+		# defaults, so they must say what is enforced, or the form shows Frappe's 170:00 for a
+		# 30-minute session (found by browser test D12-T18, 2026-10-21).
+		frappe.db.set_default(field, wanted)
 	frappe.clear_cache(doctype="System Settings")
 
 

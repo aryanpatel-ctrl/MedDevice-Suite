@@ -280,6 +280,26 @@ function type_into($input, text) {
 	});
 }
 
+// A date is kept only once the person leaves its field ('change' on blur), and a form refresh set
+// off by the field before (a fetch, a dependent field, ERPNext's own form script) can land in
+// between and draw the box again from the still empty record: the person sees the box go empty
+// and types the date again (found in CI, 2026-10-20, on a slow runner: the box empty in the
+// screenshot). Typed again once only, and only when both the record and the box are empty: a box
+// still showing a date the record did not take is a defect, left to the check that follows. The
+// field is found again: the refresh drew it anew.
+function retype_if_wiped(selector, value, label, read_stored, reopen = null) {
+	settle();
+	cy.window().then((win) => {
+		const box = Cypress.$(win.document.body).find(selector).first().val();
+		if (read_stored(win) || box) return;
+		cy.log(`${label}: date wiped by a form refresh, typed again`);
+		if (reopen) reopen();
+		cy.get(selector)
+			.first()
+			.then(($input) => type_into($input, user_date(win, value)));
+	});
+}
+
 // Types into a link field and chooses the matching entry of its list.
 function choose($input, value) {
 	cy.wrap($input).clear().focus().type(value, { delay: 0 });
@@ -333,6 +353,13 @@ function fill(fieldname, value, kind = "Data") {
 				else type_into($input, String(value));
 			})
 		);
+	if (kind === "Date")
+		retype_if_wiped(
+			inputs_of(`${FORM} .frappe-control[data-fieldname="${fieldname}"]`),
+			value,
+			fieldname,
+			(win) => current(win)[fieldname]
+		);
 	cy.window().should((win) => {
 		const stored = current(win)[fieldname];
 		if (typeof value === "number") expect(stored, fieldname).to.be.closeTo(value, 1e-6);
@@ -370,6 +397,14 @@ function fill_row(table, idx, fieldname, value, kind = "Data") {
 				else if (kind === "Datetime") type_into($input, user_date(win, value));
 				else type_into($input, String(value));
 			})
+		);
+	if (kind === "Datetime")
+		retype_if_wiped(
+			inputs_of(cell),
+			value,
+			`line ${idx} ${fieldname}`,
+			(win) => rows(win, table)[idx - 1][fieldname],
+			() => cy.get(cell).first().click()
 		);
 	cy.window().should((win) => {
 		const stored = rows(win, table)[idx - 1][fieldname];
@@ -458,15 +493,22 @@ function submit() {
 	settle();
 }
 
-// The signing dialog of a signed act (compliance/esign.js): the reason, then the password,
-// each once the dialog has taken it, as a person would; then Sign.
-function sign(label, reason) {
+// The signing dialog of a signed act (compliance/esign.js): the values the act takes with the
+// signature (`entered`, fieldname -> text), the reason, then the password, each once the dialog has
+// taken it, as a person would; then Sign.
+function sign(label, reason, entered = {}) {
 	button(label).click();
 	cy.get(".modal.show").should("have.css", "opacity", "1");
 	cy.window().should((win) => {
 		expect(win.cur_dialog?.display, "the signing dialog has opened").to.equal(true);
 		expect(win.cur_dialog.title).to.match(/^Sign: /);
 	});
+	for (const [fieldname, text] of Object.entries(entered)) {
+		cy.get(`.modal.show textarea[data-fieldname="${fieldname}"]`).click().type(text);
+		cy.window()
+			.its("cur_dialog")
+			.should((dialog) => expect(dialog.get_value(fieldname)).to.equal(text));
+	}
 	cy.get('.modal.show textarea[data-fieldname="reason"]').click().type(reason);
 	cy.window()
 		.its("cur_dialog")
@@ -1194,6 +1236,86 @@ context("The standard flow, through the screens of each job", { retries: 0 }, ()
 			);
 		});
 		no_problems("QA releases the finished lot");
+	});
+
+	it("[URS-PLT-007] [URS-QC-003] [URS-QC-005] QA holds the finished lot; without a new final inspection it is released only by concession, approved by QA and then Management", () => {
+		const justification = "Label print fault only; units sealed and conforming (browser test)";
+		sign_in("QA Manager");
+		cy.then(() => open_form("Batch", made.finished_lot));
+		button("Decide Lot").click();
+		form_is("Lot Release", (doc) => doc.__islocal && doc.batch === made.finished_lot);
+		settle();
+		save();
+		sign("Hold", "Label print fault found before dispatch (browser test)");
+		cy.window().should((win) => {
+			expect(current(win).docstatus).to.equal(1);
+			expect(current(win).decision).to.equal("Hold");
+		});
+
+		cy.then(() => open_form("Batch", made.finished_lot));
+		button("Decide Lot").click();
+		form_is("Lot Release", (doc) => doc.__islocal && doc.batch === made.finished_lot);
+		settle();
+		save();
+		cy.window().should((win) => expect(current(win).held_since, "On Hold Since").to.be.ok);
+		// Held, the lot production made is released only after a new final inspection (plan D-35).
+		expect_refusal(/has no accepted final inspection on .* made after it was put on hold/);
+		sign("Release", "Looked fine (browser test)");
+		refused_with(/has no accepted final inspection on .* made after it was put on hold/);
+		// The signing dialog stays open after a refusal, so a person can correct it; QA closes it
+		// and chooses the concession instead.
+		cy.window().then((win) => {
+			while (win.cur_dialog?.display) win.cur_dialog.hide();
+		});
+		cy.get(".modal.show").should("not.exist");
+		cy.window().should((win) => expect(current(win).docstatus).to.equal(0));
+		sign("Release by Concession", "Released under deviation (browser test)", {
+			justification,
+		});
+		cy.window().should((win) => {
+			const doc = current(win);
+			expect(doc.docstatus, "QA's signature alone releases nothing").to.equal(0);
+			expect(doc.decision).to.equal("Release by Concession");
+			expect(doc.concession_justification).to.equal(justification);
+			expect(doc.decided_by).to.equal(users["QA Manager"]);
+			made.concession = doc.name;
+		});
+		cy.contains(FORM, "waits for Management's approval").should("be.visible");
+		offered("Approve Concession", false);
+		cy.call("frappe.client.get_value", {
+			doctype: "Batch",
+			filters: { name: made.finished_lot },
+			fieldname: "mds_lot_status",
+		}).then(({ message }) => expect(message.mds_lot_status).to.equal("Hold"));
+		no_problems("QA approves the concession");
+
+		sign_in("Management");
+		cy.then(() => open_form("Lot Release", made.concession));
+		for (const label of ["Release", "Reject", "Release by Concession"]) offered(label, false);
+		sign("Approve Concession", "Deviation reviewed; risk acceptable (browser test)");
+		cy.window().should((win) => {
+			const doc = current(win);
+			expect(doc.docstatus).to.equal(1);
+			expect(doc.concession_approved_by).to.equal(users.Management);
+			expect(doc.concession_approved_at).to.be.ok;
+			expect(doc.stock_entry).to.be.ok;
+			made.concession_transfer = doc.stock_entry;
+		});
+		cy.contains(FORM, "Electronic signatures").should("be.visible");
+		cy.then(() => lots_of("Stock Entry", made.concession_transfer)).then((lots) =>
+			expect(lots.map((lot) => [lot.batch_no, lot.from_store, lot.to_store])).to.deep.equal([
+				[made.finished_lot, data.stores.hold, data.stores.finished_goods],
+			])
+		);
+		cy.call("frappe.client.get_value", {
+			doctype: "Batch",
+			filters: { name: made.finished_lot },
+			fieldname: ["mds_lot_status", "mds_lot_release"],
+		}).then(({ message }) => {
+			expect(message.mds_lot_status).to.equal("Approved");
+			expect(message.mds_lot_release).to.equal(made.concession);
+		});
+		no_problems("Management approves the concession; the lot is released");
 	});
 
 	it("[URS-PLT-007] [URS-STK-002] Stores delivers the order; the lot delivered is the one just made, which expires first", () => {

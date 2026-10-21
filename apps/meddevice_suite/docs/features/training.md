@@ -1,6 +1,6 @@
 # Training and competence (module 37) — feature document and browser test guide
 
-Requirements: **URS-TRN-001 to URS-TRN-006** (`meddevice_suite/qa/requirements.toml`). Builds on document control (module 30), e-signature (49), evidence files (54), reminders (60), routing (module 3).
+Requirements: **URS-TRN-001 to URS-TRN-006**, and **URS-TRN-007 to URS-TRN-009** for the employee master (module 9) that training relies on (`meddevice_suite/qa/requirements.toml`). Builds on document control (module 30), e-signature (49), evidence files (54), reminders (60), routing (module 3).
 Code: `meddevice_suite/qms/training.py`; records *Training Matrix* (with *Training Matrix Item*) and *Training Record* (form `training_record.js`, list `training_record_list.js`); report *Training Status*; reminder *Training Due*; `setup/fixtures/training.py` (demo operator); hooks in `meddevice_suite/hooks.py`.
 DFD trace: D2 Training (training records, expiry alerts, QMS linkage); production stage 3 ("trained operator"). Decisions: plan section 16, D-07 to D-10 and D-17 to D-19 (2026-10-11). HRMS is not used. Training is built here on ERPNext's Employee and Designation.
 
@@ -46,6 +46,15 @@ DFD trace: D2 Training (training records, expiry alerts, QMS linkage); productio
 - **Training Status report:** each employee and each document their job needs, by revision (in effect, or to take effect), with its state (Not started, Open, Trained, Competent, Expired, Not Competent, Revoked), the due date and the end of validity.
 - **Use of the ERP** (D-19): the client's "Use of the ERP" SOP goes in every job's matrix. It is client data, loaded at migration.
 
+### The employee master that training relies on (module 9, URS-TRN-007 to URS-TRN-009)
+
+Training is built on ERPNext's Employee, one record per person, as in SAP HCM, SuccessFactors or Dynamics 365 HR. These rules state what training, the trainee's signature and the job card gate depend on:
+
+- **An active employee holds a job** (URS-TRN-007). Saving an active employee without a *Designation* is refused: the job's approved matrix is what decides the training they need, so an active employee without one would silently need none. An inactive or departed employee may be without one. ERPNext's setup wizard records its own user's employee without a job; that record is asked for one at its next save.
+- **One active employee per user account** (URS-TRN-008). ERPNext refuses a second active employee on the same account. A rehire is a new employee record once the first has left; the old record cannot then be made active again on the same account.
+- **The trainee signs on the account linked now** (URS-TRN-008). *Trained* is signed only by the user the employee record links to at the moment of signing, never by an account it used to link to. When the Training Coordinator changes the account, the employee's open records (Open or Trained) move to the new account, and with them who sees them and whom *Training Due* reminds. Completed records keep the account that signed them. If moving the records fails, the change of account still saves and the failure is logged; signing is still checked against the account linked now.
+- **Nobody who is not active is trained or booked** (URS-TRN-009). Their open records are withdrawn, they cannot sign *Trained*, and nobody can assess them. ERPNext disables their user account. A job card refuses time logged for them.
+
 ## 3. Requirements and acceptance criteria
 
 | # | Requirement | Verification (`qms/test_training.py`) |
@@ -56,6 +65,9 @@ DFD trace: D2 Training (training records, expiry alerts, QMS linkage); productio
 | T4 | TRN-004 QA approval by signature, one per job, cancel and amend, no duplicates | `TestMatrixApproval.*` |
 | T5 | TRN-005 competent accepted; untrained, unassessed, unnamed, previous revision, expired, inactive refused; history counts; unvalidated save; finished time not judged; ERPNext's method; every ERPNext time-log path | `TestJobCardGate.*` |
 | T6 | TRN-006 QA revokes with a reason; retraining opens | `TestRevocation.*` |
+| T7 | TRN-007 active employee without a job refused (new and changed); inactive and departed may have none; the setup wizard's own employee; the job's matrix applies through the designation | `TestEmployeeJob.*` |
+| T8 | TRN-008 one active employee per account, rehire as a new record; open training follows a new account (visibility, reminder, signing); a former account refused even on a stale record; completed records keep the signer; a failed move does not block the change | `TestEmployeeAccount.*` |
+| T9 | TRN-009 not active: cannot sign or be assessed, records withdrawn, account disabled; a leaver is refused on a job card | `TestEmployeeNotActive.*`, `TestEmployeeNotActiveOnJobCard.*` |
 
 ## 4. Step-by-step browser testing guide
 
@@ -86,6 +98,12 @@ Issue a new revision of the work instruction with a later effective date. Expect
 
 Automated: steps 1–4 as QA in `cypress/integration/training.js`.
 
+### TR-06 The employee master (Training Coordinator)
+1. **Organization › Employee › + Add** with *Status = Active* and no *Designation*, and save. Expected: *… is active: set their designation, the job that decides their training.*
+2. Give a second active employee the *User ID* of an existing active employee. Expected: *User … is already assigned to Employee …*
+3. On an operator with an open training record, change *User ID* to a new account and save. Expected: the record's *Trainee User* is the new account; signing *Trained* as the former account is refused, as the new account it succeeds.
+4. Set an operator with a Trained record to *Left* with a relieving date. Expected: their records are *Withdrawn*, their user is disabled, and a job card refuses time logged for them.
+
 ## 5. End-to-end business workflow
 Document approved (module 30) → QA's matrix says who needs it → records open → trained, assessed and signed → operator works (production stage 3) → new revision, refresher, or revocation → retrained.
 
@@ -98,7 +116,7 @@ Document approved (module 30) → QA's matrix says who needs it → records open
 | Signed acts | Training Matrix: Approve (Approved). Training Record: Trained (Trained), Competent (Competent), Not Competent (Rejected), Record History (Verified), Revoke (Rejected) |
 | New signature meanings | *Trained*, *Competent* (module 49) |
 | Gate | `training.guard_job_card` (Job Card before_validate, before_update_after_submit), `refuse_new_operators` (from `equipment_care.make_time_log`) |
-| Hooks | Employee on_update; document control approve, take effect, withdraw; daily after revisions take effect |
+| Hooks | Employee validate (`validate_employee`: an active employee holds a job) and on_update (reconcile; `follow_account_safely` on a new account); document control approve, take effect, withdraw; daily after revisions take effect |
 | Settings | `training_due_days` 14, `training_expiry_warning_days` 30 |
 | Permissions | Designation: HR edits, QA and production pick; Training Record row-level for others (`query_conditions`, `has_permission`) |
 | Pilot | `setup/fixtures/training.py` trains the demo operator through the real acts; the flow names that operator on each time log |
@@ -110,7 +128,7 @@ Document approved (module 30) → QA's matrix says who needs it → records open
 - History is entered on the revision in effect. Training on an earlier revision does not count at the workstation, whatever the paper says.
 - Every revision is trained, even when its change request says there is no training impact (decided 2026-10-11, D-20). Use a future effective date for minor changes, and a matrix row that allows reading where appropriate.
 - An ERPNext upgrade could add a new way to log time; `test_every_whitelisted_time_log_path_is_guarded` fails until it is reviewed.
-- Records open only for employees with a job. An employee without a designation needs no training and cannot pass the gate.
+- Records open only for employees with a job. An active employee cannot be saved without one (URS-TRN-007); an active employee saved before this rule, or by ERPNext's setup wizard, keeps none until the next save, needs no training meanwhile and cannot pass the gate.
 
 ## 8. Test results and verification summary
 See the pull request.
@@ -125,4 +143,5 @@ See the pull request.
 | Pilot and browser journey use a trained operator | Verified (automated) |
 | Paper history started from the list; its reason and matrix values not forgeable | Server tests written; **not yet run** |
 | QA records paper history on screen (`cypress/integration/training.js`) | Browser test written; **not yet run** |
-| Manual TR-01…TR-05 | **Not tested** |
+| Employee master rules (URS-TRN-007 to URS-TRN-009) | Server tests written; **not yet run** |
+| Manual TR-01…TR-06 | **Not tested** |

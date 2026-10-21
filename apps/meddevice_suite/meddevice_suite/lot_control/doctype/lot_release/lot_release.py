@@ -10,10 +10,23 @@ from meddevice_suite.compliance.audit import same
 from meddevice_suite.lot_control import lot_status, stores
 from meddevice_suite.lot_control.lot_status import QUARANTINE, STATUS_FIELD
 from meddevice_suite.lot_control.receipt import origin_of, receipt_line_of
-from meddevice_suite.lot_control.release import decided_stock, held_since
+from meddevice_suite.lot_control.release import RELEASE_BY_CONCESSION, decided_stock, held_since
+from meddevice_suite.qms.change_control import is_management
 
 # What QA may set while the decision is a draft; everything else the signed act sets.
 QA_FIELDS = frozenset({"batch"})
+# Set only by the signed acts.
+DECISION_FIELDS = (
+	"decision",
+	"reason",
+	"decided_by",
+	"decided_at",
+	"stock_entry",
+	"supplier_return",
+	"concession_justification",
+	"concession_approved_by",
+	"concession_approved_at",
+)
 
 
 class LotRelease(Document):
@@ -24,7 +37,7 @@ class LotRelease(Document):
 		if not lot_status.is_qa():
 			frappe.throw(_("Only QA decides a lot."), frappe.PermissionError)
 		self.describe_lot()
-		for field in ("decision", "reason", "decided_by", "decided_at", "stock_entry", "supplier_return"):
+		for field in DECISION_FIELDS:
 			self.set(field, None)
 
 	def validate(self) -> None:
@@ -37,7 +50,9 @@ class LotRelease(Document):
 			for df in self.meta.fields
 			if not df.fetch_from and not same(before.get(df.fieldname), self.get(df.fieldname), df.fieldtype)
 		}
-		if changed - QA_FIELDS or not lot_status.is_qa():
+		# A draft QA approved a concession on is Management's to approve: QA no longer points it at
+		# another lot (plan D-35).
+		if changed - QA_FIELDS or not lot_status.is_qa() or (changed and before.get("decision")):
 			frappe.throw(
 				_("{0} is decided by signing it; its details are set by the decision.").format(self.name),
 				frappe.PermissionError,
@@ -78,6 +93,10 @@ class LotRelease(Document):
 					"returned": sum(
 						flt(holding.qty) for holding in lot_status.holdings_of(lot.name, {stores.RETURNS})
 					),
+					# Plan D-35: a second person from Management approves a concession QA approved.
+					"approves_concession": self.decision == RELEASE_BY_CONCESSION
+					and frappe.session.user != self.decided_by
+					and is_management(),
 				},
 			)
 

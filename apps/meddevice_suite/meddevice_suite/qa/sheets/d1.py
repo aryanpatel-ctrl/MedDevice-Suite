@@ -9,23 +9,31 @@ module adds what the pilot's demo customers stand for on the pilot site: a custo
 from the licence (the sheet's City Hospital (Demo)) and one with a licence QA has verified (Regional
 Medical Distributor (Demo)), made afresh each run, as the system makes them, by the run's job users
 with their signatures; and a second customer group, for the change the sheet makes under change
-control. The approved change request the sheet's last test names is made by `approve_customer_change`
-when that test reaches it, raised by Sales and assessed and approved by QA with signatures.
+control. The approved change request D1-T14 names is made by `approve_customer_change` when that
+test reaches it, raised by Sales and assessed and approved by QA with signatures.
+
+D1-T15 and D1-T16 start from records of their own, so that they run whatever the rows before them
+did: a customer in use (a sales order submitted under its verified licence) whose group Sales has
+changed under an approved change request, for QA to read in the audit trail; and a customer with a
+verified licence and one awaiting QA, which nobody, the Administrator included, deletes or cancels.
 
 Only the Administrator who runs the tests prepares the sheet.
 """
 
 import frappe
 from frappe import _
-from frappe.utils import today
+from frappe.utils import add_days, get_fullname, today
 
 from meddevice_suite.master_data import customer_licence
-from meddevice_suite.qa.ui_journey import PRODUCT, acting_as, store
+from meddevice_suite.master_data.versioning import CHANGE_REQUEST
+from meddevice_suite.qa.ui_journey import COMPANY, PRODUCT, PRODUCT_DETAILS, acting_as, store
 from meddevice_suite.qa.ui_users import email_for, ensure_test_site
-from meddevice_suite.setup.fixtures.records import LICENCE_TYPE, ensure_licence
+from meddevice_suite.setup.fixtures.records import LICENCE_TYPE, ensure_licence, licence_copy
 
 CUSTOMER_GROUP = "Commercial"  # the group the sheet's customers are made in
 OTHER_GROUP = "Hospitals (browser test)"  # the group the sheet moves its customer to
+LICENCE_CHECKED = "Licence copy checked against the authority's register (browser test)"
+CHANGE_REASON = "The customer is now a hospital (browser test)."  # why the sheet's customer changes
 
 
 def require_administrator() -> None:
@@ -56,13 +64,7 @@ def prepare_sheet(password: str) -> dict:
 
 	# The sheet's Regional Medical Distributor (Demo): recorded by Sales, its licence verified by QA.
 	licensed = new_customer(f"D1 Regional Medical Distributor {suffix}")
-	ensure_licence(  # also makes the licence type the sheet records licences under
-		licensed,
-		lambda: acting_as(email_for("Sales")),
-		lambda: acting_as(email_for("QA Manager")),
-		password,
-		"Licence copy checked against the authority's register (browser test)",
-	)
+	verified_licence(licensed, password)  # also makes the licence type the sheet records licences under
 	# The sheet's City Hospital (Demo): QA decides with a signature that it buys without a licence.
 	exempt = new_customer(f"D1 City Hospital {suffix}")
 	with acting_as(email_for("QA Manager")):
@@ -70,6 +72,38 @@ def prepare_sheet(password: str) -> dict:
 			frappe.get_doc("Customer", exempt),
 			password=password,
 			reason="Hospital buying for its own use (browser test)",
+		)
+
+	# D1-T15: a customer in use whose group Sales changed under an approved change request.
+	audited = new_customer(f"D1 Audited Distributor {suffix}")
+	audited_licence = verified_licence(audited, password)
+	submitted_order(audited)
+	audited_change = approve_customer_change(audited, password)
+	with acting_as(email_for("Sales")):
+		customer = frappe.get_doc("Customer", audited)
+		customer.customer_group = OTHER_GROUP
+		customer.set(CHANGE_REQUEST, audited_change)
+		customer.save()
+
+	# D1-T16: a verified licence and one awaiting QA, which are never deleted or cancelled.
+	kept = new_customer(f"D1 Licensed Pharmacy {suffix}")
+	kept_licence = verified_licence(kept, password)
+	with acting_as(email_for("Sales")):
+		awaiting_licence = (
+			frappe.get_doc(
+				{
+					"doctype": customer_licence.DOCTYPE,
+					"customer": kept,
+					"licence_type": LICENCE_TYPE,
+					"licence_number": f"TEST-D1-{suffix}",
+					"issuing_authority": "State Licensing Authority (browser test)",
+					"valid_from": add_days(today(), -1),
+					"valid_until": add_days(today(), 365),
+					"licence_copy": licence_copy(f"{kept} awaiting"),  # a copy of its own
+				}
+			)
+			.insert()
+			.name
 		)
 	return {
 		"customer_name": f"TEST-D1 Medical Stores {suffix}",
@@ -80,7 +114,51 @@ def prepare_sheet(password: str) -> dict:
 		"exempt_customer": exempt,
 		"product": PRODUCT,
 		"finished_goods": store("Finished Goods"),
+		"audited_customer": audited,
+		"audited_licence": audited_licence,
+		"audited_change_request": audited_change,
+		"change_reason": CHANGE_REASON,
+		"licence_checked": LICENCE_CHECKED,
+		"kept_licence": kept_licence,
+		"awaiting_licence": awaiting_licence,
+		"full_names": {job: get_fullname(email_for(job)) for job in ("Sales", "QA Manager")},
 	}
+
+
+def verified_licence(customer: str, password: str) -> str:
+	"""The customer's licence, recorded by Sales and verified by QA with a signature. Its name."""
+	ensure_licence(
+		customer,
+		lambda: acting_as(email_for("Sales")),
+		lambda: acting_as(email_for("QA Manager")),
+		password,
+		LICENCE_CHECKED,
+	)
+	return frappe.db.get_value(
+		customer_licence.DOCTYPE,
+		{"customer": customer, "docstatus": 1, "status": customer_licence.VERIFIED},
+		"name",
+	)
+
+
+def submitted_order(customer: str) -> str:
+	"""A sales order of the standard flow's product, submitted by Sales: the customer is in use."""
+	delivery = add_days(today(), 7)
+	with acting_as(email_for("Sales")):
+		order = frappe.get_doc(
+			{
+				"doctype": "Sales Order",
+				"customer": customer,
+				"company": COMPANY,
+				"transaction_date": today(),
+				"delivery_date": delivery,
+				"items": [
+					{"item_code": PRODUCT, "qty": 1, "rate": PRODUCT_DETAILS[2], "delivery_date": delivery}
+				],
+			}
+		).insert()
+		order.submit()
+		return order.name
 
 
 def new_customer(customer_name: str) -> str:
@@ -118,7 +196,7 @@ def approve_customer_change(customer: str, password: str) -> str:
 				# The request offers no customer type of change; a customer is sold the products.
 				"change_type": "Product or BOM",
 				"description": f"Customer group of {customer} changed (browser test).",
-				"reason": "The customer is now a hospital (browser test).",
+				"reason": CHANGE_REASON,
 				"affected_records": [{"reference_doctype": "Customer", "reference_name": customer}],
 				"actions": [
 					{

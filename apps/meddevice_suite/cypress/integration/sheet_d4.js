@@ -287,9 +287,10 @@ function refused_with(pattern) {
 
 // A server call the signed-in user makes that must be refused; returns the refusal.
 function refused_call(method, args) {
+	// The desk's token, as the other sheets send it; a test site that does not check it has none.
 	return cy
 		.window()
-		.its("frappe.csrf_token")
+		.then((win) => win.frappe?.csrf_token)
 		.then((csrf_token) =>
 			cy.request({
 				method: "POST",
@@ -543,6 +544,23 @@ function type_and_leave(selector, text) {
 	});
 }
 
+// A date is kept only once the person leaves its field ('change' on blur), and a form refresh set
+// off by the field before (a fetch, a dependent field, ERPNext's own form script) can land in
+// between and draw the box again from the still empty record: the person sees the box go empty
+// and types the date again (found in CI, 2026-10-20, on a slow runner: the box empty in the
+// screenshot). Typed again once only, and only when both the record and the box are empty: a box
+// still showing a date the record did not take is a defect, left to the check that follows.
+function retype_if_wiped(selector, value, label, read_stored, reopen = null) {
+	settle();
+	cy.window().then((win) => {
+		const box = Cypress.$(win.document.body).find(selector).first().val();
+		if (read_stored(win) || box) return;
+		cy.log(`${label}: date wiped by a form refresh, typed again`);
+		if (reopen) reopen();
+		type_and_leave(selector, user_date(win, value));
+	});
+}
+
 function stored_as(stored, value, label) {
 	if (typeof value === "number") expect(stored, label).to.be.closeTo(value, 1e-6);
 	else expect(stored, label).to.equal(value);
@@ -558,6 +576,8 @@ function fill(fieldname, value, kind = "Data") {
 	cy.get(selector)
 		.first()
 		.then(($input) => enter($input, value, kind, selector));
+	if (kind === "Date")
+		retype_if_wiped(selector, value, fieldname, (win) => current(win)[fieldname]);
 	cy.window().should((win) => stored_as(current(win)[fieldname], value, fieldname));
 }
 
@@ -595,6 +615,14 @@ function fill_row(table, idx, fieldname, value, kind = "Data") {
 			enter($input, value, kind, inputs_of(cell(table, idx, fieldname)), () =>
 				cy.get(`${cell(table, idx, fieldname)}:first`).click()
 			)
+		);
+	if (kind === "Date")
+		retype_if_wiped(
+			inputs_of(cell(table, idx, fieldname)),
+			value,
+			`line ${idx} ${fieldname}`,
+			(win) => rows(win, table)[idx - 1][fieldname],
+			() => cy.get(`${cell(table, idx, fieldname)}:first`).click()
 		);
 	cy.window().should((win) =>
 		stored_as(rows(win, table)[idx - 1][fieldname], value, `line ${idx} ${fieldname}`)
@@ -687,6 +715,13 @@ function fill_line(fieldname, value, kind = "Data") {
 				.filter((_, element) => Cypress.dom.isVisible(element));
 			if ($input.length) {
 				enter($input.first(), value, kind, selector);
+				if (kind === "Date")
+					retype_if_wiped(
+						selector,
+						value,
+						fieldname,
+						(win) => win.cur_frm.cur_grid.doc[fieldname]
+					);
 			} else {
 				cy.window().then((win) => {
 					const line = win.cur_frm.cur_grid.doc;
@@ -759,7 +794,10 @@ function form_menu_offers(label, expected) {
 	cy.get(`${FORM} .menu-btn-group > button:visible:first`).click();
 	cy.get(".dropdown-menu.show").should("be.visible");
 	cy.get(".dropdown-menu.show .dropdown-item").should(($items) => {
-		const labels = $items.toArray().map((item) => item.textContent.trim());
+		// By its label: an item with a keyboard shortcut (Delete) shows the shortcut beside it.
+		const labels = $items
+			.toArray()
+			.map((item) => plain((item.querySelector(".menu-item-label") ?? item).textContent));
 		if (expected) expect(labels, "the menu").to.include(label);
 		else expect(labels, "the menu").to.not.include(label);
 	});
@@ -865,6 +903,21 @@ function submit_refused({ server, screen }) {
 	settle();
 	close_dialogs(); // the submit confirmation, if it is still open behind the refusal
 	cy.window().should((win) => expect(current(win).docstatus, "not submitted").to.equal(0));
+}
+
+// The person presses Cancel on the submitted record, gives the reason asked (audit_reason.js) and
+// confirms, and the server refuses the cancellation with the sheet's message; the record stays
+// submitted.
+function cancel_refused(reason, { server, screen }) {
+	button("Cancel").click();
+	give_reason_if_asked(reason);
+	open_dialog().should("contain", "Permanently Cancel");
+	expect_refusal(server);
+	cy.get(".modal.show .btn-primary").contains("Yes").click();
+	refused_with(screen);
+	settle();
+	close_dialogs();
+	cy.window().should((win) => expect(current(win).docstatus, "still submitted").to.equal(1));
 }
 
 // A change to a regulated record asks its reason first (audit_reason.js); given when asked.
@@ -1009,6 +1062,128 @@ function stock_of(item, lot) {
 			.filter((line) => line.batch_no === lot)
 			.map((line) => [line.warehouse, line.qty, line.lot_status])
 	);
+}
+
+// --- The audit trail and the signatures (sheet_d1.js, sheet_d2.js) ---------------------------
+
+function today_text(win) {
+	return user_date(win, win.frappe.datetime.get_today());
+}
+
+// The electronic signatures shown on the form (esign.js), first signed first.
+function signature_rows() {
+	return cy.get(`${FORM} .mds-signatures`).last().find("tbody tr");
+}
+
+// An entry of the record's audit trail on its form (compliance/audit_timeline.py describe) that
+// shows every one of `lines`, recorded today: its time is shown with it.
+function audit_entry_shown(lines) {
+	cy.window().then((win) =>
+		cy.get(`${FORM} .timeline-item`).should(($items) => {
+			const entries = $items
+				.toArray()
+				.filter((item) => lines.every((line) => plain(item.textContent).includes(line)));
+			expect(
+				entries,
+				`an entry of the audit trail showing: ${lines.join(" | ")}`
+			).to.have.length.at.least(1);
+			const [entry] = entries;
+			expect(entry.dataset.timestamp?.slice(0, 10), "recorded today").to.equal(
+				win.frappe.datetime.get_today()
+			);
+			// "… ago", its date and time on hover, or the date and time where the site shows them so.
+			const time = entry.querySelector(".frappe-timestamp");
+			expect(
+				time?.title.includes(today_text(win)) ||
+					plain(entry.textContent).includes(today_text(win)),
+				"its time shown"
+			).to.be.true;
+		})
+	);
+}
+
+// The record's own audit trail, opened with the form's View > Audit Trail (public/js/audit_trail.js):
+// the Audit Event list of that record only, showing each of `actions`.
+function open_audit_trail(doctype, name, actions) {
+	from_menu("View", "Audit Trail");
+	cy.window().should((win) => {
+		expect(win.frappe.get_route()[0], "a list is open").to.equal("List");
+		expect(win.cur_list?.doctype).to.equal("Audit Event");
+	});
+	settle();
+	cy.window().should((win) => {
+		const filters = win.cur_list.filter_area.get().map((filter) => [filter[1], filter[3]]);
+		expect(filters, "the list is of this record").to.deep.include.members([
+			["reference_doctype", doctype],
+			["reference_name", name],
+		]);
+	});
+	cy.get(`${FORM} .list-row-container:not(:has(.list-row-head))`).should(($rows) => {
+		const shown = $rows.toArray().map((row) => plain(row.textContent));
+		for (const action of actions) {
+			expect(
+				shown.some((row) => row.includes(action)),
+				`an entry "${action}" listed`
+			).to.be.true;
+		}
+	});
+}
+
+// The one entry of the record's audit trail for `action` whose changes `holds`, opened from the
+// audit trail's list.
+function open_audit_event(doctype, name, action, holds) {
+	const found = {};
+	cy.call("frappe.client.get_list", {
+		doctype: "Audit Event",
+		filters: { reference_doctype: doctype, reference_name: name, action },
+		fields: ["name", "changes"],
+		limit_page_length: 0,
+	}).then(({ message }) => {
+		const matching = message.filter((event) =>
+			holds(typeof event.changes === "string" ? JSON.parse(event.changes) : event.changes)
+		);
+		expect(matching, `one ${action} entry of ${name} as expected`).to.have.length(1);
+		found.event = matching[0].name;
+	});
+	cy.then(() => cy.get(`${FORM} .list-row a[data-name="${found.event}"]`).click());
+	cy.then(() => form_is("Audit Event", (doc) => doc.name === found.event));
+	settle();
+}
+
+// Who, when, and the old and new values, on the audit entry's form.
+function audit_event_shows(doctype, name, action, user, full_name, values) {
+	cy.window().should((win) => {
+		const doc = current(win);
+		expect([doc.reference_doctype, doc.reference_name]).to.deep.equal([doctype, name]);
+		expect(doc.action).to.equal(action);
+		expect(doc.user, "who").to.equal(user);
+		expect(doc.event_at.slice(0, 10), "when").to.equal(win.frappe.datetime.get_today());
+	});
+	cy.get(`${FORM} .frappe-control[data-fieldname="action"]`).should("contain", action);
+	cy.get(`${FORM} .frappe-control[data-fieldname="user"]`).should(
+		($control) =>
+			expect(
+				[user, full_name].some((who) => $control.text().includes(who)),
+				"who, shown"
+			).to.be.true
+	);
+	cy.window().then((win) =>
+		cy
+			.get(`${FORM} .frappe-control[data-fieldname="event_at"]`)
+			.should("contain", today_text(win))
+	);
+	reveal("changes");
+	cy.get(`${FORM} .frappe-control[data-fieldname="changes"]`).should(($control) => {
+		const text = $control.text();
+		for (const value of values) {
+			expect(text, "the old and new values, as stored").to.contain(value);
+		}
+	});
+}
+
+// [field, old, new] of a field an audit entry records as changed.
+function changed_field(changes, fieldname) {
+	return (changes?.changed || []).find(([field]) => field === fieldname);
 }
 
 // --- Steps the jobs take again and again ----------------------------------------------------
@@ -2721,6 +2896,280 @@ context("D4 Inventory & Batch Ledger: the browser test sheet, as each job", () =
 			);
 			no_problems("D4-T26");
 		});
+	});
+
+	// 21 CFR 11.10(e), ISO 13485 7.5.8: QA reads each change of a lot's status, who made it, when and
+	// why, and the signed decision that made it, on the lot's form, in its audit trail and on the
+	// decision. The lot is received and released by QA in the set-up; QA holds it here, a second
+	// change of its status.
+	it("[URS-STK-004] [URS-CMP-012] D4-T27 QA reads the audit trail of a lot: its status changes and QA's signed decision", () => {
+		prepare("prepare_lot", { password, stage: "approved" }).then((lot) => {
+			const made = {};
+			const held_because = "label unreadable";
+			sign_in(QA);
+			cy.window().then((win) => {
+				made.qa = win.frappe.session.user_fullname;
+			});
+			stored("Lot Release", lot.release).then((decision) => {
+				expect(
+					[decision.docstatus, decision.decision, decision.decided_by],
+					"released by QA"
+				).to.deep.equal([1, "Release", users[QA]]);
+				made.released_because = decision.reason;
+			});
+			new_lot_release(lot.lot);
+			sign("Hold", held_because);
+			cy.window().should((win) => {
+				expect(current(win).docstatus, "held").to.equal(1);
+				made.hold = current(win).name;
+			});
+
+			// On the lot's form: each change of its status, who made it, when and why.
+			open_form("Batch", lot.lot);
+			cy.window().should((win) => expect(current(win).mds_lot_status).to.equal("Hold"));
+			cy.then(() =>
+				audit_entry_shown([
+					`Updated by ${made.qa}`,
+					"Lot Status: Quarantine → Approved",
+					`Status Reason: empty → ${made.released_because}`,
+				])
+			);
+			cy.then(() =>
+				audit_entry_shown([
+					`Updated by ${made.qa}`,
+					"Lot Status: Approved → Hold",
+					`Status Reason: ${made.released_because} → ${held_because}`,
+				])
+			);
+
+			// Its whole audit trail, from the form's View menu, and the entry of the release opened:
+			// the status, its reason and the decision that set it, as stored.
+			open_audit_trail("Batch", lot.lot, ["Created", "Updated"]);
+			open_audit_event("Batch", lot.lot, "Updated", (changes) => {
+				const status = changed_field(changes, "mds_lot_status");
+				return status?.[1] === "Quarantine" && status?.[2] === "Approved";
+			});
+			cy.then(() =>
+				audit_event_shows("Batch", lot.lot, "Updated", users[QA], made.qa, [
+					"mds_lot_status",
+					"Quarantine",
+					"Approved",
+					"mds_status_reason",
+					made.released_because,
+					"mds_lot_release",
+					lot.release,
+				])
+			);
+
+			// The release: QA's Released signature, who signed, when and why, and the signed decision
+			// in its audit trail.
+			open_form("Lot Release", lot.release);
+			cy.window().then((win) =>
+				signature_rows().should(($rows) => {
+					expect($rows, "one signature").to.have.length(1);
+					expect($rows.eq(0).text())
+						.to.contain("Released")
+						.and.to.contain(made.qa)
+						.and.to.contain(today_text(win))
+						.and.to.contain("Release")
+						.and.to.contain(made.released_because);
+				})
+			);
+			cy.then(() =>
+				audit_entry_shown([`Submitted by ${made.qa}`, "Decision: empty → Release"])
+			);
+			open_audit_trail("Lot Release", lot.release, ["Created", "Submitted"]);
+			open_audit_event("Lot Release", lot.release, "Submitted", (changes) =>
+				Boolean(changed_field(changes, "decision"))
+			);
+			cy.then(() =>
+				audit_event_shows("Lot Release", lot.release, "Submitted", users[QA], made.qa, [
+					"decision",
+					"Release",
+					made.released_because,
+					"decided_by",
+					users[QA],
+					"quality_inspection",
+					lot.inspection,
+				])
+			);
+
+			// The hold, signed the same way.
+			cy.then(() => open_form("Lot Release", made.hold));
+			cy.window().then((win) =>
+				signature_rows().should(($rows) => {
+					expect($rows, "one signature").to.have.length(1);
+					expect($rows.eq(0).text())
+						.to.contain("Held")
+						.and.to.contain(made.qa)
+						.and.to.contain(today_text(win))
+						.and.to.contain(held_because);
+				})
+			);
+			no_problems("D4-T27");
+		});
+	});
+
+	// ISO 13485 4.2.5, 8.3: QA's decision on a lot and the lot itself are kept: nobody, the
+	// Administrator included, deletes or cancels a lot release, on the form or past it, or deletes
+	// the lot. No role holds delete or cancel on either, so the form offers neither to anyone. The
+	// release's transfer is never cancelled: by Management in D4-T18, by the Administrator here.
+	it("[URS-STK-004] [URS-CMP-016] D4-T28 A lot release and a lot are never deleted, and a release's transfer never cancelled", () => {
+		prepare("prepare_lot", { password, stage: "approved" }).then((lot) => {
+			const made = {};
+			const never_deleted = exact("A lot release is never deleted.");
+			const never_cancelled = exact(
+				"A decision on a lot is never cancelled; a new decision puts the lot on hold or releases it."
+			);
+			// Frappe refuses to delete a submitted record before the release's own rule is reached.
+			const submitted_not_deleted = /Submitted Record cannot be deleted/;
+			// A lot has no rule of its own against deletion: what is recorded against it keeps it.
+			const lot_kept = exact("You can disable this Batch instead of deleting it.");
+			const decision = (name) => ({ doctype: "Lot Release", name });
+			const the_lot = { doctype: "Batch", name: lot.lot };
+
+			// QA, who decides lots: the forms offer neither, and a call past the form is refused.
+			sign_in(QA);
+			open_form("Lot Release", lot.release);
+			offered("Cancel", false);
+			form_menu_offers("Delete", false);
+			for (const method of ["frappe.client.delete", "frappe.client.cancel"]) {
+				refused_call(method, decision(lot.release)).then((message) =>
+					expect(message, `${method} as QA`).to.match(/PermissionError/)
+				);
+			}
+			// A decision QA has prepared on the lot and not signed.
+			new_lot_release(lot.lot);
+			cy.window().then((win) => {
+				made.draft = current(win).name;
+			});
+			form_menu_offers("Delete", false);
+			cy.then(() => refused_call("frappe.client.delete", decision(made.draft))).then(
+				(message) =>
+					expect(message, "deleting the prepared decision, as QA").to.match(
+						/PermissionError/
+					)
+			);
+			open_form("Batch", lot.lot);
+			form_menu_offers("Delete", false);
+			refused_call("frappe.client.delete", the_lot).then((message) =>
+				expect(message, "deleting the lot, as QA").to.match(/PermissionError/)
+			);
+			no_problems("D4-T28, QA");
+
+			// The Administrator, who holds every permission.
+			as_administrator();
+			open_form("Lot Release", lot.release);
+			offered("Cancel", false);
+			form_menu_offers("Delete", false);
+			refused_call("frappe.client.delete", decision(lot.release)).should(
+				"match",
+				submitted_not_deleted
+			);
+			refused_call("frappe.client.cancel", decision(lot.release)).should(
+				"match",
+				never_cancelled
+			);
+			cy.then(() => open_form("Lot Release", made.draft));
+			form_menu_offers("Delete", false);
+			cy.then(() => refused_call("frappe.client.delete", decision(made.draft))).should(
+				"match",
+				never_deleted
+			);
+			open_form("Batch", lot.lot);
+			form_menu_offers("Delete", false);
+			refused_call("frappe.client.delete", the_lot).should("match", lot_kept);
+			// The release's transfer, refused to Management in D4-T18, is refused to the
+			// Administrator too.
+			refused_call("frappe.client.cancel", {
+				doctype: "Stock Entry",
+				name: lot.transfer,
+			}).should(
+				"match",
+				exact(
+					`${lot.transfer} was posted by a lot release and is not cancelled; put the lot on hold instead.`
+				)
+			);
+			stored("Stock Entry", lot.transfer).then((entry) =>
+				expect(entry.docstatus, "the transfer, still submitted").to.equal(1)
+			);
+
+			// The decisions and the lot are still there, as they were.
+			stored("Lot Release", lot.release).then((kept) =>
+				expect([kept.docstatus, kept.decision], "the release, signed").to.deep.equal([
+					1,
+					"Release",
+				])
+			);
+			cy.then(() => stored("Lot Release", made.draft)).then((kept) =>
+				expect(kept.docstatus, "the prepared decision, unsigned").to.equal(0)
+			);
+			lot_values(lot.lot, ["mds_lot_status", "mds_lot_release"]).then((kept) =>
+				expect(kept, "the lot, as released").to.deep.equal({
+					mds_lot_status: "Approved",
+					mds_lot_release: lot.release,
+				})
+			);
+			no_problems("D4-T28");
+		});
+	});
+
+	// ISO 13485 8.3, URS-STK-014 (independent review 2026-10-15): stock Stores set apart in the Hold
+	// or the Rejected store, and goods a customer sent back into the Returns store, leave only by
+	// QA's signed disposition; cancelling the move that brought them there would take them out
+	// without it, and is refused.
+	it("[URS-STK-014] [URS-STK-010] D4-T29 Stores cannot cancel a move into the Hold, Rejected or Returns store; QA's disposition is the way", () => {
+		prepare("prepare_lot", { password, stage: "approved", qty: 10 }).then((lot) =>
+			prepare("prepare_delivery", { qty: 10, delivered: 3, returned: 2 }).then((sent) => {
+				const made = {};
+				const kept_for_qa = (doctype, name, lot_name, store) =>
+					refusal(
+						`Cancelling ${doctype} ${name} would take lot ${lot_name} (Approved) out of ${store} without QA's decision. Stock kept apart for QA leaves only by QA's signed disposition on a Lot Release; ask QA to decide it.`,
+						"Stock kept apart"
+					);
+				sign_in(STORES);
+				for (const [which, to, qty] of [
+					["hold", data.stores.hold, 2],
+					["rejected", data.stores.rejected, 1],
+				]) {
+					stock_entry_form({
+						type: "Material Transfer",
+						item: lot.item,
+						qty,
+						from: data.stores.approved,
+						to,
+						lot: lot.lot,
+					});
+					save();
+					submit();
+					cy.window().then((win) => {
+						made[which] = current(win).name;
+					});
+					cy.then(() =>
+						cancel_refused(
+							"Moved by mistake",
+							kept_for_qa("Stock Entry", made[which], lot.lot, to)
+						)
+					);
+					cy.then(() => stored("Stock Entry", made[which])).then((entry) =>
+						expect(entry.docstatus, `the move into ${to}, still submitted`).to.equal(1)
+					);
+				}
+
+				open_form("Delivery Note", sent.sales_return);
+				cy.window().should((win) =>
+					expect(current(win).is_return, "the customer's return").to.equal(1)
+				);
+				cancel_refused(
+					"Entered by mistake",
+					kept_for_qa("Delivery Note", sent.sales_return, sent.lot, data.stores.returns)
+				);
+				stored("Delivery Note", sent.sales_return).then((back) =>
+					expect(back.docstatus, "the return, still submitted").to.equal(1)
+				);
+				no_problems("D4-T29");
+			})
+		);
 	});
 });
 

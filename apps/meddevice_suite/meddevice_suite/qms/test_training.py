@@ -948,3 +948,170 @@ class TestJobCardGate(TrainingTestCase, RoutingTestCase):
 		for name in saving:
 			self.assertTrue(saves(name), name)
 		self.assertIn("self.save()", inspect.getsource(job_card.JobCard.add_time_logs))
+
+
+# --- The employee master (module 9) --------------------------------------------------------------
+
+
+def change_employee(emp: str, **values) -> None:
+	"""A change to the employee as the Training Coordinator saves it: through every hook."""
+	staff = frappe.get_doc("Employee", emp)
+	staff.update(values)
+	staff.save(ignore_permissions=True)
+
+
+def leave(emp: str) -> None:
+	change_employee(emp, status="Left", relieving_date=today())
+
+
+@verifies("URS-TRN-007")
+class TestEmployeeJob(TrainingTestCase):
+	def test_an_active_employee_without_a_job_is_refused(self):
+		with self.assertRaisesRegex(frappe.ValidationError, "set their designation"):
+			employee(None, person("Operator"))
+		emp, _user = self.operator(designation())
+		with self.assertRaisesRegex(frappe.ValidationError, "set their designation"):
+			change_employee(emp, designation=None)
+		self.assertTrue(frappe.db.get_value("Employee", emp, "designation"))
+
+	def test_an_employee_who_is_not_active_may_be_without_a_job(self):
+		self.assertTrue(employee(None, status="Inactive"))
+		emp, _user = self.operator(designation())
+		leave(emp)
+		change_employee(emp, designation=None)
+		self.assertFalse(frappe.db.get_value("Employee", emp, "designation"))
+
+	def test_erpnexts_setup_wizard_records_its_user_without_a_job(self):
+		frappe.flags.in_setup_wizard = True
+		try:
+			emp = employee(None)
+		finally:
+			frappe.flags.in_setup_wizard = False
+		with self.assertRaisesRegex(frappe.ValidationError, "set their designation"):
+			change_employee(emp, first_name="Asked for the job")
+
+	def test_the_jobs_matrix_applies_through_the_designation(self):
+		first, _r = self.sop()
+		second, _r2 = self.sop()
+		job, other_job = self.job_with(first), self.job_with(second)
+		emp, _user = self.operator(job)
+		colleague, _u = self.operator(job)
+		for person_in_job in (emp, colleague):
+			self.assertEqual(
+				[frappe.db.get_value(RECORD, r.name, "controlled_document") for r in records(person_in_job)],
+				[first.name],
+			)
+		change_employee(emp, designation=other_job)
+		by_document = {
+			frappe.db.get_value(RECORD, r.name, "controlled_document"): r.status for r in records(emp)
+		}
+		self.assertEqual(by_document, {first.name: "Withdrawn", second.name: "Open"})
+		self.assertEqual([r.status for r in records(colleague)], ["Open"])  # still in the job
+
+
+@verifies("URS-TRN-008")
+class TestEmployeeAccount(TrainingTestCase):
+	def test_a_user_account_belongs_to_one_active_employee(self):
+		job = designation()
+		emp, user = self.operator(job)
+		with self.assertRaises(frappe.DuplicateEntryError):
+			employee(job, user)
+		# Rehired as a new employee record once the first has left: still one active employee.
+		leave(emp)
+		rehired = employee(job, user)
+		self.assertEqual(
+			frappe.get_all("Employee", filters={"user_id": user, "status": "Active"}, pluck="name"), [rehired]
+		)
+		with self.assertRaises(frappe.DuplicateEntryError):
+			change_employee(emp, status="Active", relieving_date=None)
+
+	def test_open_training_follows_a_new_account(self):
+		document, _r = self.sop()
+		emp, old = self.operator(self.job_with(document))
+		name = self.open_record(emp)
+		self.plan(name)
+		new = person("Operator")
+		change_employee(emp, user_id=new)
+		record = frappe.get_doc(RECORD, name)
+		self.assertEqual(record.trainee_user, new)
+		self.assertTrue(training.has_permission(record, "read", new))
+		self.assertFalse(training.has_permission(record, "read", old))
+		due = {d.reference_name: d for d in reminders.training_due()}
+		self.assertEqual(due[name].user, new)
+		with self.assertRaises(frappe.PermissionError):
+			self.sign(old, RECORD, name, "Trained")
+		self.sign(new, RECORD, name, "Trained")
+		self.assertEqual(frappe.db.get_value(RECORD, name, ["status", "trained_by"]), ("Trained", new))
+
+	def test_the_trainee_signs_on_the_account_linked_at_the_time_of_signing(self):
+		"""Even where the open record still names the former account (its follow-up failed)."""
+		document, _r = self.sop()
+		emp, old = self.operator(self.job_with(document))
+		name = self.open_record(emp)
+		self.plan(name)
+		frappe.db.set_value("Employee", emp, "user_id", person("Operator"))  # no hooks: the record is stale
+		self.assertEqual(frappe.db.get_value(RECORD, name, "trainee_user"), old)
+		with self.assertRaisesRegex(frappe.PermissionError, "Only the trainee"):
+			self.sign(old, RECORD, name, "Trained")
+		self.assertEqual(frappe.db.get_value(RECORD, name, "status"), "Open")
+
+	def test_a_completed_record_keeps_the_account_that_signed_it(self):
+		document, _r = self.sop()
+		emp, old = self.operator(self.job_with(document))
+		name = self.open_record(emp)
+		self.competent(name, old)
+		change_employee(emp, user_id=person("Operator"))
+		self.assertEqual(frappe.db.get_value(RECORD, name, ["trainee_user", "trained_by"]), (old, old))
+		self.assertTrue(verify_signatures(RECORD, name))
+
+	def test_a_failed_follow_up_never_holds_back_the_change_of_account(self):
+		from unittest.mock import patch
+
+		document, _r = self.sop()
+		emp, old = self.operator(self.job_with(document))
+		name = self.open_record(emp)
+		new = person("Operator")
+		with (
+			patch.object(training, "follow_account", side_effect=frappe.ValidationError("refused")),
+			patch.object(frappe, "log_error") as logged,
+		):
+			change_employee(emp, user_id=new)
+		self.assertEqual(frappe.db.get_value("Employee", emp, "user_id"), new)
+		self.assertEqual(frappe.db.get_value(RECORD, name, "trainee_user"), old)
+		logged.assert_called_once()
+
+
+@verifies("URS-TRN-009")
+class TestEmployeeNotActive(TrainingTestCase):
+	def test_not_trained_nor_assessed_and_the_account_is_disabled(self):
+		first, _r = self.sop()
+		second, _r2 = self.sop()
+		emp, user = self.operator(self.job_with(first, second))
+		trained, still_open = (r.name for r in records(emp, status="Open"))
+		self.plan(trained)
+		self.sign(user, RECORD, trained, "Trained")
+		self.plan(still_open)
+		# Inactive before the system has withdrawn the records (as if reconciling had failed).
+		frappe.db.set_value("Employee", emp, "status", "Inactive")
+		with self.assertRaisesRegex(frappe.ValidationError, "is not active"):
+			self.sign(user, RECORD, still_open, "Trained")
+		with self.assertRaisesRegex(frappe.ValidationError, "is not active"):
+			self.sign(self.assessor, RECORD, trained, "Competent")
+		leave(emp)
+		self.assertEqual({r.status for r in records(emp)}, {"Withdrawn"})
+		self.assertFalse(frappe.db.get_value("User", user, "enabled"))
+
+
+@verifies("URS-TRN-009")
+class TestEmployeeNotActiveOnJobCard(TrainingTestCase, RoutingTestCase):
+	line = TestJobCardGate.line
+	card = TestJobCardGate.card
+	trained = TestJobCardGate.trained
+
+	def test_time_is_refused_for_a_leaver(self):
+		ws, op, instruction, _rev = self.line()
+		emp, _user = self.trained(instruction)
+		self.assertTrue(self.card(ws, op, emp).insert().name)
+		leave(emp)
+		with self.assertRaisesRegex(frappe.ValidationError, "not an active employee"):
+			self.card(ws, op, emp).insert()

@@ -19,21 +19,31 @@ each run and named with the run's own suffix, what the sheet's pilot records sta
   still in draft;
 - the measuring instrument a reading names, approved and calibrated.
 
+D3-T26 and D3-T27 start from records of their own, so that they run whatever the rows before them
+did: a finished good QA approved with a signature, its bill of materials QA approved, and its shelf
+life changed by QA under an approved change request, for QA to read in the audit trail (21 CFR
+11.10(e)); and a finished good with its approved specification and approved bill of materials, and
+a second approved finished good with its own, which nobody merges, deletes or cancels (ISO 13485
+4.2.4, 4.2.5).
+
 Only the Administrator who runs the tests prepares the sheet. The approved change requests the
 sheet names are made when its tests reach them (`approve_change`), raised by the Production
 Supervisor and assessed and approved by QA with signatures.
 """
 
 import secrets
+from collections.abc import Callable
 from contextlib import AbstractContextManager
 
 import frappe
 from frappe import _
-from frappe.utils import add_days, flt, today
+from frappe.utils import add_days, flt, get_fullname, today
 
+from meddevice_suite.compliance.signing import signatures_of
 from meddevice_suite.lot_control import stores
 from meddevice_suite.lot_control.receipt import verify_certificate
 from meddevice_suite.master_data import item_master, routing, specification, supplier_approval
+from meddevice_suite.master_data.versioning import CHANGE_REQUEST
 from meddevice_suite.qa.ui_journey import (
 	COMPANY,
 	acting_as,
@@ -66,6 +76,9 @@ COMPONENTS = {"silicone": 1.2, "connector": 100, "pouch": 100, "carton": 1}
 # counted in whole Nos.
 UNITS = {"silicone": "Kg"}
 COUNTED = "Nos"
+# The shelf life of the sheet's finished goods, in days, and what QA changes it to under an approved
+# change request in D3-T26's precondition.
+SHELF_LIFE, CHANGED_SHELF_LIFE = 1825, 1460
 
 
 def require_administrator() -> None:
@@ -123,26 +136,9 @@ def prepare_sheet(password: str) -> dict:
 	}
 	for code in materials.values():
 		approve_item(code)
-	product = new_item(
-		f"FC-2W-SIL-14-{suffix}",
-		"Foley catheter, 2-way, silicone, 14 Fr (browser test)",
-		item_master.FINISHED_GOOD,
-		group="Products",
-		hsn="90183910",
-		shelf_life=1825,
-		**{
-			item_master.STERILE: "Yes",
-			item_master.DEVICE_CLASS: "B",
-			item_master.UNITS_PER_BOX: 10,
-			item_master.BOXES_PER_CARTON: 20,
-			item_master.UDI_DI: demo_gtin(f"FC-2W-SIL-14-{suffix}"),
-			item_master.SPECIFICATION_DOCUMENT: documents["specification_document"],
-		},
-	)
-	ensure_inspection_template(product, "Products", approve_spec)  # its final specification
-	approve_item(product)
-	default_bom = new_bom(product, materials, is_default=1)
-	approve_bom(default_bom)
+	approved_product = finished_goods(documents["specification_document"], approve_item, approve_spec)
+	product = approved_product(f"FC-2W-SIL-14-{suffix}")
+	default_bom = approved_bom(product, materials, approve_bom)
 	# D3-T13: a second approved bill of the product, not the default, so that the row runs on its
 	# own (the sheet names D3-T10's).
 	second_bom = new_bom(product, materials, is_default=0)
@@ -177,6 +173,19 @@ def prepare_sheet(password: str) -> dict:
 	sub_assembly = new_item(
 		f"TEST-D3-SA-{suffix}", "Catheter shaft, extruded (browser test)", item_master.SUB_ASSEMBLY
 	)
+
+	# D3-T26 and D3-T27: records of their own.
+	audited = audited_product(approved_product(f"TEST-D3-FG26-{suffix}"), materials, approve_bom, password)
+	kept_item = approved_product(f"TEST-D3-FG27-{suffix}")
+	duplicate = approved_product(f"TEST-D3-FG27B-{suffix}")
+	kept = {
+		"item": kept_item,
+		"bom": approved_bom(kept_item, materials, approve_bom),
+		"specification": frappe.db.get_value("Item", kept_item, "quality_inspection_template"),
+		"duplicate": duplicate,
+		"duplicate_bom": approved_bom(duplicate, materials, approve_bom),
+		"duplicate_specification": frappe.db.get_value("Item", duplicate, "quality_inspection_template"),
+	}
 
 	valid_gtin, invalid_gtin = new_gtin_pair()
 	return {
@@ -226,6 +235,9 @@ def prepare_sheet(password: str) -> dict:
 			"specification": t25_specification,
 			"lot": lots[t25_item],
 		},
+		"audited": audited,
+		"kept": kept,
+		"full_names": {job: get_fullname(email_for(job)) for job in (QA, PRODUCTION)},
 	}
 
 
@@ -294,6 +306,74 @@ def new_item(
 		.insert(ignore_permissions=True)  # test-site set-up by the Administrator, checked by the caller
 		.name
 	)
+
+
+def finished_goods(
+	specification_document: str, approve_item: Callable[[str], None], approve_spec: Callable[[str], None]
+) -> Callable[[str], str]:
+	"""Makes a finished good with its code: sterile, of device class B, in boxes of 10 and cartons of
+	20, with its GTIN, the specification document that defines it and its final specification, QA
+	approving the specification and the item with signatures."""
+
+	def approved_product(code: str) -> str:
+		product = new_item(
+			code,
+			"Foley catheter, 2-way, silicone, 14 Fr (browser test)",
+			item_master.FINISHED_GOOD,
+			group="Products",
+			hsn="90183910",
+			shelf_life=SHELF_LIFE,
+			**{
+				item_master.STERILE: "Yes",
+				item_master.DEVICE_CLASS: "B",
+				item_master.UNITS_PER_BOX: 10,
+				item_master.BOXES_PER_CARTON: 20,
+				item_master.UDI_DI: demo_gtin(code),
+				item_master.SPECIFICATION_DOCUMENT: specification_document,
+			},
+		)
+		ensure_inspection_template(product, "Products", approve_spec)  # its final specification
+		approve_item(product)
+		return product
+
+	return approved_product
+
+
+def approved_bom(product: str, materials: dict[str, str], approve_bom: Callable[[str], None]) -> str:
+	"""The product's default bill of materials, drafted as Production drafts one and approved by QA
+	with a signature."""
+	bom = new_bom(product, materials, is_default=1)
+	approve_bom(bom)
+	return bom
+
+
+def audited_product(
+	product: str, materials: dict[str, str], approve_bom: Callable[[str], None], password: str
+) -> dict:
+	"""D3-T26: the approved product with its bill of materials approved by QA, and its shelf life
+	changed by QA under an approved change request that lists it, raised by Production."""
+	bom = approved_bom(product, materials, approve_bom)
+	change = approved_change_request("Item", product, password)
+	with act_as(QA):
+		doc = frappe.get_doc("Item", product)
+		doc.shelf_life_in_days = CHANGED_SHELF_LIFE
+		doc.set(CHANGE_REQUEST, change)
+		doc.save()
+	return {
+		"item": product,
+		"bom": bom,
+		"change_request": change,
+		"change_reason": frappe.db.get_value("Change Request", change, "reason"),
+		"shelf_life": {"before": SHELF_LIFE, "after": CHANGED_SHELF_LIFE},
+		"item_approval_reason": approval_reason("Item", product),
+		"bom_approval_reason": approval_reason("BOM", bom),
+	}
+
+
+def approval_reason(doctype: str, name: str) -> str:
+	"""Why QA approved the record, as its one Approve signature records it."""
+	[reason] = [row.reason for row in signatures_of(doctype, name) if row.action == "Approve"]
+	return reason
 
 
 def new_bom(product: str, materials: dict[str, str], is_default: int) -> str:

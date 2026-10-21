@@ -12,10 +12,13 @@
 //   "TEST-D2 Pouch Supplier" and the suppliers of D2-T13 and D2-T14 carry the run's tag;
 //   "Silicone Compounds (Demo)" in D2-T12 -> the journey's supplier.
 // What only time makes (a rating of a finished month) and the changes of D2-T14's precondition
-// are prepared by meddevice_suite/qa/sheets/d2.py through the code's own services.
+// are prepared by meddevice_suite/qa/sheets/d2.py through the code's own services, and so are the
+// records D2-T15 and D2-T16 start from: a supplier changed under a change request with QA's signed
+// approval, for QA to read in the audit trail, and a supplier with QA's signed approval, a decision
+// QA has prepared, and a second supplier to merge it into, which nobody merges, deletes or cancels.
 //
 // D2-T01 to D2-T11 build on one another, so once one fails the rest of that chain is not run;
-// D2-T12 to D2-T14 stand on their own.
+// D2-T12 to D2-T16 stand on their own.
 
 const USERS = "meddevice_suite.qa.ui_users";
 const JOURNEY = "meddevice_suite.qa.ui_journey";
@@ -54,6 +57,14 @@ function sign_in(job) {
 	});
 	cy.visit("/desk");
 	cy.window().its("frappe.session.user").should("eq", email);
+}
+
+// The Administrator who runs the tests, who holds every permission (D2-T16).
+function sign_in_as_administrator() {
+	leave_page();
+	cy.login();
+	cy.visit("/desk");
+	cy.window().its("frappe.session.user").should("eq", "Administrator");
 }
 
 function leave_page() {
@@ -292,12 +303,36 @@ function user_date(win, value) {
 	return win.frappe.datetime.str_to_user(value);
 }
 
+function today_text(win) {
+	return user_date(win, win.frappe.datetime.get_today());
+}
+
 // Types into a field's input and leaves it, as the person would.
 function type_into($input, text) {
 	cy.wrap($input).clear().type(text, { delay: 0 });
 	// A date picker may already have taken the focus away.
 	cy.document().then((doc) => {
 		if (doc.activeElement === $input[0]) cy.wrap($input).blur();
+	});
+}
+
+// A date is kept only once the person leaves its field ('change' on blur), and a form refresh set
+// off by the field before (a fetch, a dependent field, ERPNext's own form script) can land in
+// between and draw the box again from the still empty record: the person sees the box go empty
+// and types the date again (found in CI, 2026-10-20, on a slow runner: the box empty in the
+// screenshot). Typed again once only, and only when both the record and the box are empty: a box
+// still showing a date the record did not take is a defect, left to the check that follows. The
+// field is found again: the refresh drew it anew.
+function retype_if_wiped(selector, value, label, read_stored, reopen = null) {
+	settle();
+	cy.window().then((win) => {
+		const box = Cypress.$(win.document.body).find(selector).first().val();
+		if (read_stored(win) || box) return;
+		cy.log(`${label}: date wiped by a form refresh, typed again`);
+		if (reopen) reopen();
+		cy.get(selector)
+			.first()
+			.then(($input) => type_into($input, user_date(win, value)));
 	});
 }
 
@@ -353,6 +388,13 @@ function fill(fieldname, value, kind = "Data") {
 				else if (kind === "Date") type_into($input, user_date(win, value));
 				else type_into($input, String(value));
 			})
+		);
+	if (kind === "Date")
+		retype_if_wiped(
+			inputs_of(`${FORM} .frappe-control[data-fieldname="${fieldname}"]`),
+			value,
+			fieldname,
+			(win) => current(win)[fieldname]
 		);
 	cy.window().should((win) => {
 		const stored = current(win)[fieldname];
@@ -629,11 +671,13 @@ function banner(colour, text) {
 	);
 }
 
-// A server call the signed-in user makes that must be refused; returns the refusal.
+// A server call the signed-in user makes that must be refused, as a script or another tool would
+// send it past the form; returns the refusal.
 function refused_call(method, args) {
+	// The desk's token, as the other sheets send it; a test site that does not check it has none.
 	return cy
 		.window()
-		.its("frappe.csrf_token")
+		.then((win) => win.frappe?.csrf_token)
 		.then((csrf_token) =>
 			cy.request({
 				method: "POST",
@@ -651,6 +695,107 @@ function refused_call(method, args) {
 
 function in_days(win, days) {
 	return win.frappe.datetime.add_days(win.frappe.datetime.get_today(), days);
+}
+
+// The electronic signatures shown on the form (esign.js), first signed first.
+function signature_rows() {
+	return cy.get(`${FORM} .mds-signatures`).last().find("tbody tr");
+}
+
+// The form's menu (⋯) offers `label`, or does not; the menu is closed again when it is not.
+function in_menu(label, expected) {
+	settle();
+	cy.get(`${FORM} .menu-btn-group > button`).click();
+	cy.get(".dropdown-menu.show").should("be.visible");
+	// By its label: an item with a keyboard shortcut (Delete) shows the shortcut beside it.
+	const items = () =>
+		cy
+			.get(".dropdown-menu.show .dropdown-item")
+			.filter(
+				(_, item) =>
+					plain((item.querySelector(".menu-item-label") ?? item).textContent) === label
+			);
+	if (expected) {
+		items().should("have.length", 1).click();
+		return;
+	}
+	items().should("have.length", 0);
+	cy.get(`${FORM} .menu-btn-group > button`).click();
+	cy.get(".dropdown-menu.show").should("not.exist");
+}
+
+// What a record holds that a merge, a deletion or a cancellation would change, as stored.
+function as_stored(doctype, name, fields) {
+	return stored(doctype, name).then((doc) =>
+		Object.fromEntries(fields.map((field) => [field, doc[field]]))
+	);
+}
+
+const SUPPLIER_KEPT = ["supplier_name", "supplier_group", "disabled", "mds_version", "modified"];
+const APPROVAL_KEPT = [
+	"supplier",
+	"docstatus",
+	"decision",
+	"reason",
+	"decided_by",
+	"decided_at",
+	"modified",
+];
+
+// An entry of the record's audit trail on its form (compliance/audit_timeline.py describe) that
+// shows every one of `lines`, recorded today: its time is shown with it.
+function audit_entry_shown(lines) {
+	cy.window().then((win) =>
+		cy.get(`${FORM} .timeline-item`).should(($items) => {
+			const entries = $items
+				.toArray()
+				.filter((item) => lines.every((line) => plain(item.textContent).includes(line)));
+			expect(
+				entries,
+				`an entry of the audit trail showing: ${lines.join(" | ")}`
+			).to.have.length.at.least(1);
+			const [entry] = entries;
+			expect(entry.dataset.timestamp?.slice(0, 10), "recorded today").to.equal(
+				win.frappe.datetime.get_today()
+			);
+			// "… ago", its date and time on hover, or the date and time where the site shows them so.
+			const time = entry.querySelector(".frappe-timestamp");
+			expect(
+				time?.title.includes(today_text(win)) ||
+					plain(entry.textContent).includes(today_text(win)),
+				"its time shown"
+			).to.be.true;
+		})
+	);
+}
+
+// The record's own audit trail, opened with the form's View > Audit Trail (public/js/audit_trail.js):
+// the Audit Event list of that record only, showing each of `actions`.
+function open_audit_trail(doctype, name, actions) {
+	from_menu("View", "Audit Trail");
+	cy.window().should((win) => {
+		expect(win.frappe.get_route()[0], "a list is open").to.equal("List");
+		expect(win.cur_list?.doctype).to.equal("Audit Event");
+	});
+	settle();
+	cy.window().should((win) => {
+		const filters = win.cur_list.filter_area.get().map((filter) => [filter[1], filter[3]]);
+		expect(filters, "the list is of this record").to.deep.include.members([
+			["reference_doctype", doctype],
+			["reference_name", name],
+		]);
+	});
+	cy.get(".page-container:visible .list-row-container:not(:has(.list-row-head))").should(
+		($rows) => {
+			const shown = $rows.toArray().map((row) => plain(row.textContent));
+			for (const action of actions) {
+				expect(
+					shown.some((row) => row.includes(action)),
+					`an entry "${action}" listed`
+				).to.be.true;
+			}
+		}
+	);
 }
 
 // A new purchase order on the screen: supplier, required-by date, the quarantine store, and lines.
@@ -1277,5 +1422,281 @@ context("D2 Vendor Master: the browser test sheet, as each job", { retries: 0 },
 			);
 		});
 		no_problems("D2-T14");
+	});
+
+	// 21 CFR 11.10(e): QA reads who changed a supplier in use, when, from what to what and under
+	// which change request, and who approved the supplier with a signature, when and why, on the
+	// forms and in the audit trail.
+	it("[URS-PUR-001] [URS-CMP-012] D2-T15 QA reads the audit trail of a supplier and its approval", () => {
+		const supplier = () => data.audited.supplier;
+		const approval = () => data.audited.approval;
+		const change = () => data.audited.change_request;
+		const approved_because = () => data.audited.approval_reason;
+		const purchase = () => data.full_names.Purchase;
+		const qa = () => data.full_names["QA Manager"];
+		const audit = {};
+		sign_in("QA Manager");
+
+		// The entry of the record's audit trail for `action` whose changes name `naming`, opened
+		// from the audit trail's list.
+		const open_event = (doctype, name, action, naming) => {
+			cy.call("frappe.client.get_list", {
+				doctype: "Audit Event",
+				filters: { reference_doctype: doctype, reference_name: name, action },
+				fields: ["name", "changes"],
+				limit_page_length: 0,
+			}).then(({ message }) => {
+				const naming_it = message.filter((event) =>
+					(typeof event.changes === "string"
+						? event.changes
+						: JSON.stringify(event.changes)
+					).includes(naming)
+				);
+				expect(naming_it, `one ${action} entry names ${naming}`).to.have.length(1);
+				audit.event = naming_it[0].name;
+			});
+			cy.then(() =>
+				cy.get(`.page-container:visible .list-row a[data-name="${audit.event}"]`).click()
+			);
+			cy.then(() => form_is("Audit Event", (doc) => doc.name === audit.event));
+			settle();
+		};
+
+		// Who, when, and the old and new values, on the entry's form.
+		const event_shows = (doctype, name, action, user, full_name, values) => {
+			cy.window().should((win) => {
+				const doc = current(win);
+				expect([doc.reference_doctype, doc.reference_name]).to.deep.equal([doctype, name]);
+				expect(doc.action).to.equal(action);
+				expect(doc.user, "who").to.equal(user);
+				expect(doc.event_at.slice(0, 10), "when").to.equal(
+					win.frappe.datetime.get_today()
+				);
+			});
+			cy.get(`${FORM} .frappe-control[data-fieldname="action"]`).should("contain", action);
+			cy.get(`${FORM} .frappe-control[data-fieldname="user"]`).should(
+				($control) =>
+					expect(
+						[user, full_name].some((who) => $control.text().includes(who)),
+						"who, shown"
+					).to.be.true
+			);
+			cy.window().then((win) =>
+				cy
+					.get(`${FORM} .frappe-control[data-fieldname="event_at"]`)
+					.should("contain", today_text(win))
+			);
+			reveal("changes");
+			cy.get(`${FORM} .frappe-control[data-fieldname="changes"]`).should(($control) => {
+				const text = $control.text();
+				for (const value of values) {
+					expect(text, "the old and new values, as stored").to.contain(value);
+				}
+			});
+		};
+
+		// On the supplier's form: who changed its group, when, the old and new value, and the
+		// approved change request it was changed under.
+		cy.then(() => open_form("Supplier", supplier()));
+		cy.window().should((win) => {
+			expect(current(win).supplier_group).to.equal(data.other_group);
+			expect(current(win).mds_changed_under).to.equal(change());
+		});
+		cy.then(() =>
+			audit_entry_shown([
+				`Updated by ${purchase()}`,
+				`Supplier Group: ${data.group} → ${data.other_group}`,
+				`Last Changed Under: empty → ${change()}`,
+			])
+		);
+
+		// Its whole audit trail, from the form's View menu, and the entry of the change opened.
+		cy.then(() => open_audit_trail("Supplier", supplier(), ["Created", "Updated"]));
+		cy.then(() => open_event("Supplier", supplier(), "Updated", change()));
+		cy.then(() =>
+			event_shows("Supplier", supplier(), "Updated", users.Purchase, purchase(), [
+				"supplier_group",
+				data.group,
+				data.other_group,
+				"mds_changed_under",
+				change(),
+			])
+		);
+
+		// Why: the approved change request the supplier was changed under.
+		cy.then(() => open_form("Change Request", change()));
+		cy.window().should((win) => {
+			expect(current(win).status).to.equal("Approved");
+			expect(current(win).reason).to.equal(data.audited.change_reason);
+		});
+		reveal("reason");
+		cy.then(() =>
+			cy
+				.get(`${FORM} .frappe-control[data-fieldname="reason"]`)
+				.should("contain", data.audited.change_reason)
+		);
+
+		// The supplier's approval: QA's Approved signature, who signed, when and why, and the
+		// signed decision in its audit trail.
+		cy.then(() => open_form("Supplier Approval", approval()));
+		cy.then(() => banner("green", `Approved: ${approved_because()}`));
+		cy.window().then((win) =>
+			signature_rows().should(($rows) => {
+				expect($rows).to.have.length(1);
+				expect($rows.eq(0).text())
+					.to.contain("Approved")
+					.and.to.contain(qa())
+					.and.to.contain(today_text(win))
+					.and.to.contain(approved_because());
+			})
+		);
+		cy.then(() => audit_entry_shown([`Submitted by ${qa()}`, "Decision: empty → Approved"]));
+		cy.then(() => open_audit_trail("Supplier Approval", approval(), ["Created", "Submitted"]));
+		cy.then(() =>
+			open_event("Supplier Approval", approval(), "Submitted", approved_because())
+		);
+		cy.then(() =>
+			event_shows("Supplier Approval", approval(), "Submitted", users["QA Manager"], qa(), [
+				"decision",
+				"Approved",
+				approved_because(),
+				"decided_by",
+				users["QA Manager"],
+			])
+		);
+		no_problems("D2-T15");
+	});
+
+	// ISO 13485 4.2.5, 7.4.1 (independent review 2026-10-15): a supplier is never merged into
+	// another, which would move QA's decisions to a supplier QA never decided; and a decision on a
+	// supplier is kept as signed: nobody, the Administrator included, deletes or cancels it, on the
+	// form or past it.
+	it("[URS-PUR-001] [URS-MST-017] [URS-CMP-016] D2-T16 A supplier is never merged, and its approval is never deleted or cancelled", () => {
+		const supplier = () => data.kept.supplier;
+		const duplicate = () => data.kept.duplicate;
+		const approval = () => data.kept.approval;
+		const draft = () => data.kept.draft;
+		const never_deleted = /A supplier approval is never deleted\./;
+		const never_cancelled =
+			/A decision on a supplier is never cancelled; a new decision replaces it\./;
+		// Frappe refuses to delete a submitted record before the approval's own rule is reached.
+		const submitted_not_deleted = /Submitted Record cannot be deleted/;
+		const before = {};
+		const target = (name) => ({ doctype: "Supplier Approval", name });
+
+		// Purchase, who keeps suppliers: Rename with "Merge with existing" into another supplier.
+		sign_in("Purchase");
+		cy.then(() => as_stored("Supplier", supplier(), SUPPLIER_KEPT)).then((kept) => {
+			before.supplier = kept;
+		});
+		cy.then(() => as_stored("Supplier", duplicate(), SUPPLIER_KEPT)).then((kept) => {
+			before.duplicate = kept;
+		});
+		cy.then(() => open_form("Supplier", supplier()));
+		settle();
+		cy.get(`${FORM} .menu-btn-group > button`).click();
+		// Frappe draws the menu outside its button group: the visible menu's item, by its text.
+		cy.get(".dropdown-menu.show")
+			.contains(".dropdown-item", /^\s*Rename\s*$/)
+			.click();
+		open_dialog().should("contain", "New Name");
+		cy.then(() => {
+			cy.get('.modal.show input[data-fieldname="new_name"]').clear().type(duplicate());
+			cy.get('.modal.show input[data-fieldname="merge"]').check();
+			cy.window()
+				.its("cur_dialog")
+				.should((dialog) => {
+					expect(dialog.get_value("new_name")).to.equal(duplicate());
+					expect(dialog.get_value("merge")).to.equal(1);
+				});
+			const refusal = `Supplier ${supplier()} is not merged into ${duplicate()}: approvals and history stay with the record they were made for. Disable the duplicate instead.`;
+			expect_refusal(refusal);
+			cy.get(".modal.show .btn-primary").contains("Rename").click();
+			refused_with(null, refusal);
+			cy.call("frappe.client.get_count", {
+				doctype: "Supplier",
+				filters: { name: ["in", [supplier(), duplicate()]] },
+			}).then(({ message }) => expect(message, "both suppliers kept").to.equal(2));
+			cy.call("frappe.client.get_count", {
+				doctype: "Supplier Approval",
+				filters: { supplier: supplier(), docstatus: 1 },
+			}).then(({ message }) =>
+				expect(message, "QA's signed approval stays with it").to.equal(1)
+			);
+			cy.call("frappe.client.get_count", {
+				doctype: "Supplier Approval",
+				filters: { supplier: duplicate() },
+			}).then(({ message }) =>
+				expect(message, "no decision moved to the other supplier").to.equal(0)
+			);
+		});
+		no_problems("D2-T16, Purchase");
+
+		// QA, who decides suppliers: the form offers neither, and a call past the form is refused.
+		sign_in("QA Manager");
+		cy.then(() => as_stored("Supplier Approval", approval(), APPROVAL_KEPT)).then((kept) => {
+			expect([kept.docstatus, kept.decision], "signed").to.deep.equal([1, "Approved"]);
+			before.approval = kept;
+		});
+		cy.then(() => as_stored("Supplier Approval", draft(), APPROVAL_KEPT)).then((kept) => {
+			expect([kept.docstatus, kept.decision || null], "prepared, not signed").to.deep.equal([
+				0,
+				null,
+			]);
+			before.draft = kept;
+		});
+		cy.then(() => open_form("Supplier Approval", approval()));
+		cy.then(() => banner("green", `Approved: ${data.kept.approval_reason}`));
+		offered("Cancel", false);
+		in_menu("Delete", false);
+		for (const method of ["frappe.client.delete", "frappe.client.cancel"]) {
+			cy.then(() => refused_call(method, target(approval()))).then((message) =>
+				expect(message, `${method} as QA`).to.match(/PermissionError/)
+			);
+		}
+		cy.then(() => open_form("Supplier Approval", draft()));
+		in_menu("Delete", false);
+		cy.then(() => refused_call("frappe.client.delete", target(draft()))).then((message) =>
+			expect(message, "deleting the decision QA prepared, as QA").to.match(/PermissionError/)
+		);
+		no_problems("D2-T16, QA");
+
+		// The Administrator, who holds every permission.
+		sign_in_as_administrator();
+		cy.then(() => open_form("Supplier Approval", approval()));
+		// No Delete on a submitted record; a call past the form is refused.
+		in_menu("Delete", false);
+		cy.then(() => refused_call("frappe.client.delete", target(approval()))).then((message) =>
+			expect(message).to.match(submitted_not_deleted)
+		);
+		// No role holds cancel on a supplier approval, the System Manager included: the form offers
+		// no Cancel, not even to the Administrator, and a call past the form is refused by the
+		// approval's own rule.
+		offered("Cancel", false);
+		cy.then(() => refused_call("frappe.client.cancel", target(approval()))).then((message) =>
+			expect(message).to.match(never_cancelled)
+		);
+		// The decision QA prepared: no role holds delete, so the menu offers it to nobody, not even
+		// the Administrator; a call past the form is refused by the approval's own rule.
+		cy.then(() => open_form("Supplier Approval", draft()));
+		in_menu("Delete", false);
+		cy.then(() => refused_call("frappe.client.delete", target(draft()))).then((message) =>
+			expect(message).to.match(never_deleted)
+		);
+
+		// Both suppliers and both decisions are still there, as they were.
+		cy.then(() => as_stored("Supplier", supplier(), SUPPLIER_KEPT)).then((kept) =>
+			expect(kept, "the supplier, unchanged").to.deep.equal(before.supplier)
+		);
+		cy.then(() => as_stored("Supplier", duplicate(), SUPPLIER_KEPT)).then((kept) =>
+			expect(kept, "the other supplier, unchanged").to.deep.equal(before.duplicate)
+		);
+		cy.then(() => as_stored("Supplier Approval", approval(), APPROVAL_KEPT)).then((kept) =>
+			expect(kept, "the signed approval, unchanged").to.deep.equal(before.approval)
+		);
+		cy.then(() => as_stored("Supplier Approval", draft(), APPROVAL_KEPT)).then((kept) =>
+			expect(kept, "the decision QA prepared, unchanged").to.deep.equal(before.draft)
+		);
+		no_problems("D2-T16");
 	});
 });
