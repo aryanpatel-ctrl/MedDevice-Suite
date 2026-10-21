@@ -22,6 +22,12 @@ effect when QA approves them (plan D-34, master_data/defining_documents.py); an 
 before that rule keeps its approval, is given its document once without a change request, and is
 held to the rule at its next approval.
 
+A sub-assembly or finished good also states whether its lots made by production are inspected again
+against its final specification after a hold before QA releases them (plan D-35, decided 2026-10-20:
+SAP QM's inspection type per material, ISO 13485 8.2.6). It is on for every item unless QA, under
+change control, switches it off; a held lot is otherwise released only as a concession
+(lot_control/release.py).
+
 Items a site held before this module stay in draft: nothing is approved by migration. The
 types follow the client's master-data template of 2026-10-09, with Equipment added for the
 items that stand behind the equipment register's assets (module 8).
@@ -68,6 +74,11 @@ DEVICE_CLASSES = ("A", "B", "C", "D", "Not a device")
 GTIN_LENGTHS = (8, 12, 13, 14)
 INCOMING, FINAL = "Incoming", "Final"
 SPECIFICATION_DOCUMENT = "mds_specification_document"
+# Plan D-35: a held lot made by production is inspected again against the final specification
+# before its release. On unless QA switches it off under change control; the column's default fills
+# every item a site held before the field.
+REINSPECT_AFTER_HOLD = "mds_reinspect_after_hold"
+MADE_TYPES = (SUB_ASSEMBLY, FINISHED_GOOD)  # what production makes, in lots QA releases
 # Plan D-34: the items a document defines. What the plant buys is bought to its material
 # specification (ISO 13485 7.4.2), and what it sells is made to its product specification or
 # drawing (ISO 13485 4.2.3, the medical device file). A sub-assembly is defined by the finished
@@ -96,6 +107,7 @@ CONTROLLED_FIELDS = (
 	UDI_DI,
 	DEVICE_LIFETIME,
 	SPECIFICATION_DOCUMENT,
+	REINSPECT_AFTER_HOLD,
 )
 
 # Record types that name an item without putting it to use: the item's own setup, its prices
@@ -271,6 +283,15 @@ CUSTOM_FIELDS = {
 			"depends_on": f"eval:{list(DEFINED_BY_DOCUMENT)}.includes(doc.{ITEM_TYPE}) || doc.{SPECIFICATION_DOCUMENT}",
 			"description": "The controlled document that defines the item: its material specification if it is bought, its product specification or drawing if it is a finished good. In effect when QA approves the item.",
 		},
+		{
+			"fieldname": REINSPECT_AFTER_HOLD,
+			"label": "Re-inspect after a hold",
+			"fieldtype": "Check",
+			"default": "1",
+			"insert_after": "inspection_required_before_delivery",
+			"depends_on": f"eval:{list(MADE_TYPES)}.includes(doc.{ITEM_TYPE})",
+			"description": "A lot of this item made by production and put on hold is released only after a new accepted final inspection, or as a concession approved by QA and Management. Changed under change control once the item is approved.",
+		},
 	],
 }
 
@@ -322,6 +343,17 @@ def approved(item: str | Document) -> bool:
 		else frappe.db.get_value("Item", item, APPROVAL_STATUS)
 	)
 	return status == APPROVED
+
+
+def reinspected_after_hold(items: list[str] | set[str]) -> set[str]:
+	"""The items, of `items`, whose held lots made by production are inspected again before release
+	(plan D-35), in one query; every one of them before the field exists on the site."""
+	items = set(items)
+	if not items or not frappe.get_meta("Item").get_field(REINSPECT_AFTER_HOLD):
+		return items
+	return set(
+		frappe.get_all("Item", filters={"name": ["in", list(items)], REINSPECT_AFTER_HOLD: 1}, pluck="name")
+	)
 
 
 # --- What approval needs ------------------------------------------------------------------------
@@ -544,8 +576,15 @@ def signed_content(doc: Document) -> dict:
 		EFFECTIVE_FROM,
 	)
 	content = {
-		field: doc.get(field) for field in fields if field not in (DEVICE_LIFETIME, SPECIFICATION_DOCUMENT)
+		field: doc.get(field)
+		for field in fields
+		if field not in (DEVICE_LIFETIME, SPECIFICATION_DOCUMENT, REINSPECT_AFTER_HOLD)
 	}
+	if doc.meta.get_field(REINSPECT_AFTER_HOLD) and not cint(doc.get(REINSPECT_AFTER_HOLD)):
+		# Added with plan D-35, its column holding 1 for every item made before it: bound once switched
+		# off, so that an approval signed before it still verifies, and a switch past change control
+		# shows as a change since signing.
+		content[REINSPECT_AFTER_HOLD] = 0
 	if doc.get(SPECIFICATION_DOCUMENT):
 		# Added with plan D-34: bound once named, so that an approval signed before it still verifies.
 		content[SPECIFICATION_DOCUMENT] = doc.get(SPECIFICATION_DOCUMENT)

@@ -2,7 +2,7 @@
  "actions": [],
  "autoname": "format:LR-{YYYY}-{#####}",
  "creation": "2026-10-09 09:00:00.000000",
- "description": "QA's signed decision on a lot: release, reject or hold, or the disposition of goods a customer sent back (modules 16 and 17). Decided only by signing; never cancelled or deleted.",
+ "description": "QA's signed decision on a lot: release, reject or hold, a held lot's release by concession approved by QA and Management, or the disposition of goods a customer sent back (modules 16 and 17). Decided only by signing; never cancelled or deleted.",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
@@ -20,9 +20,12 @@
   "decision",
   "quality_inspection",
   "reason",
+  "concession_justification",
   "column_break_decided",
   "decided_by",
   "decided_at",
+  "concession_approved_by",
+  "concession_approved_at",
   "stock_entry",
   "supplier_return",
   "amended_from"
@@ -113,7 +116,7 @@
    "fieldname": "decision",
    "fieldtype": "Select",
    "label": "Decision",
-   "options": "\nRelease\nReject\nHold\nReturn to Stock\nReject Return",
+   "options": "\nRelease\nReject\nHold\nReturn to Stock\nReject Return\nRelease by Concession",
    "read_only": 1,
    "no_copy": 1,
    "in_list_view": 1,
@@ -135,6 +138,15 @@
    "no_copy": 1
   },
   {
+   "fieldname": "concession_justification",
+   "fieldtype": "Small Text",
+   "label": "Concession Justification",
+   "description": "Why the held lot is released without the inspection its hold requires (ISO 13485 8.3); written by QA with its approval.",
+   "depends_on": "eval:doc.decision==\"Release by Concession\"",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
    "fieldname": "column_break_decided",
    "fieldtype": "Column Break"
   },
@@ -150,6 +162,23 @@
    "fieldname": "decided_at",
    "fieldtype": "Datetime",
    "label": "Decided At",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "concession_approved_by",
+   "fieldtype": "Link",
+   "label": "Concession Approved By (Management)",
+   "options": "User",
+   "depends_on": "eval:doc.decision==\"Release by Concession\"",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "concession_approved_at",
+   "fieldtype": "Datetime",
+   "label": "Concession Approved At",
+   "depends_on": "eval:doc.decision==\"Release by Concession\"",
    "read_only": 1,
    "no_copy": 1
   },
@@ -183,7 +212,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-10-09 09:00:00.000000",
+ "modified": "2026-10-20 09:00:00.000000",
  "modified_by": "Administrator",
  "module": "Lot Control",
  "name": "Lot Release",

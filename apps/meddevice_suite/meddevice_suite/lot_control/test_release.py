@@ -85,22 +85,22 @@ def certificate(receipt: str, version: str = "") -> str:
 	)
 
 
-def made_by_work_order() -> str:
-	"""A lot of FINISHED_ITEM made, as the finished lot is made, by a manufacture entry on a work order
-	released on the product's Current device master record (module 31), from an approved lot of ITEM,
-	once the operations of its routing are done (URS-EQP-006); returns the finished lot, in the
-	Quarantine store."""
+def made_by_work_order(item: str = FINISHED_ITEM) -> str:
+	"""A lot of `item` (FINISHED_ITEM unless told otherwise) made, as the finished lot is made, by a
+	manufacture entry on a work order released on the product's Current device master record
+	(module 31), from an approved lot of ITEM, once the operations of its routing are done
+	(URS-EQP-006); returns the finished lot, in the Quarantine store."""
 	frappe.set_user("Administrator")
 	material = receive(ITEM, 2, store("Stores"))
 	set_status(material, APPROVED, "Approved material for the test's production")
-	lot_item(FINISHED_ITEM, "Products")
-	approve_for_test(ITEM, FINISHED_ITEM)  # module 1: production uses approved items only
-	bom = default_bom(FINISHED_ITEM) or (
+	lot_item(item, "Products")
+	approve_for_test(ITEM, item)  # module 1: production uses approved items only
+	bom = default_bom(item) or (
 		submit_bom_for_test(
 			frappe.get_doc(
 				{
 					"doctype": "BOM",
-					"item": FINISHED_ITEM,
+					"item": item,
 					"company": company(),
 					"quantity": 1,
 					"is_active": 1,
@@ -112,11 +112,11 @@ def made_by_work_order() -> str:
 			).insert()
 		).name
 	)
-	device_master_record_for_test(FINISHED_ITEM)
+	device_master_record_for_test(item)
 	order = frappe.get_doc(
 		{
 			"doctype": "Work Order",
-			"production_item": FINISHED_ITEM,
+			"production_item": item,
 			"bom_no": bom,
 			"qty": 1,
 			"company": company(),
@@ -603,7 +603,13 @@ class TestTheSignedDecision(ReleaseTestCase):
 		record.run_method("onload")
 		self.assertEqual(
 			record.get_onload("lot"),
-			{"status": QUARANTINE, "from_supplier": False, "certificate_verified": False, "returned": 0},
+			{
+				"status": QUARANTINE,
+				"from_supplier": False,
+				"certificate_verified": False,
+				"returned": 0,
+				"approves_concession": False,  # only Management, on a concession QA signed (D-35)
+			},
 		)
 		# A role that could create the record but is not QA is still refused before insert.
 		frappe.set_user(self.qc)
