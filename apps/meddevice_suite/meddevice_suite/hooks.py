@@ -459,4 +459,10 @@ override_whitelisted_methods = {
 	"erpnext.manufacturing.doctype.job_card.job_card.make_time_log": (
 		"meddevice_suite.qms.equipment_care.make_time_log"
 	),
+	# Audit trail (21 CFR 11.10(e)): ERPNext's Update Items writes a submitted order's lines on their
+	# own before it saves the order, and no hook of the order runs before the first line is written;
+	# the order is read first so that its event records each line's old and new values.
+	"erpnext.controllers.accounts_controller.update_child_qty_rate": (
+		"meddevice_suite.compliance.audit.update_child_qty_rate"
+	),
 }

@@ -10,6 +10,10 @@ before it, so altering, removing or inserting an event breaks the chain. The
 fingerprint is keyed with a key kept outside the database (fingerprint.py, version 2),
 so database access alone cannot rewrite an event and compute the chain again.
 
+ERPNext's Update Items on a submitted order writes the order's lines before it saves the order;
+the order's event still records each line added, removed or changed, with its old and new values
+(`update_child_qty_rate`).
+
 Not recorded: totals and statuses that ERPNext recalculates with
 `frappe.db.set_value` from other records (a purchase order's received
 percentage, for example). They are derived by the system, not entered, and the
@@ -152,7 +156,8 @@ def on_change(doc: Document, method: str | None = None) -> None:
 	elif set_by_code and not in_save:
 		action, changes = "Updated", differences(before, current)
 	else:
-		action, changes = ACTION_FOR.get(getattr(doc, "_action", "save"), "Updated"), differences(before, doc)
+		action = ACTION_FOR.get(getattr(doc, "_action", "save"), "Updated")
+		changes = differences(with_lines_before_update_items(doc, before), doc)
 
 	if set_by_code and not in_save and changes:
 		if outer := saved_around(doc):
@@ -194,6 +199,59 @@ def creation_event(doc: Document) -> tuple[str, dict]:
 def copy_of(doc: Document) -> Document:
 	"""The record as the trail now knows it, to compare later writes on the same object against."""
 	return frappe.get_doc(deepcopy(doc.as_dict()))
+
+
+@frappe.whitelist(methods=["POST"])
+def update_child_qty_rate(
+	parent_doctype: str, trans_items: str, parent_doctype_name: str, child_docname: str = "items"
+) -> None:
+	"""ERPNext's Update Items on a submitted order (Sales Order, Purchase Order, Quotation), routed
+	here by `override_whitelisted_methods` so that its event records each line's old and new values.
+
+	ERPNext (accounts_controller.update_child_qty_rate) deletes, saves and inserts each changed line
+	on its own, and only then saves the order, which loads the stored order, already holding the new
+	lines, as the state before the save; that event would show only the order's totals change. No
+	hook can do this instead: none of the order's runs before ERPNext writes the first line, and
+	the lines' own hooks cannot tell where one Update Items starts and ends, so a state read there
+	could outlive a refused call and be taken by a later save. Here the order is read as it is
+	before ERPNext starts, and its event compares its lines with that (`with_lines_before_update_items`);
+	the reason, the permission checks and the one transaction stay ERPNext's own."""
+	from erpnext.controllers.accounts_controller import update_child_qty_rate as erpnext_update_child_qty_rate
+
+	order = frappe.get_doc(parent_doctype, parent_doctype_name)
+	order.check_permission("read")  # ERPNext checks the permission to change it next
+	key = (parent_doctype, parent_doctype_name)
+	frappe.flags.setdefault("audit_lines_before", {})[key] = order
+	try:
+		erpnext_update_child_qty_rate(parent_doctype, trans_items, parent_doctype_name, child_docname)
+	finally:
+		frappe.flags.setdefault("audit_lines_before", {}).pop(key, None)
+
+
+def order_before_update_items(doc: Document) -> Document | None:
+	"""`doc` as it was stored before ERPNext's Update Items started writing its lines, while that call
+	runs on it and its event is not yet recorded (`update_child_qty_rate` above); None otherwise.
+
+	Also read by the approval check (approvals.before_update_after_submit), which runs before the
+	event is recorded: by the order's save, the stored order already holds the new lines."""
+	return (frappe.flags.audit_lines_before or {}).get((doc.doctype, doc.name))
+
+
+def with_lines_before_update_items(doc: Document, before: Document | None) -> Document | None:
+	"""`before`, with the child tables as they were before ERPNext's Update Items wrote them
+	(`update_child_qty_rate` above); `before` itself when no Update Items is running on `doc`.
+
+	Taken once: the order's first save in the call records the lines; any later write in the same
+	call compares with what that event recorded. The order's own fields stay as the save read them,
+	so a value written to the order by an event of its own is not recorded a second time."""
+	lines_before = order_before_update_items(doc)
+	(frappe.flags.audit_lines_before or {}).pop((doc.doctype, doc.name), None)
+	if lines_before is None or before is None:
+		return before
+	merged = copy_of(before)
+	for df in merged.meta.get_table_fields():
+		merged.set(df.fieldname, [row.as_dict() for row in lines_before.get(df.fieldname) or []])
+	return merged
 
 
 def on_trash(doc: Document, method: str | None = None) -> None:

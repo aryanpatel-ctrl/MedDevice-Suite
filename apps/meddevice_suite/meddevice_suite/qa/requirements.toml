@@ -630,8 +630,8 @@ status = "implemented"
 [[requirement]]
 id = "URS-CMP-033"
 module = 48
-title = "Once a quotation or purchase order is approved, its items, quantities and prices cannot be changed; a change is made by cancelling and amending it, which needs approval again."
-source = "DFD 2.4 PO Approval, 2.5 Generate PO; D1 Internal Price Approval, Purchase Approval; decided on the client's instruction of 2026-10-07"
+title = "Once a quotation or purchase order is approved, its lines (a line added or removed, or a line's item, quantity, rate, unit or delivery/schedule date) cannot be changed, even when the totals stay the same; a change is made by cancelling and amending it, which needs approval again."
+source = "DFD 2.4 PO Approval, 2.5 Generate PO; D1 Internal Price Approval, Purchase Approval; decided on the client's instruction of 2026-10-07; decided 2026-10-21: any line change, not only a total change, needs approval again (as SAP release strategy and Dynamics 365 purchase order change management)"
 status = "implemented"
 
 # --- Module 54: record retention and archival (D3 Retention & Archival) ----

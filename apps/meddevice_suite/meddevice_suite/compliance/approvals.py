@@ -19,7 +19,12 @@ press, so they are enforced here on every save:
   changes it, so a requester cannot alter what the approver is about to approve;
 - once approved, what was approved (items, quantities, prices, totals) stands.
   ERPNext's "Update Items" would change it in place; a change is made by
-  cancelling and amending instead, and the amendment is approved again.
+  cancelling and amending instead, and the amendment is approved again. The
+  lines are compared one by one, not through the totals: a line added or
+  removed, or a line's item, quantity, rate, unit or delivery/schedule date
+  changed, is a change even when the totals stay the same (decided 2026-10-21,
+  as SAP's release strategy and Dynamics 365's purchase order change
+  management reset an approval on any line change).
 """
 
 from typing import Any
@@ -28,7 +33,9 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.model.workflow import WorkflowPermissionError, get_workflow, get_workflow_name
-from frappe.utils import cint
+from frappe.utils import cint, getdate
+
+from meddevice_suite.compliance.audit import order_before_update_items
 
 # What an approver approves on a record; none of it changes after approval.
 APPROVED_TOTALS = (
@@ -41,6 +48,8 @@ APPROVED_TOTALS = (
 	"discount_amount",
 )
 APPROVED_ITEM_FIELDS = ("item_code", "qty", "uom", "conversion_factor", "rate", "discount_percentage")
+# The date a line is wanted by: a sales order line's delivery date, a purchase order line's schedule date.
+APPROVED_ITEM_DATES = ("delivery_date", "schedule_date")
 # A tax row changed in a way that leaves the totals as they were is still a change of the terms.
 APPROVED_TAX_FIELDS = ("charge_type", "account_head", "rate", "tax_amount", "included_in_print_rate")
 
@@ -111,7 +120,9 @@ def validate(doc: Document, method: str | None = None) -> None:
 def before_update_after_submit(doc: Document, method: str | None = None) -> None:
 	if not get_workflow_name(doc.doctype) or set_up_by_code():
 		return
-	before = doc.get_doc_before_save()
+	# ERPNext's Update Items writes the lines before it saves the order, so the stored order read as the
+	# state before this save already holds the new lines; the order as it was before the call is used.
+	before = order_before_update_items(doc) or doc.get_doc_before_save()
 	if before and approved_terms(before) != approved_terms(doc):
 		frappe.throw(
 			_(
@@ -124,8 +135,14 @@ def before_update_after_submit(doc: Document, method: str | None = None) -> None
 
 
 def approved_terms(doc: Document) -> tuple:
+	"""What was approved on `doc`: its totals, each line by its row name, and each tax row. Two
+	records' terms differ when any line was added, removed or changed, whatever the totals."""
 	items = sorted(
-		(row.name, *(flt_or_value(row.get(field)) for field in APPROVED_ITEM_FIELDS))
+		(
+			row.name,
+			*(flt_or_value(row.get(field)) for field in APPROVED_ITEM_FIELDS),
+			*(as_date(row.get(field)) for field in APPROVED_ITEM_DATES),
+		)
 		for row in doc.get("items")
 	)
 	taxes = [
@@ -141,6 +158,11 @@ def approved_terms(doc: Document) -> tuple:
 def flt_or_value(value: Any) -> Any:
 	# Numbers compared at a fixed precision, so float noise from recalculation is not a change.
 	return round(float(value), 6) if isinstance(value, int | float) else value
+
+
+def as_date(value: Any) -> str | None:
+	# A date set on a form arrives as text and one read from the database as a date; the same day is no change.
+	return str(getdate(value)) if value else None
 
 
 def set_up_by_code() -> bool:

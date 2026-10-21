@@ -14,6 +14,16 @@
 //   from the IQ (D10-T16);
 //   the completion's signature binds the impact rows the completion itself adds, and verifies
 //   (D10-T08).
+// The clauses of its regulations the sheet's lines leave unproved follow them, from D10-T19:
+//   ISO 13485 7.6, an inspection submitted after an instrument was found out of tolerance, within
+//   the period assessed, is added to the finding's records and QA assesses again (D10-T19);
+//   7.6, an in-house calibration is traceable: refused without reference standards, with the
+//   instrument as its own, or with one out of calibration (D10-T20);
+//   6.3 and 7.5.6, maintenance and a qualification are not dated ahead (D10-T21; a calibration is
+//   D10-T07);
+//   21 CFR 11.10(e), QA reads a calibration's audit trail: who did what when, why (D10-T22);
+//   ISO 13485 4.2.5, a completed calibration, maintenance or qualification is never deleted or
+//   cancelled, not even by the Administrator; only QA's signed Correct withdraws one (D10-T23).
 //
 // The sheet names the pilot's records; the test site has none, so the run uses records of its own
 // (meddevice_suite/qa/sheets/d10.py), new for each test, so no test depends on another:
@@ -288,11 +298,12 @@ function refused_with(pattern) {
 		);
 }
 
-// A server call the signed-in user makes that must be refused; returns the refusal.
+// A server call the signed-in user makes that must be refused; returns the refusal. The desk's
+// token, as the other sheets send it; a test site that does not check it has none.
 function refused_call(method, args) {
 	return cy
 		.window()
-		.its("frappe.csrf_token")
+		.then((win) => win.frappe?.csrf_token)
 		.then((csrf_token) =>
 			cy.request({
 				method: "POST",
@@ -741,6 +752,15 @@ function save() {
 	settle();
 }
 
+// Submit is pressed and confirmed, as a person submits a record no one signs (an inspection).
+function submit() {
+	primary_action().should("contain", "Submit").click();
+	open_dialog().should("contain", "Permanently Submit");
+	cy.get(".modal.show .btn-primary").contains("Yes").click();
+	cy.window().should((win) => expect(current(win).docstatus, "submitted").to.equal(1));
+	settle();
+}
+
 // Save is pressed and the server refuses it with the sheet's message; the form stays as it was.
 function save_refused({ server, screen }, label = "Save") {
 	expect_refusal(server);
@@ -1185,6 +1205,116 @@ function cannot_fetch_from_team() {
 		return close_message(win).then((closed) => expect(closed, "it closes").to.be.true);
 	});
 	settle();
+}
+
+// --- The audit trail (compliance/audit_timeline.py, public/js/audit_trail.js) ---------------------
+
+// An entry of the record's audit trail on its form that shows every one of `lines`, recorded today:
+// its time is shown with it.
+function audit_entry_shown(lines) {
+	cy.window().then((win) =>
+		cy.get(`${FORM} .timeline-item`).should(($items) => {
+			const entries = $items
+				.toArray()
+				.filter((item) => lines.every((line) => plain(item.textContent).includes(line)));
+			expect(
+				entries,
+				`an entry of the audit trail showing: ${lines.join(" | ")}`
+			).to.have.length.at.least(1);
+			const [entry] = entries;
+			expect(entry.dataset.timestamp?.slice(0, 10), "recorded today").to.equal(TODAY);
+			// "… ago", its date and time on hover, or the date and time where the site shows them so.
+			const time = entry.querySelector(".frappe-timestamp");
+			const day = user_date(win, TODAY);
+			expect(
+				time?.title.includes(day) || plain(entry.textContent).includes(day),
+				"its time shown"
+			).to.be.true;
+		})
+	);
+}
+
+// The record's own audit trail, opened with the form's View > Audit Trail: the Audit Event list of
+// that record only, showing each of `actions`.
+function open_audit_trail(doctype, name, actions) {
+	from_menu("View", "Audit Trail");
+	cy.window().should((win) => {
+		expect(win.frappe.get_route()[0], "a list is open").to.equal("List");
+		expect(win.cur_list?.doctype).to.equal("Audit Event");
+	});
+	settle();
+	cy.window().should((win) => {
+		const filters = win.cur_list.filter_area.get().map((filter) => [filter[1], filter[3]]);
+		expect(filters, "the list is of this record").to.deep.include.members([
+			["reference_doctype", doctype],
+			["reference_name", name],
+		]);
+	});
+	cy.get(`${FORM} .list-row-container:not(:has(.list-row-head))`).should(($rows) => {
+		const shown = $rows.toArray().map((row) => plain(row.textContent));
+		for (const action of actions) {
+			expect(
+				shown.some((row) => row.includes(action)),
+				`an entry "${action}" listed`
+			).to.be.true;
+		}
+	});
+}
+
+// The record's audit entries as stored, oldest first, read by the signed-in reviewer.
+function audit_events(doctype, name) {
+	return cy
+		.call("frappe.client.get_list", {
+			doctype: "Audit Event",
+			filters: { reference_doctype: doctype, reference_name: name },
+			fields: ["name", "action", "user", "reason", "event_at"],
+			order_by: "event_at asc, creation asc",
+			limit_page_length: 0,
+		})
+		.then((r) => r.message);
+}
+
+// --- Alerts ---------------------------------------------------------------------------------------
+
+// Frappe makes the Notification Log of a System Notification in a background job enqueued after the
+// request commits (notification_log.enqueue_create_notification), so on a busy test site it can come
+// well after the act: it is looked for for up to ALERT_TIMEOUT.
+const ALERT_TIMEOUT = 180000;
+
+// Looks for `check()` to come true, each look a request, until the timeout.
+function poll(check, timeout = TIMEOUT) {
+	const started = Date.now();
+	return new Promise((resolve) => {
+		const again = () =>
+			check().then(
+				(done) => {
+					if (done) return resolve(true);
+					if (Date.now() - started > timeout) return resolve(false);
+					setTimeout(again, 500);
+				},
+				() => resolve(false)
+			);
+		again();
+	});
+}
+
+// The signed-in person has been alerted about the record at least `times` times.
+function alerted_about(doctype, name, times) {
+	cy.window().then({ timeout: ALERT_TIMEOUT + 10000 }, (win) => {
+		const user = win.frappe.session.user;
+		const look = () =>
+			win.frappe
+				.xcall("frappe.client.get_list", {
+					doctype: "Notification Log",
+					filters: { document_type: doctype, document_name: name, for_user: user },
+					fields: ["name"],
+					limit_page_length: 0,
+				})
+				.then((rows) => rows.length >= times);
+		return poll(look, ALERT_TIMEOUT).then(
+			(found) => expect(found, `${user} is alerted ${times} times about ${name}`).to.be.true
+		);
+	});
 }
 
 // --- The sheet ------------------------------------------------------------------------------
@@ -2295,6 +2425,356 @@ context("D10 Equipment Master: the browser test sheet, as each job", () => {
 				"Equipment approved by QA; what was approved changes under change control."
 			);
 			no_problems("D10-T18");
+		});
+	});
+
+	// ISO 13485 7.6: what the instrument measured in the period a finding assessed is assessed, also
+	// when it is submitted after the assessment (independent review of 2026-10-15).
+	it("[URS-EQP-003] D10-T19 An inspection submitted after an out-of-tolerance finding is added to its records and QA assesses again", () => {
+		prepare("prepare_assessed_finding", { password }).then((made) => {
+			const added = `Quality Inspection ${made.inspection} was submitted after ${made.asset} was found out of tolerance and used it within the period assessed; QA assesses it.`;
+
+			// QC names the instrument, left in tolerance and fit, on an inspection of today.
+			sign_in(QC);
+			open_form("Quality Inspection", made.inspection);
+			fill_row("readings", 2, "mds_instrument", made.asset, "Link");
+			save();
+			submit();
+			cy.window().should((win) =>
+				expect(
+					rows(win, "readings")[1].mds_instrument,
+					"the reading's instrument"
+				).to.equal(made.asset)
+			);
+			no_problems("D10-T19, QC submits the inspection");
+
+			// QA: the finding is open again, the inspection listed, and QA is alerted again.
+			sign_in(QA);
+			open_form("Calibration Record", made.finding);
+			cy.window().should((win) => {
+				const doc = current(win);
+				expect(doc.docstatus, "completed").to.equal(1);
+				expect(doc.impact_status, "Impact Assessment").to.equal("Open");
+				expect(doc.impact_decision || null, "Decision").to.equal(null);
+				expect(doc.assessed_by || null, "Assessed By").to.equal(null);
+				expect(rows(win, "impact"), "Records, listed at completion").to.have.length(0);
+				expect(
+					rows(win, "later_impact").map((row) => [
+						row.reference_doctype,
+						row.reference_name,
+						row.batch_no,
+					]),
+					"Records Submitted Since"
+				).to.deep.equal([["Quality Inspection", made.inspection, made.lot]]);
+			});
+			reveal("later_impact");
+			cy.contains(
+				`${FORM} .frappe-control[data-fieldname="later_impact"]`,
+				made.inspection
+			).should("be.visible");
+			group_offered("Assess Impact", true);
+			// The audit trail records the addition, by QC's submit, with the record that caused it.
+			audit_entry_shown([
+				"Updated after submission by",
+				`Reason: ${added}`,
+				"Impact Assessment: Assessed → Open",
+			]);
+			audit_events("Calibration Record", made.finding).then((events) => {
+				const addition = events.find((event) => event.reason === added);
+				expect(addition?.action, "the addition's entry").to.equal(
+					"Updated after submission"
+				);
+				expect(addition.user, "made by QC's submit").to.equal(users[QC]);
+			});
+			// Once at completion, once now.
+			alerted_about("Calibration Record", made.finding, 2);
+
+			const reason = `Lot ${made.lot} inspected with it after the finding: to be re-inspected`;
+			sign("Assess: Product Action Needed", {
+				group: "Assess Impact",
+				meaning: "Reviewed",
+				reason,
+			});
+			cy.window().should((win) => {
+				const doc = current(win);
+				expect(doc.impact_status, "Impact Assessment").to.equal("Assessed");
+				expect(doc.impact_decision, "Decision").to.equal("Product action needed");
+				expect(doc.assessed_by, "Assessed By").to.equal(users[QA]);
+				expect(
+					(doc.__onload?.signatures || []).map((s) => [s.action, s.reason || null]),
+					"both assessments, each signed"
+				).to.deep.include.members([
+					["Assess: No Product Impact", made.assessment_reason],
+					["Assess: Product Action Needed", reason],
+				]);
+			});
+			group_offered("Assess Impact", false);
+			no_problems("D10-T19");
+		});
+	});
+
+	// ISO 13485 7.6 a): calibrated against measurement standards traceable to national standards.
+	it("[URS-EQP-002] D10-T20 An in-house calibration names reference standards that are themselves in calibration", () => {
+		const made = {};
+		prepare("prepare_instrument", { password, stage: "approved" }).then((instrument) => {
+			made.instrument = instrument.asset;
+		});
+		cy.then(() => prepare("prepare_instrument", { password, stage: "calibrated" })).then(
+			(standard) => {
+				made.standard = standard.asset;
+			}
+		);
+		cy.then(() => prepare("prepare_instrument", { password, stage: "overdue" })).then(
+			(standard) => {
+				made.overdue = standard.asset;
+			}
+		);
+		cy.then(() => {
+			const standard_is = (asset) => {
+				open_line("standards", 1);
+				fill_line("standard", asset, "Link");
+				close_line();
+			};
+			sign_in(MAINTENANCE);
+			calibration_form({ asset: made.instrument, by: "In-house" });
+			fill("procedure", data.work_instruction, "Link");
+			save_refused(refusal("Name the reference standards used."));
+
+			rows_up_to("standards", 1);
+			standard_is(made.instrument);
+			save_refused(refusal("Row 1: an instrument is not its own reference standard."));
+
+			standard_is(made.overdue);
+			cy.window().then((win) =>
+				save_refused(
+					refusal(
+						`Reference standard ${made.overdue} was not in calibration on ${user_date(
+							win,
+							TODAY
+						)}.`
+					)
+				)
+			);
+			cy.window().should((win) => expect(win.cur_frm.is_new(), "nothing saved").to.be.ok);
+			no_problems("D10-T20, the refusals");
+
+			standard_is(made.standard);
+			save();
+			sign("Complete", { meaning: "Verified" });
+			cy.window().should((win) => {
+				const doc = current(win);
+				expect(doc.docstatus, "completed").to.equal(1);
+				expect(doc.calibrated_by, "Calibrated By").to.equal("In-house");
+				expect(doc.procedure, "Procedure").to.equal(data.work_instruction);
+				expect(doc.result, "Result").to.equal("Pass");
+				expect(
+					rows(win, "standards").map((row) => [row.standard, row.standard_due_on]),
+					"the standard, with the day its own calibration is due"
+				).to.deep.equal([[made.standard, in_days(win, 365)]]);
+			});
+			signed_as("Complete", "Verified");
+			no_problems("D10-T20");
+		});
+	});
+
+	// ISO 13485 6.3 and 7.5.6, ALCOA+ contemporaneous: maintenance and a qualification are recorded
+	// once done, as a calibration is (D10-T07): a date ahead would make the equipment fit, or set
+	// its next due date, from a day that has not come.
+	it("[URS-EQP-004] [URS-EQP-010] D10-T21 Maintenance and a qualification dated ahead are refused", () => {
+		const made = {};
+		prepare("prepare_machine", { password, needs: "maintenance" }).then((machine) => {
+			made.maintained = machine.asset;
+		});
+		cy.then(() => prepare("prepare_machine", { password, needs: "qualification" })).then(
+			(machine) => {
+				made.qualified = machine.asset;
+			}
+		);
+		cy.then(() => {
+			sign_in(MAINTENANCE);
+			maintenance_form({
+				asset: made.maintained,
+				checks: [["Lubrication", "OK"]],
+				actions: "Greased rails",
+				downtime: 1,
+			});
+			cy.window().then((win) => fill("performed_on", in_days(win, 1), "Date"));
+			save_refused(refusal("Maintenance is recorded once it is done."));
+			cy.window().should((win) => expect(win.cur_frm.is_new(), "nothing saved").to.be.ok);
+			// Dated the day it was done, it is saved.
+			fill("performed_on", TODAY, "Date");
+			save();
+			cy.window().should((win) => expect(current(win).docstatus, "a draft").to.equal(0));
+			no_problems("D10-T21, maintenance");
+
+			qualification_form({
+				asset: made.qualified,
+				stage: "IQ",
+				protocol: data.protocol,
+				tests: [PASSED_TEST],
+			});
+			cy.window().then((win) => fill("performed_on", in_days(win, 1), "Date"));
+			save_refused(refusal("A qualification is recorded once it is done."));
+			cy.window().should((win) => expect(win.cur_frm.is_new(), "nothing saved").to.be.ok);
+			fill("performed_on", TODAY, "Date");
+			save();
+			cy.window().should((win) => expect(current(win).docstatus, "a draft").to.equal(0));
+			no_problems("D10-T21");
+		});
+	});
+
+	// 21 CFR 11.10(e): a secure, time-stamped audit trail of who did what to a calibration, when and
+	// why, which QA reads on the record and in the trail, and cannot change.
+	it("[URS-EQP-001] [URS-CMP-011] [URS-CMP-012] D10-T22 QA reads the audit trail of a calibration and its assessment", () => {
+		prepare("prepare_assessed_finding", { password, with_inspection: 0 }).then((made) => {
+			const audit = {};
+			sign_in(QA);
+			open_form("Calibration Record", made.finding);
+			cy.window().should((win) =>
+				expect(current(win).impact_status, "Impact Assessment").to.equal("Assessed")
+			);
+			// On the form: the completion, and QA's assessment with its reason and the values changed.
+			audit_entry_shown(["Submitted by"]);
+			audit_entry_shown([
+				"Updated after submission by",
+				`Reason: ${made.assessment_reason}`,
+				"Impact Assessment: Open → Assessed",
+			]);
+
+			// The whole trail, as stored: who did each, in order.
+			audit_events("Calibration Record", made.finding).then((events) => {
+				const first = (action) => events.find((event) => event.action === action);
+				expect(first("Created")?.user, "drafted by Maintenance").to.equal(
+					users[MAINTENANCE]
+				);
+				expect(first("Submitted")?.user, "completed by Maintenance").to.equal(
+					users[MAINTENANCE]
+				);
+				const assessment = events.find(
+					(event) =>
+						event.action === "Updated after submission" &&
+						event.reason === made.assessment_reason
+				);
+				expect(assessment?.user, "assessed by QA, with its reason").to.equal(users[QA]);
+				audit.event = assessment.name;
+			});
+			open_audit_trail("Calibration Record", made.finding, [
+				"Created",
+				"Submitted",
+				"Updated after submission",
+			]);
+			cy.then(() => cy.get(`${FORM} .list-row a[data-name="${audit.event}"]`).click());
+			cy.then(() => form_is("Audit Event", (doc) => doc.name === audit.event));
+			settle();
+			cy.window().should((win) => {
+				const doc = current(win);
+				expect([doc.reference_doctype, doc.reference_name]).to.deep.equal([
+					"Calibration Record",
+					made.finding,
+				]);
+				expect(doc.action).to.equal("Updated after submission");
+				expect(doc.user, "who").to.equal(users[QA]);
+				expect(String(doc.event_at).slice(0, 10), "when").to.equal(TODAY);
+				expect(doc.reason, "why").to.equal(made.assessment_reason);
+				expect(win.cur_frm.perm[0].write || 0, "QA may not change it").to.equal(0);
+			});
+			reveal("changes");
+			cy.get(`${FORM} .frappe-control[data-fieldname="changes"]`).should(($control) => {
+				const text = $control.text();
+				for (const value of ["impact_status", "Open", "Assessed", "No product impact"]) {
+					expect(text, "the old and new values, as stored").to.contain(value);
+				}
+			});
+			no_problems("D10-T22");
+		});
+	});
+
+	// ISO 13485 4.2.5, 21 CFR 11.10(c): a completed record is kept as completed. No role, the
+	// Administrator's included, holds delete or cancel on it; only QA's signed Correct withdraws it,
+	// and the record withdrawn is kept.
+	it("[URS-EQP-001] [URS-EQP-004] [URS-EQP-010] D10-T23 A completed calibration, maintenance or qualification is never deleted or cancelled, not even by the Administrator", () => {
+		const made = {};
+		prepare("prepare_instrument", { password, stage: "calibrated" }).then((instrument) => {
+			made.calibration = instrument.calibration;
+		});
+		cy.then(() =>
+			prepare("prepare_machine", { password, needs: "maintenance", stage: "maintained" })
+		).then((machine) => {
+			made.maintenance = machine.maintenance;
+		});
+		cy.then(() =>
+			prepare("prepare_machine", { password, needs: "qualification", stage: "iq_approved" })
+		).then((machine) => {
+			made.qualification = machine.qualification;
+		});
+		cy.then(() => {
+			const records = [
+				["Calibration Record", made.calibration],
+				["Maintenance Record", made.maintenance],
+				["Equipment Qualification", made.qualification],
+			];
+			// Frappe refuses to delete a completed (submitted) record before the record's own rule.
+			const submitted_not_deleted = /Submitted Record cannot be deleted/;
+			const still_completed = (doctype, name) =>
+				stored_values(doctype, name, ["docstatus"]).then((values) =>
+					expect(values?.docstatus, `${name} still completed`).to.equal(1)
+				);
+
+			// QA, who corrects these records: neither offered, and a call past the form refused.
+			sign_in(QA);
+			for (const [doctype, name] of records) {
+				open_form(doctype, name);
+				offered("Cancel", false);
+				form_menu_offers("Delete", false);
+				for (const method of ["frappe.client.cancel", "frappe.client.delete"]) {
+					refused_call(method, { doctype, name }).should("match", /PermissionError/);
+				}
+			}
+			no_problems("D10-T23, QA");
+
+			// The Administrator, who holds every permission: neither offered, as no role holds them,
+			// and a call past the form refused by the record's own rule.
+			as_administrator();
+			for (const [doctype, name] of records) {
+				open_form(doctype, name);
+				offered("Cancel", false);
+				form_menu_offers("Delete", false);
+				refused_call("frappe.client.cancel", { doctype, name }).should(
+					"match",
+					exact(
+						`${name} is not cancelled on its own; QA corrects it by signing Correct, with a reason.`
+					)
+				);
+				refused_call("frappe.client.delete", { doctype, name }).should(
+					"match",
+					submitted_not_deleted
+				);
+				still_completed(doctype, name);
+			}
+			no_problems("D10-T23, the Administrator");
+
+			// Only QA's signed Correct withdraws one; the record withdrawn is kept, never deleted.
+			sign_in(QA);
+			open_form("Calibration Record", made.calibration);
+			sign("Correct", { meaning: "Rejected", reason: "Certificate number typed wrongly" });
+			form_is(
+				"Calibration Record",
+				(doc) => doc.amended_from === made.calibration && doc.docstatus === 0
+			);
+			as_administrator();
+			open_form("Calibration Record", made.calibration);
+			cy.window().should((win) =>
+				expect(current(win).docstatus, "withdrawn for correction").to.equal(2)
+			);
+			form_menu_offers("Delete", false);
+			refused_call("frappe.client.delete", {
+				doctype: "Calibration Record",
+				name: made.calibration,
+			}).should("match", exact("A calibration record is never deleted."));
+			stored_values("Calibration Record", made.calibration, ["docstatus"]).then((values) =>
+				expect(values?.docstatus, "still there, withdrawn").to.equal(2)
+			);
+			no_problems("D10-T23");
 		});
 	});
 });

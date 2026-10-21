@@ -13,8 +13,9 @@ from collections.abc import Callable
 from unittest.mock import patch
 
 import frappe
-from frappe.utils import add_days, today
+from frappe.utils import add_days, add_months, get_fullname, today
 
+from meddevice_suite.compliance import quality_settings
 from meddevice_suite.qa import verifies
 from meddevice_suite.qa.sheets import d9b
 from meddevice_suite.qa.test_sheets import SheetTestCase, signed
@@ -34,6 +35,7 @@ def set_ups(password: str) -> list[tuple[Callable, dict]]:
 		(d9b.prepare_sheet, {"password": password}),
 		(d9b.prepare_draft_policy, {"password": password}),
 		(d9b.prepare_risk_file, {"password": password, "stage": "in_force"}),
+		(d9b.run_periodic_reviews, {"file": "Any"}),
 		(d9b.prepare_licence, {"password": password, "stage": "copy"}),
 		(d9b.prepare_regulatory_change, {"password": password}),
 		(
@@ -145,6 +147,14 @@ class TestSheetD9bQualityRecords(SheetTestCase):
 			frappe.db.get_value(regulatory_licence.TYPE_DOCTYPE, sheet["licence_type"], "has_expiry"), 1
 		)
 		self.assertEqual(frappe.db.get_value("File Category", sheet["file_category"], "is_group"), 0)
+		self.assertEqual(
+			sheet["full_names"],
+			{
+				QA: get_fullname(email_for(QA)),
+				PRODUCTION: get_fullname(email_for(PRODUCTION)),
+				SECOND_QA: get_fullname(email_for(SECOND_QA)),
+			},
+		)
 		self.assertEqual(sheet["training_due_days"], 14)
 		self.assertGreaterEqual(sheet["licence_warning_days"], 60)
 		types = {
@@ -178,6 +188,40 @@ class TestSheetD9bQualityRecords(SheetTestCase):
 		self.assertFalse(frappe.db.get_value(rm.FILE, risk["file"], "current_report"))
 		self.assertFalse(rm.revision_in_progress(risk["file"]))
 		self.assertNotIn("change_request", risk)
+
+	def test_a_file_whose_periodic_review_has_fallen_due(self):
+		risk = d9b.prepare_risk_file(self.password, "periodic_due")
+
+		self.assertFirstRevisionApproved(risk)
+		self.assertEqual(
+			str(frappe.db.get_value(rm.FILE, risk["file"], "next_periodic_review")), risk["due_on"]
+		)
+		self.assertEqual(risk["due_on"], str(add_days(today(), -1)))
+		self.assertEqual(
+			(risk["review_months"], risk["review_due_days"]),
+			(
+				quality_settings.value("risk_periodic_review_months"),
+				quality_settings.value("risk_review_due_days"),
+			),
+		)
+		self.assertFalse(frappe.db.exists(rm.REVIEW, {"risk_management_file": risk["file"]}))
+
+	def test_the_daily_run_raises_the_periodic_review_once_and_reminds_qa(self):
+		risk = d9b.prepare_risk_file(self.password, "periodic_due")
+
+		[review] = d9b.run_periodic_reviews(risk["file"])
+
+		self.assertEqual(
+			(review.status, review.docstatus, review.source_doctype, review.source_name),
+			(rm.OPEN, 0, rm.FILE, risk["file"]),
+		)
+		self.assertEqual(str(review.due_date), str(add_days(today(), risk["review_due_days"])))
+		self.assertEqual([row.name for row in d9b.run_periodic_reviews(risk["file"])], [review.name])
+		reminders = d9b.run_daily_reminders("Risk Review", rm.REVIEW, review.name)
+		self.assertEqual(
+			[(r.status, r.subject) for r in reminders],
+			[("Open", f"Risk review {review.name} of {risk['family']}: Periodic")],
+		)
 
 	def test_a_file_with_its_report_and_an_approved_change_that_raised_a_review(self):
 		risk = d9b.prepare_risk_file(self.password, "change_approved")
@@ -218,6 +262,18 @@ class TestSheetD9bQualityRecords(SheetTestCase):
 			("Active", 1, d9b.LICENCE_CATEGORY, email_for(QA)),
 		)
 
+	def test_a_licence_qa_saved_and_did_not_verify(self):
+		lic = d9b.prepare_licence(self.password, "draft")
+
+		licence = frappe.get_doc(regulatory_licence.DOCTYPE, lic["licence"])
+		self.assertEqual(
+			(licence.status, licence.docstatus, licence.important_file, licence.owner),
+			(regulatory_licence.DRAFT, 0, lic["copy"], email_for(QA)),
+		)
+		self.assertEqual(str(licence.valid_until), lic["valid_until"])
+		self.assertEqual(signed(regulatory_licence.DOCTYPE, licence.name), [])
+		self.assertNotIn("reason", lic)
+
 	def test_a_licence_qa_verified_against_its_copy(self):
 		lic = d9b.prepare_licence(self.password, "verified")
 
@@ -229,6 +285,7 @@ class TestSheetD9bQualityRecords(SheetTestCase):
 		self.assertEqual(licence.verified_file_version, 1)
 		self.assertEqual(str(licence.valid_until), lic["valid_until"])
 		self.assertEqual(signed(regulatory_licence.DOCTYPE, licence.name), [("Verify", email_for(QA))])
+		self.assertEqual(licence.reason, lic["reason"])
 		for key in ("evidence", "submission_copy"):
 			with self.subTest(file=key):
 				self.assertEqual(frappe.db.get_value("Important File", lic[key], "status"), "Active")
@@ -310,6 +367,21 @@ class TestSheetD9bQualityRecords(SheetTestCase):
 			(training.OPEN, "On-the-job", today()),
 		)
 		self.assertFalse(record.assessor)
+
+	def test_a_training_signed_trained_and_competent(self):
+		made = d9b.prepare_training(self.password, "signed_competent")
+
+		self.assertOnMatrix(made, 12)
+		record = frappe.get_doc(training.RECORD, made["record"])
+		self.assertEqual(
+			(record.status, record.docstatus, record.employee, record.document_revision),
+			(training.COMPETENT, 1, made["operator"], made["revision"]),
+		)
+		self.assertEqual(str(record.valid_until), str(add_months(today(), 12)))
+		self.assertEqual(
+			signed(training.RECORD, record.name),
+			[("Trained", email_for("Operator")), ("Competent", email_for(PRODUCTION))],
+		)
 
 	def test_a_training_for_qa_to_record_from_paper(self):
 		made = d9b.prepare_training(self.password, "history")

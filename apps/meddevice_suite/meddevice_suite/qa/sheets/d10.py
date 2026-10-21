@@ -22,6 +22,10 @@ job that does it (`acting_as`) through the code's own services and signed acts:
 - an instrument whose readings and workstations an out-of-tolerance calibration lists: an
   inspection QC submitted with it, and the job cards at the workstation it was moved from under an
   approved change request, at the one it is at now and at one it never was at;
+- an instrument whose calibration, done by an external laboratory 400 days ago, is overdue: a
+  reference standard out of calibration;
+- an instrument found out of tolerance, its calibration completed by Maintenance and its impact
+  assessed by QA, each with a signature, and a draft inspection by QC for it to be named in after;
 - an approved change request listing a piece of equipment, raised by Maintenance and assessed and
   approved by QA with signatures;
 - a lot QC can inspect, with a draft inspection reading with the journey's caliper.
@@ -83,7 +87,11 @@ MAINTENANCE_TEAM = "UIJ D10 Maintenance Team"
 PROTOCOL_TITLE = "Equipment qualification protocol (browser test D10)"
 WORK_INSTRUCTION_TITLE = "Tipping machine set-up (browser test D10)"
 # How far along an instrument is prepared (`prepare_instrument`).
-INSTRUMENT_STAGES = ("ready", "approved", "calibrated", "out_of_tolerance")
+INSTRUMENT_STAGES = ("ready", "approved", "calibrated", "out_of_tolerance", "overdue")
+# How long ago an overdue instrument was calibrated: longer than its interval of 365 days.
+OVERDUE_DAYS = 400
+# QA's signed assessment of an out-of-tolerance finding (`prepare_assessed_finding`).
+ASSESSMENT_REASON = f"{REASON}: nothing was measured with it since its last good calibration"
 # What a machine needs and how far along it is prepared (`prepare_machine`).
 MACHINE_NEEDS = ("maintenance", "qualification")
 MACHINE_STAGES = ("approved", "maintained", "iq_approved", "qualified")
@@ -274,11 +282,15 @@ def approved(asset: str, password: str) -> str:
 	return asset
 
 
-def calibrated(asset: str, password: str) -> str:
-	"""An external laboratory's calibration in tolerance, drafted and completed by Maintenance with a
-	signature (setup.fixtures.inspection.draft_calibration)."""
+def calibrated(asset: str, password: str, performed_on: str | None = None) -> str:
+	"""An external laboratory's calibration in tolerance, done today or on `performed_on`, drafted
+	and completed by Maintenance with a signature (setup.fixtures.inspection.draft_calibration)."""
 	with act_as(MAINTENANCE):
-		name = draft_calibration(asset).name
+		record = draft_calibration(asset)
+		if performed_on:
+			record.performed_on = performed_on
+			record.save()
+		name = record.name
 	signed(MAINTENANCE, "Calibration Record", name, "Complete", password)
 	return name
 
@@ -310,9 +322,10 @@ def asset_details(asset: str) -> dict:
 def prepare_instrument(password: str, stage: str) -> dict:
 	"""A new measuring instrument of the sheet, needing calibration every 365 days, taken as far as
 	`stage`: ready (recorded by QA with all approval needs, in draft), approved (by QA with a
-	signature), calibrated (its calibration completed by Maintenance with a signature) or
+	signature), calibrated (its calibration completed by Maintenance with a signature),
 	out_of_tolerance (calibrated, then a second calibration found out of tolerance drafted by
-	Maintenance). Returns {asset, asset_name, tag, serial, version, calibration?, draft?}."""
+	Maintenance) or overdue (calibrated OVERDUE_DAYS ago, so its calibration was due before today).
+	Returns {asset, asset_name, tag, serial, version, calibration?, draft?}."""
 	require_administrator()
 	require_password(password)
 	if stage not in INSTRUMENT_STAGES:
@@ -325,6 +338,30 @@ def prepare_instrument(password: str, stage: str) -> dict:
 		made["calibration"] = calibrated(asset, password)
 	if stage == "out_of_tolerance":
 		made["draft"] = drafted_out_of_tolerance(asset)
+	if stage == "overdue":
+		made["calibration"] = calibrated(asset, password, add_days(today(), -OVERDUE_DAYS))
+	return {**asset_details(asset), **made}
+
+
+@frappe.whitelist(methods=["POST"])
+def prepare_assessed_finding(password: str, with_inspection: int = 1) -> dict:
+	"""A new instrument of the sheet, approved and calibrated today, then found out of tolerance by a
+	second calibration completed by Maintenance with a signature, which listed nothing it measured,
+	and assessed by QA with a signature as having no product impact; with `with_inspection`, a draft
+	incoming inspection by QC of a new lot reading with the journey's caliper, for QC to name this
+	instrument in after the assessment. Returns {asset, asset_name, tag, serial, version,
+	calibration, finding, assessment_reason, inspection?, lot?}."""
+	require_administrator()
+	require_password(password)
+	asset = approved(new_equipment({}), password)
+	made = {"calibration": calibrated(asset, password)}
+	finding = drafted_out_of_tolerance(asset)
+	signed(MAINTENANCE, "Calibration Record", finding, "Complete", password)
+	signed(QA, "Calibration Record", finding, "Assess: No Product Impact", password, ASSESSMENT_REASON)
+	made.update(finding=finding, assessment_reason=ASSESSMENT_REASON)
+	if cint(with_inspection):
+		lot = verified_lot(password)
+		made.update(inspection=inspection_with(lot, journey_instrument(), submit=False), lot=lot["lot"])
 	return {**asset_details(asset), **made}
 
 
