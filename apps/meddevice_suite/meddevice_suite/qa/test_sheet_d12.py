@@ -9,6 +9,8 @@ refuse every write past permissions; and that every set-up is refused off a test
 the Administrator, and without the run's password where it signs.
 """
 
+import tempfile
+from pathlib import Path
 from unittest.mock import patch
 
 import frappe
@@ -208,6 +210,12 @@ class TestSheetD12AuditLogs(SheetTestCase):
 		self.assertEqual(verify_events(d12.TRAIL_DOCTYPE, made["name"]), [])
 
 	def test_the_newest_entries_removed_are_reported_and_put_back(self):
+		# The test's anchors are never committed, so never reach the site's anchor file, which another
+		# run may have written since: the test reads and writes a file of its own instead.
+		folder = self.enterContext(tempfile.TemporaryDirectory())
+		self.enterContext(
+			patch.object(audit_anchor, "anchor_file", return_value=Path(folder, audit_anchor.FILE_NAME))
+		)
 		made = d12.prepare_trail_record()
 		audit_anchor.anchor_trail(audit_anchor.ON_REQUEST)
 

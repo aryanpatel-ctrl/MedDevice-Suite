@@ -659,6 +659,26 @@ function cell(table, idx, fieldname) {
 	return `${FORM} .frappe-control[data-fieldname="${table}"] .grid-row[data-idx="${idx}"] [data-fieldname="${fieldname}"]`;
 }
 
+// A line of a table found by its own name rather than its number: a table can hold two lines with
+// the same number (found in Chrome, 2026-10-21: Log Settings' Reminder and Activity Log, both 16).
+function fill_named_row(table, row_name, fieldname, value) {
+	const at = `${FORM} .frappe-control[data-fieldname="${table}"] .grid-row[data-name="${row_name}"] [data-fieldname="${fieldname}"]`;
+	settle();
+	close_dialogs();
+	close_open_lists();
+	cy.get(`${at}:first`).scrollIntoView();
+	cy.get(`${at}:first`).click();
+	cy.get(inputs_of(at)).first().should("have.focus");
+	type_and_leave(inputs_of(at), String(value));
+	cy.window().should((win) =>
+		stored_as(
+			rows(win, table).find((row) => row.name === row_name)[fieldname],
+			value,
+			`line ${row_name} ${fieldname}`
+		)
+	);
+}
+
 function fill_row(table, idx, fieldname, value, kind = "Data") {
 	settle();
 	close_dialogs();
@@ -1068,6 +1088,7 @@ function list_button(label) {
 function anchor_now() {
 	list_button("Anchor Now").click();
 	cy.get(".desk-alert:visible").should("contain", "Audit Event: anchor ANC-");
+	settle();
 	return cy
 		.get(".desk-alert:visible")
 		.last()
@@ -1075,7 +1096,6 @@ function anchor_now() {
 		.then((text) => {
 			const anchored = /Audit Event: anchor (ANC-\d{4}-\d+), (\d+) entries/.exec(text);
 			expect(anchored, `the anchor of the audit trail in "${text}"`).to.not.equal(null);
-			settle();
 			return { text, anchor: anchored[1], entries: Number(anchored[2]) };
 		});
 }
@@ -1167,9 +1187,16 @@ context("D12 Audit Logs: the browser test sheet, as each job", () => {
 		// A desk call the server refuses rejects its promise with nothing, which some ERPNext form
 		// scripts leave unhandled; the refused request itself is reported by watch_requests with the
 		// server's message. Any other script error is a problem of the step.
+		// Frappe's report page leaves the refusal of its report unhandled in the same way
+		// (query_report.js, get_script), which Cypress words "An unknown error has occurred:
+		// undefined" (found in Chrome, 2026-10-21, D12-T12).
 		cy.on("uncaught:exception", (error, _runnable, promise) => {
 			const message = error?.message;
-			if (!(promise && (message === undefined || message === "undefined"))) {
+			const nothing =
+				message === undefined ||
+				message === "undefined" ||
+				/^An unknown error has occurred: undefined$/m.test(String(message));
+			if (!(promise && nothing)) {
 				run.problems.push(`script error: ${message}`);
 			}
 			return false;
@@ -1753,11 +1780,12 @@ context("D12 Audit Logs: the browser test sheet, as each job", () => {
 		sign_in(SYSADMIN);
 		open_single("Log Settings");
 		cy.window().then((win) => {
-			const index = rows(win, "logs_to_clear").findIndex(
-				(row) => row.ref_doctype === "Activity Log"
+			const row = rows(win, "logs_to_clear").find(
+				(each) => each.ref_doctype === "Activity Log"
 			);
-			expect(index, "the Activity Log row").to.be.at.least(0);
-			fill_row("logs_to_clear", index + 1, "days", 90);
+			expect(row, "the Activity Log row").to.be.ok;
+			expect(row.days, "kept for 3660 days now (compliance/retention.py)").to.equal(3660);
+			fill_named_row("logs_to_clear", row.name, "days", 90);
 		});
 		save_refused(
 			refusal("The login history is kept for 3660 days and cannot be cleared sooner.")
@@ -2062,11 +2090,28 @@ context("D12 Audit Logs: the browser test sheet, as each job", () => {
 		sign_in(SYSADMIN);
 		open_single("System Settings");
 		fill("session_expiry", "170:00");
-		save_refused(
-			refusal(
-				"Session Expiry (idle timeout) is set by the access policy: in Quality Settings, under change control."
-			)
+		const loosened = refusal(
+			"Session Expiry (idle timeout) is set by the access policy: in Quality Settings, under change control."
 		);
+		expect_refusal(loosened.server);
+		primary_action().should("contain", "Save").click();
+		// Refused, or else saved: either ends the save; a save that went through is the defect.
+		cy.window().should(
+			(win) =>
+				expect(
+					Boolean(message_dialog(win)) || !win.cur_frm.is_dirty(),
+					"the save has ended"
+				).to.be.true
+		);
+		cy.window().then((win) =>
+			expect(
+				message_dialog(win),
+				"refused (none shown: the save went through, which the access policy guard must refuse)"
+			).to.not.equal(null)
+		);
+		refused_with(loosened.screen);
+		settle();
+		close_dialogs();
 		open_single("System Settings");
 		cy.window().should((win) =>
 			expect(current(win).session_expiry, "Session Expiry unchanged").to.not.equal("170:00")
@@ -2497,9 +2542,16 @@ context("D12 Audit Logs: the browser test sheet, as each job", () => {
 				expect(by_sales("Submitted"), "Submitted").to.have.length(1);
 				const updates = by_sales("Updated after submission");
 				expect(updates, "Updated after submission").to.have.length.at.least(1);
-				const update = updates.find(
-					(event) => String(row_change(as_data(event.changes), "items", "qty")) === "1,2"
-				);
+				// ERPNext's Update Items saves the order's line on its own before the order
+				// (erpnext accounts_controller.update_child_qty_rate), and a line is recorded in its
+				// order's events, so the order's event holds the old and new quantity as its total.
+				const update = updates.find((event) => {
+					const changes = as_data(event.changes);
+					return (
+						String(row_change(changes, "items", "qty")) === "1,2" ||
+						String(field_change(changes, "total_qty")) === "1,2"
+					);
+				});
 				expect(update, "the update with the old and new quantity").to.be.ok;
 				expect(update.reason, "its reason").to.equal(reason);
 			});
