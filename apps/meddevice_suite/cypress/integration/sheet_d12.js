@@ -1191,6 +1191,14 @@ context("D12 Audit Logs: the browser test sheet, as each job", () => {
 		cy.call(`${SHEET}.restore_audit_trail`);
 	});
 
+	// D12-T22 leaves the trail verifiable whether it passes or stops half way, so the tests after it
+	// on the site (and a later run's D12-T04) find the whole trail intact.
+	afterEach(function () {
+		if (!this.currentTest.title.includes("D12-T22")) return;
+		as_administrator();
+		cy.call(`${SHEET}.restore_audit_trail`);
+	});
+
 	beforeEach(() => {
 		run.problems.length = 0;
 		run.expected.length = 0;

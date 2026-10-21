@@ -116,9 +116,16 @@ class TestSheetD12AuditLogs(SheetTestCase):
 
 		cls.sheet = cls.prepared(before)
 
-	def tearDown(self):
-		frappe.cache.delete_value(d12.REMOVED_KEY)  # the cache is not rolled back with the test
-		super().tearDown()
+	def setUp(self):
+		super().setUp()
+		# The tests' anchors are never committed, so never reach the site's anchor file, and what the
+		# tampering keeps is not rolled back with a test: each test reads and writes files of its own,
+		# never the site's.
+		folder = self.enterContext(tempfile.TemporaryDirectory())
+		self.enterContext(
+			patch.object(audit_anchor, "anchor_file", return_value=Path(folder, audit_anchor.FILE_NAME))
+		)
+		self.enterContext(patch.object(d12, "removed_store", return_value=Path(folder, "removed.json")))
 
 	def test_names_what_the_sheet_works_with(self):
 		self.assertEqual((self.sheet["supplier"], self.sheet["material"]), (SUPPLIER, d12.MATERIAL))
@@ -210,12 +217,7 @@ class TestSheetD12AuditLogs(SheetTestCase):
 		self.assertEqual(verify_events(d12.TRAIL_DOCTYPE, made["name"]), [])
 
 	def test_the_newest_entries_removed_are_reported_and_put_back(self):
-		# The test's anchors are never committed, so never reach the site's anchor file, which another
-		# run may have written since: the test reads and writes a file of its own instead.
-		folder = self.enterContext(tempfile.TemporaryDirectory())
-		self.enterContext(
-			patch.object(audit_anchor, "anchor_file", return_value=Path(folder, audit_anchor.FILE_NAME))
-		)
+		d12.restore_audit_trail()  # the trail as a run starts from: its anchor file, verifying
 		made = d12.prepare_trail_record()
 		audit_anchor.anchor_trail(audit_anchor.ON_REQUEST)
 
@@ -240,6 +242,7 @@ class TestSheetD12AuditLogs(SheetTestCase):
 
 		audit_anchor.anchor_trail(audit_anchor.ON_REQUEST)  # carries the removal forward
 		d12.remove_audit_events(made["name"], oldest=1)
+		audit_anchor.anchor_trail(audit_anchor.ON_REQUEST)
 		restored = d12.restore_audit_trail()
 
 		self.assertEqual(sorted(restored["restored"]), sorted([*made["events"][-2:], made["events"][0]]))
@@ -247,8 +250,29 @@ class TestSheetD12AuditLogs(SheetTestCase):
 		self.assertEqual(d12.events_of(made["name"]), made["events"])
 		self.assertEqual(verify_events(d12.TRAIL_DOCTYPE, made["name"]), [])
 		self.assertEqual(audit_anchor.newest_anchor("Audit Event").name, anchor)
-		self.assertFalse([problem for problem in audit_anchor.verify_trail() if anchor in problem])
+		self.assertEqual(audit_anchor.trail_findings(), [])  # the whole trail verifies
+		self.assertFalse(d12.removed_store().exists())
 		self.assertEqual(d12.restore_audit_trail(), {"restored": [], "anchors_removed": []})
+
+	def test_a_run_stopped_half_way_is_cleared_too(self):
+		"""What a run stopped between the tampering and the restore leaves, with nothing kept to put
+		back: an anchor in the file whose database row and newest entry are gone."""
+		d12.restore_audit_trail()
+		made = d12.prepare_trail_record()
+		audit_anchor.anchor_trail(audit_anchor.ON_REQUEST)
+		left = frappe.get_doc(audit_anchor.DOCTYPE, audit_anchor.newest_anchor("Audit Event").name)
+		audit_anchor.append_to_file(audit_anchor.anchor_file(), audit_anchor.as_line(left))
+		frappe.db.delete(audit_anchor.DOCTYPE, {"name": left.name})
+		frappe.db.delete("Audit Event", {"name": made["events"][-1]})
+		kinds = {finding.kind for finding in audit_anchor.trail_findings()}
+		self.assertIn(audit_anchor.ANCHOR_REMOVED, kinds)
+		self.assertIn(audit_anchor.ENTRY_MISSING, kinds)
+
+		restored = d12.restore_audit_trail()
+
+		self.assertIn(left.name, restored["anchors_removed"])
+		self.assertEqual(audit_anchor.trail_findings(), [])
+		self.assertNotIn(left.name, audit_anchor.anchor_file().read_text(encoding="utf-8"))
 
 	def test_keeps_one_audit_event_of_the_workstation(self):
 		made = d12.prepare_trail_record()

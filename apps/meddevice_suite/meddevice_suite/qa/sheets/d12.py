@@ -73,8 +73,11 @@ PURCHASE_STAGES = ("draft", "approved")
 # the sheet tampers with.
 TRAIL_DOCTYPE = "Workstation"
 TRAIL_PREFIX = "UIJ D12 Trail"
-# Where the audit events removed by the tampering are kept until they are put back.
-REMOVED_KEY = "meddevice_suite:qa:d12:removed_audit_events"
+# Where the audit events removed by the tampering are kept until they are put back: a file of the
+# site's, which every worker reads alike and which outlives a restart or a cache flush.
+REMOVED_STORE = ("private", "qa", "d12-removed-audit-events.json")
+# The most anchors the restore removes before it gives up on the whole trail verifying.
+REPAIR_LIMIT = 1000
 # The evidence records `refusals_past_permissions` tries, besides those that record themselves.
 ARCHIVE = "Record Archive"
 EVIDENCE_TYPES = (*sorted(SELF_RECORDING), ARCHIVE)
@@ -363,15 +366,13 @@ def remove_audit_events(name: str, newest: int = 0, oldest: int = 0) -> dict:
 		frappe.throw(_("{0} keeps at least one of its {1} audit events.").format(name, len(events)))
 	removed = events[:oldest] + (events[len(events) - newest :] if newest else [])
 	anchor = audit_anchor.newest_anchor("Audit Event")
-	kept = frappe.cache.get_value(REMOVED_KEY) or {}
-	if not kept:
-		# The anchor before the tampering: anchors made after it carry the removal forward.
-		kept = {"anchor": anchor.name if anchor else None, "rows": []}
+	# The anchor before the tampering began: anchors made after it carry the removal forward.
+	kept = read_removed() or {"anchor": anchor.name if anchor else None, "rows": []}
 	table = frappe.qb.DocType("Audit Event")
 	kept["rows"] += (
 		frappe.qb.from_(table).select(table.star).where(table.name.isin(removed)).run(as_dict=True)
 	)
-	frappe.cache.set_value(REMOVED_KEY, kept)
+	write_removed(kept)  # kept before the rows are deleted: nothing is lost if the request fails
 	frappe.db.delete("Audit Event", {"name": ["in", removed]})
 	return {
 		"removed": removed,
@@ -389,14 +390,18 @@ def remove_audit_events(name: str, newest: int = 0, oldest: int = 0) -> dict:
 
 @frappe.whitelist(methods=["POST"])
 def restore_audit_trail() -> dict:
-	"""Leave the test site's audit trail as it was before the tampering, as restoring the database and
-	the server's files from the backup taken before would: the removed audit events put back exactly
-	as they were, and the anchors of the audit trail made since removed from the database and from
-	the anchor file. Nothing to do when nothing was removed. Returns {restored, anchors_removed}."""
+	"""Leave the test site's audit trail verifiable again, as restoring the database and the server's
+	files from the backup taken before the tampering would; run as often as wanted.
+
+	The removed audit events are put back exactly as they were, and the anchors of the audit trail
+	made since the tampering began are removed from the database and from the anchor file. Then,
+	until the whole-trail check (audit_anchor.trail_findings, which Verify Integrity and Verify Audit
+	Trail run) finds nothing, what a run stopped half way left is removed too: the newest anchor of a
+	trail it finds a problem with, from the database and the file (an anchor whose entries are gone
+	for good, or one left in only one of the two), a damaged line of the file, and a missing file is
+	written again from the database. Returns {restored, anchors_removed}."""
 	require_administrator()
-	kept = frappe.cache.get_value(REMOVED_KEY)
-	if not kept:
-		return {"restored": [], "anchors_removed": []}
+	kept = read_removed() or {"anchor": None, "rows": []}
 	rows = [row for row in kept["rows"] if not frappe.db.exists("Audit Event", row["name"])]
 	if rows:
 		columns = list(rows[0])
@@ -405,28 +410,109 @@ def restore_audit_trail() -> dict:
 		for row in rows:
 			query = query.insert(*(row[column] for column in columns))
 		query.run()
-	since = frappe.db.get_value(audit_anchor.DOCTYPE, kept["anchor"], "creation") if kept["anchor"] else None
-	filters = {"ledger": "Audit Event"}
-	if since:
-		filters["creation"] = [">", since]
-	later = frappe.get_all(audit_anchor.DOCTYPE, filters=filters, pluck="name")
-	if later:
-		frappe.db.delete(audit_anchor.DOCTYPE, {"name": ["in", later]})
-		without_anchor_lines(audit_anchor.anchor_file(), set(later))
-	frappe.cache.delete_value(REMOVED_KEY)
-	return {"restored": [row["name"] for row in rows], "anchors_removed": later}
+	removed = []
+	if kept["rows"]:
+		since = (
+			frappe.db.get_value(audit_anchor.DOCTYPE, kept["anchor"], "creation") if kept["anchor"] else None
+		)
+		filters = {"ledger": "Audit Event"}
+		if since:
+			filters["creation"] = [">", since]
+		removed = frappe.get_all(audit_anchor.DOCTYPE, filters=filters, pluck="name")
+		if removed:
+			frappe.db.delete(audit_anchor.DOCTYPE, {"name": ["in", removed]})
+			without_anchor_lines(audit_anchor.anchor_file(), set(removed))
+	removed += whole_trail_repaired()
+	removed_store().unlink(missing_ok=True)
+	return {"restored": [row["name"] for row in rows], "anchors_removed": removed}
+
+
+def removed_store() -> Path:
+	return Path(frappe.get_site_path(*REMOVED_STORE))
+
+
+def read_removed() -> dict | None:
+	path = removed_store()
+	return json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
+
+
+def write_removed(kept: dict) -> None:
+	path = removed_store()
+	path.parent.mkdir(parents=True, exist_ok=True)
+	staged = path.with_name(f"{path.name}.writing")
+	staged.write_text(json.dumps(kept, default=str), encoding="utf-8")
+	os.replace(staged, path)
+
+
+def whole_trail_repaired() -> list[str]:
+	"""Remove what keeps the whole-trail check from verifying, newest anchor first, until it finds
+	nothing; the anchors removed."""
+	removed = []
+	for _attempt in range(REPAIR_LIMIT):
+		findings = audit_anchor.trail_findings()
+		if not findings:
+			return removed
+		finding = findings[0]
+		if finding.kind == audit_anchor.FILE_MISSING:
+			anchor_file_from_database()
+		elif finding.kind == audit_anchor.FILE_DAMAGED:
+			without_damaged_lines(audit_anchor.anchor_file())
+		else:
+			removed.append(without_newest_anchor(finding.trail))
+	frappe.throw(
+		_("The audit trail of this test site could not be made to verify: {0}").format(
+			"; ".join(finding.message for finding in audit_anchor.trail_findings())
+		)
+	)
+
+
+def without_newest_anchor(ledger: str) -> str:
+	"""Remove the trail's newest anchor, as the whole-trail check picks it, from the database and the
+	anchor file; its name."""
+	path = audit_anchor.anchor_file()
+	anchors = []
+	if stored := audit_anchor.newest_anchor(ledger):
+		anchors.append(stored)
+	if path.exists() and (copy := audit_anchor.newest_in_file(path)[0].get(ledger)):
+		anchors.append(copy)
+	newest = max(anchors, key=lambda anchor: (get_datetime(anchor.anchored_at), cint(anchor.entry_count)))
+	name = audit_anchor.anchor_name(newest)
+	frappe.db.delete(audit_anchor.DOCTYPE, {"name": name})
+	without_anchor_lines(path, {name})
+	return name
+
+
+def anchor_file_from_database() -> None:
+	"""The anchor file written again from the anchors in the database, oldest first."""
+	anchors = frappe.get_all(
+		audit_anchor.DOCTYPE,
+		fields=["name", *audit_anchor.ANCHORED],
+		order_by="creation asc, name asc",
+	)
+	replaced(audit_anchor.anchor_file(), [f"{audit_anchor.as_line(anchor)}\n" for anchor in anchors])
+
+
+def without_damaged_lines(path: Path) -> None:
+	if path.exists():
+		lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+		replaced(path, [line for line in lines if audit_anchor.readable(line)])
 
 
 def without_anchor_lines(path: Path, anchors: set[str]) -> None:
-	"""The anchor file without the lines of `anchors`, replaced in one step."""
+	"""The anchor file without the lines of `anchors`."""
 	if not path.exists():
 		return
 	lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
 	kept = [line for line in lines if (audit_anchor.readable(line) or {}).get("anchor") not in anchors]
-	if len(kept) == len(lines):
-		return
+	if len(kept) != len(lines):
+		replaced(path, kept)
+
+
+def replaced(path: Path, lines: list[str]) -> None:
+	"""The file holding `lines`, replaced in one step."""
+	path.parent.mkdir(parents=True, exist_ok=True)
 	staged = path.with_name(f"{path.name}.restoring")
-	staged.write_text("".join(kept), encoding="utf-8")
+	staged.write_text("".join(lines), encoding="utf-8")
 	os.replace(staged, path)
 
 
