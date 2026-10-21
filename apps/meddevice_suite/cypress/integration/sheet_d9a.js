@@ -2436,8 +2436,13 @@ context(
 				stored(DMR, record).then((previous) =>
 					cy.window().should((win) => {
 						const doc = current(win);
-						expect(doc.name).to.equal(
-							`DMR-${item}-${two_digits(Number(previous.revision) + 1)}`
+						// A revision number is never used twice: the next is above every revision the
+						// product has had, withdrawn drafts included, so on a site with earlier runs it
+						// can be more than one above the current revision.
+						const number = Number(doc.name.slice(`DMR-${item}-`.length));
+						expect(doc.name.startsWith(`DMR-${item}-`), doc.name).to.be.true;
+						expect(number, "the next revision number").to.be.greaterThan(
+							Number(previous.revision)
 						);
 						expect(doc.supersedes).to.equal(record);
 						expect(
