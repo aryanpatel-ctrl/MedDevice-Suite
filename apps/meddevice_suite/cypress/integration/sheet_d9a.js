@@ -303,9 +303,10 @@ function refused_with(pattern) {
 
 // A server call the signed-in user makes that must be refused; returns the refusal.
 function refused_call(method, args) {
+	// The desk's token, as the other sheets send it; a test site that does not check it has none.
 	return cy
 		.window()
-		.its("frappe.csrf_token")
+		.then((win) => win.frappe?.csrf_token)
 		.then((csrf_token) =>
 			cy.request({
 				method: "POST",
@@ -919,7 +920,24 @@ function lookup_offers(fieldname, text) {
 	close_dialogs();
 	close_open_lists();
 	reveal(fieldname);
-	const selector = inputs_of(`${FORM} .frappe-control[data-fieldname="${fieldname}"]`);
+	return offers_for(inputs_of(`${FORM} .frappe-control[data-fieldname="${fieldname}"]`), text);
+}
+
+// The same for a table's lookup on line `idx`, the cell clicked as a person opens it.
+function row_lookup_offers(table, idx, fieldname, text) {
+	settle();
+	close_dialogs();
+	close_open_lists();
+	cy.get(`${cell(table, idx, fieldname)}:first`).click();
+	cy.get(inputs_of(cell(table, idx, fieldname)))
+		.first()
+		.should("have.focus");
+	return offers_for(inputs_of(cell(table, idx, fieldname)), text);
+}
+
+// What the lookup of the input found by `selector` lists once `text` is typed into it; the input is
+// emptied and left again.
+function offers_for(selector, text) {
 	type_afresh(selector, text);
 	settle();
 	return cy
@@ -1305,6 +1323,193 @@ function work_order_form(item) {
 	fill("wip_warehouse", data.stores.work_in_progress, "Link");
 	fill("fg_warehouse", data.stores.quarantine, "Link");
 	save();
+}
+
+// --- The audit trail and what is kept (sheet_d1.js, sheet_d4.js) ---------------------------------
+
+function today_text(win) {
+	return user_date(win, today(win));
+}
+
+// An entry of a lookup's list that names the record `name`, and not one whose number only begins so
+// (WI-PRD-050 is not WI-PRD-0501). The entry shows the title and the name run together.
+function names_record(entry, name) {
+	return new RegExp(`${String(name).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?!\\d)`).test(entry);
+}
+
+// The form's ⋯ menu, opened to read what it offers, then closed again. Its items are drawn in a
+// dropdown of their own, outside the menu's button group.
+function form_menu_offers(label, expected) {
+	settle();
+	cy.get(`${FORM} .menu-btn-group > button:visible:first`).click();
+	cy.get(".dropdown-menu.show").should("be.visible");
+	cy.get(".dropdown-menu.show .dropdown-item").should(($items) => {
+		// By its label: an item with a keyboard shortcut (Delete) shows the shortcut beside it.
+		const labels = $items
+			.toArray()
+			.map((item) => plain((item.querySelector(".menu-item-label") ?? item).textContent));
+		if (expected) expect(labels, "the menu").to.include(label);
+		else expect(labels, "the menu").to.not.include(label);
+	});
+	cy.get(`${FORM} .menu-btn-group > button:visible:first`).click();
+}
+
+// What a record holds that a deletion, a cancellation or any other write would change, as stored and
+// read by the signed-in person.
+function as_stored(doctype, name, fields = ["docstatus", "status", "modified"]) {
+	return stored(doctype, name).then((doc) =>
+		Object.fromEntries(fields.map((field) => [field, doc[field] ?? null]))
+	);
+}
+
+// An entry of the record's audit trail on its form (compliance/audit_timeline.py describe) that
+// shows every one of `lines`, recorded today: its time is shown with it.
+function audit_entry_shown(lines) {
+	cy.window().then((win) =>
+		cy.get(`${FORM} .timeline-item`).should(($items) => {
+			const entries = $items
+				.toArray()
+				.filter((item) => lines.every((line) => plain(item.textContent).includes(line)));
+			expect(
+				entries,
+				`an entry of the audit trail showing: ${lines.join(" | ")}`
+			).to.have.length.at.least(1);
+			const [entry] = entries;
+			expect(entry.dataset.timestamp?.slice(0, 10), "recorded today").to.equal(
+				win.frappe.datetime.get_today()
+			);
+			// "… ago", its date and time on hover, or the date and time where the site shows them so.
+			const time = entry.querySelector(".frappe-timestamp");
+			expect(
+				time?.title.includes(today_text(win)) ||
+					plain(entry.textContent).includes(today_text(win)),
+				"its time shown"
+			).to.be.true;
+		})
+	);
+}
+
+// The record's own audit trail, opened with the form's View > Audit Trail (public/js/audit_trail.js):
+// the Audit Event list of that record only, showing each of `actions`.
+function open_audit_trail(doctype, name, actions) {
+	from_menu("View", "Audit Trail");
+	cy.window().should((win) => {
+		expect(win.frappe.get_route()[0], "a list is open").to.equal("List");
+		expect(win.cur_list?.doctype).to.equal("Audit Event");
+	});
+	settle();
+	cy.window().should((win) => {
+		const filters = win.cur_list.filter_area.get().map((filter) => [filter[1], filter[3]]);
+		expect(filters, "the list is of this record").to.deep.include.members([
+			["reference_doctype", doctype],
+			["reference_name", name],
+		]);
+	});
+	cy.get(`${FORM} .list-row-container:not(:has(.list-row-head))`).should(($rows) => {
+		const shown = $rows.toArray().map((row) => plain(row.textContent));
+		for (const action of actions) {
+			expect(
+				shown.some((row) => row.includes(action)),
+				`an entry "${action}" listed`
+			).to.be.true;
+		}
+	});
+}
+
+// The one entry of the record's audit trail for `action` whose changes `holds`, opened from the
+// audit trail's list.
+function open_audit_event(doctype, name, action, holds) {
+	const found = {};
+	cy.call("frappe.client.get_list", {
+		doctype: "Audit Event",
+		filters: { reference_doctype: doctype, reference_name: name, action },
+		fields: ["name", "changes"],
+		limit_page_length: 0,
+	}).then(({ message }) => {
+		const matching = message.filter((event) =>
+			holds(typeof event.changes === "string" ? JSON.parse(event.changes) : event.changes)
+		);
+		expect(matching, `one ${action} entry of ${name} as expected`).to.have.length(1);
+		found.event = matching[0].name;
+	});
+	cy.then(() => cy.get(`${FORM} .list-row a[data-name="${found.event}"]`).click());
+	cy.then(() => form_is("Audit Event", (doc) => doc.name === found.event));
+	settle();
+}
+
+// Who, when, and the old and new values, on the audit entry's form.
+function audit_event_shows(doctype, name, action, user, full_name, values) {
+	cy.window().should((win) => {
+		const doc = current(win);
+		expect([doc.reference_doctype, doc.reference_name]).to.deep.equal([doctype, name]);
+		expect(doc.action).to.equal(action);
+		expect(doc.user, "who").to.equal(user);
+		expect(doc.event_at.slice(0, 10), "when").to.equal(win.frappe.datetime.get_today());
+	});
+	cy.get(`${FORM} .frappe-control[data-fieldname="action"]`).should("contain", action);
+	cy.get(`${FORM} .frappe-control[data-fieldname="user"]`).should(
+		($control) =>
+			expect(
+				[user, full_name].some((who) => $control.text().includes(who)),
+				"who, shown"
+			).to.be.true
+	);
+	cy.window().then((win) =>
+		cy
+			.get(`${FORM} .frappe-control[data-fieldname="event_at"]`)
+			.should("contain", today_text(win))
+	);
+	reveal("changes");
+	cy.get(`${FORM} .frappe-control[data-fieldname="changes"]`).should(($control) => {
+		const text = $control.text();
+		for (const value of values) {
+			expect(text, "the old and new values, as stored").to.contain(value);
+		}
+	});
+}
+
+// [field, old, new] of a field an audit entry records as changed.
+function changed_field(changes, fieldname) {
+	return (changes?.changed || []).find(([field]) => field === fieldname);
+}
+
+// Verify Integrity from the form's View menu (audit_trail.js): the record's audit trail and
+// signatures verify, and the record still holds what each signature binds (21 CFR 11.10(e), 11.70).
+function integrity_verified(doctype, name) {
+	from_menu("View", "Verify Integrity");
+	cy.window()
+		.should((win) => {
+			const shown = message_dialog(win);
+			expect(shown, "the integrity check's answer").to.not.equal(null);
+			// The anchors of the whole trail may report what other tests did; this record's own
+			// trail and signatures are read below.
+			expect(shown.text).to.match(/Integrity (verified|problem found)/);
+			expect(shown.text, "the signatures").to.not.contain(
+				"The signatures on this record do not verify."
+			);
+		})
+		.then({ timeout: 10000 }, (win) =>
+			close_message(win).then((closed) => expect(closed).to.be.true)
+		);
+	cy.call("meddevice_suite.compliance.audit_timeline.verify_record", { doctype, name }).then(
+		({ message }) => {
+			expect(message.signatures_intact, "signatures intact").to.be.true;
+			expect(message.signature_chain, "the signature chain").to.be.empty;
+			expect(message.audit_trail, "its audit trail").to.be.empty;
+		}
+	);
+}
+
+// Neither Delete nor Cancel is offered on the open form, to the signed-in person, and each call past
+// the form is refused with `refusals[method]`.
+function neither_offered(doctype, name, refusals) {
+	if ("frappe.client.cancel" in refusals) offered("Cancel", false);
+	form_menu_offers("Delete", false);
+	for (const [method, pattern] of Object.entries(refusals)) {
+		refused_call(method, { doctype, name }).then((message) =>
+			expect(message, `${method} on ${name}`).to.match(pattern)
+		);
+	}
 }
 
 // --- The sheet ------------------------------------------------------------------------------
@@ -2695,6 +2900,520 @@ context(
 						expect(message.audit_trail, "its audit trail").to.be.empty;
 					});
 					no_problems("D9-CC-08");
+				}
+			);
+		});
+
+		// --- Added since: a revision's audit trail, nothing deleted or cancelled, withdrawn and ---------
+		// --- abandoned revisions kept out of use ---------------------------------------------------------
+
+		// 21 CFR 11.10(e), 11.50, 11.70; ISO 13485 4.2.4, 4.2.5: QA reads the life of a revision, who
+		// drafted, authored, reviewed and approved it, when and why: on its form (the signatures and the
+		// audit trail), in the audit trail's own list and entry, and that it all verifies. The revision
+		// is taken through its life by each job in the set-up, each signing with the sheet's reason.
+		it("[URS-QMS-002] [URS-CMP-012] D9-DOC-08 QA reads the audit trail of a revision: who authored, reviewed and approved it, when and why", () => {
+			prepare("prepare_document", { password, stage: "effective" }).then(({ revision }) => {
+				const why = "Browser test sheet D9"; // the set-up's reason (qa/sheets/d9a.py REASON)
+				const by = {};
+				sign_in(QA);
+				open_form(REVISION, revision);
+				cy.window().should((win) => {
+					const doc = current(win);
+					expect(doc.status).to.equal("Effective");
+					expect(
+						[doc.author, doc.reviewer, doc.approver],
+						"Author, Reviewer, Approved By"
+					).to.deep.equal([users[PRODUCTION], users[QC], users[QA]]);
+					expect(
+						(doc.__onload?.signatures || []).map((s) => [
+							s.meaning,
+							s.signer,
+							s.reason,
+						]),
+						"its signatures, first signed first"
+					).to.deep.equal([
+						["Authored", users[PRODUCTION], why],
+						["Reviewed", users[QC], why],
+						["Approved", users[QA], why],
+					]);
+				});
+				cy.window().then((win) => {
+					for (const signature of current(win).__onload.signatures) {
+						by[signature.meaning] = signature.signer_name;
+					}
+				});
+
+				// Each signature on the form: who signed, when, the act and why.
+				cy.window().then((win) => {
+					signature_shows("Authored", by.Authored, today_text(win), "Author", why);
+					signature_shows("Reviewed", by.Reviewed, today_text(win), "Review", why);
+					signature_shows("Approved", by.Approved, today_text(win), "Approve", why);
+				});
+
+				// Its audit trail on the form: each step, who took it and when, from what to what.
+				cy.then(() => {
+					audit_entry_shown([`Created by ${by.Authored}`]);
+					audit_entry_shown([
+						`Updated by ${by.Authored}`,
+						"Status: Draft → In Review",
+						"File Fingerprint (SHA-256): empty →",
+					]);
+					audit_entry_shown([
+						`Updated by ${by.Reviewed}`,
+						"Status: In Review → Awaiting Approval",
+					]);
+					audit_entry_shown([
+						`Submitted by ${by.Approved}`,
+						"Status: Awaiting Approval → Approved",
+						`Approved By: empty → ${users[QA]}`,
+					]);
+					audit_entry_shown([
+						`Updated by ${by.Approved}`,
+						"Status: Approved → Effective",
+					]);
+				});
+
+				// The whole audit trail, from the form's View menu, and QA's approval opened.
+				open_audit_trail(REVISION, revision, ["Created", "Updated", "Submitted"]);
+				open_audit_event(REVISION, revision, "Submitted", (changes) => {
+					const status = changed_field(changes, "status");
+					return status?.[1] === "Awaiting Approval" && status?.[2] === "Approved";
+				});
+				cy.then(() =>
+					audit_event_shows(REVISION, revision, "Submitted", users[QA], by.Approved, [
+						"status",
+						"Awaiting Approval",
+						"Approved",
+						"approver",
+						users[QA],
+					])
+				);
+
+				// Its trail and its signatures verify, and it still holds what each signature binds.
+				open_form(REVISION, revision);
+				integrity_verified(REVISION, revision);
+				no_problems("D9-DOC-08");
+			});
+		});
+
+		// ISO 13485 4.2.4, 4.2.5; 21 CFR 11.10(c): a controlled document and its revisions are kept. No
+		// role holds delete or cancel on either, so the forms offer neither to anyone, the
+		// Administrator included; a call past the form is refused, for the Administrator by the record's
+		// own rule. A document is withdrawn (D9-DOC-06) and a revision superseded (D9-CC-03) or
+		// abandoned (D9-DOC-11) instead.
+		it("[URS-QMS-005] [URS-CMP-016] D9-DOC-09 A controlled document and its revisions are never deleted or cancelled, not even by the Administrator", () => {
+			prepare("prepare_document", { password, stage: "effective", in_progress: 1 }).then(
+				({ document, revision, in_progress }) => {
+					const refused = /PermissionError/;
+					const document_fields = ["status", "current_revision", "modified"];
+					const before = {};
+
+					// QA, who approves documents: the forms offer neither, and a call past them is refused.
+					sign_in(QA);
+					as_stored(DOCUMENT, document, document_fields).then((kept) => {
+						expect(kept.status, "the document").to.equal("Effective");
+						before.document = kept;
+					});
+					as_stored(REVISION, revision).then((kept) => {
+						expect([kept.docstatus, kept.status], "approved").to.deep.equal([
+							1,
+							"Effective",
+						]);
+						before.revision = kept;
+					});
+					as_stored(REVISION, in_progress).then((kept) => {
+						expect([kept.docstatus, kept.status], "in progress").to.deep.equal([
+							0,
+							"Draft",
+						]);
+						before.in_progress = kept;
+					});
+					open_form(DOCUMENT, document);
+					neither_offered(DOCUMENT, document, { "frappe.client.delete": refused });
+					open_form(REVISION, revision);
+					neither_offered(REVISION, revision, {
+						"frappe.client.delete": refused,
+						"frappe.client.cancel": refused,
+					});
+					open_form(REVISION, in_progress);
+					neither_offered(REVISION, in_progress, { "frappe.client.delete": refused });
+					no_problems("D9-DOC-09, QA");
+
+					// The Administrator, who holds every permission.
+					as_administrator();
+					open_form(DOCUMENT, document);
+					neither_offered(DOCUMENT, document, {
+						"frappe.client.delete": exact(
+							"A controlled document is withdrawn, never deleted."
+						),
+					});
+					open_form(REVISION, revision);
+					neither_offered(REVISION, revision, {
+						// Frappe refuses to delete a submitted record before the revision's own rule.
+						"frappe.client.delete": /Submitted Record cannot be deleted/,
+						"frappe.client.cancel": exact(
+							"An approved revision is superseded or withdrawn, never cancelled."
+						),
+					});
+					open_form(REVISION, in_progress);
+					neither_offered(REVISION, in_progress, {
+						"frappe.client.delete": exact("A document revision is never deleted."),
+					});
+
+					// All three are still there, as they were.
+					cy.then(() => as_stored(DOCUMENT, document, document_fields)).then((kept) =>
+						expect(kept, "the document, as it was").to.deep.equal(before.document)
+					);
+					cy.then(() => as_stored(REVISION, revision)).then((kept) =>
+						expect(kept, "the approved revision, as it was").to.deep.equal(
+							before.revision
+						)
+					);
+					cy.then(() => as_stored(REVISION, in_progress)).then((kept) =>
+						expect(kept, "the revision in progress, as it was").to.deep.equal(
+							before.in_progress
+						)
+					);
+					no_problems("D9-DOC-09");
+				}
+			);
+		});
+
+		// ISO 13485 4.2.4 (obsolete documents are not used): where the documents a device is made by
+		// are chosen (the device master record's Documents), a withdrawn document is not offered beside
+		// one in effect, and a record that names it all the same is not signed.
+		it("[URS-QMS-005] [URS-QMS-006] [URS-QMS-027] D9-DOC-10 A withdrawn document is not offered where documents are chosen, and a record naming it is not signed", () => {
+			prepare("prepare_document", { password, stage: "effective" }).then((withdrawn) =>
+				prepare("prepare_document", { password, stage: "effective" }).then((in_effect) =>
+					prepare("prepare_dmr", { password }).then(({ record }) => {
+						const draft = {};
+						sign_in(QA);
+						open_form(DOCUMENT, withdrawn.document);
+						sign("Withdraw", "Merged into the line work instruction", "Withdraw", () =>
+							from_menu("Actions", "Withdraw")
+						);
+						cy.window().should((win) =>
+							expect(current(win).status).to.equal("Obsolete")
+						);
+						no_problems("D9-DOC-10, QA withdraws the document");
+
+						// The Production Supervisor starts the record's next revision and chooses a document
+						// on a line of its own.
+						sign_in(PRODUCTION);
+						open_form(DMR, record);
+						button("Start New Revision").click();
+						form_is(DMR, (doc) => doc.name !== record && doc.status === "Draft");
+						settle();
+						cy.window().then((win) => {
+							draft.name = current(win).name;
+							draft.line = rows(win, "documents").length + 1;
+						});
+						cy.then(() => rows_up_to("documents", draft.line));
+						cy.then(() =>
+							row_lookup_offers(
+								"documents",
+								draft.line,
+								"controlled_document",
+								withdrawn.document
+							)
+						).then(
+							(listed) =>
+								expect(
+									listed.filter((entry) =>
+										names_record(entry, withdrawn.document)
+									),
+									`the withdrawn ${withdrawn.document} offered`
+								).to.be.empty
+						);
+						cy.then(() =>
+							row_lookup_offers(
+								"documents",
+								draft.line,
+								"controlled_document",
+								in_effect.document
+							)
+						).then(
+							(listed) =>
+								expect(
+									listed.some((entry) =>
+										names_record(entry, in_effect.document)
+									),
+									`${in_effect.document}, in effect, offered in\n${listed.join(
+										"\n"
+									)}\n`
+								).to.be.true
+						);
+						no_problems("D9-DOC-10, the lookup");
+
+						// Put on the line past the lookup, as a script could: kept on the draft, and the
+						// author's signature is refused.
+						cy.window().then((win) => {
+							const row = rows(win, "documents")[draft.line - 1];
+							return win.frappe.model.set_value(
+								row.doctype,
+								row.name,
+								"controlled_document",
+								withdrawn.document
+							);
+						});
+						settle();
+						cy.window().should((win) =>
+							expect(
+								rows(win, "documents")[draft.line - 1].controlled_document,
+								"the line's document"
+							).to.equal(withdrawn.document)
+						);
+						fill("summary_of_change", "Line work instruction added");
+						save();
+						sign_refused(
+							"Sign as Author",
+							null,
+							refusal(
+								`records in force instead of Controlled Document ${withdrawn.document}`
+							),
+							"Author"
+						);
+						cy.then(() => stored(DMR, draft.name)).then((doc) => {
+							expect(doc.status, "still a draft").to.equal("Draft");
+							expect(
+								doc.documents.map((row) => row.controlled_document),
+								"its documents"
+							).to.include(withdrawn.document);
+						});
+						no_signature();
+						no_problems("D9-DOC-10");
+					})
+				)
+			);
+		});
+
+		// ISO 13485 4.2.4 b); 21 CFR 11.50 (independent review 2026-10-15): QA gives up a revision that
+		// will not be finished, with a signature and a reason; it is kept, Abandoned, and no longer
+		// holds the document's one revision in progress. Its author is not offered the act, and an
+		// approved revision is not abandoned.
+		it("[URS-QMS-002] D9-DOC-11 QA abandons a revision that will not be finished, with a signed reason", () => {
+			prepare("prepare_document", { password, stage: "effective", in_progress: 1 }).then(
+				({ document, revision, in_progress }) => {
+					const reason = "The change was dropped; the work instruction stays as it is";
+					sign_in(PRODUCTION);
+					open_form(REVISION, in_progress);
+					offered("Sign as Author", true);
+					offered("Abandon Revision", false);
+					sign_refused_on_server(
+						REVISION,
+						in_progress,
+						"Abandon",
+						"Withdrawn",
+						reason,
+						"Only QA can abandon a document revision."
+					);
+					no_problems("D9-DOC-11, its author");
+
+					sign_in(QA);
+					open_form(REVISION, in_progress);
+					// Without a reason the dialog does not sign; nor does the server.
+					open_signing("Abandon Revision", "Abandon");
+					cy.get(".modal.show").should("contain", "Withdrawn");
+					enter_password();
+					press_sign();
+					refused_with(
+						/Missing Values Required: Following fields have missing values:\s*Reason/
+					);
+					cy.window().should((win) =>
+						expect(win.cur_dialog?.title, "the signing dialog stays open").to.equal(
+							"Sign: Abandon"
+						)
+					);
+					close_signing();
+					sign_refused_on_server(
+						REVISION,
+						in_progress,
+						"Abandon",
+						"Withdrawn",
+						"",
+						"Say why the revision is abandoned."
+					);
+
+					sign("Abandon Revision", reason, "Abandon");
+					cy.window().should((win) => {
+						const doc = current(win);
+						expect(doc.status).to.equal("Abandoned");
+						expect(doc.docstatus, "kept, never approved").to.equal(0);
+					});
+					// document_revision.js asks for "gray", which Frappe's form message does not have: it
+					// draws it blue.
+					banner("blue", "Abandoned before approval. This revision was never in use.");
+					signature_shows("Withdrawn", "Abandon", reason);
+					none_offered([
+						"Sign as Author",
+						"Sign as Reviewer",
+						"Return for Changes",
+						"Approve",
+						"Abandon Revision",
+					]);
+
+					// An approved revision is not abandoned.
+					sign_refused_on_server(
+						REVISION,
+						revision,
+						"Abandon",
+						"Withdrawn",
+						reason,
+						`Only a revision not yet approved can be abandoned; ${revision} is Effective.`
+					);
+
+					// The document stays in effect on its revision, and a new revision can be started.
+					open_form(DOCUMENT, document);
+					cy.window().should((win) => {
+						expect(current(win).status).to.equal("Effective");
+						expect(current(win).current_revision, "Effective Revision").to.equal(
+							revision
+						);
+					});
+					offered("Revision in Progress", false);
+					offered("New Revision", true);
+					no_problems("D9-DOC-11");
+				}
+			);
+		});
+
+		// ISO 13485 4.2.5, 7.3.9; 21 CFR 11.10(c): a change request is kept. No role holds delete or
+		// cancel on it, so the form offers neither to anyone, the Administrator included; a call past
+		// the form is refused, for the Administrator by the request's own rule. The raiser withdraws it
+		// before approval and QA rejects or closes it instead (D9-CC-05, D9-CC-03).
+		it("[URS-QMS-016] [URS-CMP-016] D9-CC-09 A change request is never deleted or cancelled, not even by the Administrator", () => {
+			prepare("prepare_changes", {
+				password,
+				stages: ["approved", "under_assessment"],
+			}).then(({ changes: [approved, assessing] }) => {
+				const refused = /PermissionError/;
+				const before = {};
+				const as_job = () => {
+					open_form(CHANGE, approved);
+					neither_offered(CHANGE, approved, {
+						"frappe.client.delete": refused,
+						"frappe.client.cancel": refused,
+					});
+					open_form(CHANGE, assessing);
+					neither_offered(CHANGE, assessing, { "frappe.client.delete": refused });
+				};
+
+				// QA, who approves changes, and the Production Supervisor, who raised them.
+				sign_in(QA);
+				as_stored(CHANGE, approved).then((kept) => {
+					expect([kept.docstatus, kept.status], "approved").to.deep.equal([
+						1,
+						"Approved",
+					]);
+					before.approved = kept;
+				});
+				as_stored(CHANGE, assessing).then((kept) => {
+					expect([kept.docstatus, kept.status], "under assessment").to.deep.equal([
+						0,
+						"Under Assessment",
+					]);
+					before.assessing = kept;
+				});
+				as_job();
+				no_problems("D9-CC-09, QA");
+				sign_in(PRODUCTION);
+				as_job();
+				no_problems("D9-CC-09, the raiser");
+
+				// The Administrator, who holds every permission.
+				as_administrator();
+				open_form(CHANGE, approved);
+				neither_offered(CHANGE, approved, {
+					// Frappe refuses to delete a submitted record before the request's own rule.
+					"frappe.client.delete": /Submitted Record cannot be deleted/,
+					"frappe.client.cancel": exact(
+						"An approved change is implemented and closed, never cancelled."
+					),
+				});
+				open_form(CHANGE, assessing);
+				neither_offered(CHANGE, assessing, {
+					"frappe.client.delete": exact("A change request is never deleted."),
+				});
+
+				// Both are still there, as they were.
+				cy.then(() => as_stored(CHANGE, approved)).then((kept) =>
+					expect(kept, "the approved request, as it was").to.deep.equal(before.approved)
+				);
+				cy.then(() => as_stored(CHANGE, assessing)).then((kept) =>
+					expect(kept, "the request under assessment, as it was").to.deep.equal(
+						before.assessing
+					)
+				);
+				no_problems("D9-CC-09");
+			});
+		});
+
+		// ISO 13485 4.2.3, 4.2.5; 21 CFR 11.10(c): the device master record is kept. No role holds
+		// delete or cancel on it, so the form offers neither to anyone, the Administrator included; a
+		// call past the form is refused, for the Administrator by the record's own rule. A revision is
+		// superseded or withdrawn instead (D9-DMR-01, D9-DMR-03).
+		it("[URS-QMS-028] [URS-CMP-016] D9-DMR-05 A device master record is never deleted or cancelled, not even by the Administrator", () => {
+			prepare("prepare_dmr", { password, stage: "authored" }).then(
+				({ record, revision }) => {
+					const refused = /PermissionError/;
+					const before = {};
+					const as_job = () => {
+						open_form(DMR, record);
+						neither_offered(DMR, record, {
+							"frappe.client.delete": refused,
+							"frappe.client.cancel": refused,
+						});
+						open_form(DMR, revision);
+						neither_offered(DMR, revision, { "frappe.client.delete": refused });
+					};
+
+					// QA, who approves the record, and the Production Supervisor, who authored its revision.
+					sign_in(QA);
+					as_stored(DMR, record).then((kept) => {
+						expect([kept.docstatus, kept.status], "in force").to.deep.equal([
+							1,
+							"Current",
+						]);
+						before.record = kept;
+					});
+					as_stored(DMR, revision).then((kept) => {
+						expect([kept.docstatus, kept.status], "authored").to.deep.equal([
+							0,
+							"Awaiting Approval",
+						]);
+						before.revision = kept;
+					});
+					as_job();
+					no_problems("D9-DMR-05, QA");
+					sign_in(PRODUCTION);
+					as_job();
+					no_problems("D9-DMR-05, its author");
+
+					// The Administrator, who holds every permission.
+					as_administrator();
+					open_form(DMR, record);
+					neither_offered(DMR, record, {
+						// Frappe refuses to delete a submitted record before the record's own rule.
+						"frappe.client.delete": /Submitted Record cannot be deleted/,
+						"frappe.client.cancel": exact(
+							"A device master record is superseded or withdrawn, never cancelled."
+						),
+					});
+					open_form(DMR, revision);
+					neither_offered(DMR, revision, {
+						"frappe.client.delete": exact("A device master record is never deleted."),
+					});
+
+					// Both are still there, as they were.
+					cy.then(() => as_stored(DMR, record)).then((kept) =>
+						expect(kept, "the Current record, as it was").to.deep.equal(before.record)
+					);
+					cy.then(() => as_stored(DMR, revision)).then((kept) =>
+						expect(kept, "the revision awaiting approval, as it was").to.deep.equal(
+							before.revision
+						)
+					);
+					no_problems("D9-DMR-05");
 				}
 			);
 		});
