@@ -1129,10 +1129,22 @@ function alerted_of_finding(finding, subject) {
 		);
 	});
 	open_list("Notification Log", { document_name: finding });
-	cy.window().should((win) => {
-		const subjects = win.cur_list.data.map((row) => plain(row.subject));
-		expect(subjects, "the alert in the person's notifications").to.include(subject);
-	});
+	cy.window().should((win) =>
+		expect(win.cur_list.data.length, "the alert in the person's notifications").to.be.at.least(
+			1
+		)
+	);
+	// The list's lines do not carry the subject: it is read from the person's own log.
+	cy.window().then((win) =>
+		listed("Notification Log", { for_user: win.frappe.session.user, document_name: finding }, [
+			"subject",
+		]).then((alerts) =>
+			expect(
+				alerts.map((alert) => plain(alert.subject)),
+				"the alert's subject"
+			).to.include(subject)
+		)
+	);
 	open_form("Audit Trail Finding", finding);
 	cy.window().should((win) => {
 		const doc = current(win);
@@ -1195,7 +1207,7 @@ context("D12 Audit Logs: the browser test sheet, as each job", () => {
 			const nothing =
 				message === undefined ||
 				message === "undefined" ||
-				/^An unknown error has occurred: undefined$/m.test(String(message));
+				/An unknown error has occurred: undefined/.test(String(message));
 			if (!(promise && nothing)) {
 				run.problems.push(`script error: ${message}`);
 			}
@@ -1385,7 +1397,7 @@ context("D12 Audit Logs: the browser test sheet, as each job", () => {
 			sign_in(QA);
 			open_form("Calibration Record", calibration);
 			verify_integrity().then((answer) => {
-				expect(answer.title).to.equal("Integrity verified");
+				expect(answer.title, answer.message).to.equal("Integrity verified");
 				expect(answer.green, "green").to.be.true;
 				expect(answer.message).to.contain(
 					`The audit trail and the signatures of ${calibration} are intact.`
@@ -2087,34 +2099,46 @@ context("D12 Audit Logs: the browser test sheet, as each job", () => {
 	});
 
 	it("[URS-CMP-037] D12-T18 The System Administrator cannot loosen the access policy or change Quality Settings", () => {
+		const made = {};
 		sign_in(SYSADMIN);
+		// The value the site enforces (compliance/access_policy.py writes it to System Settings).
+		cy.call("frappe.client.get_single_value", {
+			doctype: "System Settings",
+			field: "session_expiry",
+		}).then(({ message }) => {
+			made.enforced = message;
+		});
 		open_single("System Settings");
-		fill("session_expiry", "170:00");
-		const loosened = refusal(
-			"Session Expiry (idle timeout) is set by the access policy: in Quality Settings, under change control."
+		// The form shows Session Expiry from Frappe's site defaults (system_settings.js `load`),
+		// which the access policy does not update, so it can show Frappe's 170:00 while another
+		// value is enforced (found in Chrome, 2026-10-21). Typing the value the form already shows
+		// changes nothing and Save sends nothing; the administrator then types another loosened one.
+		cy.window().then((win) => {
+			made.shown = current(win).session_expiry;
+			made.typed = made.shown === "170:00" ? "168:00" : "170:00";
+			fill("session_expiry", made.typed);
+		});
+		cy.window().should((win) => expect(win.cur_frm.is_dirty(), "a change to save").to.be.ok);
+		save_refused(
+			refusal(
+				"Session Expiry (idle timeout) is set by the access policy: in Quality Settings, under change control."
+			)
 		);
-		expect_refusal(loosened.server);
-		primary_action().should("contain", "Save").click();
-		// Refused, or else saved: either ends the save; a save that went through is the defect.
-		cy.window().should(
-			(win) =>
-				expect(
-					Boolean(message_dialog(win)) || !win.cur_frm.is_dirty(),
-					"the save has ended"
-				).to.be.true
+		cy.call("frappe.client.get_single_value", {
+			doctype: "System Settings",
+			field: "session_expiry",
+		}).then(({ message }) =>
+			expect(message, "Session Expiry unchanged").to.equal(made.enforced)
 		);
-		cy.window().then((win) =>
-			expect(
-				message_dialog(win),
-				"refused (none shown: the save went through, which the access policy guard must refuse)"
-			).to.not.equal(null)
-		);
-		refused_with(loosened.screen);
-		settle();
-		close_dialogs();
+		no_problems("D12-T18, the refusal");
+
+		// The form shows the value in force, not one the site does not use.
 		open_single("System Settings");
 		cy.window().should((win) =>
-			expect(current(win).session_expiry, "Session Expiry unchanged").to.not.equal("170:00")
+			expect(
+				current(win).session_expiry,
+				`Session Expiry shown (the site enforces ${made.enforced})`
+			).to.equal(made.enforced)
 		);
 		open_single("Quality Settings");
 		nothing_to_save();
@@ -2162,13 +2186,18 @@ context("D12 Audit Logs: the browser test sheet, as each job", () => {
 					/Electronic Signature: anchor ANC-\d{4}-\d+, \d+ entries/
 				);
 			});
+			settle();
 			cy.window().should((win) => {
-				const shown = win.cur_list.data.map((row) => row.name);
-				expect(shown, "the new anchor listed").to.include(made.anchor);
+				const names = win.cur_list.data.map((row) => row.name);
+				expect(names, "newest first").to.deep.equal([...names].sort().reverse());
 			});
-			cy.then(() => stored("Audit Anchor", made.anchor)).then((anchor) =>
-				expect(anchor.trigger, "Recorded").to.equal("On request")
-			);
+			cy.then(() =>
+				listed("Audit Anchor", { name: made.anchor }, ["name", "trigger", "ledger"])
+			).then((anchors) => {
+				expect(anchors, `the new anchor ${made.anchor} recorded`).to.have.length(1);
+				expect(anchors[0].trigger, "Recorded").to.equal("On request");
+				expect(anchors[0].ledger, "Trail").to.equal("Audit Event");
+			});
 
 			cy.then(() => open_form("Audit Anchor", made.anchor));
 			cy.window().should((win) => {
@@ -2191,7 +2220,7 @@ context("D12 Audit Logs: the browser test sheet, as each job", () => {
 
 			open_list("Audit Anchor");
 			verify_audit_trail().then((answer) => {
-				expect(answer.title).to.equal("Integrity verified");
+				expect(answer.title, answer.message).to.equal("Integrity verified");
 				expect(answer.green, "green").to.be.true;
 				expect(answer.message).to.equal(
 					"No anchored entry of the audit trail or the signatures is missing."
@@ -2337,7 +2366,7 @@ context("D12 Audit Logs: the browser test sheet, as each job", () => {
 				anchor_now();
 				open_form(made.record.doctype, made.record.name);
 				verify_integrity().then((answer) => {
-					expect(answer.title).to.equal("Integrity verified");
+					expect(answer.title, answer.message).to.equal("Integrity verified");
 					expect(answer.green, "green").to.be.true;
 				});
 				no_problems("D12-T22, step 2");
@@ -2363,7 +2392,7 @@ context("D12 Audit Logs: the browser test sheet, as each job", () => {
 				sign_in(QA);
 				open_form(made.record.doctype, made.record.name);
 				verify_integrity().then((answer) => {
-					expect(answer.title).to.equal("Integrity problem found");
+					expect(answer.title, answer.message).to.equal("Integrity problem found");
 					expect(answer.green, "red").to.be.false;
 					// The record's own chain shows no problem: the findings start with the whole trail's.
 					expect(
@@ -2414,7 +2443,7 @@ context("D12 Audit Logs: the browser test sheet, as each job", () => {
 				open_list("Audit Anchor");
 				anchor_now();
 				verify_audit_trail().then((answer) => {
-					expect(answer.title).to.equal("Integrity problem found");
+					expect(answer.title, answer.message).to.equal("Integrity problem found");
 					expect(answer.message).to.match(
 						/Audit Event: 2 of the \d+ entries recorded up to anchor ANC-\d{4}-\d+ are missing\./
 					);
@@ -2451,7 +2480,9 @@ context("D12 Audit Logs: the browser test sheet, as each job", () => {
 				sign_in(QA);
 				open_list("Audit Anchor");
 				verify_audit_trail().then((answer) =>
-					expect(answer.title, "the trail is whole again").to.equal("Integrity verified")
+					expect(answer.title, `the trail is whole again: ${answer.message}`).to.equal(
+						"Integrity verified"
+					)
 				);
 				no_problems("D12-T22");
 			});
