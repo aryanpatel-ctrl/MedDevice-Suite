@@ -634,6 +634,10 @@ function stored(doctype, name) {
 // A server call the signed-in user makes that must be refused, as a script or another tool would
 // send it past the form (sheet_d10.js refused_call): its status and message.
 function refused_call(method, args) {
+	// Its token comes from a desk page: right after signing in no page is open yet (D1-T16).
+	cy.window().then((win) => {
+		if (!win.frappe?.csrf_token) cy.visit("/desk");
+	});
 	return cy
 		.window()
 		.its("frappe.csrf_token")
