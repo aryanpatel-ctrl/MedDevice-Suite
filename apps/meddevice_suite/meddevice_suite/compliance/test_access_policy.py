@@ -27,6 +27,15 @@ class TestThePolicyOnTheSite(QualitySettingsTestCase):
 				self.assertEqual(system(field), wanted)
 		self.assertEqual(system("login_with_email_link"), 0)  # no sign-in without the password
 
+	def test_the_desk_shows_what_is_enforced(self):
+		"""The desk reads System Settings' defaults: they say what the policy enforces, as the
+		settings' own save would set them (browser test D12-T18 found the form showing 170:00)."""
+		frappe.db.set_default("session_expiry", "170:00")  # as a site left by Frappe's install
+		apply_access_policy()
+		for field, wanted in system_values().items():
+			with self.subTest(field=field):
+				self.assertEqual(str(frappe.db.get_default(field)), str(wanted))
+
 	def test_qa_changes_them_under_change_control_and_the_site_follows_at_once(self):
 		self.settings(
 			password_strength=4,
