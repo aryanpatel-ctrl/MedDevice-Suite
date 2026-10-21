@@ -9,8 +9,10 @@ from meddevice_suite.master_data.test_supplier_approval import approved_for
 from meddevice_suite.qa import verifies
 from meddevice_suite.setup.install import apply_configuration
 from meddevice_suite.setup.test_roles import user_with_profile
+from meddevice_suite.setup.test_stock import approve_for_test, stock_item
 
 ITEM = "MDS-WORKFLOW-ITEM"
+SECOND_ITEM = "MDS-WORKFLOW-ITEM-2"
 CUSTOMER = "MDS Workflow Customer"
 SUPPLIER = "MDS Workflow Supplier"
 # One person holding both the requester's and the approver's roles.
@@ -36,8 +38,6 @@ def ensure_items_and_parties() -> None:
 				"mds_item_type": "Finished Good",
 			}
 		).insert()
-	from meddevice_suite.setup.test_stock import approve_for_test
-
 	approve_for_test(ITEM)  # module 1: quotations and orders name approved items only
 	if not frappe.db.exists("Customer", CUSTOMER):
 		frappe.get_doc(
@@ -478,3 +478,95 @@ class TestApprovedPricesStand(ApprovalTestCase):
 		copy.insert()
 
 		self.assertEqual(self.state(copy), ("Draft", 0))
+
+
+@verifies("URS-CMP-033")
+class TestEveryLineOfAnApprovedOrderStands(ApprovalTestCase):
+	"""Any change to an approved order's lines needs approval again, even one that leaves every total
+	as it was (decided 2026-10-21). ERPNext's Update Items writes the lines before it saves the order,
+	so the check compares the lines with the order as it was before the call, not with the totals."""
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		stock_item(SECOND_ITEM, is_stock_item=0)
+		approve_for_test(SECOND_ITEM)
+		approved_for(SUPPLIER, [ITEM, SECOND_ITEM])
+
+	def approved_order(self):
+		"""An approved purchase order of two lines at the same rate: 100 + 50 at 4, 600 in all."""
+		self.as_user(self.purchase)
+		order = frappe.get_doc(
+			{
+				"doctype": "Purchase Order",
+				"supplier": SUPPLIER,
+				"transaction_date": today(),
+				"schedule_date": add_days(today(), 7),
+				"items": [
+					{"item_code": ITEM, "qty": 100, "rate": 4, "schedule_date": add_days(today(), 7)},
+					{"item_code": SECOND_ITEM, "qty": 50, "rate": 4, "schedule_date": add_days(today(), 7)},
+				],
+			}
+		).insert()
+		self.act(self.purchase, order, "Send for Approval")
+		self.act(self.approver, order, "Approve")
+		frappe.set_user("Administrator")
+		return frappe.get_doc("Purchase Order", order.name)
+
+	def update_items(self, order, lines: list[dict]) -> None:
+		"""Update Items as the desk sends it, by the approver and with a reason, so only the approval decides."""
+		from meddevice_suite.compliance.test_audit_update_items import update_items
+
+		self.as_user(self.approver)
+		stage_reason("Purchase Order", order.name, "update_after_submit", "Supplier confirmed the order")
+		update_items("Purchase Order", order.name, lines)
+
+	def lines_of(self, order) -> list[tuple]:
+		return [
+			(row.item_code, row.qty, row.rate, str(row.schedule_date))
+			for row in frappe.get_doc("Purchase Order", order.name).items
+		]
+
+	def assert_refused(self, order, lines: list[dict]) -> None:
+		stored = self.lines_of(order)
+		frappe.db.savepoint("refused")
+		with self.assertRaisesRegex(frappe.ValidationError, "has been approved"):
+			self.update_items(order, lines)
+		frappe.db.rollback(save_point="refused")  # as the refused request is rolled back
+		frappe.set_user("Administrator")
+		self.assertEqual(self.lines_of(order), stored)
+		self.assertEqual(self.state(order), ("Approved", 1))
+		self.assertEqual(frappe.db.get_value("Purchase Order", order.name, "grand_total"), 600)
+
+	def test_two_lines_swapping_quantities_with_equal_totals_need_approval_again(self):
+		from meddevice_suite.compliance.test_audit_update_items import as_line
+
+		order = self.approved_order()
+		first, second = order.items
+		self.assert_refused(order, [as_line(first, qty=50), as_line(second, qty=100)])
+
+	def test_one_rate_up_and_another_down_with_equal_totals_need_approval_again(self):
+		from meddevice_suite.compliance.test_audit_update_items import as_line
+
+		order = self.approved_order()
+		first, second = order.items
+		# 100 x 5 + 50 x 2 = 600, as 100 x 4 + 50 x 4.
+		self.assert_refused(order, [as_line(first, rate=5), as_line(second, rate=2)])
+
+	def test_a_new_schedule_date_alone_needs_approval_again(self):
+		from meddevice_suite.compliance.test_audit_update_items import as_line
+
+		order = self.approved_order()
+		first, second = order.items
+		self.assert_refused(order, [as_line(first, schedule_date=add_days(today(), 14)), as_line(second)])
+
+	def test_update_items_with_no_change_keeps_the_approval(self):
+		from meddevice_suite.compliance.test_audit_update_items import as_line
+
+		order = self.approved_order()
+		stored = self.lines_of(order)
+		self.update_items(order, [as_line(row) for row in order.items])
+		frappe.set_user("Administrator")
+
+		self.assertEqual(self.lines_of(order), stored)
+		self.assertEqual(self.state(order), ("Approved", 1))

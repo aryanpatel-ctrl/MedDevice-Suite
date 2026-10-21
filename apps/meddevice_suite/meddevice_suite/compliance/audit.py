@@ -228,6 +228,15 @@ def update_child_qty_rate(
 		frappe.flags.setdefault("audit_lines_before", {}).pop(key, None)
 
 
+def order_before_update_items(doc: Document) -> Document | None:
+	"""`doc` as it was stored before ERPNext's Update Items started writing its lines, while that call
+	runs on it and its event is not yet recorded (`update_child_qty_rate` above); None otherwise.
+
+	Also read by the approval check (approvals.before_update_after_submit), which runs before the
+	event is recorded: by the order's save, the stored order already holds the new lines."""
+	return (frappe.flags.audit_lines_before or {}).get((doc.doctype, doc.name))
+
+
 def with_lines_before_update_items(doc: Document, before: Document | None) -> Document | None:
 	"""`before`, with the child tables as they were before ERPNext's Update Items wrote them
 	(`update_child_qty_rate` above); `before` itself when no Update Items is running on `doc`.
@@ -235,7 +244,8 @@ def with_lines_before_update_items(doc: Document, before: Document | None) -> Do
 	Taken once: the order's first save in the call records the lines; any later write in the same
 	call compares with what that event recorded. The order's own fields stay as the save read them,
 	so a value written to the order by an event of its own is not recorded a second time."""
-	lines_before = (frappe.flags.audit_lines_before or {}).pop((doc.doctype, doc.name), None)
+	lines_before = order_before_update_items(doc)
+	(frappe.flags.audit_lines_before or {}).pop((doc.doctype, doc.name), None)
 	if lines_before is None or before is None:
 		return before
 	merged = copy_of(before)

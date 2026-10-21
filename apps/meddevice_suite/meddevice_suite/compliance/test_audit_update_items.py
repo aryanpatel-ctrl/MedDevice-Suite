@@ -175,8 +175,9 @@ class TestSalesOrderUpdateItemsIsAudited(CustomerLicenceTestCase):
 
 @verifies("URS-CMP-008")
 class TestPurchaseOrderUpdateItemsIsAudited(ApprovalTestCase):
-	def test_a_lines_new_schedule_date_is_recorded_with_the_old_one(self):
-		# An approved order's quantities and prices stand (URS-CMP-033); its dates may move.
+	def test_a_refused_change_to_an_approved_order_records_nothing(self):
+		# Any change to an approved order's lines, a new schedule date too, needs approval again
+		# (URS-CMP-033, decided 2026-10-21): refused, so no line is recorded as changed.
 		order = self.purchase_order()
 		self.act(self.purchase, order, "Send for Approval")
 		self.act(self.approver, order, "Approve")
@@ -186,17 +187,16 @@ class TestPurchaseOrderUpdateItemsIsAudited(ApprovalTestCase):
 
 		self.as_user(self.approver)
 		stage_reason("Purchase Order", order.name, "update_after_submit", "Supplier ships a week later")
-		update_items("Purchase Order", order.name, [as_line(row, schedule_date=add_days(today(), 14))])
+		frappe.db.savepoint("refused")
+		with self.assertRaisesRegex(frappe.ValidationError, "has been approved"):
+			update_items("Purchase Order", order.name, [as_line(row, schedule_date=add_days(today(), 14))])
+		frappe.db.rollback(save_point="refused")  # as the refused request is rolled back
 		frappe.set_user("Administrator")
 
-		(update,) = [
-			event
-			for event in events_for("Purchase Order", order.name)[since:]
-			if event.action == "Updated after submission"
-		]
-		self.assertEqual((update.user, update.reason), (self.approver, "Supplier ships a week later"))
+		self.assertFalse(frappe.flags.audit_lines_before)
 		self.assertEqual(
-			as_dates(line_changes(update, row.name)["schedule_date"]),
-			as_dates([add_days(today(), 7), add_days(today(), 14)]),
+			as_dates([frappe.db.get_value("Purchase Order Item", row.name, "schedule_date")]),
+			as_dates([add_days(today(), 7)]),
 		)
+		self.assertEqual(events_for("Purchase Order", order.name)[since:], [])
 		self.assertEqual(verify_events("Purchase Order", order.name), [])
