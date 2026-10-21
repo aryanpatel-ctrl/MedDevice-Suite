@@ -528,6 +528,23 @@ function type_and_leave(selector, text) {
 	});
 }
 
+// A date is kept only once the person leaves its field ('change' on blur), and a form refresh set
+// off by the field before (a fetch, a dependent field, ERPNext's own form script) can land in
+// between and draw the box again from the still empty record: the person sees the box go empty
+// and types the date again (found in CI, 2026-10-20, on a slow runner: the box empty in the
+// screenshot). Typed again once only, and only when both the record and the box are empty: a box
+// still showing a date the record did not take is a defect, left to the check that follows.
+function retype_if_wiped(selector, value, label, read_stored, reopen = null) {
+	settle();
+	cy.window().then((win) => {
+		const box = Cypress.$(win.document.body).find(selector).first().val();
+		if (read_stored(win) || box) return;
+		cy.log(`${label}: date wiped by a form refresh, typed again`);
+		if (reopen) reopen();
+		type_and_leave(selector, user_date(win, value));
+	});
+}
+
 function stored_as(stored, value, label) {
 	if (typeof value === "number") expect(stored, label).to.be.closeTo(value, 1e-6);
 	else expect(stored, label).to.equal(value);
@@ -543,6 +560,8 @@ function fill(fieldname, value, kind = "Data") {
 	cy.get(selector)
 		.first()
 		.then(($input) => enter($input, value, kind, selector));
+	if (kind === "Date")
+		retype_if_wiped(selector, value, fieldname, (win) => current(win)[fieldname]);
 	cy.window().should((win) => stored_as(current(win)[fieldname], value, fieldname));
 }
 
@@ -608,6 +627,14 @@ function fill_row(table, idx, fieldname, value, kind = "Data") {
 				cy.get(`${cell(table, idx, fieldname)}:first`).click()
 			)
 		);
+	if (kind === "Date")
+		retype_if_wiped(
+			inputs_of(cell(table, idx, fieldname)),
+			value,
+			`line ${idx} ${fieldname}`,
+			(win) => rows(win, table)[idx - 1][fieldname],
+			() => cy.get(`${cell(table, idx, fieldname)}:first`).click()
+		);
 	cy.window().should((win) =>
 		stored_as(rows(win, table)[idx - 1][fieldname], value, `line ${idx} ${fieldname}`)
 	);
@@ -649,6 +676,13 @@ function fill_line(fieldname, value, kind = "Data") {
 				.filter((_, element) => Cypress.dom.isVisible(element));
 			if ($input.length) {
 				enter($input.first(), value, kind, selector);
+				if (kind === "Date")
+					retype_if_wiped(
+						selector,
+						value,
+						fieldname,
+						(win) => win.cur_frm.cur_grid.doc[fieldname]
+					);
 			} else {
 				cy.window().then((win) => {
 					const line = win.cur_frm.cur_grid.doc;

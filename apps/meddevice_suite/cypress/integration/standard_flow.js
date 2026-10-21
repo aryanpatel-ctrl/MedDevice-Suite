@@ -280,6 +280,26 @@ function type_into($input, text) {
 	});
 }
 
+// A date is kept only once the person leaves its field ('change' on blur), and a form refresh set
+// off by the field before (a fetch, a dependent field, ERPNext's own form script) can land in
+// between and draw the box again from the still empty record: the person sees the box go empty
+// and types the date again (found in CI, 2026-10-20, on a slow runner: the box empty in the
+// screenshot). Typed again once only, and only when both the record and the box are empty: a box
+// still showing a date the record did not take is a defect, left to the check that follows. The
+// field is found again: the refresh drew it anew.
+function retype_if_wiped(selector, value, label, read_stored, reopen = null) {
+	settle();
+	cy.window().then((win) => {
+		const box = Cypress.$(win.document.body).find(selector).first().val();
+		if (read_stored(win) || box) return;
+		cy.log(`${label}: date wiped by a form refresh, typed again`);
+		if (reopen) reopen();
+		cy.get(selector)
+			.first()
+			.then(($input) => type_into($input, user_date(win, value)));
+	});
+}
+
 // Types into a link field and chooses the matching entry of its list.
 function choose($input, value) {
 	cy.wrap($input).clear().focus().type(value, { delay: 0 });
@@ -333,6 +353,13 @@ function fill(fieldname, value, kind = "Data") {
 				else type_into($input, String(value));
 			})
 		);
+	if (kind === "Date")
+		retype_if_wiped(
+			inputs_of(`${FORM} .frappe-control[data-fieldname="${fieldname}"]`),
+			value,
+			fieldname,
+			(win) => current(win)[fieldname]
+		);
 	cy.window().should((win) => {
 		const stored = current(win)[fieldname];
 		if (typeof value === "number") expect(stored, fieldname).to.be.closeTo(value, 1e-6);
@@ -370,6 +397,14 @@ function fill_row(table, idx, fieldname, value, kind = "Data") {
 				else if (kind === "Datetime") type_into($input, user_date(win, value));
 				else type_into($input, String(value));
 			})
+		);
+	if (kind === "Datetime")
+		retype_if_wiped(
+			inputs_of(cell),
+			value,
+			`line ${idx} ${fieldname}`,
+			(win) => rows(win, table)[idx - 1][fieldname],
+			() => cy.get(cell).first().click()
 		);
 	cy.window().should((win) => {
 		const stored = rows(win, table)[idx - 1][fieldname];

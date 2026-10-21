@@ -316,6 +316,26 @@ function type_into($input, text) {
 	});
 }
 
+// A date is kept only once the person leaves its field ('change' on blur), and a form refresh set
+// off by the field before (a fetch, a dependent field, ERPNext's own form script) can land in
+// between and draw the box again from the still empty record: the person sees the box go empty
+// and types the date again (found in CI, 2026-10-20, on a slow runner: the box empty in the
+// screenshot). Typed again once only, and only when both the record and the box are empty: a box
+// still showing a date the record did not take is a defect, left to the check that follows. The
+// field is found again: the refresh drew it anew.
+function retype_if_wiped(selector, value, label, read_stored, reopen = null) {
+	settle();
+	cy.window().then((win) => {
+		const box = Cypress.$(win.document.body).find(selector).first().val();
+		if (read_stored(win) || box) return;
+		cy.log(`${label}: date wiped by a form refresh, typed again`);
+		if (reopen) reopen();
+		cy.get(selector)
+			.first()
+			.then(($input) => type_into($input, win.frappe.datetime.str_to_user(value)));
+	});
+}
+
 // Types into a link field and chooses the entry of its list for `value`: the entry's name in
 // bold, or, on a lookup that shows titles, its name under the title.
 function choose($input, value) {
@@ -365,6 +385,13 @@ function fill(fieldname, value, kind = "Data") {
 					type_into($input, win.frappe.datetime.str_to_user(value));
 				else type_into($input, String(value));
 			})
+		);
+	if (kind === "Date")
+		retype_if_wiped(
+			inputs_of(`${FORM} .frappe-control[data-fieldname="${fieldname}"]`),
+			value,
+			fieldname,
+			(win) => current(win)[fieldname]
 		);
 	cy.window().should((win) => {
 		const stored = current(win)[fieldname];

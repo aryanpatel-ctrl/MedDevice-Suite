@@ -91,10 +91,16 @@ jobs:
           name: server-test-evidence
           path: reports/
 
-  ui:
-    name: UI tests
+  # The browser tests in parallel shards (scripts/ci/ui_shard.py): as one queue they took nearly
+  # three hours. Each shard builds its own bench and site, as the single job did.
+  ui-shard:
+    name: UI tests (${{ matrix.shard }})
     needs: integrity
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false  # every shard reports, so one run shows every failure
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
 
     services:
       redis-cache:
@@ -123,12 +129,30 @@ jobs:
       - name: Start bench
         run: scripts/ci/start_bench.sh
 
-      - name: Run UI tests
-        run: bench --site $SITE run-ui-tests meddevice_suite --headless --browser electron
+      - name: Every spec is in exactly one shard
+        run: scripts/ci/ui_shard.py --check
+
+      - name: Run this shard's UI tests
+        run: |
+          specs=$(scripts/ci/ui_shard.py ${{ matrix.shard }})
+          echo "Shard ${{ matrix.shard }}: $specs"
+          bench --site $SITE run-ui-tests meddevice_suite --headless --browser electron --spec "$specs"
 
       - name: Upload screenshots of failures
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: ui-test-screenshots
+          name: ui-test-screenshots-${{ matrix.shard }}
           path: apps/meddevice_suite/cypress/screenshots/
+
+  # The one check branch protection and the merge gate read: green only when every shard is.
+  ui:
+    name: UI tests
+    needs: ui-shard
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every shard passed
+        run: |
+          echo "shards: ${{ needs.ui-shard.result }}"
+          test "${{ needs.ui-shard.result }}" = "success"
