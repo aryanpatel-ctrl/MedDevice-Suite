@@ -1,6 +1,6 @@
 # Employee master (module 9) — feature document and browser test guide
 
-Module 9 uses ERPNext's **Employee** as it is (master plan: "Used as is: routing and work centres, warehouses, employee"). It is not one of the nine version-controlled masters of URS-MST-001, and it has no requirement of its own. What this app adds to it comes from the platform requirements below.
+Module 9 uses ERPNext's **Employee** (master plan: "Used as is: routing and work centres, warehouses, employee"). It is not one of the nine version-controlled masters of URS-MST-001. Its own requirements, **URS-TRN-007 to URS-TRN-009** (stated 2026-10-21), say what training, the trainee's signature and the job card gate rely on; they are described and verified with training (`training.md`, *The employee master that training relies on*). The rest comes from the platform requirements below.
 Code: permissions in `meddevice_suite/setup/roles.py` (Employee), audit scope in `compliance/audit_scope.py`, retention in `compliance/retention.py`, sidebar in `setup/sidebars.py` (Organization), lookups in `setup/lookups.py`.
 DFD trace: no data store of its own; people appear as the users of each process. Training and operator qualification come from the ERP flowchart (D2) and are module 37.
 
@@ -19,7 +19,8 @@ DFD trace: no data store of its own; people appear as the users of each process.
 
 ## 2. Detailed functional explanation
 
-- **The record** is ERPNext's Employee; nothing is added to it.
+- **The record** is ERPNext's Employee; no field is added to it.
+- **Rules** (URS-TRN-007 to URS-TRN-009): an active employee holds a designation; a user account belongs to one active employee; the trainee signs on the account linked when they sign, and open training follows a new account; nobody who is not active is trained, assessed or booked on a job card, and ERPNext disables their account. Code: `qms/training.py` (`validate_employee`, `on_employee_update`, `follow_account`), registered on Employee in `hooks.py`.
 - **Who may do what** is set by the job profiles (URS-CMP-014): the Training Coordinator edits, Production reads, an Operator can only pick an employee in a lookup (URS-CMP-036).
 - **Audit trail.** Every change to an employee is recorded with who, when, old and new values (module 50).
 - **Retention.** Employee records are kept ten years with the equipment and personnel records (module 54).
@@ -29,6 +30,7 @@ DFD trace: no data store of its own; people appear as the users of each process.
 
 | Requirement | What it gives this master | Verification |
 | --- | --- | --- |
+| URS-TRN-007 to URS-TRN-009 | Job held while active; one active employee per account; signing and open training on the account linked now; not active is not trained or booked | `qms/test_training.py` (`TestEmployeeJob`, `TestEmployeeAccount`, `TestEmployeeNotActive`, `TestEmployeeNotActiveOnJobCard`) |
 | URS-CMP-014 | Job profiles grant exactly the roles a job needs | `setup/test_roles.py` |
 | URS-CMP-036 | Lookups searchable by the job filling the form, without opening the record | `setup/test_lookups.py` |
 | Audit trail (module 50) | Changes recorded | `compliance/test_audit.py`, audit scope |
@@ -38,6 +40,7 @@ DFD trace: no data store of its own; people appear as the users of each process.
 
 ### EM-01 Record an employee
 Role: Training Coordinator. **Organization › Employee › + Add**: name, gender, date of birth, date of joining, department, designation, user. Save. Expected: saved.
+Without a designation while *Active*: refused. The rules for the job and the account are tested in training, TR-06.
 
 ### EM-02 Who may change it
 Role: Production Supervisor: the employee opens read-only. Role: Operator: the employee cannot be opened; on a job card's time log the operator can still pick themselves.
@@ -62,12 +65,13 @@ Person joins → the Training Coordinator records the employee and the system ad
 - HRMS is not installed: leave, attendance and payroll are outside the client's scope.
 
 ## 8. Test results and verification summary
-No code changes in this module; the tests above run in the full suite of every pull request.
+The employee master rules (URS-TRN-007 to URS-TRN-009) added on 2026-10-21; their tests are in `qms/test_training.py`, run in the full suite of every pull request.
 
 ## 9. Final QA checklist
 
 | Item | Status |
 | --- | --- |
+| Employee master rules URS-TRN-007 to URS-TRN-009 | Server tests written; **not yet run** |
 | Permissions per job | Verified (automated) |
 | Audit trail and retention | Verified (automated) |
 | Manual EM-01…EM-03 | **Not tested** |

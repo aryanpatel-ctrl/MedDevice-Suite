@@ -1451,6 +1451,33 @@ title = "QA may revoke an employee's competence with an electronic signature and
 source = "D2 Training Management (Competency Evaluation); ISO 13485 6.2, 8.3; decided 2026-10-11 (plan D-18)"
 status = "implemented"
 
+# --- Module 9: employee master (ERPNext Employee, as training, signing and job cards rely on it) ---
+# Stated 2026-10-21: module 9 had no requirement although training (module 37), the trainee's
+# signature (module 49) and the job card gate (URS-TRN-005) depend on it. Global HR practice (SAP
+# HCM, SuccessFactors, Dynamics 365 HR): one employee record per person, linked to that person's
+# own system user, carrying the job that drives required training.
+
+[[requirement]]
+id = "URS-TRN-007"
+module = 9
+title = "An active employee holds a job (designation): saving an active employee without one is refused, and the training their job's approved matrix names applies to them through it, so a change of job changes the training they need."
+source = "D2 Training Management (Training Matrix, Employee Training); ISO 13485 6.2 (competence determined for personnel doing work affecting product quality); decided 2026-10-21 by the implementer on the client's instruction to decide build questions (2026-10-11): the job is mandatory while active, as an employee's job is in global HR practice"
+status = "implemented"
+
+[[requirement]]
+id = "URS-TRN-008"
+module = 9
+title = "A user account belongs to at most one active employee, and a trainee signs only on the user account their employee record links to at the time of signing; when that link changes, the employee's open training records, who sees them and whom they remind follow the new account, and completed records keep the account that signed them."
+source = "D2 Training Management (Employee Training); ISO 13485 6.2; 21 CFR 11.100(a) (a signature unique to one individual), 11.10(d); decided 2026-10-11 (plan D-08: everyone signs on their own account); decided 2026-10-21 by the implementer: one active employee per user, ERPNext's own check"
+status = "implemented"
+
+[[requirement]]
+id = "URS-TRN-009"
+module = 9
+title = "An employee who is not active is neither trained nor booked: their open training records are withdrawn, they cannot sign a training or be assessed, their user account is disabled, and time is refused for them on a job card."
+source = "D2 Training Management (Employee Training, Competency Evaluation); DFD 4.4 Execute Work Orders; ISO 13485 6.2, 7.5.1; 21 CFR 11.10(d) (access limited to authorised individuals)"
+status = "implemented"
+
 [[requirement]]
 id = "URS-REG-001"
 module = 41

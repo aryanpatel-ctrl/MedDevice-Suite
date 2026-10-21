@@ -239,8 +239,13 @@ doc_events = {
 		# the period that finding assessed: added to that calibration, its assessment open again.
 		"on_submit": "meddevice_suite.qms.calibration.add_later_use",
 	},
-	# Module 37: joining, a new job, leaving or returning changes what training is needed.
-	"Employee": {"on_update": "meddevice_suite.qms.training.on_employee_update"},
+	"Employee": {
+		# Module 9: an active employee holds the job that decides their training (URS-TRN-007).
+		"validate": "meddevice_suite.qms.training.validate_employee",
+		# Module 37: joining, a new job, leaving or returning changes what training is needed; a new
+		# user account takes over the open training (URS-TRN-008).
+		"on_update": "meddevice_suite.qms.training.on_employee_update",
+	},
 	"Purchase Receipt": {
 		"validate": [
 			# Plan D-28: a finished good is made by the plant, never bought in.
