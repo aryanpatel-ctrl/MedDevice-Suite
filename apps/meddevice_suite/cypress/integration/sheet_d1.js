@@ -6,9 +6,12 @@
 // an approved change request (master_data/customer_licence.py, master_data/versioning.py).
 //
 // The rows build on each other, so a row is never tried again and once one fails the rows after
-// it are not run (as standard_flow.js). The job users and the standard flow's product and stock
-// come from meddevice_suite/qa/ui_users.py and ui_journey.py; the customers the sheet starts from
-// (an exempt hospital, a licensed distributor) from meddevice_suite/qa/sheets/d1.py.
+// it are not run (as standard_flow.js), except D1-T15 and D1-T16, which start from records of their
+// own and run whatever the rows before them did: QA reads the audit trail of a customer and its
+// licence, and a licence is never deleted or cancelled, not even by the Administrator. The job
+// users and the standard flow's product and stock come from meddevice_suite/qa/ui_users.py and
+// ui_journey.py; the customers the sheet starts from (an exempt hospital, a licensed distributor,
+// and those of D1-T15 and D1-T16) from meddevice_suite/qa/sheets/d1.py.
 
 const USERS = "meddevice_suite.qa.ui_users";
 const JOURNEY = "meddevice_suite.qa.ui_journey";
@@ -27,6 +30,8 @@ const AWAITING_BANNER =
 	"Awaiting QA's verification: no sales order or delivery is made on it yet.";
 const EXEMPT_BANNER = "Buys without a licence, as QA decided with a signature.";
 const NOT_LICENSED_TITLE = "Customer not licensed";
+// The rows that start from records of their own (qa/sheets/d1.py) and run after a row has failed.
+const OWN_RECORDS = /\bD1-T1[56]\b/;
 
 let password;
 let users;
@@ -626,6 +631,114 @@ function stored(doctype, name) {
 	return cy.call("frappe.client.get", { doctype, name }).then((r) => r.message);
 }
 
+// A server call the signed-in user makes that must be refused, as a script or another tool would
+// send it past the form (sheet_d10.js refused_call): its status and message.
+function refused_call(method, args) {
+	return cy
+		.window()
+		.its("frappe.csrf_token")
+		.then((csrf_token) =>
+			cy.request({
+				method: "POST",
+				url: `/api/method/${method}`,
+				body: args,
+				headers: { Accept: "application/json", "X-Frappe-CSRF-Token": csrf_token },
+				failOnStatusCode: false,
+			})
+		)
+		.then((response) => {
+			expect(response.status, `${method} is refused`).to.be.within(400, 499);
+			return { status: response.status, message: server_message(response.body) };
+		});
+}
+
+// The form's menu (⋯) offers `label`, or does not; the menu is closed again when it is not.
+function in_menu(label, expected) {
+	settle();
+	cy.get(`${FORM} .menu-btn-group > button`).click();
+	cy.get(".dropdown-menu.show").should("be.visible");
+	// By its label: an item with a keyboard shortcut (Delete) shows the shortcut beside it.
+	const items = () =>
+		cy
+			.get(".dropdown-menu.show .dropdown-item")
+			.filter(
+				(_, item) =>
+					plain((item.querySelector(".menu-item-label") ?? item).textContent) === label
+			);
+	if (expected) {
+		items().should("have.length", 1).click();
+		return;
+	}
+	items().should("have.length", 0);
+	cy.get(`${FORM} .menu-btn-group > button`).click();
+	cy.get(".dropdown-menu.show").should("not.exist");
+}
+
+// What a licence holds that a deletion or a cancellation would change, as stored.
+const KEPT_FIELDS = ["docstatus", "status", "reason", "decided_by", "decided_at", "modified"];
+
+function licence_as_stored(name) {
+	return stored("Customer Licence", name).then((licence) =>
+		Object.fromEntries(KEPT_FIELDS.map((field) => [field, licence[field]]))
+	);
+}
+
+// An entry of the record's audit trail on its form (compliance/audit_timeline.py describe) that
+// shows every one of `lines`, recorded today: its time is shown with it.
+function audit_entry_shown(lines) {
+	cy.window().then((win) =>
+		cy.get(`${FORM} .timeline-item`).should(($items) => {
+			const entries = $items
+				.toArray()
+				.filter((item) => lines.every((line) => plain(item.textContent).includes(line)));
+			expect(
+				entries,
+				`an entry of the audit trail showing: ${lines.join(" | ")}`
+			).to.have.length.at.least(1);
+			const [entry] = entries;
+			expect(entry.dataset.timestamp?.slice(0, 10), "recorded today").to.equal(
+				win.frappe.datetime.get_today()
+			);
+			// "… ago", its date and time on hover, or the date and time where the site shows them so.
+			const time = entry.querySelector(".frappe-timestamp");
+			expect(
+				time?.title.includes(today_text(win)) ||
+					plain(entry.textContent).includes(today_text(win)),
+				"its time shown"
+			).to.be.true;
+		})
+	);
+}
+
+// The record's own audit trail, opened with the form's View > Audit Trail (public/js/audit_trail.js):
+// the Audit Event list of that record only, showing each of `actions`.
+function open_audit_trail(doctype, name, actions) {
+	from_menu("View", "Audit Trail");
+	cy.window().should((win) => {
+		expect(win.frappe.get_route()[0], "a list is open").to.equal("List");
+		expect(win.cur_list?.doctype).to.equal("Audit Event");
+	});
+	settle();
+	cy.window().should((win) => {
+		const filters = win.cur_list.filter_area.get().map((filter) => [filter[1], filter[3]]);
+		expect(filters, "the list is of this record").to.deep.include.members([
+			["reference_doctype", doctype],
+			["reference_name", name],
+		]);
+	});
+	cy.get(".page-container:visible .list-row-container:not(:has(.list-row-head))").should(
+		($rows) => {
+			const shown = $rows.toArray().map((row) => plain(row.textContent));
+			for (const action of actions) {
+				expect(
+					shown.some((row) => row.includes(action)),
+					`an entry "${action}" listed`
+				).to.be.true;
+			}
+		}
+	);
+}
+
 // Each row builds on the one before, so a row is never tried again (its first attempt may have
 // done part of its work), and once one fails the rows after it are not run.
 context("D1 Customer Master: the browser test sheet, as each job", { retries: 0 }, () => {
@@ -646,7 +759,7 @@ context("D1 Customer Master: the browser test sheet, as each job", { retries: 0 
 	});
 
 	beforeEach(function () {
-		if (stopped) this.skip();
+		if (stopped && !OWN_RECORDS.test(this.currentTest.title)) this.skip();
 		run.problems.length = 0;
 		run.expected.length = 0;
 		watch_requests();
@@ -1088,5 +1201,221 @@ context("D1 Customer Master: the browser test sheet, as each job", { retries: 0 
 			expect(doc.mds_change_request, "named afresh for each change").to.not.be.ok;
 		});
 		no_problems("D1-T14");
+	});
+
+	// 21 CFR 11.10(e): QA reads who changed a customer in use, when, from what to what and under
+	// which change request, and who verified its licence, on the forms and in the audit trail.
+	it("[URS-MST-008] [URS-CMP-012] D1-T15 QA reads the audit trail of a customer and its licence", () => {
+		const customer = () => sheet.audited_customer;
+		const licence = () => sheet.audited_licence;
+		const change = () => sheet.audited_change_request;
+		const sales = () => sheet.full_names.Sales;
+		const qa = () => sheet.full_names["QA Manager"];
+		const audit = {};
+		sign_in("QA Manager");
+
+		// On the customer's form: who changed its group, when, the old and new value, and the
+		// approved change request it was changed under.
+		cy.then(() => open_form("Customer", customer()));
+		cy.window().should((win) => {
+			expect(current(win).customer_group).to.equal(sheet.other_group);
+			expect(current(win).mds_changed_under).to.equal(change());
+		});
+		cy.then(() =>
+			audit_entry_shown([
+				`Updated by ${sales()}`,
+				`Customer Group: ${sheet.customer_group} → ${sheet.other_group}`,
+				`Last Changed Under: empty → ${change()}`,
+			])
+		);
+
+		// Its whole audit trail, from the form's View menu, and the entry of the change opened.
+		cy.then(() => open_audit_trail("Customer", customer(), ["Created", "Updated"]));
+		cy.then(() =>
+			cy.call("frappe.client.get_list", {
+				doctype: "Audit Event",
+				filters: {
+					reference_doctype: "Customer",
+					reference_name: customer(),
+					action: "Updated",
+				},
+				fields: ["name", "changes"],
+				limit_page_length: 0,
+			})
+		).then(({ message }) => {
+			const of_the_change = message.filter((event) =>
+				(typeof event.changes === "string"
+					? event.changes
+					: JSON.stringify(event.changes)
+				).includes(change())
+			);
+			expect(of_the_change, "one entry records the change").to.have.length(1);
+			audit.event = of_the_change[0].name;
+		});
+		cy.then(() =>
+			cy.get(`.page-container:visible .list-row a[data-name="${audit.event}"]`).click()
+		);
+		cy.then(() => form_is("Audit Event", (doc) => doc.name === audit.event));
+		settle();
+		cy.window().should((win) => {
+			const doc = current(win);
+			expect([doc.reference_doctype, doc.reference_name]).to.deep.equal([
+				"Customer",
+				customer(),
+			]);
+			expect(doc.action).to.equal("Updated");
+			expect(doc.user, "who changed it").to.equal(users.Sales);
+			expect(doc.event_at.slice(0, 10), "when").to.equal(win.frappe.datetime.get_today());
+		});
+		cy.get(`${FORM} .frappe-control[data-fieldname="action"]`).should("contain", "Updated");
+		cy.get(`${FORM} .frappe-control[data-fieldname="user"]`).should(
+			($control) =>
+				expect(
+					[users.Sales, sales()].some((who) => $control.text().includes(who)),
+					"who changed it, shown"
+				).to.be.true
+		);
+		cy.window().then((win) =>
+			cy
+				.get(`${FORM} .frappe-control[data-fieldname="event_at"]`)
+				.should("contain", today_text(win))
+		);
+		reveal("changes");
+		cy.get(`${FORM} .frappe-control[data-fieldname="changes"]`).should(($control) => {
+			const text = $control.text();
+			for (const value of [
+				"customer_group",
+				sheet.customer_group,
+				sheet.other_group,
+				"mds_changed_under",
+				change(),
+			]) {
+				expect(text, "the old and new values, as stored").to.contain(value);
+			}
+		});
+
+		// Why: the approved change request the customer was changed under.
+		cy.then(() => open_form("Change Request", change()));
+		cy.window().should((win) => {
+			expect(current(win).status).to.equal("Approved");
+			expect(current(win).reason).to.equal(sheet.change_reason);
+		});
+		reveal("reason");
+		cy.get(`${FORM} .frappe-control[data-fieldname="reason"]`).should(
+			"contain",
+			sheet.change_reason
+		);
+
+		// The customer's licence: QA's Verified signature, who signed, when and why, and the
+		// verification in its audit trail.
+		cy.then(() => open_form("Customer Licence", licence()));
+		banner("green", `Verified: ${sheet.licence_checked}`);
+		cy.window().then((win) =>
+			signature_rows().should(($rows) => {
+				expect($rows).to.have.length(1);
+				expect($rows.eq(0).text())
+					.to.contain("Verified")
+					.and.to.contain(qa())
+					.and.to.contain(today_text(win))
+					.and.to.contain(sheet.licence_checked);
+			})
+		);
+		cy.then(() => audit_entry_shown([`Submitted by ${qa()}`, "Status: empty → Verified"]));
+		cy.then(() => open_audit_trail("Customer Licence", licence(), ["Created", "Submitted"]));
+		no_problems("D1-T15");
+	});
+
+	// ISO 13485 4.2.5, 21 CFR 11.10(c): a licence is kept as decided. QA withdraws one; nobody, the
+	// Administrator included, deletes or cancels it, on the form or past it.
+	it("[URS-MST-008] [URS-CMP-016] D1-T16 A customer licence is never deleted or cancelled, not even by the Administrator", () => {
+		const verified = () => sheet.kept_licence;
+		const awaiting = () => sheet.awaiting_licence;
+		const never_deleted = exactly("A customer licence is never deleted.");
+		const never_cancelled = exactly(
+			"A customer licence is never cancelled; QA withdraws it, and a renewed licence is a new record."
+		);
+		// Frappe refuses to delete a submitted record before the licence's own rule is reached.
+		const submitted_not_deleted = /Submitted Record cannot be deleted/;
+		const before = {};
+		const target = (name) => ({ doctype: "Customer Licence", name });
+
+		// QA, who decides licences: the form offers neither, and a call past the form is refused.
+		sign_in("QA Manager");
+		cy.then(() => licence_as_stored(verified())).then((kept) => {
+			expect([kept.docstatus, kept.status], "verified").to.deep.equal([1, "Verified"]);
+			before.verified = kept;
+		});
+		cy.then(() => licence_as_stored(awaiting())).then((kept) => {
+			expect(kept.docstatus, "awaiting QA").to.equal(0);
+			before.awaiting = kept;
+		});
+		cy.then(() => open_form("Customer Licence", verified()));
+		banner("green", `Verified: ${sheet.licence_checked}`);
+		offered("Cancel", false);
+		in_menu("Delete", false);
+		for (const method of ["frappe.client.delete", "frappe.client.cancel"]) {
+			cy.then(() => refused_call(method, target(verified()))).then(({ status, message }) => {
+				expect(status, `${method} as QA`).to.equal(403);
+				expect(message).to.match(/PermissionError/);
+			});
+		}
+		cy.then(() => open_form("Customer Licence", awaiting()));
+		in_menu("Delete", false);
+		cy.then(() => refused_call("frappe.client.delete", target(awaiting()))).then(
+			({ status, message }) => {
+				expect(status, "deleting the licence awaiting QA, as QA").to.equal(403);
+				expect(message).to.match(/PermissionError/);
+			}
+		);
+		no_problems("D1-T16, QA");
+
+		// The Administrator, who holds every permission.
+		sign_in_as_administrator();
+		cy.then(() => open_form("Customer Licence", verified()));
+		// No Delete on a submitted record; a call past the form is refused.
+		in_menu("Delete", false);
+		cy.then(() => refused_call("frappe.client.delete", target(verified()))).then(
+			({ message }) => expect(message).to.match(submitted_not_deleted)
+		);
+		// Cancel is offered: the reason the audit trail asks for, the confirmation, and the refusal.
+		offered("Cancel", true);
+		button("Cancel").click();
+		cy.then(() => open_dialog().should("contain", `Reason for cancelling ${verified()}`));
+		enter_reason("Customer no longer licensed (browser test)");
+		cy.get(".modal.show .btn-primary").contains("Continue").click();
+		open_dialog().should("contain", "Permanently Cancel");
+		expect_refusal(never_cancelled);
+		cy.get(".modal.show .btn-primary").contains("Yes").click();
+		refused_with(never_cancelled);
+		cy.window().should((win) => expect(current(win).docstatus, "still verified").to.equal(1));
+		// Nor by a call past the form.
+		cy.then(() => refused_call("frappe.client.cancel", target(verified()))).then(
+			({ status, message }) => {
+				expect(status).to.equal(403);
+				expect(message).to.match(never_cancelled);
+			}
+		);
+		// The licence awaiting QA: Delete is offered, and refused.
+		cy.then(() => open_form("Customer Licence", awaiting()));
+		in_menu("Delete", true);
+		open_dialog().should("contain", "Permanently delete");
+		expect_refusal(never_deleted);
+		cy.get(".modal.show .btn-primary").contains("Yes").click();
+		refused_with(never_deleted);
+		cy.then(() => refused_call("frappe.client.delete", target(awaiting()))).then(
+			({ status, message }) => {
+				expect(status).to.equal(403);
+				expect(message).to.match(never_deleted);
+			}
+		);
+
+		// Both licences are still there, as they were.
+		cy.then(() => licence_as_stored(verified())).then((kept) =>
+			expect(kept, "the verified licence, unchanged").to.deep.equal(before.verified)
+		);
+		cy.then(() => licence_as_stored(awaiting())).then((kept) =>
+			expect(kept, "the licence awaiting QA, unchanged").to.deep.equal(before.awaiting)
+		);
+		no_problems("D1-T16");
 	});
 });
