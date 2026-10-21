@@ -13,6 +13,13 @@ as the jobs would have done it:
   the order; Purchase raised a change request listing it, which QA assessed and approved with
   signatures.
 
+D2-T15 and D2-T16 start from records of their own, so that they run whatever the tests before them
+did: a supplier in use whose group Purchase has changed under an approved change request, with QA's
+signed approval, for QA to read in the audit trail (21 CFR 11.10(e)); and a supplier with QA's signed
+approval, a decision QA has prepared but not signed, and a second supplier to merge it into, which
+nobody merges, and whose decisions nobody, the Administrator included, deletes or cancels (ISO 13485
+4.2.5, 7.4.1).
+
 Run after ui_journey.prepare_journey, which makes and approves the journey's raw materials (module
 1) the sheet orders. Every supplier is new, its name made unique for the run. Only the Administrator
 who runs the tests prepares them, with the run's password of the job users
@@ -22,10 +29,11 @@ who runs the tests prepares them, with the run's password of the job users
 import frappe
 from frappe import _
 from frappe.model.workflow import apply_workflow
-from frappe.utils import add_days, add_months, get_first_day, getdate, today
+from frappe.utils import add_days, add_months, get_first_day, get_fullname, getdate, today
 
 from meddevice_suite.compliance.signing import sign_action
-from meddevice_suite.master_data import supplier_rating
+from meddevice_suite.master_data import supplier_approval, supplier_rating
+from meddevice_suite.master_data.versioning import CHANGE_REQUEST
 from meddevice_suite.qa.ui_journey import COMPANY, QUARANTINE, acting_as, store
 from meddevice_suite.qa.ui_users import email_for, ensure_test_site
 
@@ -35,13 +43,17 @@ NOT_LISTED = "UIJ-RM-CONNECTOR"  # the sheet's RM-CARTON: an item the supplier i
 SILICONE = "UIJ-RM-SILICONE"  # the sheet's RM-SILICONE
 GROUP = "Raw Material"
 OTHER_GROUP = "TEST-D2 Packaging Suppliers"
+APPROVAL_REASON = "Audited (browser test sheet D2)"  # why QA approves the set-up's suppliers
+CHANGE_REASON = "The supplier now supplies packaging only (browser test)."  # why a supplier changes
 
 
 @frappe.whitelist(methods=["POST"])
 def prepare(password: str) -> dict:
 	"""What the sheet starts from. Returns {"tag", "new_supplier", "items", "group", "other_group",
 	"rated": {"supplier", "rating", "score", "period", "threshold"}, "in_use": {"supplier",
-	"change_request"}}."""
+	"change_request"}, "audited": {"supplier", "approval", "change_request", "change_reason",
+	"approval_reason"}, "kept": {"supplier", "approval", "draft", "duplicate", "approval_reason"},
+	"full_names"}."""
 	ensure_test_site()
 	if frappe.session.user != "Administrator":
 		frappe.throw(
@@ -60,6 +72,9 @@ def prepare(password: str) -> dict:
 		"other_group": OTHER_GROUP,
 		"rated": rated_below_threshold(f"TEST-D2 Rated Supplier {tag}", password),
 		"in_use": in_use_under_change_request(f"TEST-D2 Silicone Compounds {tag}", password),
+		"audited": changed_under_change_request(f"TEST-D2 Audited Supplier {tag}", password),
+		"kept": kept_decisions(tag, password),
+		"full_names": {job: get_fullname(email_for(job)) for job in ("Purchase", "QA Manager")},
 	}
 
 
@@ -99,14 +114,66 @@ def in_use_under_change_request(name: str, password: str) -> dict:
 	return {"supplier": supplier, "change_request": approved_change_request(supplier, password)}
 
 
-def approved_supplier(name: str, item: str, password: str) -> str:
-	"""Purchase creates the supplier; QA approves it for `item` with its certificate and a signature."""
+def changed_under_change_request(name: str, password: str) -> dict:
+	"""A supplier in use whose group Purchase changed under an approved change request, with QA's
+	signed approval (D2-T15)."""
+	in_use = in_use_under_change_request(name, password)
+	supplier = in_use["supplier"]
 	with acting_as(email_for("Purchase")):
-		supplier = (
+		doc = frappe.get_doc("Supplier", supplier)
+		doc.supplier_group = OTHER_GROUP
+		doc.set(CHANGE_REQUEST, in_use["change_request"])
+		doc.save()
+	return {
+		**in_use,
+		"approval": signed_approval(supplier),
+		"change_reason": CHANGE_REASON,
+		"approval_reason": APPROVAL_REASON,
+	}
+
+
+def kept_decisions(tag: str, password: str) -> dict:
+	"""A supplier with QA's signed approval and a decision QA has prepared but not signed, and a
+	second supplier Purchase recorded, to merge the first into (D2-T16)."""
+	supplier = approved_supplier(f"TEST-D2 Kept Supplier {tag}", POUCH, password)
+	with acting_as(email_for("QA Manager")):
+		draft = (
+			frappe.get_doc(
+				{"doctype": supplier_approval.DOCTYPE, "supplier": supplier, "items": [{"item_code": POUCH}]}
+			)
+			.insert()
+			.name
+		)
+	return {
+		"supplier": supplier,
+		"approval": signed_approval(supplier),
+		"draft": draft,
+		"duplicate": new_supplier(f"TEST-D2 Duplicate Supplier {tag}"),
+		"approval_reason": APPROVAL_REASON,
+	}
+
+
+def signed_approval(supplier: str) -> str:
+	"""The supplier's one decision QA has signed."""
+	[name] = frappe.get_all(
+		supplier_approval.DOCTYPE, filters={"supplier": supplier, "docstatus": 1}, pluck="name"
+	)
+	return name
+
+
+def new_supplier(name: str) -> str:
+	"""A supplier Purchase records, as Purchase records one."""
+	with acting_as(email_for("Purchase")):
+		return (
 			frappe.get_doc({"doctype": "Supplier", "supplier_name": name, "supplier_group": GROUP})
 			.insert()
 			.name
 		)
+
+
+def approved_supplier(name: str, item: str, password: str) -> str:
+	"""Purchase creates the supplier; QA approves it for `item` with its certificate and a signature."""
+	supplier = new_supplier(name)
 	with acting_as(email_for("QA Manager")):
 		certificate = frappe.get_doc(
 			{
@@ -126,9 +193,7 @@ def approved_supplier(name: str, item: str, password: str) -> str:
 				"items": [{"item_code": item}],
 			}
 		).insert()
-		sign_action(
-			"Supplier Approval", approval.name, "Approve", password, "Audited (browser test sheet D2)"
-		)
+		sign_action("Supplier Approval", approval.name, "Approve", password, APPROVAL_REASON)
 	return supplier
 
 
@@ -173,7 +238,7 @@ def approved_change_request(supplier: str, password: str) -> str:
 				"title": f"Move {supplier} to {OTHER_GROUP} (browser test sheet D2)",
 				"change_type": "Supplier",
 				"description": f"Supplier group of {supplier} changed to {OTHER_GROUP} (browser test).",
-				"reason": "The supplier now supplies packaging only (browser test).",
+				"reason": CHANGE_REASON,
 				"affected_records": [{"reference_doctype": "Supplier", "reference_name": supplier}],
 				"actions": [
 					{
