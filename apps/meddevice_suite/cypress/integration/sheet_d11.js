@@ -26,6 +26,7 @@
 const USERS = "meddevice_suite.qa.ui_users";
 const JOURNEY = "meddevice_suite.qa.ui_journey";
 const SHEET = "meddevice_suite.qa.sheets.d11";
+const TASK_METHODS = "meddevice_suite.work_management.work_task";
 const COMPLETE_OCCURRENCE = "meddevice_suite.work_management.reminders.complete_occurrence";
 const API = /^https?:\/\/[^/]+\/api\//;
 const FORM = ".page-container:visible";
@@ -925,14 +926,13 @@ function open_prompt(label) {
 	button(label).click();
 }
 
-// A prompt the form opens (frappe.prompt): the person types into its own field and presses its own
-// primary button; the form reloads the record the call changed. The prompt closes as it sends the
-// call (frappe.prompt hides it first); a message answering the call, or anything else left open
-// over the form, is closed as the person closes it, and a red or orange one is reported as a
-// problem of the step (close_dialogs). Found in Chrome, 2026-10-21 (D11-T03, T06, T11): two dialogs
-// were still open after the prompt was answered, and the step waited on them instead of closing
-// them.
-function answer_prompt(fieldname, text) {
+// A prompt the form opens (frappe.prompt): the person types into its own field, leaves it, and
+// presses its own primary button, which closes the prompt and sends `method`; the form reloads the
+// record the call changed. Found in Chrome, 2026-10-21 (D11-T03, T06, T11): the prompt was closed
+// with the record unchanged, so the step now waits until the prompt has taken the typed value (its
+// change event, as leaving the field gives it), and then for the call itself, which must succeed. A
+// message left on screen (a refusal, values the prompt found missing) is named in the failure.
+function answer_prompt(fieldname, text, method) {
 	let asked;
 	open_dialog();
 	cy.window().then((win) => {
@@ -942,18 +942,27 @@ function answer_prompt(fieldname, text) {
 	cy.get(field).last().click();
 	cy.get(field).last().clear();
 	cy.get(field).last().type(text);
-	cy.window().should(() => expect(asked.get_value(fieldname)).to.equal(text));
+	cy.get(field).last().blur();
+	cy.window().should(() => {
+		expect(asked.get_value(fieldname), "the prompt's field").to.equal(text);
+		expect(asked.fields_dict[fieldname].value, "the value the prompt has taken").to.equal(
+			text
+		);
+		expect(asked.get_values(true)?.[fieldname], "what the prompt will send").to.equal(text);
+	});
+	cy.intercept("POST", `/api/method/${method}`).as("answered");
 	cy.then(() => cy.wrap(asked.$wrapper.find(".btn-modal-primary:visible").first()).click());
-	// The prompt has gone, or a message answers it (a refusal, values it found missing).
 	cy.window().should((win) => {
 		const shown = message_dialog(win);
-		expect(
-			!asked.display || Boolean(shown),
-			`the prompt is answered${shown ? `: ${shown.text}` : ""}`
-		).to.be.true;
+		expect(shown?.text ?? null, "a message over the prompt").to.equal(null);
+		expect(asked.display, "the prompt has closed").to.not.be.ok;
 	});
-	close_dialogs();
-	cy.window().should(() => expect(asked.display, "the prompt is closed").to.not.be.ok);
+	cy.wait("@answered").then(({ response }) =>
+		expect(
+			response?.statusCode,
+			`${method} is carried out: ${server_message(response?.body)}`
+		).to.equal(200)
+	);
 	settle(RELOAD_DELAY_MS + QUIET_MS);
 	close_dialogs();
 	cy.get(".modal.show").should("not.exist");
@@ -1249,7 +1258,11 @@ context("D11 Task / Approval & Reminders: the browser test sheet, as each job", 
 			open_form(TASK, task);
 			cy.window().should((win) => expect(current(win).subject).to.equal(subject));
 			open_prompt("Submit for Approval");
-			answer_prompt("result", "Die cleaned, no damage found");
+			answer_prompt(
+				"result",
+				"Die cleaned, no damage found",
+				`${TASK_METHODS}.submit_for_approval`
+			);
 			cy.window().should((win) => {
 				const doc = current(win);
 				expect(doc.status, "Status").to.equal("Submitted");
@@ -1302,7 +1315,11 @@ context("D11 Task / Approval & Reminders: the browser test sheet, as each job", 
 			my_work_lists(TASK, task, [`Do the task again: ${subject}`]);
 			open_record(TASK, task);
 			open_prompt("Submit for Approval");
-			answer_prompt("result", "Die cleaned; die lip inspected, no nicks");
+			answer_prompt(
+				"result",
+				"Die cleaned; die lip inspected, no nicks",
+				`${TASK_METHODS}.submit_for_approval`
+			);
 			cy.window().should((win) => {
 				const doc = current(win);
 				expect(doc.status, "Status").to.equal("Submitted");
@@ -1401,7 +1418,7 @@ context("D11 Task / Approval & Reminders: the browser test sheet, as each job", 
 		sign_in(PRODUCTION);
 		cy.then(() => open_form(TASK, made.task));
 		open_prompt("Withdraw");
-		answer_prompt("reason", "Die replaced instead");
+		answer_prompt("reason", "Die replaced instead", `${TASK_METHODS}.withdraw`);
 		cy.window().should((win) => {
 			const doc = current(win);
 			expect(doc.status, "Status").to.equal("Withdrawn");
@@ -1630,7 +1647,7 @@ context("D11 Task / Approval & Reminders: the browser test sheet, as each job", 
 			open_form(REMINDER, made.reminder);
 			cy.window().should((win) => expect(current(win).schedule).to.equal(made.schedule));
 			open_prompt("Mark Completed");
-			answer_prompt("remark", remark);
+			answer_prompt("remark", remark, COMPLETE_OCCURRENCE);
 			cy.window().should((win) => {
 				const doc = current(win);
 				expect(doc.status, "Status").to.equal("Completed");
