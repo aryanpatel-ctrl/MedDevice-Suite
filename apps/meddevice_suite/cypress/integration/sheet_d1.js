@@ -330,9 +330,17 @@ function type_into($input, text) {
 // field is found again: the refresh drew it anew.
 function retype_if_wiped(selector, value, label, read_stored, reopen = null) {
 	settle();
+	// Right after the person leaves the box it still shows the date while the record is empty, and
+	// the refresh may land only then (found in CI, 2026-10-21: the box emptied after this check had
+	// passed it). Wait until the record has the date or the box is empty; a box that keeps showing
+	// a date the record never takes is a defect and fails here.
+	const box_of = (win) => Cypress.$(win.document.body).find(selector).first().val();
+	cy.window().should((win) => {
+		expect(Boolean(read_stored(win)) || !box_of(win), `${label}: kept by the record`).to.be
+			.true;
+	});
 	cy.window().then((win) => {
-		const box = Cypress.$(win.document.body).find(selector).first().val();
-		if (read_stored(win) || box) return;
+		if (read_stored(win)) return;
 		cy.log(`${label}: date wiped by a form refresh, typed again`);
 		if (reopen) reopen();
 		cy.get(selector)
