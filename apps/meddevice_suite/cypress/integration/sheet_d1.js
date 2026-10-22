@@ -349,17 +349,75 @@ function retype_if_wiped(selector, value, label, read_stored, reopen = null) {
 	});
 }
 
-// Types into a link field and chooses the entry of its list for `value`: the entry's name in
-// bold, or, on a lookup that shows titles, its name under the title.
-function choose($input, value) {
-	cy.wrap($input).clear().focus().type(value, { delay: 0 });
+function first_of(selector) {
+	return selector
+		.split(",")
+		.map((part) => `${part.trim()}:first`)
+		.join(", ");
+}
+
+function type_afresh(selector, value) {
+	settle();
+	cy.get(first_of(selector)).clear();
+	settle();
+	cy.get(first_of(selector)).type(value, { delay: 0 });
+}
+
+// The entry of a lookup's list for `value`: the record's name in bold, or, on a lookup that shows
+// titles, its name right after the title with no space (sheet_d11.js entry_named).
+function entry_named($options, value) {
+	const options = $options.toArray();
+	const squeezed = (text) => String(text ?? "").replace(/\s+/g, "");
+	return (
+		options.find((option) => option.querySelector("strong")?.textContent.trim() === value) ||
+		options.find((option) => squeezed(option.textContent).endsWith(squeezed(value))) ||
+		options.find((option) => squeezed(option.textContent).includes(squeezed(value)))
+	);
+}
+
+// The lookup's list has come back from its search and stopped changing.
+function lookup_list_settled() {
+	cy.window({ log: false }).then({ timeout: TIMEOUT + 5000 }, (win) => {
+		let last = -1;
+		let since = Date.now();
+		return until(() => {
+			const count = win.$('[role="listbox"]:visible [role="option"]').length;
+			if (count !== last) {
+				last = count;
+				since = Date.now();
+				return false;
+			}
+			return count > 0 && Date.now() - since >= QUIET_MS;
+		}).then((settled) => expect(settled, "the lookup's list has settled").to.be.true);
+	});
+}
+
+// Types into a link field and chooses the entry of its list for `value` (sheet_d11.js choose).
+// The list can still show the answer to an earlier, shorter search when the last one is done (CI,
+// 2026-10-22, D1-T03: the item typed in full, a list of other items left open): the person types
+// it once more when the list or the typed value is not there, and picks the one entry that names it.
+function choose(selector, value) {
+	type_afresh(selector, value);
+	settle();
+	cy.get("body").then(($body) => {
+		const $input = $body.find(selector).first();
+		const $options = $body.find('[role="listbox"]:visible [role="option"]');
+		if (!$options.length || $input.val() !== value || !entry_named($options, value)) {
+			cy.log(`${value}: not offered by the lookup's last search, typed again`);
+			type_afresh(selector, value);
+		}
+	});
+	lookup_list_settled();
 	cy.get('[role="listbox"]:visible [role="option"]')
 		.filter(
 			(_, option) =>
-				option.querySelector("strong")?.textContent.trim() === value ||
-				option.textContent.includes(value)
+				option ===
+				entry_named(
+					Cypress.$(option).closest('[role="listbox"]').find('[role="option"]'),
+					value
+				)
 		)
-		.first()
+		.should("have.length", 1)
 		.click();
 }
 
@@ -388,11 +446,12 @@ function fill(fieldname, value, kind = "Data") {
 	settle();
 	close_open_lists();
 	reveal(fieldname);
-	cy.get(inputs_of(`${FORM} .frappe-control[data-fieldname="${fieldname}"]`))
+	const selector = inputs_of(`${FORM} .frappe-control[data-fieldname="${fieldname}"]`);
+	cy.get(selector)
 		.first()
 		.then(($input) =>
 			cy.window().then((win) => {
-				if (kind === "Link") choose($input, value);
+				if (kind === "Link") choose(selector, value);
 				else if (kind === "Select") cy.wrap($input).select(value);
 				else if (kind === "Date")
 					type_into($input, win.frappe.datetime.str_to_user(value));
@@ -438,7 +497,7 @@ function fill_row(table, idx, fieldname, value, kind = "Data") {
 	cy.get(inputs_of(cell))
 		.first()
 		.then(($input) => {
-			if (kind === "Link") choose($input, value);
+			if (kind === "Link") choose(inputs_of(cell), value);
 			else type_into($input, String(value));
 		});
 	cy.window().should((win) => {
