@@ -259,6 +259,10 @@ PERMISSIONS: dict[str, dict[str, tuple[str, ...]]] = {
 			"Stock Manager": APPROVE,
 			"Manufacturing User": CORRECT,
 			"Accounts User": VIEW,
+			# QC names the entry whose goods it inspects (production, returns) in the inspection's
+			# Reference Name; it opens the entry, never changes it (found by the manual protocol of
+			# data store D4, 2026-10-22).
+			"QC Inspector": VIEW,
 			# QA's lot release moves the lot between stores (module 17): the release posts the
 			# transfer under the QA user, who never fills in a stock entry by hand (the lot
 			# control refuses any other stock entry of theirs) and never cancels one.
@@ -302,7 +306,13 @@ PERMISSIONS: dict[str, dict[str, tuple[str, ...]]] = {
 	),
 	# --- Dispatch
 	"Delivery Note": oversight(
-		{"Stock User": CORRECT, "Stock Manager": APPROVE, "Sales User": ENTER, "Accounts User": VIEW}
+		{
+			"Stock User": CORRECT,
+			"Stock Manager": APPROVE,
+			"Sales User": ENTER,
+			"Accounts User": VIEW,
+			"QC Inspector": VIEW,  # the delivery or return whose goods QC inspects, as for Stock Entry
+		}
 	),
 	"Packing Slip": oversight({"Stock User": CORRECT, "Stock Manager": APPROVE, "Sales User": VIEW}),
 	# --- Maintenance
