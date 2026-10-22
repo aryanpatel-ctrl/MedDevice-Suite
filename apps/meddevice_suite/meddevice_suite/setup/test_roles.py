@@ -428,6 +428,21 @@ class TestSegregationOfDuties(ProfileTestCase):
 			with self.subTest(profile=profile):
 				self.assertFalse(can(self.users[profile], "Quality Inspection", "submit"))
 
+	def test_inspectors_open_the_records_whose_goods_they_inspect_and_never_change_them(self):
+		"""An inspection names the receipt, entry, delivery or job card whose goods it inspects: QC
+		opens each to choose it, and changes none (found by the manual protocol of data store D4,
+		2026-10-22: QC could not name the stock entry of returned goods)."""
+		inspector = self.users["QC Inspector"]
+		for doctype in ("Purchase Receipt", "Stock Entry", "Delivery Note", "Job Card"):
+			with self.subTest(doctype=doctype):
+				self.assertIn(
+					doctype, frappe.get_meta("Quality Inspection").get_field("reference_type").options
+				)
+				for permission in ("select", "read"):
+					self.assertTrue(can(inspector, doctype, permission), permission)
+				for permission in ("write", "create", "submit", "cancel"):
+					self.assertFalse(can(inspector, doctype, permission), permission)
+
 	def test_operators_record_their_operations_only(self):
 		operator = self.users["Operator"]
 

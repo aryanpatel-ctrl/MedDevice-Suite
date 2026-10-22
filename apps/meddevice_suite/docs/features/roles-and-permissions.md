@@ -69,6 +69,7 @@ Navigation for the administrator: **Users › User** (`/desk/user/<email>`), **U
 | BOM | Manufacturing User EDIT (drafts); Quality Manager APPROVE (submits) |
 | Batch | Item Manager EDIT; Stock User and Manufacturing User VIEW + create (a lot is made by the receipt or production entry: `CREATED_THROUGH_TRANSACTIONS`) |
 | Stock Entry, Serial and Batch Bundle | Quality Manager REVIEW + write, create, submit, posted only by QA's lot release service (`POSTED_BY_SERVICES`, module 17) |
+| Stock Entry, Delivery Note | QC Inspector VIEW: the entry, delivery or return whose goods an inspection names as its reference (found by the manual protocol of data store D4, 2026-10-22); QC never changes them |
 | Item, Warehouse | Operator PICK (the item and stores on a job card); Maintenance User PICK on Warehouse |
 
 Nobody has **delete**, **share** or **import** on any regulated record type (URS-CMP-016); **System Manager** has VIEW only (URS-CMP-017). `HIGHER_LEVELS` adds permission-level-1 rows (Customer: Sales Manager read/write, Sales User read; Purchase Order: Purchase Manager; Purchase Receipt and Delivery Note: Stock Manager; Sales Order: Sales Manager, ERPNext's own row for ignoring pricing rules).
